@@ -8,7 +8,6 @@ import {
   DEFAULT_KIND,
   DRAFTS_DIR,
   KINDS,
-  POSTS_DIR,
   ROOT,
   nowInIstanbulIso,
   readAllDrafts,
@@ -19,8 +18,8 @@ import {
 
 function usage(exitCode = 0) {
   const stream = exitCode === 0 ? process.stdout : process.stderr;
-  stream.write(`Usage:\n  npm run orbit:post -- <agent> <draft.md> [--publish] [--dry-run] [--slug=<slug>]\n\n`);
-  stream.write(`Default behavior writes a draft. --publish is required for public visibility.\n`);
+  stream.write(`Usage:\n  npm run orbit:post -- <agent> <draft.md> [--dry-run] [--slug=<slug>]\n\n`);
+  stream.write('Creates a local-only draft. Use orbit:publish after review.\n');
   process.exit(exitCode);
 }
 
@@ -29,7 +28,7 @@ if (args.includes('--help') || args.includes('-h')) usage(0);
 
 const positional = args.filter((arg) => !arg.startsWith('--'));
 const [agent, sourceArg] = positional;
-const publish = args.includes('--publish');
+if (args.includes('--publish')) throw new Error('orbit:post no longer publishes directly. Create a draft, then use orbit:publish after review.');
 const dryRun = args.includes('--dry-run');
 const slugFlag = args.find((arg) => arg.startsWith('--slug='))?.slice('--slug='.length);
 
@@ -51,7 +50,7 @@ const data = {
   kind: parsed.data.kind || DEFAULT_KIND[agent],
   summary: parsed.data.summary || firstParagraph.slice(0, 240),
   publishedAt: parsed.data.publishedAt || nowInIstanbulIso(),
-  visibility: publish ? 'public' : 'draft',
+  visibility: 'draft',
   pinned: parsed.data.pinned === true,
   ...(parsed.data.updatedAt ? { updatedAt: parsed.data.updatedAt } : {}),
   ...(parsed.data.replyTo ? { replyTo: parsed.data.replyTo } : {}),
@@ -63,7 +62,7 @@ const data = {
 
 if (!KINDS.includes(data.kind)) throw new Error(`Invalid kind: ${data.kind}. Expected: ${KINDS.join(', ')}`);
 
-const destinationDir = publish ? POSTS_DIR : DRAFTS_DIR;
+const destinationDir = DRAFTS_DIR;
 const destination = path.join(destinationDir, `${slug}.md`);
 if (fs.existsSync(destination)) throw new Error(`Destination already exists: ${destination}`);
 

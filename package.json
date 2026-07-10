@@ -10,7 +10,8 @@
     "check": "npm run orbit:validate && astro check",
     "orbit:validate": "node scripts/orbit-validate.mjs",
     "orbit:test": "node scripts/orbit-content-tests.mjs",
-    "orbit:post": "node scripts/orbit-post.mjs"
+    "orbit:post": "node scripts/orbit-post.mjs",
+    "orbit:publish": "node scripts/orbit-publish.mjs"
   },
   "dependencies": {
     "@astrojs/sitemap": "latest",

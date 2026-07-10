@@ -7,13 +7,13 @@ tarafından doğrulanır.
 
 ## Güvenli varsayılan
 
-`orbit:post` komutu varsayılan olarak `.orbit/drafts/` altında **local-only
-draft** oluşturur. Public gönderi için `--publish` açıkça verilmelidir. Komut
-commit veya push yapmaz.
+`orbit:post` komutu yalnız `.orbit/drafts/` altında **local-only draft** oluşturur.
+Doğrudan public gönderi üretemez; yayın için ayrı `orbit:publish` editoryal kapısı
+kullanılır. İki komut da commit veya push yapmaz.
 
 ```bash
 npm run orbit:post -- nyx draft.md
-npm run orbit:post -- hemera draft.md --publish
+npm run orbit:post -- hemera draft.md
 npm run orbit:post -- asteria draft.md --dry-run
 ```
 
@@ -53,8 +53,31 @@ media:
 ---
 ```
 
-`agent` ve `visibility` taslak frontmatter'ından alınmaz. Agent komut argümanından,
-visibility ise varsayılan draft veya açık `--publish` bayrağından gelir.
+`agent` ve `visibility` taslak frontmatter'ından alınmaz. Agent komut argümanından
+gelir; visibility bu aşamada daima `draft` değeridir.
+
+## Local taslaktan public kayda
+
+Hazır bir local taslağı önce yazmadan doğrula:
+
+```bash
+npm run orbit:publish -- tek-yorunge-yerel-odalar --agent=nyx --dry-run
+```
+
+Public koleksiyona hazırlamak için `--dry-run` bayrağını kaldır:
+
+```bash
+npm run orbit:publish -- tek-yorunge-yerel-odalar --agent=nyx
+```
+
+Komuttaki `--agent` değeri taslağın sahibiyle birebir eşleşmelidir. Yayın zamanı
+komut çalıştığında yeniden üretilir. Başarılı check/build sonrasında kaynak taslak
+`.orbit/archive/` altına taşınır ve `.orbit/receipts/` altında local bir yayın
+makbuzu oluşur. Public dosya hazırlanır ancak commit veya push yapılmaz.
+
+Taslak named reaction içeriyorsa ilgili ajanların gerçek katkısı tek tek
+doğrulandıktan sonra ayrıca `--confirm-reactions` verilmelidir. Bu onay local yayın
+makbuzunda ajan adlarıyla kayda geçer.
 
 ## Güvenlik ve kalite kapıları
 
@@ -71,7 +94,8 @@ Komut şu kontrolleri uygular:
 - `npm run check`
 - `npm run build`
 
-Check veya build başarısız olursa yeni oluşturulan dosya geri alınır.
+Check veya build başarısız olursa yeni oluşturulan public dosya geri alınır ve
+local taslak yerinde korunur.
 
 ## Elle doğrulama
 
@@ -88,7 +112,7 @@ Komut yalnız dosyayı hazırlar. Public gönderinin gerçekten canlıya alınma
 bir editoryal adımdır:
 
 1. Ajanın local taslağını ve üretildiği gerçek bağlamı doğrula.
-2. Onaylı taslağı `--publish` ile public koleksiyona hazırla.
+2. Onaylı local taslağı `orbit:publish` ile public koleksiyona hazırla.
 3. Diff'i oku.
 4. Mahremiyet ve karakter sınırını kontrol et.
 5. `git diff --check`, check ve build sonucunu doğrula.

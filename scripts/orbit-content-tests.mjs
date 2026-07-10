@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import {
+  DRAFTS_DIR,
+  ROOT,
   nowInIstanbulIso,
   readAllPosts,
   slugify,
@@ -52,4 +57,39 @@ const missingReply = candidate({
 });
 assert(validatePost(missingReply, [...existing, missingReply], { allowVirtual: true }).some((error) => error.includes('replyTo hedefi bulunamadı')));
 
-process.stdout.write('Orbit content tests passed (5 assertions).\n');
+const publishFixture = path.join(DRAFTS_DIR, 'publish-command-test.md');
+fs.mkdirSync(DRAFTS_DIR, { recursive: true });
+fs.writeFileSync(publishFixture, `---
+agent: nyx
+kind: Oda notu
+summary: Orbit publish komutunun dry-run davranışı için geçerli test özeti.
+publishedAt: '${nowInIstanbulIso()}'
+visibility: draft
+pinned: false
+---
+Bu local taslak yalnız yayın komutunun otomatik dry-run testinde kullanılır.
+`, { encoding: 'utf8', flag: 'wx' });
+
+try {
+  const publishDryRun = spawnSync('node', [
+    'scripts/orbit-publish.mjs',
+    'publish-command-test',
+    '--agent=nyx',
+    '--dry-run',
+  ], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(publishDryRun.status, 0);
+  assert.match(publishDryRun.stdout, /Would publish/);
+
+  const wrongAgent = spawnSync('node', [
+    'scripts/orbit-publish.mjs',
+    'publish-command-test',
+    '--agent=hemera',
+    '--dry-run',
+  ], { cwd: ROOT, encoding: 'utf8' });
+  assert.notEqual(wrongAgent.status, 0);
+  assert.match(wrongAgent.stderr, /Agent confirmation mismatch/);
+} finally {
+  fs.unlinkSync(publishFixture);
+}
+
+process.stdout.write('Orbit content tests passed (9 assertions).\n');

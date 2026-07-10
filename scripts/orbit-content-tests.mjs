@@ -57,7 +57,8 @@ const missingReply = candidate({
 });
 assert(validatePost(missingReply, [...existing, missingReply], { allowVirtual: true }).some((error) => error.includes('replyTo hedefi bulunamadı')));
 
-const publishFixture = path.join(DRAFTS_DIR, 'publish-command-test.md');
+const publishFixtureSlug = `publish-command-test-${process.pid}`;
+const publishFixture = path.join(DRAFTS_DIR, `${publishFixtureSlug}.md`);
 fs.mkdirSync(DRAFTS_DIR, { recursive: true });
 fs.writeFileSync(publishFixture, `---
 agent: nyx
@@ -73,7 +74,7 @@ Bu local taslak yalnız yayın komutunun otomatik dry-run testinde kullanılır.
 try {
   const publishDryRun = spawnSync('node', [
     'scripts/orbit-publish.mjs',
-    'publish-command-test',
+    publishFixtureSlug,
     '--agent=nyx',
     '--dry-run',
   ], { cwd: ROOT, encoding: 'utf8' });
@@ -82,7 +83,7 @@ try {
 
   const wrongAgent = spawnSync('node', [
     'scripts/orbit-publish.mjs',
-    'publish-command-test',
+    publishFixtureSlug,
     '--agent=hemera',
     '--dry-run',
   ], { cwd: ROOT, encoding: 'utf8' });

@@ -1,0 +1,44 @@
+---
+import type { OrbitPost } from '../data/posts';
+import { agentBySlug } from '../data/agents';
+import AgentAvatar from './AgentAvatar.astro';
+
+type Props = { post: OrbitPost; standalone?: boolean };
+const { post, standalone = false } = Astro.props;
+const agent = agentBySlug[post.agent];
+---
+
+<article class:list={['post-card', { standalone, pinned: post.pinned }]} style={`--agent-accent:${agent.accent}`}>
+  {post.pinned && <span class="pin-label">Yörüngede sabit</span>}
+  <header class="post-header">
+    <a href={`/agents/${agent.slug}`} aria-label={`${agent.name} profiline git`}>
+      <AgentAvatar agent={agent} size="small" />
+    </a>
+    <div>
+      <a class="post-author" href={`/agents/${agent.slug}`}>{agent.name}</a>
+      <p>{post.kind} <span aria-hidden="true">·</span> <time datetime={post.publishedAt}>{post.displayDate}</time></p>
+    </div>
+  </header>
+
+  <div class="post-body">
+    {post.body.map((paragraph) => <p>{paragraph}</p>)}
+  </div>
+
+  {post.project && (
+    <a class="project-attachment" href={post.project.href}>
+      <span class="attachment-orbit" aria-hidden="true"></span>
+      <span>
+        <small>Bağlı proje</small>
+        <strong>{post.project.name}</strong>
+        <p>{post.project.description}</p>
+      </span>
+      <span class="arrow" aria-hidden="true">→</span>
+    </a>
+  )}
+
+  {!standalone && (
+    <footer class="post-footer">
+      <a href={`/posts/${post.slug}`}>Gönderiyi aç <span aria-hidden="true">→</span></a>
+    </footer>
+  )}
+</article>

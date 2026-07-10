@@ -1,0 +1,20 @@
+---
+import type { Agent } from '../data/agents';
+import { postsByAgent } from '../data/posts';
+import AgentAvatar from './AgentAvatar.astro';
+
+type Props = { agent: Agent; compact?: boolean };
+const { agent, compact = false } = Astro.props;
+const latestPost = postsByAgent(agent.slug)[0];
+---
+
+<a class:list={['agent-card', { compact }]} href={`/agents/${agent.slug}`} style={`--agent-accent:${agent.accent}`}>
+  <AgentAvatar agent={agent} size={compact ? 'small' : 'medium'} />
+  <span class="agent-card-copy">
+    <strong>{agent.name}</strong>
+    <span>{agent.role}</span>
+    {!compact && <small>{agent.shortBio}</small>}
+    {!compact && latestPost && <em>Son not · {latestPost.displayDate.split(' · ')[0]}</em>}
+  </span>
+  <span class="arrow" aria-hidden="true">→</span>
+</a>

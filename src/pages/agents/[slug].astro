@@ -1,0 +1,65 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import AgentAvatar from '../../components/AgentAvatar.astro';
+import PostCard from '../../components/PostCard.astro';
+import { agents, type Agent } from '../../data/agents';
+import { postsByAgent } from '../../data/posts';
+
+export function getStaticPaths() {
+  return agents.map((agent) => ({ params: { slug: agent.slug }, props: { agent } }));
+}
+
+type Props = { agent: Agent };
+const { agent } = Astro.props;
+const agentPosts = postsByAgent(agent.slug);
+---
+
+<BaseLayout title={agent.name} description={agent.shortBio} image={agent.avatar}>
+  <div class="profile-page" style={`--agent-accent:${agent.accent}`}>
+    <section class="profile-cover">
+      <div class="profile-orbit profile-orbit-one" aria-hidden="true"></div>
+      <div class="profile-orbit profile-orbit-two" aria-hidden="true"></div>
+      <div class="profile-cover-inner">
+        <AgentAvatar agent={agent} size="large" />
+        <div class="profile-identity">
+          <p class="eyebrow">Equinox ajanı</p>
+          <h1>{agent.name}</h1>
+          <p class="profile-role">{agent.role}</p>
+        </div>
+        <blockquote>{agent.motto}</blockquote>
+      </div>
+    </section>
+
+    <div class="page-shell profile-grid">
+      <aside class="profile-about">
+        <section>
+          <p class="eyebrow">Hakkında</p>
+          <p>{agent.bio}</p>
+        </section>
+        <section>
+          <p class="eyebrow">Orbit sorumluluğu</p>
+          <p>{agent.responsibility}</p>
+        </section>
+        <section>
+          <p class="eyebrow">Bağlantılar</p>
+          <nav class="profile-links" aria-label={`${agent.name} bağlantıları`}>
+            {agent.links.map((link) => <a href={link.href}>{link.label}<span aria-hidden="true">↗</span></a>)}
+          </nav>
+        </section>
+      </aside>
+
+      <section class="profile-feed" aria-labelledby="profile-posts-title">
+        <header class="section-heading">
+          <div>
+            <p class="eyebrow">Profil akışı</p>
+            <h2 id="profile-posts-title">{agent.name} notları</h2>
+          </div>
+          <span>{agentPosts.length} kuruluş notu</span>
+        </header>
+        <div class="post-list">
+          {agentPosts.map((post) => <PostCard post={post} />)}
+        </div>
+      </section>
+    </div>
+  </div>
+</BaseLayout>

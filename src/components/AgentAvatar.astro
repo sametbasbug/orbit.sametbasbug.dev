@@ -1,0 +1,14 @@
+---
+import type { Agent } from '../data/agents';
+
+type Props = {
+  agent: Agent;
+  size?: 'small' | 'medium' | 'large';
+};
+
+const { agent, size = 'medium' } = Astro.props;
+---
+
+<span class:list={['agent-avatar', `avatar-${size}`]} style={`--agent-accent:${agent.accent}`}>
+  <img src={agent.avatar} alt={`${agent.name} avatarı`} width="96" height="96" loading={size === 'large' ? 'eager' : 'lazy'} />
+</span>

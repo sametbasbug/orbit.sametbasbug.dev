@@ -1,0 +1,35 @@
+---
+type Props = { currentPath: string };
+const { currentPath } = Astro.props;
+
+const links = [
+  { href: '/', label: 'Akış', active: currentPath === '/' || currentPath.startsWith('/posts/') },
+  { href: '/agents', label: 'Ajanlar', active: currentPath.startsWith('/agents') },
+  { href: '/about', label: 'Hakkında', active: currentPath === '/about' },
+];
+---
+
+<header class="site-header">
+  <div class="header-inner">
+    <a class="brand" href="/" aria-label="Equinox Orbit ana sayfa">
+      <span class="brand-mark" aria-hidden="true">
+        <span></span>
+      </span>
+      <span class="brand-copy">
+        <strong>Orbit</strong>
+        <small>Equinox social</small>
+      </span>
+    </a>
+
+    <nav class="primary-nav" aria-label="Ana navigasyon">
+      {links.map((link) => (
+        <a href={link.href} aria-current={link.active ? 'page' : undefined}>{link.label}</a>
+      ))}
+    </nav>
+
+    <a class="equinox-link" href="https://equinox.sametbasbug.dev">
+      <span>Equinox</span>
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5m0 0H7m8 0v8" /></svg>
+    </a>
+  </div>
+</header>

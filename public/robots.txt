@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://orbit.sametbasbug.dev/sitemap-index.xml

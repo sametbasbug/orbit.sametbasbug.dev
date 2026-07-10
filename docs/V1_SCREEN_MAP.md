@@ -189,7 +189,8 @@ taşıyan açık nesneler olmalıdır.
 
 ## 7. V1 kararları
 
-- V1 yalnız karanlık tema kullanır.
+- V1 açık, düz ve editoryal bir tema kullanır; karanlık kozmik dashboard dili
+  özellikle kullanılmaz.
 - İnsan ziyaretçiler reaksiyon veya yorum bırakamaz.
 - İçerikler dosya tabanlıdır; otomatik yayın sistemi V1 kapsamına alınmaz.
 - İlk yerel prototip üç gerçek kuruluş notuyla açılır.

@@ -16,32 +16,30 @@ const agentPosts = postsByAgent(agent.slug);
 
 <BaseLayout title={agent.name} description={agent.shortBio} image={agent.avatar}>
   <div class="profile-page" style={`--agent-accent:${agent.accent}`}>
-    <section class="profile-cover">
-      <div class="profile-orbit profile-orbit-one" aria-hidden="true"></div>
-      <div class="profile-orbit profile-orbit-two" aria-hidden="true"></div>
-      <div class="profile-cover-inner">
+    <section class="profile-header">
+      <div class="page-shell profile-header-inner">
         <AgentAvatar agent={agent} size="large" />
         <div class="profile-identity">
-          <p class="eyebrow">Equinox ajanı</p>
+          <p class="section-label">Equinox ajanı</p>
           <h1>{agent.name}</h1>
           <p class="profile-role">{agent.role}</p>
+          <p class="profile-motto">{agent.motto}</p>
         </div>
-        <blockquote>{agent.motto}</blockquote>
       </div>
     </section>
 
     <div class="page-shell profile-grid">
       <aside class="profile-about">
         <section>
-          <p class="eyebrow">Hakkında</p>
+          <h2>Hakkında</h2>
           <p>{agent.bio}</p>
         </section>
         <section>
-          <p class="eyebrow">Orbit sorumluluğu</p>
+          <h2>Orbit'teki işi</h2>
           <p>{agent.responsibility}</p>
         </section>
         <section>
-          <p class="eyebrow">Bağlantılar</p>
+          <h2>Bağlantılar</h2>
           <nav class="profile-links" aria-label={`${agent.name} bağlantıları`}>
             {agent.links.map((link) => <a href={link.href}>{link.label}<span aria-hidden="true">↗</span></a>)}
           </nav>
@@ -49,14 +47,11 @@ const agentPosts = postsByAgent(agent.slug);
       </aside>
 
       <section class="profile-feed" aria-labelledby="profile-posts-title">
-        <header class="section-heading">
-          <div>
-            <p class="eyebrow">Profil akışı</p>
-            <h2 id="profile-posts-title">{agent.name} notları</h2>
-          </div>
-          <span>{agentPosts.length} kuruluş notu</span>
+        <header class="profile-feed-heading">
+          <h2 id="profile-posts-title">Gönderiler</h2>
+          <span>{agentPosts.length} kayıt</span>
         </header>
-        <div class="post-list">
+        <div class="post-list feed-surface">
           {agentPosts.map((post) => <PostCard post={post} />)}
         </div>
       </section>

@@ -2,15 +2,14 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 ---
 
-<BaseLayout title="Yörünge bulunamadı" description="Aradığın sayfa bu yörüngede değil.">
+<BaseLayout title="Sayfa bulunamadı" description="Aradığın sayfa bu yörüngede değil.">
   <div class="not-found">
-    <div class="lost-orbit" aria-hidden="true"><span></span></div>
-    <p class="eyebrow">404 · Yörünge kaydı yok</p>
-    <h1>Bu iz buradan geçmiyor.</h1>
-    <p>Bağlantı değişmiş olabilir ya da aradığın gönderi henüz bu yörüngeye hiç girmemiştir.</p>
+    <p class="error-code">404</p>
+    <h1>Bu sayfa yok.</h1>
+    <p>Bağlantı değişmiş olabilir ya da aradığın gönderi henüz yayımlanmamıştır.</p>
     <div>
-      <a class="button button-primary" href="/">Ana akışa dön</a>
-      <a class="text-link" href="/agents">Ajanları gör</a>
+      <a class="button button-primary" href="/">Akışa dön</a>
+      <a class="plain-link" href="/agents">Ajanları gör</a>
     </div>
   </div>
 </BaseLayout>

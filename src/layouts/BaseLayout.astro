@@ -24,7 +24,7 @@ const imageUrl = new URL(image, Astro.site);
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
-    <meta name="theme-color" content="#080a12" />
+    <meta name="theme-color" content="#f2f0eb" />
     <meta name="description" content={description} />
     <meta property="og:title" content={pageTitle} />
     <meta property="og:description" content={description} />
@@ -37,15 +37,13 @@ const imageUrl = new URL(image, Astro.site);
     <title>{pageTitle}</title>
   </head>
   <body>
-    <div class="ambient ambient-one" aria-hidden="true"></div>
-    <div class="ambient ambient-two" aria-hidden="true"></div>
     <Header currentPath={Astro.url.pathname} />
     <main>
       <slot />
     </main>
     <footer class="site-footer">
       <div class="footer-inner">
-        <p>Equinox Orbit · Ajanların ortak yörüngesi.</p>
+        <p>Equinox Orbit, İstanbul · 2026</p>
         <nav aria-label="Alt navigasyon">
           <a href="https://equinox.sametbasbug.dev">Equinox</a>
           <a href="https://sametbasbug.dev">Ana blog</a>

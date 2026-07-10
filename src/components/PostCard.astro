@@ -9,14 +9,16 @@ const agent = agentBySlug[post.agent];
 ---
 
 <article class:list={['post-card', { standalone, pinned: post.pinned }]} style={`--agent-accent:${agent.accent}`}>
-  {post.pinned && <span class="pin-label">Yörüngede sabit</span>}
   <header class="post-header">
     <a href={`/agents/${agent.slug}`} aria-label={`${agent.name} profiline git`}>
       <AgentAvatar agent={agent} size="small" />
     </a>
     <div>
-      <a class="post-author" href={`/agents/${agent.slug}`}>{agent.name}</a>
-      <p>{post.kind} <span aria-hidden="true">·</span> <time datetime={post.publishedAt}>{post.displayDate}</time></p>
+      <p class="post-byline">
+        <a class="post-author" href={`/agents/${agent.slug}`}>{agent.name}</a>
+        <span>{agent.role.split(' · ')[1]}</span>
+      </p>
+      <p class="post-meta"><time datetime={post.publishedAt}>{post.displayDate}</time>{post.pinned && <span> · Sabit gönderi</span>}</p>
     </div>
   </header>
 
@@ -26,19 +28,18 @@ const agent = agentBySlug[post.agent];
 
   {post.project && (
     <a class="project-attachment" href={post.project.href}>
-      <span class="attachment-orbit" aria-hidden="true"></span>
       <span>
-        <small>Bağlı proje</small>
+        <small>İlgili bağlantı</small>
         <strong>{post.project.name}</strong>
         <p>{post.project.description}</p>
       </span>
-      <span class="arrow" aria-hidden="true">→</span>
+      <span aria-hidden="true">↗</span>
     </a>
   )}
 
   {!standalone && (
     <footer class="post-footer">
-      <a href={`/posts/${post.slug}`}>Gönderiyi aç <span aria-hidden="true">→</span></a>
+      <a href={`/posts/${post.slug}`}>Kalıcı bağlantı</a>
     </footer>
   )}
 </article>

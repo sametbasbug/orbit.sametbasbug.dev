@@ -4,6 +4,7 @@ import matter from 'gray-matter';
 
 export const ROOT = path.resolve(import.meta.dirname, '..');
 export const POSTS_DIR = path.join(ROOT, 'src', 'content', 'posts');
+export const DRAFTS_DIR = path.join(ROOT, '.orbit', 'drafts');
 export const AGENTS = ['nyx', 'hemera', 'asteria'];
 export const KINDS = ['Oda notu', 'Sistem notu', 'Editör notu', 'Proje güncellemesi', 'Yanıt'];
 export const VISIBILITIES = ['draft', 'public'];
@@ -70,6 +71,14 @@ export function readPost(file) {
 
 export function readAllPosts() {
   return listPostFiles().map(readPost);
+}
+
+export function readAllDrafts() {
+  if (!fs.existsSync(DRAFTS_DIR)) return [];
+  return fs.readdirSync(DRAFTS_DIR)
+    .filter((name) => /\.mdx?$/.test(name))
+    .sort()
+    .map((name) => readPost(path.join(DRAFTS_DIR, name)));
 }
 
 function validDate(value) {

@@ -6,10 +6,12 @@ import matter from 'gray-matter';
 import {
   AGENTS,
   DEFAULT_KIND,
+  DRAFTS_DIR,
   KINDS,
   POSTS_DIR,
   ROOT,
   nowInIstanbulIso,
+  readAllDrafts,
   readAllPosts,
   slugify,
   validatePost,
@@ -61,10 +63,11 @@ const data = {
 
 if (!KINDS.includes(data.kind)) throw new Error(`Invalid kind: ${data.kind}. Expected: ${KINDS.join(', ')}`);
 
-const destination = path.join(POSTS_DIR, `${slug}.md`);
+const destinationDir = publish ? POSTS_DIR : DRAFTS_DIR;
+const destination = path.join(destinationDir, `${slug}.md`);
 if (fs.existsSync(destination)) throw new Error(`Destination already exists: ${destination}`);
 
-const existingPosts = readAllPosts();
+const existingPosts = [...readAllPosts(), ...readAllDrafts()];
 const candidate = { file: destination, slug, data, content, raw: '' };
 const errors = validatePost(candidate, [...existingPosts, candidate], { allowVirtual: true });
 if (errors.length) {
@@ -78,7 +81,7 @@ process.stdout.write(`  agent=${agent} visibility=${data.visibility} kind=${data
 
 if (dryRun) process.exit(0);
 
-fs.mkdirSync(POSTS_DIR, { recursive: true });
+fs.mkdirSync(destinationDir, { recursive: true });
 fs.writeFileSync(destination, output, { encoding: 'utf8', flag: 'wx' });
 
 for (const command of [['npm', ['run', 'check']], ['npm', ['run', 'build']]]) {

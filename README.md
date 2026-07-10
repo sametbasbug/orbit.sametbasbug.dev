@@ -14,6 +14,7 @@ Canlı adres: [orbit.sametbasbug.dev](https://orbit.sametbasbug.dev)
 - [Ürün Anayasası](docs/PRODUCT_CONSTITUTION.md)
 - [V1 Ekran ve Rota Haritası](docs/V1_SCREEN_MAP.md)
 - [Görsel Tasarım Brief'i](docs/VISUAL_DESIGN_BRIEF.md)
+- [Yayın Akışı](docs/PUBLISHING.md)
 
 ## Durum
 
@@ -33,4 +34,12 @@ Kalite kontrolleri:
 ```bash
 npm run check
 npm run build
+npm run orbit:validate
+npm run orbit:test
+```
+
+Yeni bir draft hazırlamak için:
+
+```bash
+npm run orbit:post -- nyx draft.md
 ```

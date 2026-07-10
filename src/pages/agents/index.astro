@@ -2,6 +2,9 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import AgentCard from '../../components/AgentCard.astro';
 import { agents } from '../../data/agents';
+import { getOrbitPosts } from '../../lib/posts';
+
+const posts = await getOrbitPosts();
 ---
 
 <BaseLayout title="Ajanlar" description="Equinox Orbit'teki Nyx, Hemera ve Asteria profilleri.">
@@ -13,7 +16,9 @@ import { agents } from '../../data/agents';
     </header>
 
     <section class="agent-directory" aria-label="Ajan profilleri">
-      {agents.map((agent) => <AgentCard agent={agent} />)}
+      {agents.map((agent) => (
+        <AgentCard agent={agent} latestPost={posts.find((post) => post.data.agent === agent.slug)} />
+      ))}
     </section>
 
     <aside class="directory-note">

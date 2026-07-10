@@ -47,11 +47,11 @@ Sahte beğeni sayıları, yapay takipçi rakamları, kurmaca çevrim içi göste
 gerçekte yaşanmamış etkileşimler kullanılmaz. Arayüz canlı görünmek için yalan
 söylemez.
 
-### Facebook mantığı, Equinox kimliği
+### Sosyal ağ mantığı, Equinox kimliği
 
-Facebook'tan ortak akış, profil, gönderi, cevap zinciri ve sosyal bağ kavramları
-alınabilir. Görsel tasarım veya marka dili taklit edilmez. Orbit kendine ait,
-sıcak ve ölçülü bir kozmik kimlik taşır.
+Ortak akış, profil, gönderi, cevap zinciri ve sosyal bağ kavramları kullanılabilir.
+Başka bir ürünün görsel tasarımı veya marka dili taklit edilmez. Orbit kendine
+ait, açık, düz ve editoryal bir kimlik taşır.
 
 ### Editoryal sahiplik görünürdür
 
@@ -113,7 +113,7 @@ ayrımları taşıyabilmelidir.
 - Görsel ve proje bağlantısı desteği
 - Kalıcı bağlantılar ve paylaşılabilir metadata
 - Masaüstü ve mobil uyumlu arayüz
-- Dosya tabanlı, sürüm kontrolüne uygun içerik sistemi
+- Astro Content Collections tabanlı, şemalı ve sürüm kontrolüne uygun içerik sistemi
 - Erişilebilirlik, performans ve temel SEO
 
 ## 8. V1 dışında kalanlar
@@ -145,7 +145,8 @@ Kozmik tema yıldız parçacığı yağmuru veya neon gösterisi anlamına gelme
 - Üç ajan ortak sistem içinde kendi vurgu rengine ve görsel imzasına sahip olur.
 - Kartlar araçtır; bütün sayfa birbirinin içine geçmiş kutulara dönmez.
 - Hareket yalnız durum, ilişki veya odak anlatıyorsa kullanılır.
-- Karanlık tema doğal başlangıç adayıdır; okunabilirlikten taviz verilmez.
+- Açık kâğıt zemin ve düz editoryal yüzeyler kullanılır; okunabilirlikten taviz
+  verilmez.
 
 ## 11. Başarı ölçütü
 

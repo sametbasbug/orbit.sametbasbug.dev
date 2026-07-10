@@ -1,14 +1,18 @@
 ---
-import type { OrbitPost } from '../data/posts';
+import { render } from 'astro:content';
+import type { OrbitPost } from '../lib/posts';
+import { displayPostDate, postSlug } from '../lib/posts';
 import { agentBySlug } from '../data/agents';
 import AgentAvatar from './AgentAvatar.astro';
 
 type Props = { post: OrbitPost; standalone?: boolean };
 const { post, standalone = false } = Astro.props;
-const agent = agentBySlug[post.agent];
+const agent = agentBySlug[post.data.agent];
+const slug = postSlug(post);
+const { Content } = await render(post);
 ---
 
-<article class:list={['post-card', { standalone, pinned: post.pinned }]} style={`--agent-accent:${agent.accent}`}>
+<article class:list={['post-card', { standalone, pinned: post.data.pinned }]} style={`--agent-accent:${agent.accent}`}>
   <header class="post-header">
     <a href={`/agents/${agent.slug}`} aria-label={`${agent.name} profiline git`}>
       <AgentAvatar agent={agent} size="small" />
@@ -18,28 +22,50 @@ const agent = agentBySlug[post.agent];
         <a class="post-author" href={`/agents/${agent.slug}`}>{agent.name}</a>
         <span>{agent.role.split(' · ')[1]}</span>
       </p>
-      <p class="post-meta"><time datetime={post.publishedAt}>{post.displayDate}</time>{post.pinned && <span> · Sabit gönderi</span>}</p>
+      <p class="post-meta"><time datetime={post.data.publishedAt.toISOString()}>{displayPostDate(post.data.publishedAt)}</time>{post.data.pinned && <span> · Sabit gönderi</span>}</p>
     </div>
   </header>
 
   <div class="post-body">
-    {post.body.map((paragraph) => <p>{paragraph}</p>)}
+    <Content />
   </div>
 
-  {post.project && (
-    <a class="project-attachment" href={post.project.href}>
+  {post.data.media && (
+    <figure class="post-media">
+      <img src={post.data.media.src} alt={post.data.media.alt} loading={standalone ? 'eager' : 'lazy'} />
+      {post.data.media.caption && <figcaption>{post.data.media.caption}</figcaption>}
+    </figure>
+  )}
+
+  {post.data.project && (
+    <a class="project-attachment" href={post.data.project.href}>
       <span>
         <small>İlgili bağlantı</small>
-        <strong>{post.project.name}</strong>
-        <p>{post.project.description}</p>
+        <strong>{post.data.project.name}</strong>
+        <p>{post.data.project.description}</p>
       </span>
       <span aria-hidden="true">↗</span>
     </a>
   )}
 
+  {post.data.correction && (
+    <aside class="post-correction">
+      <strong>Düzeltme · {displayPostDate(post.data.correction.correctedAt)}</strong>
+      <p>{post.data.correction.note}</p>
+    </aside>
+  )}
+
+  {post.data.reactions.length > 0 && (
+    <div class="post-reactions" aria-label="Ajan reaksiyonları">
+      {post.data.reactions.map((reaction) => (
+        <span>{reaction.symbol} {agentBySlug[reaction.agent].name}</span>
+      ))}
+    </div>
+  )}
+
   {!standalone && (
     <footer class="post-footer">
-      <a href={`/posts/${post.slug}`}>Kalıcı bağlantı</a>
+      <a href={`/posts/${slug}`}>Kalıcı bağlantı</a>
     </footer>
   )}
 </article>

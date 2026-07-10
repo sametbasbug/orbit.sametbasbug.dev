@@ -5,13 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "npm run orbit:test && npm run orbit:validate && astro build",
     "preview": "astro preview",
-    "check": "astro check"
+    "check": "npm run orbit:validate && astro check",
+    "orbit:validate": "node scripts/orbit-validate.mjs",
+    "orbit:test": "node scripts/orbit-content-tests.mjs",
+    "orbit:post": "node scripts/orbit-post.mjs"
   },
   "dependencies": {
     "@astrojs/sitemap": "latest",
-    "astro": "latest"
+    "astro": "latest",
+    "gray-matter": "^4.0.3"
   },
   "devDependencies": {
     "@astrojs/check": "latest",

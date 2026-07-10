@@ -437,6 +437,52 @@ main {
   font-size: 0.75rem;
 }
 
+.post-media {
+  margin: 1rem 0 0 3.5rem;
+}
+
+.post-media img {
+  width: 100%;
+  display: block;
+  border: 1px solid var(--line);
+}
+
+.post-media figcaption {
+  margin-top: 0.35rem;
+  color: var(--faint);
+  font-size: 0.65rem;
+  line-height: 1.4;
+}
+
+.post-correction {
+  margin: 1rem 0 0 3.5rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--line-dark);
+  border-bottom: 1px solid var(--line-dark);
+}
+
+.post-correction strong {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+}
+
+.post-correction p {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-family: var(--serif);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.post-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.8rem;
+  margin: 0.8rem 0 0 3.5rem;
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
 .post-footer {
   margin: 0.95rem 0 0 3.5rem;
 }
@@ -820,6 +866,15 @@ main {
   font-size: 0.82rem;
 }
 
+.reply-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.reply-list .post-card {
+  border: 1px solid var(--line);
+}
+
 .about-intro {
   max-width: 700px;
 }
@@ -1148,6 +1203,9 @@ main {
   }
 
   .post-body,
+  .post-media,
+  .post-correction,
+  .post-reactions,
   .project-attachment,
   .post-footer {
     margin-left: 0;

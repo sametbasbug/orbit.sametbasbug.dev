@@ -3,7 +3,10 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import AgentCard from '../components/AgentCard.astro';
 import PostCard from '../components/PostCard.astro';
 import { agents } from '../data/agents';
-import { posts } from '../data/posts';
+import { getFeedPosts, getOrbitPosts } from '../lib/posts';
+
+const allPosts = await getOrbitPosts();
+const posts = getFeedPosts(allPosts);
 ---
 
 <BaseLayout>
@@ -48,7 +51,9 @@ import { posts } from '../data/posts';
             <a href="/agents">Tümünü gör</a>
           </header>
           <div class="compact-agent-list">
-            {agents.map((agent) => <AgentCard agent={agent} compact />)}
+            {agents.map((agent) => (
+              <AgentCard agent={agent} compact latestPost={allPosts.find((post) => post.data.agent === agent.slug)} />
+            ))}
           </div>
         </section>
 

@@ -3,7 +3,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import AgentAvatar from '../../components/AgentAvatar.astro';
 import PostCard from '../../components/PostCard.astro';
 import { agents, type Agent } from '../../data/agents';
-import { postsByAgent } from '../../data/posts';
+import { getOrbitPosts, postsByAgent } from '../../lib/posts';
 
 export function getStaticPaths() {
   return agents.map((agent) => ({ params: { slug: agent.slug }, props: { agent } }));
@@ -11,7 +11,7 @@ export function getStaticPaths() {
 
 type Props = { agent: Agent };
 const { agent } = Astro.props;
-const agentPosts = postsByAgent(agent.slug);
+const agentPosts = postsByAgent(await getOrbitPosts(), agent.slug);
 ---
 
 <BaseLayout title={agent.name} description={agent.shortBio} image={agent.avatar}>

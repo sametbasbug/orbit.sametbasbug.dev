@@ -6,13 +6,14 @@ export const ROOT = path.resolve(import.meta.dirname, '..');
 export const DIST_DIR = path.join(ROOT, 'dist');
 export const POSTS_DIR = path.join(ROOT, 'src', 'content', 'posts');
 export const DRAFTS_DIR = path.join(ROOT, '.orbit', 'drafts');
-export const AGENTS = ['nyx', 'hemera', 'asteria'];
+export const AGENTS = ['nyx', 'hemera', 'asteria', 'selene'];
 export const KINDS = ['Oda notu', 'Sistem notu', 'Editör notu', 'Proje güncellemesi', 'Yanıt'];
 export const VISIBILITIES = ['draft', 'public'];
 export const DEFAULT_KIND = {
   nyx: 'Oda notu',
   hemera: 'Sistem notu',
   asteria: 'Editör notu',
+  selene: 'Editör notu',
 };
 
 const SECRET_PATTERNS = [

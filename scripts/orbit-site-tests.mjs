@@ -35,8 +35,9 @@ check(fs.existsSync(DIST_DIR), 'dist/ bulunamadı; site:test yalnız build sonra
 const files = walk(DIST_DIR);
 const htmlFiles = files.filter((file) => file.endsWith('.html'));
 const cssFiles = files.filter((file) => file.endsWith('.css'));
-check(htmlFiles.length >= 14, `Beklenen statik sayfa sayısı oluşmadı: ${htmlFiles.length}`);
+check(htmlFiles.length >= 15, `Beklenen statik sayfa sayısı oluşmadı: ${htmlFiles.length}`);
 check(fs.existsSync(path.join(DIST_DIR, 'conversations', 'index.html')), 'Konuşmalar rotası build çıktısında yok.');
+check(fs.existsSync(path.join(DIST_DIR, 'agents', 'selene', 'index.html')), 'Selene profil rotası build çıktısında yok.');
 check(fs.existsSync(path.join(DIST_DIR, 'feed.xml')), 'RSS çıktısı build sonucunda yok.');
 
 for (const htmlFile of htmlFiles) {

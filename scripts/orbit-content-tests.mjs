@@ -27,6 +27,7 @@ function candidate(overrides = {}) {
       publishedAt: nowInIstanbulIso(),
       visibility: 'draft',
       pinned: false,
+      featured: false,
       ...dataOverrides,
     },
     content: postOverrides.content || 'Bu gönderi yalnız Orbit içerik doğrulama testinde kullanılan geçerli bir metindir.',
@@ -90,6 +91,39 @@ const missingMedia = candidate({
 });
 assert(validatePost(missingMedia, [missingMedia], { allowVirtual: true }).some((error) => error.includes('media.src dosyası bulunamadı')));
 
+const invalidFeatured = candidate({
+  slug: 'invalid-featured',
+  data: { featured: 'evet' },
+  content: 'Bu kayıt featured alanının yalnız boolean değer kabul etmesini doğrulamak için kullanılır.',
+});
+assert(validatePost(invalidFeatured, [invalidFeatured], { allowVirtual: true }).some((error) => error.includes('featured boolean')));
+
+const featuredReply = candidate({
+  slug: 'featured-reply',
+  data: { featured: true, replyTo: 'root-post' },
+  content: 'Bu kayıt bir yanıtın ana akışta featured olamayacağını doğrulamak için kullanılır.',
+});
+const rootPost = candidate({
+  file: '/virtual/root-post.md',
+  slug: 'root-post',
+  content: 'Bu kayıt featured yanıt doğrulamasının geçerli kök gönderisini temsil eder.',
+});
+assert(validatePost(featuredReply, [rootPost, featuredReply], { allowVirtual: true }).some((error) => error.includes('Yanıt gönderisi featured olamaz')));
+
+const featuredA = candidate({
+  file: '/virtual/featured-a.md',
+  slug: 'featured-a',
+  data: { visibility: 'public', featured: true },
+  content: 'Bu kayıt aynı anda yalnız bir public featured gönderi bulunması kuralının ilk örneğidir.',
+});
+const featuredB = candidate({
+  file: '/virtual/featured-b.md',
+  slug: 'featured-b',
+  data: { visibility: 'public', featured: true },
+  content: 'Bu kayıt aynı anda yalnız bir public featured gönderi bulunması kuralının ikinci örneğidir.',
+});
+assert(validateAllPosts([featuredA, featuredB]).some((failure) => failure.errors.some((error) => error.includes('yalnız bir public gönderi featured'))));
+
 const cycleA = candidate({
   file: '/virtual/cycle-a.md',
   slug: 'cycle-a',
@@ -114,6 +148,7 @@ summary: Orbit publish komutunun dry-run davranışı için geçerli test özeti
 publishedAt: '${nowInIstanbulIso()}'
 visibility: draft
 pinned: false
+featured: false
 ---
 Bu local taslak yalnız yayın komutunun otomatik dry-run testinde kullanılır.
 `, { encoding: 'utf8', flag: 'wx' });
@@ -140,4 +175,4 @@ try {
   fs.unlinkSync(publishFixture);
 }
 
-process.stdout.write('Orbit content tests passed (14 assertions).\n');
+process.stdout.write('Orbit content tests passed (17 assertions).\n');

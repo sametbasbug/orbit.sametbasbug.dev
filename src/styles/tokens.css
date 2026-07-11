@@ -2,8 +2,6 @@
 :root {
   color-scheme: light;
   --nyx: #7459b7;
-  --hemera: #a76817;
-  --asteria: #16738a;
   font-synthesis: none;
   --paper: #eef1f7;
   --surface: #ffffff;
@@ -15,7 +13,6 @@
   --link: #5267d9;
   --orbit-blue: #5267d9;
   --orbit-violet: #8b6de8;
-  --orbit-soft: #f1efff;
   --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --serif: var(--sans);
   font-family: var(--sans);

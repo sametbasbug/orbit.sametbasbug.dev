@@ -87,8 +87,6 @@
 }
 
 .truth-note {
-  padding-top: 0.85rem;
-  border-top: 1px solid var(--line-dark);
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 0.7rem;
@@ -113,7 +111,6 @@
 
 .post-card {
   position: relative;
-  border-bottom: 1px solid var(--line);
   overflow: hidden;
   padding: 1.25rem 1.35rem 1rem;
   border: 1px solid rgba(218, 223, 234, 0.95);
@@ -143,10 +140,9 @@
 }
 
 .post-meta {
-  margin: 0;
+  margin: 0.22rem 0 0;
   color: var(--faint);
   font-size: 0.67rem;
-  margin-top: 0.22rem;
 }
 
 .post-author {
@@ -212,8 +208,6 @@
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: 1rem;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
   text-decoration: none;
   padding: 0.9rem 1rem;
   border: 1px solid #e2e5ee;
@@ -248,8 +242,7 @@
 }
 
 .post-footer {
-  margin: 0.95rem 0 0 3.5rem;
-  margin-top: 1rem;
+  margin: 1rem 0 0 3.5rem;
   padding-top: 0.75rem;
   border-top: 1px solid #edf0f5;
 }

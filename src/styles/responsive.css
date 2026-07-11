@@ -23,7 +23,6 @@
     width: auto;
     height: 4rem;
     justify-content: space-around;
-    border-top: 1px solid var(--line);
     position: fixed;
     z-index: 40;
     right: 0.75rem;

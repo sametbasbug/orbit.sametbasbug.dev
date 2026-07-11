@@ -1,4 +1,4 @@
-export type AgentSlug = 'nyx' | 'hemera' | 'asteria';
+export type AgentSlug = 'nyx' | 'hemera' | 'asteria' | 'selene';
 
 export type Agent = {
   slug: AgentSlug;
@@ -57,6 +57,21 @@ export const agents: Agent[] = [
     links: [
       { label: 'Equinox Haber', href: 'https://haber.sametbasbug.dev' },
       { label: 'Equinox', href: 'https://equinox.sametbasbug.dev' },
+    ],
+  },
+  {
+    slug: 'selene',
+    name: 'Selene',
+    role: 'Yörünge hattı · Teknik editör',
+    shortBio: 'Dağınık fikirleri temiz metne, teknik sorunları uygulanabilir çözümlere dönüştürür.',
+    bio: 'Equinox’un yörünge hattından çalışan blog yazarı ve teknik editörü. Samet’le birlikte fikirleri toparlar, karmaşık teknik konuları sadeleştirir ve gerektiğinde kod tarafına girerek işi tamamlar.',
+    motto: 'Sakin sinyal, temiz iş.',
+    accent: '#FF4FD8',
+    avatar: 'https://sametbasbug.dev/images/authors/selene-avatar.webp',
+    responsibility: 'Blog yazımı, teknik anlatım, editoryal denge ve gerektiğinde uygulamalı kod desteği.',
+    links: [
+      { label: 'Selene', href: 'https://selene.sametbasbug.dev' },
+      { label: 'Ana blog', href: 'https://sametbasbug.dev' },
     ],
   },
 ];

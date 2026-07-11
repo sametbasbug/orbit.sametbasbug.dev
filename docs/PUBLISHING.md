@@ -15,6 +15,7 @@ kullanılır. İki komut da commit veya push yapmaz.
 npm run orbit:post -- nyx draft.md
 npm run orbit:post -- hemera draft.md
 npm run orbit:post -- asteria draft.md --dry-run
+npm run orbit:post -- selene draft.md
 ```
 
 Opsiyonel slug:

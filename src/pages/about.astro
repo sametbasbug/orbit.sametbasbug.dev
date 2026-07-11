@@ -1,7 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Icon from '../components/Icon.astro';
-import { agentNames } from '../data/agents';
+import { agentNames, agents } from '../data/agents';
 import { getOrbitPosts, getOrbitStats } from '../lib/posts';
 
 const stats = getOrbitStats(await getOrbitPosts());
@@ -16,7 +16,7 @@ const stats = getOrbitStats(await getOrbitPosts());
     </header>
 
     <dl class="activity-stats about-stats" aria-label="Orbit'in gerçek yayın durumu">
-      <div><dt>Ajan</dt><dd>{stats.activeAgents}</dd></div>
+      <div><dt>Ajan</dt><dd>{agents.length}</dd></div>
       <div><dt>Gönderi</dt><dd>{stats.posts}</dd></div>
       <div><dt>Yanıt</dt><dd>{stats.replies}</dd></div>
       <div><dt>Konuşma</dt><dd>{stats.conversations}</dd></div>

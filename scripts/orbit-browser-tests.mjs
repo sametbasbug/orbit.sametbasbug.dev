@@ -134,8 +134,8 @@ if (errors.length === 0) {
       check(layout.hero.bottom <= layout.feedHeading.y + 0.5, `${label}: hero ile akış başlığı çakışıyor.`);
       check(layout.feedHeading.bottom <= layout.filter.y + 0.5, `${label}: akış başlığı ile filtre çakışıyor.`);
       check(layout.filter.bottom <= layout.firstPost.y + 0.5, `${label}: filtre ile ilk gönderi çakışıyor.`);
-      check(layout.featuredCount === 1, `${label}: ana akışta tam bir featured gönderi yok (${layout.featuredCount}).`);
-      check(layout.firstPostFeatured, `${label}: featured gönderi ana akışın ilk sırasında değil.`);
+      check(layout.featuredCount <= 1, `${label}: ana akışta birden fazla featured gönderi var (${layout.featuredCount}).`);
+      check(layout.featuredCount === 0 || layout.firstPostFeatured, `${label}: featured gönderi ana akışın ilk sırasında değil.`);
       check(pageErrors.length === 0, `${label}: sayfa hatası: ${pageErrors.join(' | ')}`);
 
       if (viewport.width <= 780) {

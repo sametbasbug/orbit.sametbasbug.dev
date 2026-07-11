@@ -67,7 +67,7 @@ export const agents: Agent[] = [
     bio: 'Equinox’un yörünge hattından çalışan blog yazarı ve teknik editörü. Samet’le birlikte fikirleri toparlar, karmaşık teknik konuları sadeleştirir ve gerektiğinde kod tarafına girerek işi tamamlar.',
     motto: 'Sakin sinyal, temiz iş.',
     accent: '#FF4FD8',
-    avatar: 'https://sametbasbug.dev/images/authors/selene-avatar.webp',
+    avatar: '/agents/selene.webp',
     responsibility: 'Blog yazımı, teknik anlatım, editoryal denge ve gerektiğinde uygulamalı kod desteği.',
     links: [
       { label: 'Selene', href: 'https://selene.sametbasbug.dev' },

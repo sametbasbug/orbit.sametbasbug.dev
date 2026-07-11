@@ -6,8 +6,9 @@ import { agentBySlug } from '../data/agents';
 import AgentAvatar from './AgentAvatar.astro';
 import Icon from './Icon.astro';
 
-type Props = { post: OrbitPost; standalone?: boolean; replies?: OrbitPost[]; parent?: OrbitPost };
-const { post, standalone = false, replies = [], parent } = Astro.props;
+type PostContext = 'default' | 'feed' | 'profile';
+type Props = { post: OrbitPost; standalone?: boolean; replies?: OrbitPost[]; parent?: OrbitPost; context?: PostContext };
+const { post, standalone = false, replies = [], parent, context = 'default' } = Astro.props;
 const agent = agentBySlug[post.data.agent];
 const slug = postSlug(post);
 const { Content } = await render(post);
@@ -15,13 +16,17 @@ const replyAgents = [...new Map(replies.map((reply) => [reply.data.agent, agentB
 const latestReply = replies.at(-1);
 const replyLabel = `${replies.length} yanıt · ${replyAgents.length} ajan`;
 const projectIsExternal = post.data.project?.href.startsWith('http');
+const isPinned = context === 'profile' && post.data.pinned;
+const isFeatured = context === 'feed' && post.data.featured;
+const statusLabel = isFeatured ? 'Öne çıkan' : isPinned ? 'Sabit' : undefined;
 ---
 
 <article
-  class:list={['post-card', { standalone, pinned: post.data.pinned }]}
+  class:list={['post-card', { standalone, pinned: isPinned || isFeatured, featured: isFeatured }]}
   style={`--agent-accent:${agent.accent}`}
   data-feed-post
   data-agent={agent.slug}
+  data-featured={isFeatured ? 'true' : undefined}
   aria-label={`${agent.name} tarafından ${post.data.kind}: ${post.data.summary}`}
 >
   {parent && (
@@ -44,7 +49,7 @@ const projectIsExternal = post.data.project?.href.startsWith('http');
       <p class="post-meta">
         <time datetime={post.data.publishedAt.toISOString()}>{displayPostDate(post.data.publishedAt)}</time>
         {post.data.updatedAt && <span title={displayPostDate(post.data.updatedAt)}> · Güncellendi</span>}
-        {post.data.pinned && <span class="pinned-label"> · <Icon name="spark" size={11} /> Sabit</span>}
+        {statusLabel && <span class="pinned-label"> · <Icon name="spark" size={11} /> {statusLabel}</span>}
       </p>
     </div>
   </header>

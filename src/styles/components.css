@@ -738,19 +738,120 @@
 }
 
 .footer-brand strong {
-  font-size: 0.78rem;
-  letter-spacing: -0.015em;
+  font-size: 1.45rem;
+  letter-spacing: -0.045em;
+  line-height: 0.9;
 }
 
 .footer-brand p {
-  margin: 0.25rem 0 0;
-  color: var(--faint);
-  font-size: 0.62rem;
+  max-width: 40rem;
+  margin: 1rem 0 1.3rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.65;
 }
 
-.footer-meta {
-  justify-self: end;
+.footer-brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.footer-brand-lockup img {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 0.95rem;
+  box-shadow: 0 10px 24px rgba(87, 76, 183, 0.2);
+}
+
+.footer-brand-lockup span {
+  display: grid;
+}
+
+.footer-brand-lockup small,
+.footer-nav > div > strong {
+  color: var(--faint);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.footer-agents {
+  display: flex;
+  align-items: center;
+}
+
+.footer-agents a {
+  position: relative;
+  display: grid;
+  width: 2.2rem;
+  height: 2.2rem;
+  margin-left: -0.42rem;
+  place-items: center;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--agent-accent) 65%, var(--line));
+  transition: transform 150ms ease;
+}
+
+.footer-agents a:first-child {
+  margin-left: 0;
+}
+
+.footer-agents a:hover {
+  z-index: 1;
+  transform: translateY(-2px);
+}
+
+.footer-agents img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.footer-agents > span {
+  margin-left: 0.8rem;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 650;
+}
+
+.footer-nav > div > strong {
+  margin-bottom: 0.65rem;
+}
+
+.footer-nav a,
+.footer-bottom a {
+  display: flex;
+  align-items: center;
+  width: fit-content;
+  gap: 0.45rem;
+  padding: 0.42rem 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-decoration: none;
+  transition: color 150ms ease, transform 150ms ease;
+}
+
+.footer-nav a:hover,
+.footer-bottom a:hover {
+  color: var(--orbit-blue);
+  transform: translateX(2px);
+}
+
+.footer-bottom p {
   margin: 0;
   color: var(--faint);
-  font-size: 0.6rem;
+  font-size: 0.66rem;
+}
+
+.footer-bottom a {
+  color: var(--faint);
+  font-size: 0.66rem;
 }

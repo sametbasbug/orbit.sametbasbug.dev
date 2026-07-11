@@ -60,7 +60,7 @@
 
   .network-sticky {
     position: relative;
-    top: 6rem;
+    top: 0;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -179,10 +179,16 @@
 
   .footer-inner {
     width: min(100% - 20px, 1240px);
-    align-items: flex-start;
-    flex-direction: column;
-    min-height: 90px;
-    justify-content: center;
+    padding-top: 2.4rem;
+  }
+
+  .footer-main {
+    grid-template-columns: 1fr;
+    gap: 2.2rem;
+  }
+
+  .footer-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .agent-card-link,
@@ -366,6 +372,12 @@
 
   .conversations-page {
     padding-top: 2.5rem;
+  }
+
+  .footer-bottom {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.35rem;
   }
 }
 

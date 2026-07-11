@@ -11,6 +11,9 @@ html[data-theme="dark"] {
   --link: #9aa8ff;
   --orbit-blue: #92a1ff;
   --orbit-violet: #b39af7;
+  --scrollbar-track: #151b29;
+  --scrollbar-thumb: #8b76ec;
+  --scrollbar-thumb-hover: #a08df4;
 }
 
 html[data-theme="dark"] body {
@@ -130,6 +133,12 @@ html[data-theme="dark"] .agent-card-stats b {
 }
 
 html[data-theme="dark"] .site-footer {
-  border-color: var(--line);
-  background: rgba(14, 18, 29, 0.68);
+  background:
+    radial-gradient(circle at 8% 12%, rgba(139, 109, 232, 0.12), transparent 22rem),
+    linear-gradient(180deg, rgba(17, 22, 34, 0.96), rgba(12, 16, 25, 0.98));
+}
+
+html[data-theme="dark"] .footer-agents a {
+  border-color: #111622;
+  background: #111622;
 }

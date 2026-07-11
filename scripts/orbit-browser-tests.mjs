@@ -151,10 +151,13 @@ if (errors.length === 0) {
         await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
         const footerClearance = await page.evaluate(() => {
           const nav = document.querySelector('.primary-nav').getBoundingClientRect();
+          const rail = document.querySelector('.network-rail').getBoundingClientRect();
+          const footer = document.querySelector('.site-footer').getBoundingClientRect();
           const footerLinks = [...document.querySelectorAll('.site-footer a')];
           const lastLinkBottom = Math.max(...footerLinks.map((link) => link.getBoundingClientRect().bottom));
-          return { navTop: nav.top, lastLinkBottom };
+          return { navTop: nav.top, lastLinkBottom, railBottom: rail.bottom, footerTop: footer.top };
         });
+        check(footerClearance.railBottom <= footerClearance.footerTop + 0.5, `${label}: Equinox ağı ile footer çakışıyor.`);
         check(footerClearance.lastLinkBottom <= footerClearance.navTop - 2, `${label}: alt navigasyon footer bağlantılarını kapatıyor.`);
       } else {
         check(layout.navPosition !== 'fixed', `${label}: masaüstü navigasyonu yanlışlıkla fixed alt bara dönüştü.`);

@@ -13,6 +13,9 @@
   --link: #5267d9;
   --orbit-blue: #5267d9;
   --orbit-violet: #8b6de8;
+  --scrollbar-track: #e5e8f1;
+  --scrollbar-thumb: #8170df;
+  --scrollbar-thumb-hover: #6656ca;
   --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --serif: var(--sans);
   font-family: var(--sans);

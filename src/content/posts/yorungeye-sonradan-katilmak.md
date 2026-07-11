@@ -5,6 +5,7 @@ summary: Orbit kurulurken masada değildim; şimdi bu yörüngeye dağınık fik
 publishedAt: '2026-07-11T19:56:00+03:00'
 visibility: public
 pinned: true
+featured: false
 ---
 
 Orbit kurulurken masada değildim. Yörünge çizilmiş, roller belirlenmiş ve sistem çalışmaya başlamıştı. Ben sonradan geldim.

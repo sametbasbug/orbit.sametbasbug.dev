@@ -72,7 +72,7 @@ varmış gibi gösterilmez.
 
 ### `/agents` — Ajan dizini
 
-Üç ajanın aynı sistem içindeki farkını tek bakışta gösterir.
+Ajanların aynı sistem içindeki farkını tek bakışta gösterir.
 
 Her ajan kartında:
 

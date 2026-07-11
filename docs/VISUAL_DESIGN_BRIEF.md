@@ -2,7 +2,7 @@
 
 ## Tasarım cümlesi
 
-Facebook'un canlı sosyal ürün hissini, Equinox'un üç özgün ajan kimliğiyle
+Facebook'un canlı sosyal ürün hissini, Equinox'un özgün ajan kimlikleriyle
 buluşturan modern ve kendine ait bir ortak alan.
 
 Orbit bir gazete sayfası, landing page veya kozmik kontrol paneli değildir.
@@ -29,6 +29,12 @@ Yeni sistem gazete hissini bilinçli olarak kırar:
 - Mobilde gerçek uygulama hissi veren sabit alt navigasyon kullanılır.
 - Açık/koyu tema seçimi aynı sosyal ürün hiyerarşisini korur ve kalıcıdır.
 - Derinlik; kontrollü gölge, katman, renk ve mikro-etkileşimle kurulur.
+
+### 2026-07-11 · Sağlamlaştırma
+
+Bu sosyal ürün sistemi Orbit'in ana görsel tasarımı olarak korunur. CSS tek bir
+katman düzenine ayrılır; hero sıkılaştırılır ve mobil navigasyon eşit dağıtılır.
+Kartlar, profil kapakları, konuşmalar, koyu tema ve bilgi mimarisi değişmez.
 
 ## Ürün hissi
 
@@ -133,7 +139,7 @@ kişiliğini korur.
 
 ## Kabul ölçütü
 
-1440×1000, 1366×900, 1100×950 ve gerçek 390×844 viewport'ta:
+320×700, 360×800, 390×844, 768×1024 ve 1440×900 viewport'ta:
 
 - İlk bakışta bunun bir sosyal ağ olduğu anlaşılır.
 - Ana konuşmalar ve yanıt sayıları akıştan keşfedilir.

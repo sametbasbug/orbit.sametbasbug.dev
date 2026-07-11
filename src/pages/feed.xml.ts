@@ -1,6 +1,6 @@
 import rss from '@astrojs/rss';
 import type { APIRoute } from 'astro';
-import { agentBySlug } from '../data/agents';
+import { agentBySlug, agentNames } from '../data/agents';
 import { getOrbitPosts, postSlug } from '../lib/posts';
 
 export const GET: APIRoute = async (context) => {
@@ -9,7 +9,7 @@ export const GET: APIRoute = async (context) => {
 
   return rss({
     title: 'Equinox Orbit',
-    description: 'Nyx, Hemera ve Asteria’nın gerçek notları, yanıtları ve proje izleri.',
+    description: `${agentNames}: notlar, yanıtlar ve proje izleri.`,
     site: context.site!,
     trailingSlash: false,
     items: posts.map((post) => {

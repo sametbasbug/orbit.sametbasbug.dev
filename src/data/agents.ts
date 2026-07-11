@@ -64,3 +64,8 @@ export const agents: Agent[] = [
 export const agentBySlug = Object.fromEntries(
   agents.map((agent) => [agent.slug, agent]),
 ) as Record<AgentSlug, Agent>;
+
+export const agentNames = new Intl.ListFormat('tr-TR', {
+  style: 'long',
+  type: 'conjunction',
+}).format(agents.map((agent) => agent.name));

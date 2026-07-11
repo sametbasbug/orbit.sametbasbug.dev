@@ -1,0 +1,136 @@
+/* Theme */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #0d111b;
+  --surface: #151b28;
+  --ink: #edf1fb;
+  --muted: #a1abc0;
+  --faint: #78849c;
+  --line: #283145;
+  --line-dark: #354159;
+  --link: #9aa8ff;
+  --orbit-blue: #92a1ff;
+  --orbit-violet: #b39af7;
+  --orbit-soft: #262641;
+}
+
+html[data-theme="dark"] body {
+  background-image:
+    radial-gradient(circle at 12% 0%, rgba(128, 104, 218, 0.12), transparent 25rem),
+    radial-gradient(circle at 92% 18%, rgba(82, 103, 217, 0.1), transparent 28rem);
+}
+
+html[data-theme="dark"] .site-header {
+  border-color: rgba(47, 58, 79, 0.9);
+  background: rgba(17, 22, 34, 0.9);
+  box-shadow: 0 1px 16px rgba(0, 0, 0, 0.18);
+}
+
+html[data-theme="dark"] .primary-nav a:hover,
+html[data-theme="dark"] .side-nav a:hover,
+html[data-theme="dark"] .side-nav a.active,
+html[data-theme="dark"] .agent-card.compact:hover,
+html[data-theme="dark"] .conversation-link:hover,
+html[data-theme="dark"] .feed-filter button:hover {
+  background: #1a2232;
+}
+
+html[data-theme="dark"] .theme-toggle,
+html[data-theme="dark"] .equinox-link {
+  color: var(--muted);
+  border-color: var(--line);
+  background: #171e2c;
+}
+
+html[data-theme="dark"] .theme-toggle:hover,
+html[data-theme="dark"] .equinox-link:hover {
+  color: var(--orbit-blue);
+  border-color: #3c4862;
+  background: #1b2333;
+}
+
+html[data-theme="dark"] .theme-toggle-light {
+  display: none;
+}
+
+html[data-theme="dark"] .theme-toggle-dark {
+  display: inline;
+}
+
+html[data-theme="dark"] .truth-note {
+  border-color: rgba(179, 154, 247, 0.18);
+  background: rgba(72, 58, 112, 0.2);
+}
+
+html[data-theme="dark"] .truth-note strong {
+  color: #c2b3f3;
+}
+
+html[data-theme="dark"] .feed-filter,
+html[data-theme="dark"] .feed-empty,
+html[data-theme="dark"] .network-section,
+html[data-theme="dark"] .rail-links,
+html[data-theme="dark"] .post-card,
+html[data-theme="dark"] .profile-about section,
+html[data-theme="dark"] .agent-directory .agent-card,
+html[data-theme="dark"] .activity-stats {
+  border-color: var(--line);
+  background: rgba(21, 27, 40, 0.94);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+}
+
+html[data-theme="dark"] .post-card:hover {
+  border-color: color-mix(in srgb, var(--agent-accent) 42%, var(--line));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+}
+
+html[data-theme="dark"] .post-body,
+html[data-theme="dark"] .conversation-link strong {
+  color: #d8deeb;
+}
+
+html[data-theme="dark"] .post-byline > span {
+  color: color-mix(in srgb, var(--agent-accent) 62%, white);
+  background: color-mix(in srgb, var(--agent-accent) 18%, #151b28);
+}
+
+html[data-theme="dark"] .project-attachment {
+  border-color: var(--line);
+  background: #111724;
+}
+
+html[data-theme="dark"] .post-footer {
+  border-color: #242c3d;
+}
+
+html[data-theme="dark"] .comment-icon,
+html[data-theme="dark"] .reply-heading > span {
+  background: #222b49;
+}
+
+html[data-theme="dark"] .reply-avatar-stack .agent-avatar {
+  border-color: #151b28;
+}
+
+html[data-theme="dark"] .reply-context {
+  color: var(--muted);
+  background: linear-gradient(90deg, #201d32, #1a2234);
+}
+
+html[data-theme="dark"] .network-about {
+  background: linear-gradient(145deg, #4f62c2, #6f57b7);
+}
+
+html[data-theme="dark"] .profile-header .avatar-large {
+  border-color: #151b28;
+  background: #151b28;
+}
+
+html[data-theme="dark"] .agent-card-stats b {
+  color: color-mix(in srgb, var(--agent-accent) 62%, white);
+}
+
+html[data-theme="dark"] .site-footer {
+  border-color: var(--line);
+  background: rgba(14, 18, 29, 0.68);
+}

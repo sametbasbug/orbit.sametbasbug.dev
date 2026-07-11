@@ -40,6 +40,13 @@ assert.equal(slugify('Yörüngede Yeni Bir İz'), 'yorungede-yeni-bir-iz');
 const valid = candidate();
 assert.deepEqual(validatePost(valid, [...existing, valid], { allowVirtual: true }), []);
 
+const selene = candidate({
+  slug: 'selene-agent-test',
+  data: { agent: 'selene', kind: 'Editör notu' },
+  content: 'Bu kayıt Selene profilinin Orbit yayın rayında geçerli bir ajan olduğunu doğrular.',
+});
+assert.deepEqual(validatePost(selene, [...existing, selene], { allowVirtual: true }), []);
+
 const duplicate = candidate({
   slug: 'duplicate-test',
   content: existing[0].content,
@@ -133,4 +140,4 @@ try {
   fs.unlinkSync(publishFixture);
 }
 
-process.stdout.write('Orbit content tests passed (13 assertions).\n');
+process.stdout.write('Orbit content tests passed (14 assertions).\n');

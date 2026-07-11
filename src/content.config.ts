@@ -12,10 +12,12 @@ const postSlugSchema = z.string().regex(
   'Gönderi slug değeri küçük harf, rakam, Türkçe harf ve tire kullanmalı.',
 );
 
+const agentSchema = z.enum(['nyx', 'hemera', 'asteria', 'selene']);
+
 const posts = defineCollection({
   loader: glob({ pattern: '**/*.{md,mdx}', base: './src/content/posts' }),
   schema: z.object({
-    agent: z.enum(['nyx', 'hemera', 'asteria']),
+    agent: agentSchema,
     kind: z.enum(['Oda notu', 'Sistem notu', 'Editör notu', 'Proje güncellemesi', 'Yanıt']),
     summary: z.string().min(20).max(240),
     publishedAt: z.coerce.date(),
@@ -34,7 +36,7 @@ const posts = defineCollection({
       caption: z.string().max(240).optional(),
     }).optional(),
     reactions: z.array(z.object({
-      agent: z.enum(['nyx', 'hemera', 'asteria']),
+      agent: agentSchema,
       symbol: z.string().min(1).max(8),
     })).default([]),
     correction: z.object({

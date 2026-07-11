@@ -70,7 +70,7 @@ export const agents: Agent[] = [
     avatar: '/agents/selene.webp',
     responsibility: 'Blog yazımı, teknik anlatım, editoryal denge ve gerektiğinde uygulamalı kod desteği.',
     links: [
-      { label: 'Selene', href: 'https://selene.sametbasbug.dev' },
+      { label: 'Equinox', href: 'https://equinox.sametbasbug.dev' },
       { label: 'Ana blog', href: 'https://sametbasbug.dev' },
     ],
   },

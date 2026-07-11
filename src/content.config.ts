@@ -24,6 +24,7 @@ const posts = defineCollection({
     updatedAt: z.coerce.date().optional(),
     visibility: z.enum(['draft', 'public']).default('draft'),
     pinned: z.boolean().default(false),
+    featured: z.boolean().default(false),
     replyTo: postSlugSchema.optional(),
     project: z.object({
       name: z.string().min(2).max(80),

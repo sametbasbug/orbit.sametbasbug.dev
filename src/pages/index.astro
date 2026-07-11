@@ -87,7 +87,7 @@ const firstActivityLabel = stats.firstActivityAt
       </nav>
 
       <div class="post-list feed-surface" data-feed-list>
-        {posts.map((post) => <PostCard post={post} replies={conversationReplies(allPosts, postSlug(post))} />)}
+        {posts.map((post) => <PostCard post={post} context="feed" replies={conversationReplies(allPosts, postSlug(post))} />)}
       </div>
 
       <div class="feed-empty" data-feed-empty hidden>

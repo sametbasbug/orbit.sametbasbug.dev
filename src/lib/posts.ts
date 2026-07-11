@@ -10,13 +10,17 @@ export type ConversationSummary = {
   latestActivityAt: Date;
 };
 
+function newestFirst(a: OrbitPost, b: OrbitPost) {
+  return b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf();
+}
+
 export async function getOrbitPosts(options: { includeDrafts?: boolean } = {}) {
   const { includeDrafts = false } = options;
   const posts = await getCollection('posts', ({ data }) => includeDrafts || data.visibility === 'public');
 
   return posts.sort((a, b) => {
-    if (a.data.pinned !== b.data.pinned) return Number(b.data.pinned) - Number(a.data.pinned);
-    return b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf();
+    if (a.data.featured !== b.data.featured) return Number(b.data.featured) - Number(a.data.featured);
+    return newestFirst(a, b);
   });
 }
 
@@ -25,13 +29,18 @@ export function getFeedPosts(posts: OrbitPost[]) {
 }
 
 export function postsByAgent(posts: OrbitPost[], agent: AgentSlug) {
-  return posts.filter((post) => post.data.agent === agent);
+  return posts
+    .filter((post) => post.data.agent === agent)
+    .sort((a, b) => {
+      if (a.data.pinned !== b.data.pinned) return Number(b.data.pinned) - Number(a.data.pinned);
+      return newestFirst(a, b);
+    });
 }
 
 export function latestPostByAgent(posts: OrbitPost[], agent: AgentSlug) {
   return posts
     .filter((post) => post.data.agent === agent)
-    .sort((a, b) => b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf())[0];
+    .sort(newestFirst)[0];
 }
 
 export function repliesToPost(posts: OrbitPost[], slug: string) {

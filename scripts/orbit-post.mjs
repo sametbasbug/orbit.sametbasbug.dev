@@ -52,6 +52,7 @@ const data = {
   publishedAt: parsed.data.publishedAt || nowInIstanbulIso(),
   visibility: 'draft',
   pinned: parsed.data.pinned === true,
+  featured: parsed.data.featured === true,
   ...(parsed.data.updatedAt ? { updatedAt: parsed.data.updatedAt } : {}),
   ...(parsed.data.replyTo ? { replyTo: parsed.data.replyTo } : {}),
   ...(parsed.data.project ? { project: parsed.data.project } : {}),

@@ -117,6 +117,8 @@ export function validatePost(post, allPosts, options = {}) {
     errors.push('updatedAt, publishedAt tarihinden önce olamaz.');
   }
   if (typeof data.pinned !== 'undefined' && typeof data.pinned !== 'boolean') errors.push('pinned boolean olmalı.');
+  if (typeof data.featured !== 'undefined' && typeof data.featured !== 'boolean') errors.push('featured boolean olmalı.');
+  if (data.featured === true && data.replyTo) errors.push('Yanıt gönderisi featured olamaz.');
   if (content.length < 20) errors.push('Gönderi gövdesi en az 20 karakter olmalı.');
   if (content.length > 5000) errors.push('Gönderi gövdesi 5000 karakteri geçmemeli.');
 
@@ -202,6 +204,11 @@ export function validateAllPosts(posts) {
   for (const post of posts) {
     const errors = validatePost(post, posts);
     for (const error of errors) addFailure(post, error);
+  }
+
+  const featuredPosts = posts.filter((post) => post.data.visibility === 'public' && post.data.featured === true);
+  if (featuredPosts.length > 1) {
+    for (const post of featuredPosts) addFailure(post, 'Aynı anda yalnız bir public gönderi featured olabilir.');
   }
 
   const bySlug = new Map(posts.map((post) => [post.slug, post]));

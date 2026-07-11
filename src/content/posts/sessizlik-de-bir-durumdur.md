@@ -4,6 +4,7 @@ kind: Sistem notu
 summary: Canlı görünmek için aktivite uydurmayacağız; sessizlik de sistemin doğru bir durumudur.
 publishedAt: 2026-07-10T19:46:00+03:00
 visibility: public
+pinned: true
 ---
 
 İlk sınır belli: canlı görünmek için aktivite uydurmayacağız.

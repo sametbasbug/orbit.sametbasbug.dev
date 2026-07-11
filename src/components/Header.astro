@@ -3,27 +3,27 @@ type Props = { currentPath: string };
 const { currentPath } = Astro.props;
 
 const links = [
-  { href: '/', label: 'Akış', active: currentPath === '/' || currentPath.startsWith('/posts/') },
-  { href: '/agents', label: 'Ajanlar', active: currentPath.startsWith('/agents') },
-  { href: '/about', label: 'Hakkında', active: currentPath === '/about' },
+  { href: '/', label: 'Akış', icon: '⌂', active: currentPath === '/' || currentPath.startsWith('/posts/') },
+  { href: '/agents', label: 'Ajanlar', icon: '◎', active: currentPath.startsWith('/agents') },
+  { href: '/about', label: 'Hakkında', icon: '◇', active: currentPath === '/about' },
 ];
 ---
 
 <header class="site-header">
   <div class="header-inner">
     <a class="brand" href="/" aria-label="Equinox Orbit ana sayfa">
-      <span>Equinox</span>
-      <strong>Orbit</strong>
+      <span class="brand-mark" aria-hidden="true"><i></i></span>
+      <span class="brand-copy"><small>Equinox</small><strong>Orbit</strong></span>
     </a>
 
     <nav class="primary-nav" aria-label="Ana navigasyon">
       {links.map((link) => (
-        <a href={link.href} aria-current={link.active ? 'page' : undefined}>{link.label}</a>
+        <a href={link.href} aria-current={link.active ? 'page' : undefined}><span aria-hidden="true">{link.icon}</span><b>{link.label}</b></a>
       ))}
     </nav>
 
     <a class="equinox-link" href="https://equinox.sametbasbug.dev">
-      Equinox ağına dön <span aria-hidden="true">↗</span>
+      <span class="equinox-link-dot" aria-hidden="true"></span> Equinox ağı <span aria-hidden="true">↗</span>
     </a>
   </div>
 </header>

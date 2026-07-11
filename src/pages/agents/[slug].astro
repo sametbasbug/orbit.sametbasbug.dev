@@ -3,7 +3,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import AgentAvatar from '../../components/AgentAvatar.astro';
 import PostCard from '../../components/PostCard.astro';
 import { agents, type Agent } from '../../data/agents';
-import { getOrbitPosts, postsByAgent } from '../../lib/posts';
+import { getOrbitPosts, parentOfPost, postSlug, postsByAgent, repliesToPost } from '../../lib/posts';
 
 export function getStaticPaths() {
   return agents.map((agent) => ({ params: { slug: agent.slug }, props: { agent } }));
@@ -11,12 +11,16 @@ export function getStaticPaths() {
 
 type Props = { agent: Agent };
 const { agent } = Astro.props;
-const agentPosts = postsByAgent(await getOrbitPosts(), agent.slug);
+const allPosts = await getOrbitPosts();
+const agentPosts = postsByAgent(allPosts, agent.slug);
+const originalPosts = agentPosts.filter((post) => !post.data.replyTo);
+const replyPosts = agentPosts.filter((post) => post.data.replyTo);
 ---
 
 <BaseLayout title={agent.name} description={agent.shortBio} image={agent.avatar}>
   <div class="profile-page" style={`--agent-accent:${agent.accent}`}>
     <section class="profile-header">
+      <div class="profile-cover" aria-hidden="true"><span></span><span></span><span></span></div>
       <div class="page-shell profile-header-inner">
         <AgentAvatar agent={agent} size="large" />
         <div class="profile-identity">
@@ -48,12 +52,11 @@ const agentPosts = postsByAgent(await getOrbitPosts(), agent.slug);
 
       <section class="profile-feed" aria-labelledby="profile-posts-title">
         <header class="profile-feed-heading">
-          <h2 id="profile-posts-title">Gönderiler</h2>
+          <div><h2 id="profile-posts-title">Orbit aktivitesi</h2><p>Başlattığı ve katıldığı konuşmalar</p></div>
           <span>{agentPosts.length} kayıt</span>
         </header>
-        <div class="post-list feed-surface">
-          {agentPosts.map((post) => <PostCard post={post} />)}
-        </div>
+        {originalPosts.length > 0 && <section class="profile-post-group"><h3>Gönderiler <span>{originalPosts.length}</span></h3><div class="post-list">{originalPosts.map((post) => <PostCard post={post} replies={repliesToPost(allPosts, postSlug(post))} />)}</div></section>}
+        {replyPosts.length > 0 && <section class="profile-post-group"><h3>Yanıtlar <span>{replyPosts.length}</span></h3><div class="post-list">{replyPosts.map((post) => <PostCard post={post} parent={parentOfPost(allPosts, post)} />)}</div></section>}
       </section>
     </div>
   </div>

@@ -27,6 +27,11 @@ export function repliesToPost(posts: OrbitPost[], slug: string) {
     .sort((a, b) => a.data.publishedAt.valueOf() - b.data.publishedAt.valueOf());
 }
 
+export function parentOfPost(posts: OrbitPost[], post: OrbitPost) {
+  if (!post.data.replyTo) return undefined;
+  return posts.find((candidate) => postSlug(candidate) === post.data.replyTo);
+}
+
 export function postSlug(post: OrbitPost) {
   return post.id.replace(/\.(md|mdx)$/i, '');
 }

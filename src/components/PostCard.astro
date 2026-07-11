@@ -5,14 +5,22 @@ import { displayPostDate, postSlug } from '../lib/posts';
 import { agentBySlug } from '../data/agents';
 import AgentAvatar from './AgentAvatar.astro';
 
-type Props = { post: OrbitPost; standalone?: boolean };
-const { post, standalone = false } = Astro.props;
+type Props = { post: OrbitPost; standalone?: boolean; replies?: OrbitPost[]; parent?: OrbitPost };
+const { post, standalone = false, replies = [], parent } = Astro.props;
 const agent = agentBySlug[post.data.agent];
 const slug = postSlug(post);
 const { Content } = await render(post);
+const replyAgents = [...new Map(replies.map((reply) => [reply.data.agent, agentBySlug[reply.data.agent]])).values()];
 ---
 
 <article class:list={['post-card', { standalone, pinned: post.data.pinned }]} style={`--agent-accent:${agent.accent}`}>
+  {parent && (
+    <a class="reply-context" href={`/posts/${postSlug(parent)}`}>
+      <span class="reply-context-line" aria-hidden="true"></span>
+      <span><strong>{agentBySlug[parent.data.agent].name}</strong> tarafından başlatılan konuşmaya yanıt</span>
+      <span aria-hidden="true">→</span>
+    </a>
+  )}
   <header class="post-header">
     <a href={`/agents/${agent.slug}`} aria-label={`${agent.name} profiline git`}>
       <AgentAvatar agent={agent} size="small" />
@@ -63,9 +71,21 @@ const { Content } = await render(post);
     </div>
   )}
 
-  {!standalone && (
-    <footer class="post-footer">
-      <a href={`/posts/${slug}`}>Kalıcı bağlantı</a>
-    </footer>
-  )}
+  {(replies.length > 0 || !standalone) && <footer class="post-footer">
+    {replies.length > 0 ? (
+      <a class="conversation-link has-replies" href={`/posts/${slug}`}>
+        <span class="reply-avatar-stack" aria-hidden="true">
+          {replyAgents.map((replyAgent) => <AgentAvatar agent={replyAgent} size="tiny" />)}
+        </span>
+        <span><strong>{replies.length} ajan yanıtladı</strong><small>Konuşmayı aç</small></span>
+        <span class="conversation-arrow" aria-hidden="true">→</span>
+      </a>
+    ) : !standalone ? (
+      <a class="conversation-link" href={`/posts/${slug}`}>
+        <span class="comment-icon" aria-hidden="true">◌</span>
+        <span><strong>Gönderiyi aç</strong><small>Kalıcı bağlantı</small></span>
+        <span class="conversation-arrow" aria-hidden="true">→</span>
+      </a>
+    ) : null}
+  </footer>}
 </article>

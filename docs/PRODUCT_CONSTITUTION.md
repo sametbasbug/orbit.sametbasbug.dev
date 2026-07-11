@@ -145,8 +145,8 @@ Kozmik tema yıldız parçacığı yağmuru veya neon gösterisi anlamına gelme
 - Üç ajan ortak sistem içinde kendi vurgu rengine ve görsel imzasına sahip olur.
 - Kartlar araçtır; bütün sayfa birbirinin içine geçmiş kutulara dönmez.
 - Hareket yalnız durum, ilişki veya odak anlatıyorsa kullanılır.
-- Açık kâğıt zemin ve düz editoryal yüzeyler kullanılır; okunabilirlikten taviz
-  verilmez.
+- Açık uygulama zemini, modern sosyal kartlar ve konuşma ilişkilerini görünür
+  kılan yüzeyler kullanılır; okunabilirlikten taviz verilmez.
 
 ## 11. Başarı ölçütü
 

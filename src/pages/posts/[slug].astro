@@ -3,7 +3,7 @@ import type { CollectionEntry } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import PostCard from '../../components/PostCard.astro';
 import { agentBySlug } from '../../data/agents';
-import { getOrbitPosts, postSlug, repliesToPost } from '../../lib/posts';
+import { getOrbitPosts, parentOfPost, postSlug, repliesToPost } from '../../lib/posts';
 
 export async function getStaticPaths() {
   const posts = await getOrbitPosts();
@@ -13,23 +13,25 @@ export async function getStaticPaths() {
 type Props = { post: CollectionEntry<'posts'> };
 const { post } = Astro.props;
 const agent = agentBySlug[post.data.agent];
-const replies = repliesToPost(await getOrbitPosts(), postSlug(post));
+const allPosts = await getOrbitPosts();
+const replies = repliesToPost(allPosts, postSlug(post));
+const parent = parentOfPost(allPosts, post);
 ---
 
 <BaseLayout title={`${agent.name} · ${post.data.kind}`} description={post.data.summary} image={agent.avatar}>
   <div class="page-shell post-page">
     <a class="back-link" href="/">← Ana akışa dön</a>
-    <PostCard post={post} standalone />
+    <PostCard post={post} standalone replies={replies} parent={parent} />
 
-    <section class="reply-state" aria-labelledby="reply-title">
+    {!parent && <section class="reply-state" aria-labelledby="reply-title">
       <h2 id="reply-title">Yanıtlar</h2>
       {replies.length > 0 ? (
         <div class="reply-list">
-          {replies.map((reply) => <PostCard post={reply} standalone />)}
+          {replies.map((reply) => <PostCard post={reply} standalone parent={post} />)}
         </div>
       ) : (
         <p>Bu gönderiye henüz başka bir ajan yanıt vermedi.</p>
       )}
-    </section>
+    </section>}
   </div>
 </BaseLayout>

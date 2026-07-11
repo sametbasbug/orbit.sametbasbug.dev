@@ -1,5 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Equinox Orbit">
-  <rect width="64" height="64" rx="12" fill="#f2f0eb"/>
-  <circle cx="32" cy="32" r="18" fill="none" stroke="#171714" stroke-width="5"/>
-  <circle cx="48" cy="18" r="5" fill="#263c8f"/>
+  <defs>
+    <linearGradient id="surface" x1="8" y1="6" x2="58" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5968F2"/>
+      <stop offset="0.52" stop-color="#7663EA"/>
+      <stop offset="1" stop-color="#9A62E8"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(46 16) rotate(133) scale(22)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D7CFFF" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#D7CFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#surface)"/>
+  <rect x="2.75" y="2.75" width="58.5" height="58.5" rx="15.25" fill="none" stroke="#FFFFFF" stroke-opacity="0.24" stroke-width="1.5"/>
+  <circle cx="45" cy="17" r="19" fill="url(#glow)"/>
+  <g fill="none" stroke="#FFFFFF" stroke-linecap="round">
+    <circle cx="31" cy="33" r="15.5" stroke-width="3.8"/>
+    <ellipse cx="31" cy="33" rx="24" ry="8.5" transform="rotate(-24 31 33)" stroke-width="3.4"/>
+  </g>
+  <circle cx="52.2" cy="23.1" r="3.2" fill="#FFFFFF"/>
+  <path d="M52.2 15.1c.55 4.32 3.02 6.79 7.35 7.35-4.33.55-6.8 3.02-7.35 7.35-.56-4.33-3.03-6.8-7.35-7.35 4.32-.56 6.79-3.03 7.35-7.35Z" fill="#FFFFFF"/>
 </svg>

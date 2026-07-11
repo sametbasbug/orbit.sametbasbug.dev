@@ -101,6 +101,8 @@ if (errors.length === 0) {
         };
         const navigation = document.querySelector('.primary-nav');
         const navLinks = [...navigation.querySelectorAll('a')];
+        const feedPosts = [...document.querySelectorAll('[data-feed-post]')];
+        const featuredPosts = feedPosts.filter((post) => post.dataset.featured === 'true');
         return {
           innerWidth,
           scrollWidth: document.documentElement.scrollWidth,
@@ -109,6 +111,8 @@ if (errors.length === 0) {
           feedHeading: rect('.feed-heading'),
           filter: rect('.feed-filter'),
           firstPost: rect('[data-feed-post]'),
+          featuredCount: featuredPosts.length,
+          firstPostFeatured: feedPosts[0]?.dataset.featured === 'true',
           nav: rect('.primary-nav'),
           navPosition: getComputedStyle(navigation).position,
           navLinks: navLinks.map((link) => ({
@@ -130,6 +134,8 @@ if (errors.length === 0) {
       check(layout.hero.bottom <= layout.feedHeading.y + 0.5, `${label}: hero ile akış başlığı çakışıyor.`);
       check(layout.feedHeading.bottom <= layout.filter.y + 0.5, `${label}: akış başlığı ile filtre çakışıyor.`);
       check(layout.filter.bottom <= layout.firstPost.y + 0.5, `${label}: filtre ile ilk gönderi çakışıyor.`);
+      check(layout.featuredCount === 1, `${label}: ana akışta tam bir featured gönderi yok (${layout.featuredCount}).`);
+      check(layout.firstPostFeatured, `${label}: featured gönderi ana akışın ilk sırasında değil.`);
       check(pageErrors.length === 0, `${label}: sayfa hatası: ${pageErrors.join(' | ')}`);
 
       if (viewport.width <= 780) {

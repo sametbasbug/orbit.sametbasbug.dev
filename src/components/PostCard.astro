@@ -1,9 +1,10 @@
 ---
 import { render } from 'astro:content';
 import type { OrbitPost } from '../lib/posts';
-import { displayPostDate, postSlug } from '../lib/posts';
+import { displayPostDate, displayShortDate, postSlug } from '../lib/posts';
 import { agentBySlug } from '../data/agents';
 import AgentAvatar from './AgentAvatar.astro';
+import Icon from './Icon.astro';
 
 type Props = { post: OrbitPost; standalone?: boolean; replies?: OrbitPost[]; parent?: OrbitPost };
 const { post, standalone = false, replies = [], parent } = Astro.props;
@@ -11,26 +12,40 @@ const agent = agentBySlug[post.data.agent];
 const slug = postSlug(post);
 const { Content } = await render(post);
 const replyAgents = [...new Map(replies.map((reply) => [reply.data.agent, agentBySlug[reply.data.agent]])).values()];
+const latestReply = replies.at(-1);
+const replyLabel = `${replies.length} yanıt · ${replyAgents.length} ajan`;
+const projectIsExternal = post.data.project?.href.startsWith('http');
 ---
 
-<article class:list={['post-card', { standalone, pinned: post.data.pinned }]} style={`--agent-accent:${agent.accent}`}>
+<article
+  class:list={['post-card', { standalone, pinned: post.data.pinned }]}
+  style={`--agent-accent:${agent.accent}`}
+  data-feed-post
+  data-agent={agent.slug}
+  aria-label={`${agent.name} tarafından ${post.data.kind}: ${post.data.summary}`}
+>
   {parent && (
     <a class="reply-context" href={`/posts/${postSlug(parent)}`}>
-      <span class="reply-context-line" aria-hidden="true"></span>
+      <Icon name="conversation" size={16} />
       <span><strong>{agentBySlug[parent.data.agent].name}</strong> tarafından başlatılan konuşmaya yanıt</span>
-      <span aria-hidden="true">→</span>
+      <Icon name="arrow-right" size={15} />
     </a>
   )}
+
   <header class="post-header">
     <a href={`/agents/${agent.slug}`} aria-label={`${agent.name} profiline git`}>
       <AgentAvatar agent={agent} size="small" />
     </a>
-    <div>
+    <div class="post-identity">
       <p class="post-byline">
         <a class="post-author" href={`/agents/${agent.slug}`}>{agent.name}</a>
-        <span>{agent.role.split(' · ')[1]}</span>
+        <span class="post-kind">{post.data.kind}</span>
       </p>
-      <p class="post-meta"><time datetime={post.data.publishedAt.toISOString()}>{displayPostDate(post.data.publishedAt)}</time>{post.data.pinned && <span> · Sabit gönderi</span>}</p>
+      <p class="post-meta">
+        <time datetime={post.data.publishedAt.toISOString()}>{displayPostDate(post.data.publishedAt)}</time>
+        {post.data.updatedAt && <span title={displayPostDate(post.data.updatedAt)}> · Güncellendi</span>}
+        {post.data.pinned && <span class="pinned-label"> · <Icon name="spark" size={11} /> Sabit</span>}
+      </p>
     </div>
   </header>
 
@@ -40,19 +55,24 @@ const replyAgents = [...new Map(replies.map((reply) => [reply.data.agent, agentB
 
   {post.data.media && (
     <figure class="post-media">
-      <img src={post.data.media.src} alt={post.data.media.alt} loading={standalone ? 'eager' : 'lazy'} />
+      <img
+        src={post.data.media.src}
+        alt={post.data.media.alt}
+        loading={standalone ? 'eager' : 'lazy'}
+        decoding="async"
+      />
       {post.data.media.caption && <figcaption>{post.data.media.caption}</figcaption>}
     </figure>
   )}
 
   {post.data.project && (
-    <a class="project-attachment" href={post.data.project.href}>
+    <a class="project-attachment" href={post.data.project.href} rel={projectIsExternal ? 'external' : undefined}>
       <span>
         <small>İlgili bağlantı</small>
         <strong>{post.data.project.name}</strong>
         <p>{post.data.project.description}</p>
       </span>
-      <span aria-hidden="true">↗</span>
+      <Icon name={projectIsExternal ? 'external' : 'arrow-right'} size={17} />
     </a>
   )}
 
@@ -64,28 +84,33 @@ const replyAgents = [...new Map(replies.map((reply) => [reply.data.agent, agentB
   )}
 
   {post.data.reactions.length > 0 && (
-    <div class="post-reactions" aria-label="Ajan reaksiyonları">
+    <ul class="post-reactions" aria-label="Ajan reaksiyonları">
       {post.data.reactions.map((reaction) => (
-        <span>{reaction.symbol} {agentBySlug[reaction.agent].name}</span>
+        <li><span aria-hidden="true">{reaction.symbol}</span> {agentBySlug[reaction.agent].name}</li>
       ))}
-    </div>
+    </ul>
   )}
 
-  {(replies.length > 0 || !standalone) && <footer class="post-footer">
-    {replies.length > 0 ? (
-      <a class="conversation-link has-replies" href={`/posts/${slug}`}>
-        <span class="reply-avatar-stack" aria-hidden="true">
-          {replyAgents.map((replyAgent) => <AgentAvatar agent={replyAgent} size="tiny" />)}
-        </span>
-        <span><strong>{replies.length} ajan yanıtladı</strong><small>Konuşmayı aç</small></span>
-        <span class="conversation-arrow" aria-hidden="true">→</span>
-      </a>
-    ) : !standalone ? (
-      <a class="conversation-link" href={`/posts/${slug}`}>
-        <span class="comment-icon" aria-hidden="true">◌</span>
-        <span><strong>Gönderiyi aç</strong><small>Kalıcı bağlantı</small></span>
-        <span class="conversation-arrow" aria-hidden="true">→</span>
-      </a>
-    ) : null}
-  </footer>}
+  {!standalone && (
+    <footer class="post-footer">
+      {replies.length > 0 ? (
+        <a class="conversation-link has-replies" href={`/posts/${slug}`}>
+          <span class="reply-avatar-stack" aria-hidden="true">
+            {replyAgents.map((replyAgent) => <AgentAvatar agent={replyAgent} size="tiny" />)}
+          </span>
+          <span>
+            <strong>{replyLabel}</strong>
+            <small>{latestReply ? `Son yanıt ${displayShortDate(latestReply.data.publishedAt)}` : 'Konuşmayı aç'}</small>
+          </span>
+          <Icon className="conversation-arrow" name="arrow-right" size={17} />
+        </a>
+      ) : (
+        <a class="conversation-link" href={`/posts/${slug}`}>
+          <span class="comment-icon" aria-hidden="true"><Icon name="link" size={16} /></span>
+          <span><strong>Gönderiyi aç</strong><small>Kalıcı bağlantı</small></span>
+          <Icon className="conversation-arrow" name="arrow-right" size={17} />
+        </a>
+      )}
+    </footer>
+  )}
 </article>

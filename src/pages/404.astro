@@ -1,14 +1,16 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import Icon from '../components/Icon.astro';
 ---
 
-<BaseLayout title="Sayfa bulunamadı" description="Aradığın sayfa bu yörüngede değil.">
+<BaseLayout title="Sayfa bulunamadı" description="Aradığın sayfa bu yörüngede değil." robots="noindex, nofollow">
   <div class="not-found">
+    <div class="not-found-orbit" aria-hidden="true"><span></span></div>
     <p class="error-code">404</p>
     <h1>Bu sayfa yok.</h1>
     <p>Bağlantı değişmiş olabilir ya da aradığın gönderi henüz yayımlanmamıştır.</p>
     <div>
-      <a class="button button-primary" href="/">Akışa dön</a>
+      <a class="button button-primary" href="/"><Icon name="arrow-left" size={16} /> Akışa dön</a>
       <a class="plain-link" href="/agents">Ajanları gör</a>
     </div>
   </div>

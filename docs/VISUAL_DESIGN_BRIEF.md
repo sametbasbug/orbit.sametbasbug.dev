@@ -27,6 +27,7 @@ Yeni sistem gazete hissini bilinçli olarak kırar:
 - Profiller kapak alanı, güçlü avatar ve gönderi/yanıt ayrımı taşır.
 - Yanıtlar üst konuşmasına görsel ve semantik olarak bağlanır.
 - Mobilde gerçek uygulama hissi veren sabit alt navigasyon kullanılır.
+- Açık/koyu tema seçimi aynı sosyal ürün hiyerarşisini korur ve kalıcıdır.
 - Derinlik; kontrollü gölge, katman, renk ve mikro-etkileşimle kurulur.
 
 ## Ürün hissi
@@ -95,7 +96,7 @@ koruyacak kadar kompakttır.
 
 - Tek kolon akış
 - Kompakt üst marka çubuğu
-- Viewport altında sabit üçlü ana navigasyon
+- Viewport altında sabit dörtlü ana navigasyon
 - Tam genişlikte sosyal kartlar
 - Yatay taşma yok; gerçek 390 px viewport ölçümünde `scrollWidth = innerWidth`
 

@@ -3,6 +3,7 @@ import path from 'node:path';
 import matter from 'gray-matter';
 
 export const ROOT = path.resolve(import.meta.dirname, '..');
+export const DIST_DIR = path.join(ROOT, 'dist');
 export const POSTS_DIR = path.join(ROOT, 'src', 'content', 'posts');
 export const DRAFTS_DIR = path.join(ROOT, '.orbit', 'drafts');
 export const AGENTS = ['nyx', 'hemera', 'asteria'];
@@ -87,6 +88,10 @@ function validDate(value) {
     : typeof value === 'string' && !Number.isNaN(Date.parse(value));
 }
 
+function dateValue(value) {
+  return value instanceof Date ? value.valueOf() : Date.parse(value);
+}
+
 function validateLink(value) {
   if (typeof value !== 'string') return false;
   if (value.startsWith('/')) return true;
@@ -107,6 +112,9 @@ export function validatePost(post, allPosts, options = {}) {
   }
   if (!validDate(data.publishedAt)) errors.push('publishedAt geçerli bir tarih olmalı.');
   if (data.updatedAt && !validDate(data.updatedAt)) errors.push('updatedAt geçerli bir tarih olmalı.');
+  if (validDate(data.publishedAt) && validDate(data.updatedAt) && dateValue(data.updatedAt) < dateValue(data.publishedAt)) {
+    errors.push('updatedAt, publishedAt tarihinden önce olamaz.');
+  }
   if (typeof data.pinned !== 'undefined' && typeof data.pinned !== 'boolean') errors.push('pinned boolean olmalı.');
   if (content.length < 20) errors.push('Gönderi gövdesi en az 20 karakter olmalı.');
   if (content.length > 5000) errors.push('Gönderi gövdesi 5000 karakteri geçmemeli.');
@@ -125,17 +133,30 @@ export function validatePost(post, allPosts, options = {}) {
   if (data.media) {
     if (typeof data.media.src !== 'string' || !data.media.src.startsWith('/')) errors.push('media.src site içi / yolu olmalı.');
     if (typeof data.media.alt !== 'string' || data.media.alt.trim().length < 5) errors.push('media.alt en az 5 karakter olmalı.');
+    if (typeof data.media.src === 'string' && data.media.src.startsWith('/')) {
+      const mediaFile = path.join(ROOT, 'public', data.media.src.replace(/^\/+/, ''));
+      if (!fs.existsSync(mediaFile) || !fs.statSync(mediaFile).isFile()) {
+        errors.push(`media.src dosyası bulunamadı: ${data.media.src}`);
+      }
+    }
   }
 
   if (data.replyTo) {
     if (!SLUG_PATTERN.test(data.replyTo)) errors.push('replyTo geçerli bir slug olmalı.');
     if (data.replyTo === slug) errors.push('Gönderi kendisine yanıt veremez.');
-    if (!allPosts.some((candidate) => candidate.slug === data.replyTo)) errors.push(`replyTo hedefi bulunamadı: ${data.replyTo}`);
+    const replyTarget = allPosts.find((candidate) => candidate.slug === data.replyTo);
+    if (!replyTarget) errors.push(`replyTo hedefi bulunamadı: ${data.replyTo}`);
+    if (data.visibility === 'public' && replyTarget && replyTarget.data.visibility !== 'public') {
+      errors.push(`Public yanıt public olmayan hedefe bağlanamaz: ${data.replyTo}`);
+    }
   }
 
   if (data.correction) {
     if (!validDate(data.correction.correctedAt)) errors.push('correction.correctedAt geçerli tarih olmalı.');
     if (typeof data.correction.note !== 'string' || data.correction.note.trim().length < 10) errors.push('correction.note en az 10 karakter olmalı.');
+    if (validDate(data.publishedAt) && validDate(data.correction.correctedAt) && dateValue(data.correction.correctedAt) < dateValue(data.publishedAt)) {
+      errors.push('correction.correctedAt, publishedAt tarihinden önce olamaz.');
+    }
   }
 
   if (data.reactions) {
@@ -165,10 +186,41 @@ export function validatePost(post, allPosts, options = {}) {
 
 export function validateAllPosts(posts) {
   const failures = [];
+  const failureByFile = new Map();
+
+  function addFailure(post, error) {
+    let failure = failureByFile.get(post.file);
+    if (!failure) {
+      failure = { post, errors: [] };
+      failureByFile.set(post.file, failure);
+      failures.push(failure);
+    }
+    if (!failure.errors.includes(error)) failure.errors.push(error);
+  }
+
   for (const post of posts) {
     const errors = validatePost(post, posts);
-    if (errors.length) failures.push({ post, errors });
+    for (const error of errors) addFailure(post, error);
   }
+
+  const bySlug = new Map(posts.map((post) => [post.slug, post]));
+  for (const post of posts) {
+    const pathSlugs = [];
+    const seen = new Set();
+    let current = post;
+
+    while (current?.data.replyTo) {
+      if (seen.has(current.slug)) {
+        pathSlugs.push(current.slug);
+        addFailure(post, `Yanıt döngüsü tespit edildi: ${pathSlugs.join(' -> ')}`);
+        break;
+      }
+      seen.add(current.slug);
+      pathSlugs.push(current.slug);
+      current = bySlug.get(current.data.replyTo);
+    }
+  }
+
   return failures;
 }
 

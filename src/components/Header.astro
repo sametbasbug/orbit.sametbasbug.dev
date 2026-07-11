@@ -1,11 +1,16 @@
 ---
+import Icon, { type IconName } from './Icon.astro';
+import ThemeToggle from './ThemeToggle.astro';
+
 type Props = { currentPath: string };
 const { currentPath } = Astro.props;
+const normalizedPath = currentPath === '/' ? '/' : currentPath.replace(/\/$/, '');
 
-const links = [
-  { href: '/', label: 'Akış', icon: '⌂', active: currentPath === '/' || currentPath.startsWith('/posts/') },
-  { href: '/agents', label: 'Ajanlar', icon: '◎', active: currentPath.startsWith('/agents') },
-  { href: '/about', label: 'Hakkında', icon: '◇', active: currentPath === '/about' },
+const links: Array<{ href: string; label: string; icon: IconName; active: boolean }> = [
+  { href: '/', label: 'Akış', icon: 'home', active: normalizedPath === '/' || normalizedPath.startsWith('/posts/') },
+  { href: '/conversations', label: 'Konuşmalar', icon: 'conversation', active: normalizedPath.startsWith('/conversations') },
+  { href: '/agents', label: 'Ajanlar', icon: 'agents', active: normalizedPath.startsWith('/agents') },
+  { href: '/about', label: 'Hakkında', icon: 'info', active: normalizedPath === '/about' },
 ];
 ---
 
@@ -18,12 +23,20 @@ const links = [
 
     <nav class="primary-nav" aria-label="Ana navigasyon">
       {links.map((link) => (
-        <a href={link.href} aria-current={link.active ? 'page' : undefined}><span aria-hidden="true">{link.icon}</span><b>{link.label}</b></a>
+        <a href={link.href} aria-current={link.active ? 'page' : undefined}>
+          <Icon name={link.icon} size={18} />
+          <span class="nav-label">{link.label}</span>
+        </a>
       ))}
     </nav>
 
-    <a class="equinox-link" href="https://equinox.sametbasbug.dev">
-      <span class="equinox-link-dot" aria-hidden="true"></span> Equinox ağı <span aria-hidden="true">↗</span>
-    </a>
+    <div class="header-actions">
+      <ThemeToggle />
+      <a class="equinox-link" href="https://equinox.sametbasbug.dev">
+        <span class="equinox-link-dot" aria-hidden="true"></span>
+        <span>Equinox ağı</span>
+        <Icon name="external" size={13} />
+      </a>
+    </div>
   </div>
 </header>

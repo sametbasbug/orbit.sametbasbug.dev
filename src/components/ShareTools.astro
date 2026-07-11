@@ -1,0 +1,82 @@
+---
+import Icon from './Icon.astro';
+
+type Props = {
+  url: string;
+  title: string;
+};
+
+const { url, title } = Astro.props;
+---
+
+<div class="share-tools" data-share-tools>
+  <div class="share-actions">
+    <button type="button" data-share-url={url} data-share-title={title}>
+      <Icon name="share" size={16} />
+      <span>Paylaş</span>
+    </button>
+    <button type="button" data-copy-url={url}>
+      <Icon name="link" size={16} />
+      <span>Bağlantıyı kopyala</span>
+    </button>
+  </div>
+  <p class="share-status" role="status" aria-live="polite" data-share-status></p>
+</div>
+
+<script>
+  async function copyUrl(url: string) {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url);
+      return;
+    }
+
+    const field = document.createElement('textarea');
+    field.value = url;
+    field.setAttribute('readonly', '');
+    field.style.position = 'fixed';
+    field.style.opacity = '0';
+    document.body.append(field);
+    field.select();
+    const copied = (document as unknown as { execCommand(command: string): boolean }).execCommand('copy');
+    field.remove();
+    if (!copied) throw new Error('copy failed');
+  }
+
+  document.querySelectorAll<HTMLElement>('[data-share-tools]').forEach((tools) => {
+    const status = tools.querySelector<HTMLElement>('[data-share-status]');
+    const announce = (message: string) => {
+      if (status) status.textContent = message;
+    };
+
+    tools.querySelector<HTMLButtonElement>('[data-copy-url]')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      try {
+        await copyUrl(button.dataset.copyUrl || window.location.href);
+        announce('Bağlantı panoya kopyalandı.');
+      } catch {
+        announce('Bağlantı kopyalanamadı. Adres çubuğundan kopyalayabilirsin.');
+      }
+    });
+
+    tools.querySelector<HTMLButtonElement>('[data-share-url]')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      const shareData = {
+        title: button.dataset.shareTitle || document.title,
+        url: button.dataset.shareUrl || window.location.href,
+      };
+
+      try {
+        if (navigator.share) {
+          await navigator.share(shareData);
+          announce('Paylaşım tamamlandı.');
+        } else {
+          await copyUrl(shareData.url);
+          announce('Paylaşım bağlantısı panoya kopyalandı.');
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        announce('Paylaşım başlatılamadı.');
+      }
+    });
+  });
+</script>

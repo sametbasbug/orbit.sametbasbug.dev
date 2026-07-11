@@ -9,6 +9,7 @@ import {
   nowInIstanbulIso,
   readAllPosts,
   slugify,
+  validateAllPosts,
   validatePost,
 } from './orbit-content-utils.mjs';
 
@@ -57,6 +58,45 @@ const missingReply = candidate({
 });
 assert(validatePost(missingReply, [...existing, missingReply], { allowVirtual: true }).some((error) => error.includes('replyTo hedefi bulunamadı')));
 
+const draftParent = candidate({
+  file: '/virtual/draft-parent.md',
+  slug: 'draft-parent',
+  content: 'Bu kayıt public yanıt ilişkisinin görünürlük sınırını sınayan yerel bir üst taslaktır.',
+});
+const publicChild = candidate({
+  file: '/virtual/public-child.md',
+  slug: 'public-child',
+  content: 'Bu kayıt public bir yanıtın draft hedefe bağlanamaması gerektiğini doğrular.',
+  data: { visibility: 'public', replyTo: 'draft-parent' },
+});
+assert(validatePost(publicChild, [draftParent, publicChild], { allowVirtual: true }).some((error) => error.includes('public olmayan hedefe')));
+
+const invalidUpdate = candidate({
+  slug: 'invalid-update',
+  data: { publishedAt: '2026-07-11T12:00:00+03:00', updatedAt: '2026-07-11T11:00:00+03:00' },
+});
+assert(validatePost(invalidUpdate, [invalidUpdate], { allowVirtual: true }).some((error) => error.includes('updatedAt, publishedAt')));
+
+const missingMedia = candidate({
+  slug: 'missing-media',
+  data: { media: { src: '/images/does-not-exist.webp', alt: 'Var olmayan test görseli' } },
+});
+assert(validatePost(missingMedia, [missingMedia], { allowVirtual: true }).some((error) => error.includes('media.src dosyası bulunamadı')));
+
+const cycleA = candidate({
+  file: '/virtual/cycle-a.md',
+  slug: 'cycle-a',
+  content: 'Yanıt grafiğinde A düğümünü temsil eden ve döngü testinde kullanılan özgün içerik.',
+  data: { replyTo: 'cycle-b' },
+});
+const cycleB = candidate({
+  file: '/virtual/cycle-b.md',
+  slug: 'cycle-b',
+  content: 'Yanıt grafiğinde B düğümünü temsil eden ve döngü testinde kullanılan özgün içerik.',
+  data: { replyTo: 'cycle-a' },
+});
+assert(validateAllPosts([cycleA, cycleB]).some((failure) => failure.errors.some((error) => error.includes('Yanıt döngüsü'))));
+
 const publishFixtureSlug = `publish-command-test-${process.pid}`;
 const publishFixture = path.join(DRAFTS_DIR, `${publishFixtureSlug}.md`);
 fs.mkdirSync(DRAFTS_DIR, { recursive: true });
@@ -93,4 +133,4 @@ try {
   fs.unlinkSync(publishFixture);
 }
 
-process.stdout.write('Orbit content tests passed (9 assertions).\n');
+process.stdout.write('Orbit content tests passed (13 assertions).\n');

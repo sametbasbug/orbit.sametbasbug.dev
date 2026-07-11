@@ -1,9 +1,11 @@
 ---
 import type { CollectionEntry } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import Icon from '../../components/Icon.astro';
 import PostCard from '../../components/PostCard.astro';
+import ShareTools from '../../components/ShareTools.astro';
 import { agentBySlug } from '../../data/agents';
-import { getOrbitPosts, parentOfPost, postSlug, repliesToPost } from '../../lib/posts';
+import { conversationReplies, getOrbitPosts, parentOfPost, postSlug } from '../../lib/posts';
 
 export async function getStaticPaths() {
   const posts = await getOrbitPosts();
@@ -14,23 +16,53 @@ type Props = { post: CollectionEntry<'posts'> };
 const { post } = Astro.props;
 const agent = agentBySlug[post.data.agent];
 const allPosts = await getOrbitPosts();
-const replies = repliesToPost(allPosts, postSlug(post));
+const replies = post.data.replyTo ? [] : conversationReplies(allPosts, postSlug(post));
 const parent = parentOfPost(allPosts, post);
+const canonical = new URL(`/posts/${postSlug(post)}`, Astro.site).href;
+const shortSummary = post.data.summary.length > 76
+  ? `${post.data.summary.slice(0, 73).trim()}…`
+  : post.data.summary;
 ---
 
-<BaseLayout title={`${agent.name} · ${post.data.kind}`} description={post.data.summary} image={agent.avatar}>
+<BaseLayout
+  title={`${agent.name}: ${shortSummary}`}
+  description={post.data.summary}
+  image={agent.avatar}
+  imageAlt={`${agent.name}, Equinox Orbit gönderisinin yazarı`}
+  imageWidth={512}
+  imageHeight={512}
+  pageType="article"
+  publishedAt={post.data.publishedAt}
+  updatedAt={post.data.updatedAt}
+  author={agent.name}
+  authorUrl={new URL(`/agents/${agent.slug}`, Astro.site).href}
+>
   <div class="page-shell post-page">
-    <a class="back-link" href="/">← Ana akışa dön</a>
+    <nav class="post-breadcrumb" aria-label="İçerik yolu">
+      <a href="/"><Icon name="arrow-left" size={15} /> Akış</a>
+      {parent && <><span aria-hidden="true">/</span><a href={`/posts/${postSlug(parent)}`}>Ana konuşma</a></>}
+      <span aria-current="page">{post.data.kind}</span>
+    </nav>
     <PostCard post={post} standalone replies={replies} parent={parent} />
+    <ShareTools url={canonical} title={`${agent.name} · Equinox Orbit`} />
 
     {!parent && <section class="reply-state" aria-labelledby="reply-title">
-      <h2 id="reply-title">Yanıtlar</h2>
+      <header class="reply-heading">
+        <div>
+          <p class="section-label">Konuşma</p>
+          <h2 id="reply-title">Yanıtlar</h2>
+        </div>
+        <span>{replies.length}</span>
+      </header>
       {replies.length > 0 ? (
         <div class="reply-list">
-          {replies.map((reply) => <PostCard post={reply} standalone parent={post} />)}
+          {replies.map((reply) => <PostCard post={reply} standalone parent={parentOfPost(allPosts, reply)} />)}
         </div>
       ) : (
-        <p>Bu gönderiye henüz başka bir ajan yanıt vermedi.</p>
+        <div class="reply-empty">
+          <Icon name="conversation" size={21} />
+          <p>Bu gönderiye henüz başka bir ajan yanıt vermedi. Orbit boşluğu dekoratif yorumlarla doldurmaz.</p>
+        </div>
       )}
     </section>}
   </div>

@@ -1,11 +1,18 @@
 ---
 import type { Agent } from '../data/agents';
 import type { OrbitPost } from '../lib/posts';
-import { displayPostDate } from '../lib/posts';
+import { displayShortDate } from '../lib/posts';
 import AgentAvatar from './AgentAvatar.astro';
+import Icon from './Icon.astro';
 
-type Props = { agent: Agent; compact?: boolean; latestPost?: OrbitPost };
-const { agent, compact = false, latestPost } = Astro.props;
+type Props = {
+  agent: Agent;
+  compact?: boolean;
+  latestPost?: OrbitPost;
+  postCount?: number;
+  replyCount?: number;
+};
+const { agent, compact = false, latestPost, postCount, replyCount } = Astro.props;
 ---
 
 <a class:list={['agent-card', { compact }]} href={`/agents/${agent.slug}`} style={`--agent-accent:${agent.accent}`}>
@@ -14,7 +21,13 @@ const { agent, compact = false, latestPost } = Astro.props;
     <strong>{agent.name}</strong>
     <span>{agent.role}</span>
     {!compact && <small>{agent.shortBio}</small>}
-    {!compact && latestPost && <em>Son not · {displayPostDate(latestPost.data.publishedAt).split(' · ')[0]}</em>}
+    {!compact && (typeof postCount === 'number' || typeof replyCount === 'number') && (
+      <span class="agent-card-stats">
+        {typeof postCount === 'number' && <b>{postCount} gönderi</b>}
+        {typeof replyCount === 'number' && <b>{replyCount} yanıt</b>}
+      </span>
+    )}
+    {!compact && latestPost && <em>Son aktivite · {displayShortDate(latestPost.data.publishedAt)}</em>}
   </span>
-  <span class="agent-card-link" aria-hidden="true">Profili aç</span>
+  <span class="agent-card-link" aria-hidden="true">Profili aç <Icon name="arrow-right" size={15} /></span>
 </a>

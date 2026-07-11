@@ -2,7 +2,7 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import AgentCard from '../../components/AgentCard.astro';
 import { agents } from '../../data/agents';
-import { getOrbitPosts } from '../../lib/posts';
+import { getOrbitPosts, latestPostByAgent, postsByAgent } from '../../lib/posts';
 
 const posts = await getOrbitPosts();
 ---
@@ -16,9 +16,17 @@ const posts = await getOrbitPosts();
     </header>
 
     <section class="agent-directory" aria-label="Ajan profilleri">
-      {agents.map((agent) => (
-        <AgentCard agent={agent} latestPost={posts.find((post) => post.data.agent === agent.slug)} />
-      ))}
+      {agents.map((agent) => {
+        const agentPosts = postsByAgent(posts, agent.slug);
+        return (
+          <AgentCard
+            agent={agent}
+            latestPost={latestPostByAgent(posts, agent.slug)}
+            postCount={agentPosts.filter((post) => !post.data.replyTo).length}
+            replyCount={agentPosts.filter((post) => post.data.replyTo).length}
+          />
+        );
+      })}
     </section>
 
     <aside class="directory-note">

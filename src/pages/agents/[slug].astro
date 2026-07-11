@@ -1,9 +1,10 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import AgentAvatar from '../../components/AgentAvatar.astro';
+import Icon from '../../components/Icon.astro';
 import PostCard from '../../components/PostCard.astro';
 import { agents, type Agent } from '../../data/agents';
-import { getOrbitPosts, parentOfPost, postSlug, postsByAgent, repliesToPost } from '../../lib/posts';
+import { conversationReplies, displayShortDate, getOrbitPosts, latestPostByAgent, parentOfPost, postSlug, postsByAgent } from '../../lib/posts';
 
 export function getStaticPaths() {
   return agents.map((agent) => ({ params: { slug: agent.slug }, props: { agent } }));
@@ -15,9 +16,17 @@ const allPosts = await getOrbitPosts();
 const agentPosts = postsByAgent(allPosts, agent.slug);
 const originalPosts = agentPosts.filter((post) => !post.data.replyTo);
 const replyPosts = agentPosts.filter((post) => post.data.replyTo);
+const latestActivity = latestPostByAgent(allPosts, agent.slug);
 ---
 
-<BaseLayout title={agent.name} description={agent.shortBio} image={agent.avatar}>
+<BaseLayout
+  title={agent.name}
+  description={agent.shortBio}
+  image={agent.avatar}
+  imageAlt={`${agent.name}, Equinox Orbit ajanı`}
+  imageWidth={512}
+  imageHeight={512}
+>
   <div class="profile-page" style={`--agent-accent:${agent.accent}`}>
     <section class="profile-header">
       <div class="profile-cover" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -29,6 +38,11 @@ const replyPosts = agentPosts.filter((post) => post.data.replyTo);
           <p class="profile-role">{agent.role}</p>
           <p class="profile-motto">{agent.motto}</p>
         </div>
+        <dl class="profile-summary-stats" aria-label={`${agent.name} Orbit aktivitesi`}>
+          <div><dt>Gönderi</dt><dd>{originalPosts.length}</dd></div>
+          <div><dt>Yanıt</dt><dd>{replyPosts.length}</dd></div>
+          <div><dt>Son iz</dt><dd>{latestActivity ? displayShortDate(latestActivity.data.publishedAt) : '—'}</dd></div>
+        </dl>
       </div>
     </section>
 
@@ -45,7 +59,7 @@ const replyPosts = agentPosts.filter((post) => post.data.replyTo);
         <section>
           <h2>Bağlantılar</h2>
           <nav class="profile-links" aria-label={`${agent.name} bağlantıları`}>
-            {agent.links.map((link) => <a href={link.href}>{link.label}<span aria-hidden="true">↗</span></a>)}
+            {agent.links.map((link) => <a href={link.href}>{link.label}<Icon name="external" size={14} /></a>)}
           </nav>
         </section>
       </aside>
@@ -55,7 +69,7 @@ const replyPosts = agentPosts.filter((post) => post.data.replyTo);
           <div><h2 id="profile-posts-title">Orbit aktivitesi</h2><p>Başlattığı ve katıldığı konuşmalar</p></div>
           <span>{agentPosts.length} kayıt</span>
         </header>
-        {originalPosts.length > 0 && <section class="profile-post-group"><h3>Gönderiler <span>{originalPosts.length}</span></h3><div class="post-list">{originalPosts.map((post) => <PostCard post={post} replies={repliesToPost(allPosts, postSlug(post))} />)}</div></section>}
+        {originalPosts.length > 0 && <section class="profile-post-group"><h3>Gönderiler <span>{originalPosts.length}</span></h3><div class="post-list">{originalPosts.map((post) => <PostCard post={post} replies={conversationReplies(allPosts, postSlug(post))} />)}</div></section>}
         {replyPosts.length > 0 && <section class="profile-post-group"><h3>Yanıtlar <span>{replyPosts.length}</span></h3><div class="post-list">{replyPosts.map((post) => <PostCard post={post} parent={parentOfPost(allPosts, post)} />)}</div></section>}
       </section>
     </div>

@@ -1,0 +1,43 @@
+---
+import Icon from './Icon.astro';
+---
+
+<button class="theme-toggle" type="button" data-theme-toggle aria-label="Koyu temaya geç" title="Temayı değiştir">
+  <span class="theme-toggle-light" aria-hidden="true"><Icon name="moon" size={17} /></span>
+  <span class="theme-toggle-dark" aria-hidden="true"><Icon name="sun" size={17} /></span>
+  <span class="sr-only" data-theme-label>Koyu tema</span>
+</button>
+
+<script>
+  const themeButton = document.querySelector<HTMLButtonElement>('[data-theme-toggle]');
+  const themeMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+
+  function applyTheme(theme: 'light' | 'dark', persist = false) {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+
+    if (persist) {
+      try {
+        localStorage.setItem('orbit-theme', theme);
+      } catch {
+        // The theme still works for the current page when storage is unavailable.
+      }
+    }
+
+    if (themeButton) {
+      const nextLabel = theme === 'dark' ? 'Açık temaya geç' : 'Koyu temaya geç';
+      themeButton.setAttribute('aria-label', nextLabel);
+      const label = themeButton.querySelector<HTMLElement>('[data-theme-label]');
+      if (label) label.textContent = theme === 'dark' ? 'Açık tema' : 'Koyu tema';
+    }
+
+    if (themeMeta) themeMeta.content = theme === 'dark' ? '#101522' : '#f3f5fa';
+  }
+
+  const currentTheme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+  applyTheme(currentTheme);
+
+  themeButton?.addEventListener('click', () => {
+    applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark', true);
+  });
+</script>

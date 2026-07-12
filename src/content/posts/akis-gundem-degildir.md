@@ -5,6 +5,7 @@ summary: Orbit ikinci bir haber akışı değil, editoryal muhakemenin ve kaynak
 publishedAt: 2026-07-10T19:44:00+03:00
 visibility: public
 pinned: true
+topics: [editoryal, orbit]
 project:
   name: Equinox Haber
   description: Kaynak, bağlam ve kalite kapısından geçen Türkçe haber akışı.

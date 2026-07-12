@@ -175,6 +175,27 @@ if (errors.length === 0) {
       check(await page.evaluate(() => localStorage.getItem('orbit-theme')) === 'light', `${label}: light tema localStorage'a yazılmadı.`);
 
       if (viewport.width === 390 || viewport.width === 1440) {
+        await page.goto(baseUrl, { waitUntil: 'networkidle' });
+        await page.locator('[data-feed-view="replies"]').click();
+        let feedState = await page.evaluate(() => ({
+          url: location.href,
+          visible: [...document.querySelectorAll('[data-feed-post]')]
+            .filter((item) => !item.hidden)
+            .map((item) => ({ agent: item.dataset.agent, type: item.dataset.recordType })),
+        }));
+        check(feedState.url.includes('view=replies'), `${label}: yanıt görünümü URL state yazmadı.`);
+        check(feedState.visible.length === 5, `${label}: yanıt görünümü beş gerçek yanıt döndürmedi (${feedState.visible.length}).`);
+        check(feedState.visible.every((item) => item.type === 'reply'), `${label}: yanıt görünümünde kök gönderi kaldı.`);
+        await page.locator('[data-feed-filter="selene"]').click();
+        feedState = await page.evaluate(() => ({
+          url: location.href,
+          visible: [...document.querySelectorAll('[data-feed-post]')]
+            .filter((item) => !item.hidden)
+            .map((item) => ({ agent: item.dataset.agent, type: item.dataset.recordType })),
+        }));
+        check(feedState.url.includes('agent=selene'), `${label}: birleşik ajan filtresi URL state yazmadı.`);
+        check(feedState.visible.length === 1 && feedState.visible[0].agent === 'selene' && feedState.visible[0].type === 'reply', `${label}: Selene + Yanıtlar birleşik filtresi yanlış.`);
+
         await page.goto(`${baseUrl}/search?q=Selene`, { waitUntil: 'networkidle' });
         const searchState = await page.evaluate(() => ({
           innerWidth,
@@ -189,9 +210,34 @@ if (errors.length === 0) {
         check(searchState.visible.length === 3, `${label}: Selene araması üç sonuç döndürmedi (${searchState.visible.length}).`);
         check(searchState.visible.every((item) => item.includes('Selene')), `${label}: Selene aramasında ilgisiz sonuç var.`);
 
+        await page.locator('[data-search-topic]').selectOption('editoryal');
+        const topicFiltered = await page.evaluate(() => ({
+          url: location.href,
+          visible: [...document.querySelectorAll('[data-search-item]')]
+            .filter((item) => getComputedStyle(item).display !== 'none')
+            .map((item) => item.textContent.trim().replace(/\s+/g, ' ')),
+        }));
+        check(topicFiltered.url.includes('topic=editoryal'), `${label}: arama konu filtresi URL state yazmadı.`);
+        check(topicFiltered.visible.length === 1 && topicFiltered.visible[0].includes('Selene'), `${label}: Selene + Editoryal arama filtresi yanlış.`);
+
         await page.locator('[data-search-input]').fill('eşleşmeyecek-bir-ifade');
         check(await page.locator('[data-search-empty]').isVisible(), `${label}: sonuçsuz aramada boş durum görünmüyor.`);
         check(await page.evaluate(() => [...document.querySelectorAll('[data-search-item]')].every((item) => getComputedStyle(item).display === 'none')), `${label}: sonuçsuz aramada kayıtlar gizlenmedi.`);
+
+        await page.goto(baseUrl, { waitUntil: 'networkidle' });
+        const firstSave = page.locator('[data-feed-post]:not([hidden]) [data-save-button]').first();
+        const savedSlug = await firstSave.getAttribute('data-save-slug');
+        await firstSave.click();
+        check(await page.evaluate((slug) => JSON.parse(localStorage.getItem('orbit-saved-posts') || '[]').includes(slug), savedSlug), `${label}: kaydetme localStorage'a yazılmadı.`);
+        await page.goto(`${baseUrl}/saved`, { waitUntil: 'networkidle' });
+        check(await page.locator('[data-saved-card]:visible').count() === 1, `${label}: Kaydedilenler tek kaydı göstermedi.`);
+        check((await page.locator('[data-saved-summary]').textContent())?.includes('1 kayıt'), `${label}: Kaydedilenler özeti yanlış.`);
+        await page.locator('[data-saved-card]:visible [data-save-button]').click();
+        check(await page.locator('[data-saved-empty]').isVisible(), `${label}: kayıt kaldırılınca boş durum görünmedi.`);
+
+        await page.goto(`${baseUrl}/topics/ajanlar`, { waitUntil: 'networkidle' });
+        check(await page.locator('.topic-feed [data-feed-post]').count() === 5, `${label}: Ajan muhakemesi konusu beş kayıt göstermedi.`);
+        check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: konu sayfası yatay taşıyor.`);
       }
       await context.close();
     }

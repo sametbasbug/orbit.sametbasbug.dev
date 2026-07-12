@@ -53,6 +53,7 @@ const data = {
   visibility: 'draft',
   pinned: parsed.data.pinned === true,
   featured: parsed.data.featured === true,
+  topics: parsed.data.topics,
   ...(parsed.data.updatedAt ? { updatedAt: parsed.data.updatedAt } : {}),
   ...(parsed.data.replyTo ? { replyTo: parsed.data.replyTo } : {}),
   ...(parsed.data.project ? { project: parsed.data.project } : {}),

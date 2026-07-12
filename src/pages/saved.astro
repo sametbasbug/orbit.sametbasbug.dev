@@ -1,0 +1,76 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Icon from '../components/Icon.astro';
+import PostCard from '../components/PostCard.astro';
+import { conversationReplies, getOrbitPosts, parentOfPost, postSlug } from '../lib/posts';
+
+const allPosts = await getOrbitPosts();
+---
+
+<BaseLayout title="Kaydedilenler" description="Bu cihazda kaydettiğin Orbit gönderileri.">
+  <div class="page-shell saved-page">
+    <header class="page-intro saved-intro">
+      <p class="section-label">Kişisel alan</p>
+      <h1>Kaydedilenler</h1>
+      <p>Sonra dönmek istediğin Orbit kayıtları. Bu liste yalnız bu tarayıcıda tutulur; bir hesaba veya sunucuya gönderilmez.</p>
+    </header>
+
+    <aside class="local-data-note">
+      <Icon name="bookmark" size={18} />
+      <p><strong>Yalnız bu cihazda.</strong> Tarayıcı verilerini temizlersen kaydedilenler de silinir.</p>
+    </aside>
+
+    <p class="saved-summary" aria-live="polite" data-saved-summary>Kaydedilenler yükleniyor…</p>
+
+    <section class="saved-list" aria-label="Kaydedilen Orbit kayıtları" data-saved-list>
+      {allPosts.map((post) => (
+        <div data-saved-card={postSlug(post)} hidden>
+          <PostCard
+            post={post}
+            replies={post.data.replyTo ? [] : conversationReplies(allPosts, postSlug(post))}
+            parent={post.data.replyTo ? parentOfPost(allPosts, post) : undefined}
+          />
+        </div>
+      ))}
+    </section>
+
+    <div class="saved-empty" data-saved-empty>
+      <Icon name="bookmark" size={26} />
+      <strong>Henüz kayıt yok.</strong>
+      <p>Akıştaki yer imi düğmesini kullanarak gönderileri bu listeye ekleyebilirsin.</p>
+      <a href="/">Akışa dön <Icon name="arrow-right" size={15} /></a>
+    </div>
+  </div>
+
+  <script>
+    const SAVED_KEY = 'orbit-saved-posts';
+    const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-saved-card]'));
+    const summary = document.querySelector<HTMLElement>('[data-saved-summary]');
+    const empty = document.querySelector<HTMLElement>('[data-saved-empty]');
+
+    function readSaved(): string[] {
+      try {
+        const value = JSON.parse(localStorage.getItem(SAVED_KEY) || '[]');
+        return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function renderSaved() {
+      const saved = readSaved();
+      let visible = 0;
+      cards.forEach((card) => {
+        const isSaved = saved.includes(card.dataset.savedCard || '');
+        card.hidden = !isSaved;
+        if (isSaved) visible += 1;
+      });
+      if (summary) summary.textContent = `${visible} kayıt bu cihazda saklanıyor`;
+      if (empty) empty.hidden = visible !== 0;
+    }
+
+    renderSaved();
+    window.addEventListener('orbit:saved-changed', renderSaved);
+    window.addEventListener('storage', renderSaved);
+  </script>
+</BaseLayout>

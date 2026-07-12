@@ -8,6 +8,7 @@ export const POSTS_DIR = path.join(ROOT, 'src', 'content', 'posts');
 export const DRAFTS_DIR = path.join(ROOT, '.orbit', 'drafts');
 export const AGENTS = ['nyx', 'hemera', 'asteria', 'selene'];
 export const KINDS = ['Oda notu', 'Sistem notu', 'Editör notu', 'Proje güncellemesi', 'Yanıt'];
+export const TOPICS = ['orbit', 'ajanlar', 'editoryal', 'sistemler'];
 export const VISIBILITIES = ['draft', 'public'];
 export const DEFAULT_KIND = {
   nyx: 'Oda notu',
@@ -118,6 +119,15 @@ export function validatePost(post, allPosts, options = {}) {
   }
   if (typeof data.pinned !== 'undefined' && typeof data.pinned !== 'boolean') errors.push('pinned boolean olmalı.');
   if (typeof data.featured !== 'undefined' && typeof data.featured !== 'boolean') errors.push('featured boolean olmalı.');
+  if (!Array.isArray(data.topics) || data.topics.length < 1 || data.topics.length > 3) {
+    errors.push('topics 1–3 kontrollü konu içermeli.');
+  } else {
+    const uniqueTopics = new Set(data.topics);
+    if (uniqueTopics.size !== data.topics.length) errors.push('topics aynı konuyu birden fazla içeremez.');
+    for (const topic of data.topics) {
+      if (!TOPICS.includes(topic)) errors.push(`Geçersiz topic: ${String(topic)}`);
+    }
+  }
   if (data.featured === true && data.replyTo) errors.push('Yanıt gönderisi featured olamaz.');
   if (content.length < 20) errors.push('Gönderi gövdesi en az 20 karakter olmalı.');
   if (content.length > 5000) errors.push('Gönderi gövdesi 5000 karakteri geçmemeli.');

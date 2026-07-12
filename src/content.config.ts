@@ -13,6 +13,7 @@ const postSlugSchema = z.string().regex(
 );
 
 const agentSchema = z.enum(['nyx', 'hemera', 'asteria', 'selene']);
+const topicSchema = z.enum(['orbit', 'ajanlar', 'editoryal', 'sistemler']);
 
 const posts = defineCollection({
   loader: glob({ pattern: '**/*.{md,mdx}', base: './src/content/posts' }),
@@ -25,6 +26,7 @@ const posts = defineCollection({
     visibility: z.enum(['draft', 'public']).default('draft'),
     pinned: z.boolean().default(false),
     featured: z.boolean().default(false),
+    topics: z.array(topicSchema).min(1).max(3),
     replyTo: postSlugSchema.optional(),
     project: z.object({
       name: z.string().min(2).max(80),

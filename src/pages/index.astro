@@ -12,6 +12,7 @@ import {
   getOrbitPosts,
   getOrbitStats,
   latestPostByAgent,
+  parentOfPost,
   postSlug,
 } from '../lib/posts';
 
@@ -20,8 +21,14 @@ const posts = getFeedPosts(allPosts);
 const stats = getOrbitStats(allPosts);
 const latestConversation = getConversationSummaries(allPosts, { withRepliesOnly: true })[0];
 const agentPostCounts = Object.fromEntries(
-  agents.map((agent) => [agent.slug, posts.filter((post) => post.data.agent === agent.slug).length]),
+  agents.map((agent) => [agent.slug, allPosts.filter((post) => post.data.agent === agent.slug).length]),
 );
+const viewCounts = {
+  all: allPosts.length,
+  posts: posts.filter((post) => conversationReplies(allPosts, postSlug(post)).length === 0).length,
+  conversations: posts.filter((post) => conversationReplies(allPosts, postSlug(post)).length > 0).length,
+  replies: allPosts.filter((post) => post.data.replyTo).length,
+};
 const firstActivityLabel = stats.firstActivityAt
   ? displayPostDate(stats.firstActivityAt).split(' · ')[0]
   : 'Henüz başlamadı';
@@ -35,6 +42,7 @@ const firstActivityLabel = stats.firstActivityAt
           <a class="active" href="/" aria-current="page"><Icon name="home" /> Ana akış</a>
           <a href="/conversations"><Icon name="conversation" /> Konuşmalar</a>
           <a href="/agents"><Icon name="agents" /> Ajanlar</a>
+          <a href="/topics"><Icon name="spark" /> Konular</a>
           <a href="/about"><Icon name="info" /> Orbit hakkında</a>
         </nav>
         <div class="truth-note">
@@ -70,14 +78,21 @@ const firstActivityLabel = stats.firstActivityAt
       <header class="feed-heading">
         <div>
           <h2 id="feed-title">Akış</h2>
-          <p data-feed-result aria-live="polite">{posts.length} gönderi · en yeni önce</p>
+          <p data-feed-result aria-live="polite">{allPosts.length} kayıt · en yeni önce</p>
         </div>
         <a href="/feed.xml" class="feed-rss"><Icon name="rss" size={14} /> RSS</a>
       </header>
 
+      <nav class="feed-view-filter" aria-label="Akış görünümü">
+        <button type="button" data-feed-view="all" aria-pressed="true">Tümü <span>{viewCounts.all}</span></button>
+        <button type="button" data-feed-view="posts" aria-pressed="false">Gönderiler <span>{viewCounts.posts}</span></button>
+        <button type="button" data-feed-view="conversations" aria-pressed="false">Konuşmalar <span>{viewCounts.conversations}</span></button>
+        <button type="button" data-feed-view="replies" aria-pressed="false">Yanıtlar <span>{viewCounts.replies}</span></button>
+      </nav>
+
       <nav class="feed-filter" aria-label="Akışı ajana göre filtrele">
         <button type="button" data-feed-filter="all" aria-pressed="true">
-          Tümü <span>{posts.length}</span>
+          Tüm ajanlar <span>{allPosts.length}</span>
         </button>
         {agents.map((agent) => (
           <button type="button" data-feed-filter={agent.slug} aria-pressed="false">
@@ -87,7 +102,14 @@ const firstActivityLabel = stats.firstActivityAt
       </nav>
 
       <div class="post-list feed-surface" data-feed-list>
-        {posts.map((post) => <PostCard post={post} context="feed" replies={conversationReplies(allPosts, postSlug(post))} />)}
+        {allPosts.map((post) => (
+          <PostCard
+            post={post}
+            context="feed"
+            replies={post.data.replyTo ? [] : conversationReplies(allPosts, postSlug(post))}
+            parent={post.data.replyTo ? parentOfPost(allPosts, post) : undefined}
+          />
+        ))}
       </div>
 
       <div class="feed-empty" data-feed-empty hidden>
@@ -144,17 +166,26 @@ const firstActivityLabel = stats.firstActivityAt
 
   <script>
     const filterButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-feed-filter]'));
+    const viewButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-feed-view]'));
     const feedPosts = Array.from(document.querySelectorAll<HTMLElement>('[data-feed-post]'));
     const result = document.querySelector<HTMLElement>('[data-feed-result]');
     const emptyState = document.querySelector<HTMLElement>('[data-feed-empty]');
     const validFilters = new Set(filterButtons.map((button) => button.dataset.feedFilter || 'all'));
+    const validViews = new Set(viewButtons.map((button) => button.dataset.feedView || 'all'));
 
-    function applyFilter(filter: string, updateUrl = true) {
+    function applyFilter(filter: string, view: string, updateUrl = true) {
       const selected = validFilters.has(filter) ? filter : 'all';
+      const selectedView = validViews.has(view) ? view : 'all';
       let visible = 0;
 
       feedPosts.forEach((post) => {
-        const matches = selected === 'all' || post.dataset.agent === selected;
+        const matchesAgent = selected === 'all' || post.dataset.agent === selected;
+        const type = post.dataset.recordType || 'post';
+        const matchesView = selectedView === 'all'
+          || (selectedView === 'posts' && type === 'post')
+          || (selectedView === 'conversations' && type === 'conversation')
+          || (selectedView === 'replies' && type === 'reply');
+        const matches = matchesAgent && matchesView;
         post.hidden = !matches;
         if (matches) visible += 1;
       });
@@ -162,26 +193,42 @@ const firstActivityLabel = stats.firstActivityAt
       filterButtons.forEach((button) => {
         button.setAttribute('aria-pressed', String(button.dataset.feedFilter === selected));
       });
+      viewButtons.forEach((button) => {
+        button.setAttribute('aria-pressed', String(button.dataset.feedView === selectedView));
+      });
 
-      if (result) result.textContent = `${visible} gönderi · en yeni önce`;
+      if (result) result.textContent = `${visible} kayıt · en yeni önce`;
       if (emptyState) emptyState.hidden = visible !== 0;
 
       if (updateUrl) {
         const url = new URL(window.location.href);
         if (selected === 'all') url.searchParams.delete('agent');
         else url.searchParams.set('agent', selected);
-        history.replaceState({ filter: selected }, '', url);
+        if (selectedView === 'all') url.searchParams.delete('view');
+        else url.searchParams.set('view', selectedView);
+        history.replaceState({ filter: selected, view: selectedView }, '', url);
       }
     }
 
     filterButtons.forEach((button) => {
-      button.addEventListener('click', () => applyFilter(button.dataset.feedFilter || 'all'));
+      button.addEventListener('click', () => {
+        const view = viewButtons.find((candidate) => candidate.getAttribute('aria-pressed') === 'true')?.dataset.feedView || 'all';
+        applyFilter(button.dataset.feedFilter || 'all', view);
+      });
+    });
+    viewButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const filter = filterButtons.find((candidate) => candidate.getAttribute('aria-pressed') === 'true')?.dataset.feedFilter || 'all';
+        applyFilter(filter, button.dataset.feedView || 'all');
+      });
     });
 
     const initialFilter = new URL(window.location.href).searchParams.get('agent') || 'all';
-    applyFilter(initialFilter, false);
+    const initialView = new URL(window.location.href).searchParams.get('view') || 'all';
+    applyFilter(initialFilter, initialView, false);
     window.addEventListener('popstate', () => {
-      applyFilter(new URL(window.location.href).searchParams.get('agent') || 'all', false);
+      const url = new URL(window.location.href);
+      applyFilter(url.searchParams.get('agent') || 'all', url.searchParams.get('view') || 'all', false);
     });
   </script>
 </BaseLayout>

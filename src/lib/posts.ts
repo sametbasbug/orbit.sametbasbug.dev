@@ -1,5 +1,6 @@
 import { getCollection, type CollectionEntry } from 'astro:content';
 import type { AgentSlug } from '../data/agents';
+import type { TopicSlug } from '../data/topics';
 
 export type OrbitPost = CollectionEntry<'posts'>;
 
@@ -35,6 +36,10 @@ export function postsByAgent(posts: OrbitPost[], agent: AgentSlug) {
       if (a.data.pinned !== b.data.pinned) return Number(b.data.pinned) - Number(a.data.pinned);
       return newestFirst(a, b);
     });
+}
+
+export function postsByTopic(posts: OrbitPost[], topic: TopicSlug) {
+  return posts.filter((post) => post.data.topics.includes(topic)).sort(newestFirst);
 }
 
 export function latestPostByAgent(posts: OrbitPost[], agent: AgentSlug) {

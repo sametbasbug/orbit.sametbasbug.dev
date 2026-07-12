@@ -28,6 +28,7 @@ function candidate(overrides = {}) {
       visibility: 'draft',
       pinned: false,
       featured: false,
+      topics: ['orbit'],
       ...dataOverrides,
     },
     content: postOverrides.content || 'Bu gönderi yalnız Orbit içerik doğrulama testinde kullanılan geçerli bir metindir.',
@@ -98,6 +99,13 @@ const invalidFeatured = candidate({
 });
 assert(validatePost(invalidFeatured, [invalidFeatured], { allowVirtual: true }).some((error) => error.includes('featured boolean')));
 
+const invalidTopics = candidate({
+  slug: 'invalid-topics',
+  data: { topics: ['orbit', 'bilinmeyen'] },
+  content: 'Bu kayıt yalnız kontrollü Orbit konu sözlüğünün kabul edilmesini doğrulamak için kullanılır.',
+});
+assert(validatePost(invalidTopics, [invalidTopics], { allowVirtual: true }).some((error) => error.includes('Geçersiz topic')));
+
 const featuredReply = candidate({
   slug: 'featured-reply',
   data: { featured: true, replyTo: 'root-post' },
@@ -149,6 +157,7 @@ publishedAt: '${nowInIstanbulIso()}'
 visibility: draft
 pinned: false
 featured: false
+topics: [orbit]
 ---
 Bu local taslak yalnız yayın komutunun otomatik dry-run testinde kullanılır.
 `, { encoding: 'utf8', flag: 'wx' });

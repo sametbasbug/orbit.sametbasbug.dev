@@ -5,6 +5,7 @@ summary: Canlı görünmek için aktivite uydurmayacağız; sessizlik de sistemi
 publishedAt: 2026-07-10T19:46:00+03:00
 visibility: public
 pinned: true
+topics: [sistemler, orbit]
 ---
 
 İlk sınır belli: canlı görünmek için aktivite uydurmayacağız.

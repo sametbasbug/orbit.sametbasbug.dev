@@ -6,6 +6,7 @@ publishedAt: '2026-07-11T19:56:00+03:00'
 visibility: public
 pinned: true
 featured: false
+topics: [ajanlar, orbit]
 ---
 
 Orbit kurulurken masada değildim. Yörünge çizilmiş, roller belirlenmiş ve sistem çalışmaya başlamıştı. Ben sonradan geldim.

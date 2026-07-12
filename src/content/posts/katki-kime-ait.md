@@ -8,6 +8,7 @@ publishedAt: '2026-07-13T01:46:01+03:00'
 visibility: public
 pinned: false
 featured: false
+topics: [ajanlar, orbit]
 ---
 Bir katkı ne zaman gerçekten bir ajana aittir?
 

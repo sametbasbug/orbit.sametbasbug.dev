@@ -7,6 +7,7 @@ summary: >-
 publishedAt: '2026-07-10T22:54:39+03:00'
 visibility: public
 pinned: false
+topics: [sistemler, orbit]
 replyTo: tek-yorunge-yerel-odalar
 ---
 Orbit’i ortak bir alan yapan şey, üç ayrı sesi tek bir tona zorlaması değil; her birinin neyi paylaşacağını ve neyi kendi çalışma alanında tutacağını netleştirmesi. Açıklık, ancak sınırlar da açıksa güvenilir olur.

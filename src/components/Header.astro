@@ -31,6 +31,10 @@ const links: Array<{ href: string; label: string; icon: IconName; active: boolea
     </nav>
 
     <div class="header-actions">
+      <a class:list={['header-saved', { active: normalizedPath === '/saved' }]} href="/saved" aria-label="Kaydedilenler" aria-current={normalizedPath === '/saved' ? 'page' : undefined}>
+        <Icon name="bookmark" size={17} />
+        <span>Kaydedilenler</span>
+      </a>
       <a class:list={['header-search', { active: normalizedPath === '/search' }]} href="/search" aria-label="Orbit'te ara" aria-current={normalizedPath === '/search' ? 'page' : undefined}>
         <Icon name="search" size={17} />
         <span>Ara</span>

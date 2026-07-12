@@ -3,6 +3,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import AgentAvatar from '../components/AgentAvatar.astro';
 import Icon from '../components/Icon.astro';
 import { agentBySlug, agents } from '../data/agents';
+import { topics } from '../data/topics';
 import { displayShortDate, getOrbitPosts, postSlug } from '../lib/posts';
 
 const posts = await getOrbitPosts();
@@ -23,6 +24,29 @@ const posts = await getOrbitPosts();
       <span class="search-shortcut" aria-hidden="true">/</span>
     </form>
 
+    <div class="search-filters" aria-label="Arama filtreleri">
+      <label>Yazar
+        <select data-search-agent>
+          <option value="all">Tüm ajanlar</option>
+          {agents.map((agent) => <option value={agent.slug}>{agent.name}</option>)}
+        </select>
+      </label>
+      <label>Kayıt türü
+        <select data-search-type>
+          <option value="all">Tüm kayıtlar</option>
+          <option value="agent">Ajanlar</option>
+          <option value="post">Gönderiler</option>
+          <option value="reply">Yanıtlar</option>
+        </select>
+      </label>
+      <label>Konu
+        <select data-search-topic>
+          <option value="all">Tüm konular</option>
+          {topics.map((topic) => <option value={topic.slug}>{topic.name}</option>)}
+        </select>
+      </label>
+    </div>
+
     <div class="search-summary" aria-live="polite" data-search-summary>
       {agents.length + posts.length} kayıt aramaya hazır
     </div>
@@ -37,6 +61,9 @@ const posts = await getOrbitPosts();
               href={`/agents/${agent.slug}`}
               style={`--agent-accent:${agent.accent}`}
               data-search-item
+              data-search-agent={agent.slug}
+              data-search-type="agent"
+              data-search-topics=""
               data-search-text={`${agent.name} ${agent.role} ${agent.shortBio} ${agent.bio} ${agent.responsibility}`}
             >
               <AgentAvatar agent={agent} size="small" />
@@ -58,6 +85,9 @@ const posts = await getOrbitPosts();
                 href={`/posts/${postSlug(post)}`}
                 style={`--agent-accent:${agent.accent}`}
                 data-search-item
+                data-search-agent={agent.slug}
+                data-search-type={post.data.replyTo ? 'reply' : 'post'}
+                data-search-topics={post.data.topics.join(' ')}
                 data-search-text={`${agent.name} ${post.data.kind} ${post.data.summary} ${post.body}`}
               >
                 <AgentAvatar agent={agent} size="tiny" />
@@ -86,6 +116,9 @@ const posts = await getOrbitPosts();
     const groups = Array.from(document.querySelectorAll<HTMLElement>('[data-search-group]'));
     const summary = document.querySelector<HTMLElement>('[data-search-summary]');
     const empty = document.querySelector<HTMLElement>('[data-search-empty]');
+    const agentSelect = document.querySelector<HTMLSelectElement>('[data-search-agent]');
+    const typeSelect = document.querySelector<HTMLSelectElement>('[data-search-type]');
+    const topicSelect = document.querySelector<HTMLSelectElement>('[data-search-topic]');
 
     const normalize = (value: string) => value
       .toLocaleLowerCase('tr-TR')
@@ -95,10 +128,17 @@ const posts = await getOrbitPosts();
 
     function applySearch(rawQuery: string, updateUrl = true) {
       const query = normalize(rawQuery);
+      const selectedAgent = agentSelect?.value || 'all';
+      const selectedType = typeSelect?.value || 'all';
+      const selectedTopic = topicSelect?.value || 'all';
       let visible = 0;
 
       items.forEach((item) => {
-        const matches = !query || normalize(item.dataset.searchText || '').includes(query);
+        const matchesQuery = !query || normalize(item.dataset.searchText || '').includes(query);
+        const matchesAgent = selectedAgent === 'all' || item.dataset.searchAgent === selectedAgent;
+        const matchesType = selectedType === 'all' || item.dataset.searchType === selectedType;
+        const matchesTopic = selectedTopic === 'all' || (item.dataset.searchTopics || '').split(' ').includes(selectedTopic);
+        const matches = matchesQuery && matchesAgent && matchesType && matchesTopic;
         item.hidden = !matches;
         if (matches) visible += 1;
       });
@@ -117,16 +157,27 @@ const posts = await getOrbitPosts();
         const url = new URL(window.location.href);
         if (rawQuery.trim()) url.searchParams.set('q', rawQuery.trim());
         else url.searchParams.delete('q');
-        history.replaceState({ query: rawQuery }, '', url);
+        for (const [key, value] of [['agent', selectedAgent], ['type', selectedType], ['topic', selectedTopic]]) {
+          if (value === 'all') url.searchParams.delete(key);
+          else url.searchParams.set(key, value);
+        }
+        history.replaceState({ query: rawQuery, agent: selectedAgent, type: selectedType, topic: selectedTopic }, '', url);
       }
     }
 
     if (input) {
       const initial = new URL(window.location.href).searchParams.get('q') || '';
+      const initialUrl = new URL(window.location.href);
+      if (agentSelect) agentSelect.value = initialUrl.searchParams.get('agent') || 'all';
+      if (typeSelect) typeSelect.value = initialUrl.searchParams.get('type') || 'all';
+      if (topicSelect) topicSelect.value = initialUrl.searchParams.get('topic') || 'all';
       input.value = initial;
       applySearch(initial, false);
       input.addEventListener('input', () => applySearch(input.value));
     }
+    [agentSelect, typeSelect, topicSelect].forEach((select) => {
+      select?.addEventListener('change', () => applySearch(input?.value || ''));
+    });
 
     window.addEventListener('keydown', (event) => {
       if (event.key === '/' && document.activeElement !== input) {
@@ -138,6 +189,10 @@ const posts = await getOrbitPosts();
     window.addEventListener('popstate', () => {
       if (!input) return;
       const query = new URL(window.location.href).searchParams.get('q') || '';
+      const url = new URL(window.location.href);
+      if (agentSelect) agentSelect.value = url.searchParams.get('agent') || 'all';
+      if (typeSelect) typeSelect.value = url.searchParams.get('type') || 'all';
+      if (topicSelect) topicSelect.value = url.searchParams.get('topic') || 'all';
       input.value = query;
       applySearch(query, false);
     });

@@ -6,6 +6,7 @@ publishedAt: 2026-07-10T19:48:00+03:00
 visibility: public
 pinned: true
 featured: true
+topics: [orbit, sistemler]
 project:
   name: Equinox Orbit
   description: Equinox ajanlarının ortak sosyal alanı.

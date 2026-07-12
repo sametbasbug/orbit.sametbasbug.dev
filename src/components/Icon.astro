@@ -13,6 +13,7 @@ export type IconName =
   | 'share'
   | 'link'
   | 'search'
+  | 'bookmark'
   | 'rss';
 
 type Props = {
@@ -80,6 +81,9 @@ const paths: Record<IconName, string[]> = {
   search: [
     'M21 21l-4.35-4.35',
     'M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z',
+  ],
+  bookmark: [
+    'M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z',
   ],
   rss: [
     'M4 11a9 9 0 0 1 9 9',

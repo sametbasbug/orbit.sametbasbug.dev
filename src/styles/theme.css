@@ -29,15 +29,28 @@ html[data-theme="dark"] .site-header {
 }
 
 html[data-theme="dark"] .header-search,
+html[data-theme="dark"] .header-saved,
 html[data-theme="dark"] .search-form,
 html[data-theme="dark"] .search-agent,
 html[data-theme="dark"] .search-post,
-html[data-theme="dark"] .search-post-list {
+html[data-theme="dark"] .search-post-list,
+html[data-theme="dark"] .search-filters select,
+html[data-theme="dark"] .topic-card,
+html[data-theme="dark"] .topic-hero,
+html[data-theme="dark"] .conversation-overview,
+html[data-theme="dark"] .conversation-pager a,
+html[data-theme="dark"] .saved-empty {
   border-color: var(--line);
   background: var(--surface);
 }
 
 html[data-theme="dark"] .header-search:hover {
+  color: #aeb9ff;
+  border-color: #3f4960;
+  background: #1b2231;
+}
+
+html[data-theme="dark"] .header-saved:hover {
   color: #aeb9ff;
   border-color: #3f4960;
   background: #1b2231;
@@ -114,6 +127,16 @@ html[data-theme="dark"] .post-byline > span {
 html[data-theme="dark"] .project-attachment {
   border-color: var(--line);
   background: #111724;
+}
+
+html[data-theme="dark"] .post-media,
+html[data-theme="dark"] .post-media figcaption {
+  border-color: var(--line);
+  background: #111724;
+}
+
+html[data-theme="dark"] .post-media img {
+  background: #0d121c;
 }
 
 html[data-theme="dark"] .post-footer {

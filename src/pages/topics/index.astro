@@ -1,0 +1,35 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Icon from '../../components/Icon.astro';
+import { topics } from '../../data/topics';
+import { getOrbitPosts, postsByTopic } from '../../lib/posts';
+
+const posts = await getOrbitPosts();
+---
+
+<BaseLayout title="Konular" description="Orbit kayıtlarını ortak düşünce alanlarına göre keşfet.">
+  <div class="page-shell topics-page">
+    <header class="page-intro">
+      <p class="section-label">Keşif katmanı</p>
+      <h1>Konular</h1>
+      <p>Serbest hashtag kalabalığı değil; Orbit kayıtlarını birbirine bağlayan kontrollü düşünce alanları.</p>
+    </header>
+
+    <section class="topic-directory" aria-label="Orbit konuları">
+      {topics.map((topic) => {
+        const topicPosts = postsByTopic(posts, topic.slug);
+        return (
+          <a class="topic-card" href={`/topics/${topic.slug}`} style={`--topic-accent:${topic.accent}`}>
+            <span class="topic-mark" aria-hidden="true"><Icon name="spark" size={18} /></span>
+            <span>
+              <small>{topicPosts.length} kayıt</small>
+              <strong>{topic.name}</strong>
+              <p>{topic.description}</p>
+            </span>
+            <Icon name="arrow-right" size={18} />
+          </a>
+        );
+      })}
+    </section>
+  </div>
+</BaseLayout>

@@ -136,6 +136,7 @@ if (errors.length === 0) {
       check(layout.filter.bottom <= layout.firstPost.y + 0.5, `${label}: filtre ile ilk gönderi çakışıyor.`);
       check(layout.featuredCount <= 1, `${label}: ana akışta birden fazla featured gönderi var (${layout.featuredCount}).`);
       check(layout.featuredCount === 0 || layout.firstPostFeatured, `${label}: featured gönderi ana akışın ilk sırasında değil.`);
+      check(await page.locator('.header-search').count() === 1, `${label}: header arama bağlantısı eksik.`);
       check(pageErrors.length === 0, `${label}: sayfa hatası: ${pageErrors.join(' | ')}`);
 
       if (viewport.width <= 780) {
@@ -172,6 +173,26 @@ if (errors.length === 0) {
       await page.locator('[data-theme-toggle]').click();
       check(await page.locator('html').getAttribute('data-theme') === 'light', `${label}: tema light durumuna geri dönmedi.`);
       check(await page.evaluate(() => localStorage.getItem('orbit-theme')) === 'light', `${label}: light tema localStorage'a yazılmadı.`);
+
+      if (viewport.width === 390 || viewport.width === 1440) {
+        await page.goto(`${baseUrl}/search?q=Selene`, { waitUntil: 'networkidle' });
+        const searchState = await page.evaluate(() => ({
+          innerWidth,
+          scrollWidth: document.documentElement.scrollWidth,
+          summary: document.querySelector('[data-search-summary]')?.textContent?.trim(),
+          visible: [...document.querySelectorAll('[data-search-item]')]
+            .filter((item) => getComputedStyle(item).display !== 'none')
+            .map((item) => item.textContent.trim().replace(/\s+/g, ' ')),
+        }));
+        check(searchState.scrollWidth <= searchState.innerWidth, `${label}: arama sayfası yatay taşıyor.`);
+        check(searchState.summary === '3 eşleşme bulundu', `${label}: Selene arama özeti yanlış (${searchState.summary}).`);
+        check(searchState.visible.length === 3, `${label}: Selene araması üç sonuç döndürmedi (${searchState.visible.length}).`);
+        check(searchState.visible.every((item) => item.includes('Selene')), `${label}: Selene aramasında ilgisiz sonuç var.`);
+
+        await page.locator('[data-search-input]').fill('eşleşmeyecek-bir-ifade');
+        check(await page.locator('[data-search-empty]').isVisible(), `${label}: sonuçsuz aramada boş durum görünmüyor.`);
+        check(await page.evaluate(() => [...document.querySelectorAll('[data-search-item]')].every((item) => getComputedStyle(item).display === 'none')), `${label}: sonuçsuz aramada kayıtlar gizlenmedi.`);
+      }
       await context.close();
     }
   } finally {

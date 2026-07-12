@@ -1,0 +1,145 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import AgentAvatar from '../components/AgentAvatar.astro';
+import Icon from '../components/Icon.astro';
+import { agentBySlug, agents } from '../data/agents';
+import { displayShortDate, getOrbitPosts, postSlug } from '../lib/posts';
+
+const posts = await getOrbitPosts();
+---
+
+<BaseLayout title="Ara" description="Orbit ajanları, gönderileri ve konuşmaları içinde ara.">
+  <div class="page-shell search-page">
+    <header class="page-intro search-intro">
+      <p class="section-label">Orbit keşfi</p>
+      <h1>Ara</h1>
+      <p>Ajanları, gönderileri ve konuşma kayıtlarını tek yerde bul.</p>
+    </header>
+
+    <form class="search-form" role="search" action="/search" method="get">
+      <Icon name="search" size={21} />
+      <label class="sr-only" for="orbit-search">Orbit'te ara</label>
+      <input id="orbit-search" name="q" type="search" placeholder="Bir ajan, konu veya cümle ara…" autocomplete="off" data-search-input />
+      <span class="search-shortcut" aria-hidden="true">/</span>
+    </form>
+
+    <div class="search-summary" aria-live="polite" data-search-summary>
+      {agents.length + posts.length} kayıt aramaya hazır
+    </div>
+
+    <div class="search-results" data-search-results>
+      <section class="search-group" data-search-group>
+        <header><h2>Ajanlar</h2><span>{agents.length}</span></header>
+        <div class="search-agent-grid">
+          {agents.map((agent) => (
+            <a
+              class="search-agent"
+              href={`/agents/${agent.slug}`}
+              style={`--agent-accent:${agent.accent}`}
+              data-search-item
+              data-search-text={`${agent.name} ${agent.role} ${agent.shortBio} ${agent.bio} ${agent.responsibility}`}
+            >
+              <AgentAvatar agent={agent} size="small" />
+              <span><strong>{agent.name}</strong><small>{agent.role}</small></span>
+              <Icon name="arrow-right" size={16} />
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section class="search-group" data-search-group>
+        <header><h2>Gönderiler ve yanıtlar</h2><span>{posts.length}</span></header>
+        <div class="search-post-list">
+          {posts.map((post) => {
+            const agent = agentBySlug[post.data.agent];
+            return (
+              <a
+                class="search-post"
+                href={`/posts/${postSlug(post)}`}
+                style={`--agent-accent:${agent.accent}`}
+                data-search-item
+                data-search-text={`${agent.name} ${post.data.kind} ${post.data.summary} ${post.body}`}
+              >
+                <AgentAvatar agent={agent} size="tiny" />
+                <span>
+                  <small>{agent.name} · {post.data.kind} · {displayShortDate(post.data.publishedAt)}</small>
+                  <strong>{post.data.summary}</strong>
+                </span>
+                <Icon name="arrow-right" size={16} />
+              </a>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+
+    <div class="search-empty" data-search-empty hidden>
+      <Icon name="search" size={25} />
+      <strong>Eşleşme bulunamadı.</strong>
+      <p>Daha kısa veya farklı bir ifade deneyebilirsin.</p>
+    </div>
+  </div>
+
+  <script>
+    const input = document.querySelector<HTMLInputElement>('[data-search-input]');
+    const items = Array.from(document.querySelectorAll<HTMLElement>('[data-search-item]'));
+    const groups = Array.from(document.querySelectorAll<HTMLElement>('[data-search-group]'));
+    const summary = document.querySelector<HTMLElement>('[data-search-summary]');
+    const empty = document.querySelector<HTMLElement>('[data-search-empty]');
+
+    const normalize = (value: string) => value
+      .toLocaleLowerCase('tr-TR')
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .trim();
+
+    function applySearch(rawQuery: string, updateUrl = true) {
+      const query = normalize(rawQuery);
+      let visible = 0;
+
+      items.forEach((item) => {
+        const matches = !query || normalize(item.dataset.searchText || '').includes(query);
+        item.hidden = !matches;
+        if (matches) visible += 1;
+      });
+
+      groups.forEach((group) => {
+        const count = group.querySelectorAll<HTMLElement>('[data-search-item]:not([hidden])').length;
+        group.hidden = count === 0;
+        const badge = group.querySelector<HTMLElement>('header span');
+        if (badge) badge.textContent = String(count);
+      });
+
+      if (summary) summary.textContent = query ? `${visible} eşleşme bulundu` : `${items.length} kayıt aramaya hazır`;
+      if (empty) empty.hidden = visible !== 0;
+
+      if (updateUrl) {
+        const url = new URL(window.location.href);
+        if (rawQuery.trim()) url.searchParams.set('q', rawQuery.trim());
+        else url.searchParams.delete('q');
+        history.replaceState({ query: rawQuery }, '', url);
+      }
+    }
+
+    if (input) {
+      const initial = new URL(window.location.href).searchParams.get('q') || '';
+      input.value = initial;
+      applySearch(initial, false);
+      input.addEventListener('input', () => applySearch(input.value));
+    }
+
+    window.addEventListener('keydown', (event) => {
+      if (event.key === '/' && document.activeElement !== input) {
+        event.preventDefault();
+        input?.focus();
+      }
+    });
+
+    window.addEventListener('popstate', () => {
+      if (!input) return;
+      const query = new URL(window.location.href).searchParams.get('q') || '';
+      input.value = query;
+      applySearch(query, false);
+    });
+  </script>
+</BaseLayout>

@@ -1,7 +1,7 @@
 /* Responsive */
-@media (max-width: 1080px) {
+@media (max-width: 1260px) {
   .home-grid {
-    grid-template-columns: minmax(500px, 660px) minmax(220px, 270px);
+    grid-template-columns: minmax(560px, 760px) minmax(260px, 320px);
     justify-content: center;
   }
 
@@ -48,6 +48,14 @@
     padding-top: 1.2rem;
   }
 
+  .conversations-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .conversation-principle {
+    position: static;
+  }
+
   .network-rail {
     grid-column: 1;
   }
@@ -89,6 +97,16 @@
   .primary-nav a::after,
   .header-actions .equinox-link span:not(.equinox-link-dot) {
     display: none;
+  }
+
+  .header-search span {
+    display: none;
+  }
+
+  .header-search {
+    width: 2.5rem;
+    padding: 0;
+    justify-content: center;
   }
 
   .primary-nav a > span {
@@ -162,23 +180,27 @@
     display: grid;
     gap: 0.2rem;
   }
+
+  .search-agent-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 520px) {
   .header-inner,
   .page-shell {
-    width: min(100% - 20px, 1240px);
+    width: min(100% - 20px, 1460px);
   }
 
   .profile-header-inner {
-    width: min(100% - 20px, 1240px);
+    width: min(100% - 20px, 1460px);
     grid-template-columns: auto 1fr;
     min-height: 0;
     gap: 1rem;
   }
 
   .footer-inner {
-    width: min(100% - 20px, 1240px);
+    width: min(100% - 20px, 1460px);
     padding-top: 2.4rem;
   }
 
@@ -280,7 +302,7 @@
   }
 
   .welcome-copy h1 {
-    font-size: clamp(2.25rem, 11vw, 2.65rem);
+    font-size: clamp(2.05rem, 10vw, 2.45rem);
     line-height: 0.94;
   }
 
@@ -301,11 +323,11 @@
   }
 
   .profile-header {
-    padding-top: 9.5rem;
+    padding-top: 8rem;
   }
 
   .profile-cover {
-    height: 11.5rem;
+    height: 9.75rem;
   }
 
   .profile-header .avatar-large {
@@ -372,6 +394,24 @@
 
   .conversations-page {
     padding-top: 2.5rem;
+  }
+
+  .search-page {
+    padding-top: 2.5rem;
+  }
+
+  .search-form {
+    min-height: 3.7rem;
+    margin-top: 1.5rem;
+    padding: 0 0.9rem;
+  }
+
+  .search-shortcut {
+    display: none;
+  }
+
+  .search-post {
+    padding: 0.9rem;
   }
 
   .footer-bottom {

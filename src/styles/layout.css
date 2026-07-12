@@ -4,23 +4,23 @@
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 2rem;
-  min-height: 72px;
-  width: min(1240px, calc(100% - 40px));
+  gap: 2.5rem;
+  min-height: 76px;
+  width: min(1460px, calc(100% - 56px));
 }
 
 .page-shell {
   margin: 0 auto;
-  width: min(1240px, calc(100% - 40px));
+  width: min(1460px, calc(100% - 56px));
 }
 
 .home-grid {
   display: grid;
   justify-content: space-between;
   align-items: start;
-  grid-template-columns: 190px minmax(520px, 660px) minmax(220px, 270px);
-  gap: 2rem;
-  padding: 2rem 0 5rem;
+  grid-template-columns: 220px minmax(620px, 760px) minmax(280px, 320px);
+  gap: 1.5rem;
+  padding: 1.5rem 0 5rem;
 }
 
 .context-sticky {
@@ -49,7 +49,7 @@
   display: grid;
   gap: 0;
   padding: 3rem 0 1.4rem;
-  width: min(1240px, calc(100% - 40px));
+  width: min(1460px, calc(100% - 56px));
 }
 
 .footer-main {

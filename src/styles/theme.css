@@ -28,6 +28,21 @@ html[data-theme="dark"] .site-header {
   box-shadow: 0 1px 16px rgba(0, 0, 0, 0.18);
 }
 
+html[data-theme="dark"] .header-search,
+html[data-theme="dark"] .search-form,
+html[data-theme="dark"] .search-agent,
+html[data-theme="dark"] .search-post,
+html[data-theme="dark"] .search-post-list {
+  border-color: var(--line);
+  background: var(--surface);
+}
+
+html[data-theme="dark"] .header-search:hover {
+  color: #aeb9ff;
+  border-color: #3f4960;
+  background: #1b2231;
+}
+
 html[data-theme="dark"] .primary-nav a:hover,
 html[data-theme="dark"] .side-nav a:hover,
 html[data-theme="dark"] .side-nav a.active,

@@ -114,6 +114,8 @@ if (errors.length === 0) {
           featuredCount: featuredPosts.length,
           firstPostFeatured: feedPosts[0]?.dataset.featured === 'true',
           nav: rect('.primary-nav'),
+          navDisplay: getComputedStyle(navigation).display,
+          headerSearch: rect('.header-search-form'),
           navPosition: getComputedStyle(navigation).position,
           navLinks: navLinks.map((link) => ({
             rect: (() => {
@@ -136,10 +138,13 @@ if (errors.length === 0) {
       check(layout.filter.bottom <= layout.firstPost.y + 0.5, `${label}: filtre ile ilk gönderi çakışıyor.`);
       check(layout.featuredCount <= 1, `${label}: ana akışta birden fazla featured gönderi var (${layout.featuredCount}).`);
       check(layout.featuredCount === 0 || layout.firstPostFeatured, `${label}: featured gönderi ana akışın ilk sırasında değil.`);
-      check(await page.locator('.header-search').count() === 1, `${label}: header arama bağlantısı eksik.`);
+      check(await page.locator('.header-search-form').count() === 1, `${label}: header arama formu eksik.`);
       check(pageErrors.length === 0, `${label}: sayfa hatası: ${pageErrors.join(' | ')}`);
 
       if (viewport.width <= 780) {
+        check(layout.navDisplay === 'flex', `${label}: mobil alt navigasyon görünür değil.`);
+        check(layout.headerSearch?.width === 0 || layout.headerSearch?.height === 0, `${label}: masaüstü arama formu mobilde gizlenmedi.`);
+        check(await page.locator('.header-mobile-search').isVisible(), `${label}: mobil arama erişimi görünür değil.`);
         check(layout.navPosition === 'fixed', `${label}: mobil alt navigasyon fixed değil.`);
         check(layout.nav.x >= 0 && layout.nav.right <= layout.innerWidth && layout.nav.bottom <= viewport.height, `${label}: mobil alt navigasyon kırpılıyor.`);
         check(layout.navLinks.length === 4, `${label}: mobil navigasyonda dört öğe yok.`);
@@ -162,6 +167,9 @@ if (errors.length === 0) {
         check(footerClearance.lastLinkBottom <= footerClearance.navTop - 2, `${label}: alt navigasyon footer bağlantılarını kapatıyor.`);
       } else {
         check(layout.navPosition !== 'fixed', `${label}: masaüstü navigasyonu yanlışlıkla fixed alt bara dönüştü.`);
+        check(layout.navDisplay === 'none', `${label}: üstteki kopya ana navigasyon masaüstünde gizlenmedi.`);
+        check(layout.headerSearch && layout.headerSearch.width >= 220, `${label}: masaüstü arama formu yeterli genişlikte değil.`);
+        check(!(await page.locator('.header-mobile-search').isVisible()), `${label}: mobil arama düğmesi masaüstünde görünür kaldı.`);
       }
 
       check(await page.locator('html').getAttribute('data-theme') === 'light', `${label}: başlangıç teması light değil.`);
@@ -173,6 +181,15 @@ if (errors.length === 0) {
       await page.locator('[data-theme-toggle]').click();
       check(await page.locator('html').getAttribute('data-theme') === 'light', `${label}: tema light durumuna geri dönmedi.`);
       check(await page.evaluate(() => localStorage.getItem('orbit-theme')) === 'light', `${label}: light tema localStorage'a yazılmadı.`);
+
+      if (viewport.width === 1440) {
+        await page.goto(baseUrl, { waitUntil: 'networkidle' });
+        await page.locator('#header-search-input').fill('Selene');
+        await page.locator('#header-search-input').press('Enter');
+        await page.waitForURL(/\/search\?q=Selene$/);
+        check(new URL(page.url()).searchParams.get('q') === 'Selene', `${label}: header araması sorguyu URL'ye taşımadı.`);
+        check((await page.locator('[data-search-summary]').textContent())?.trim() === '3 eşleşme bulundu', `${label}: header araması doğru sonuç özetini üretmedi.`);
+      }
 
       if (viewport.width === 390 || viewport.width === 1440) {
         await page.goto(baseUrl, { waitUntil: 'networkidle' });

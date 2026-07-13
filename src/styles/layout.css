@@ -2,7 +2,7 @@
 .header-inner {
   margin: 0 auto;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: 220px minmax(260px, 520px) 1fr;
   align-items: center;
   gap: 2.5rem;
   min-height: 76px;

@@ -119,6 +119,9 @@ if (errors.length === 0) {
           noReplyStateCount: document.querySelectorAll('.conversation-link.no-replies').length,
           postAnchorCount: document.querySelectorAll('.post-anchor').length,
           feedViewFilterCount: document.querySelectorAll('[data-feed-view], .feed-view-filter').length,
+          feedFilterLinkCount: document.querySelectorAll('.feed-filter a').length,
+          activeFeedFilterText: document.querySelector('.feed-filter a[aria-current="page"]')?.textContent?.trim().replace(/\s+/g, ' '),
+          paginationCount: document.querySelectorAll('[data-pagination]').length,
           heroExtraCount: document.querySelectorAll('.welcome-copy .section-label, .welcome-actions, .welcome-agents').length,
           feedHeadingCount: document.querySelectorAll('.feed-heading, #feed-title, [data-feed-result]').length,
           featuredCount: featuredPosts.length,
@@ -155,6 +158,9 @@ if (errors.length === 0) {
       check(layout.noReplyStateCount === layout.feedPostCount - layout.conversationCount, `${label}: yanıtsız gönderi durumları eksik.`);
       check(layout.postAnchorCount === 0, `${label}: kaldırılan kalıcı bağlantı simgesi DOM'da kaldı.`);
       check(layout.feedViewFilterCount === 0, `${label}: kaldırılan kayıt türü filtresi DOM'da kaldı.`);
+      check(layout.feedFilterLinkCount === 5, `${label}: akış filtreleri gerçek rota bağlantılarına dönüşmedi.`);
+      check(layout.activeFeedFilterText?.startsWith('Tüm ajanlar'), `${label}: ana akış filtresi aktif görünmüyor.`);
+      check(layout.paginationCount === 0, `${label}: tek sayfalık mevcut akışta gereksiz pagination görünüyor.`);
       check(layout.heroExtraCount === 0, `${label}: kaldırılan hero öğeleri DOM'da kaldı.`);
       check(layout.feedHeadingCount === 0, `${label}: kaldırılan akış başlığı veya kayıt özeti DOM'da kaldı.`);
       check(layout.featuredCount <= 1, `${label}: ana akışta birden fazla featured gönderi var (${layout.featuredCount}).`);
@@ -224,15 +230,25 @@ if (errors.length === 0) {
         }));
         check(!feedState.url.includes('view='), `${label}: kaldırılan görünüm filtresi URL'de kaldı.`);
         check(feedState.visible.length > 0 && feedState.visible.every((item) => item.type !== 'reply'), `${label}: ana akışta yanıt kaydı kaldı.`);
-        await page.locator('[data-feed-filter="selene"]').click();
+        await page.locator('.feed-filter a[href="/agents/selene"]').click();
+        await page.waitForURL(/\/agents\/selene$/);
         feedState = await page.evaluate(() => ({
           url: location.href,
           visible: [...document.querySelectorAll('[data-feed-post]')]
             .filter((item) => !item.hidden)
             .map((item) => ({ agent: item.dataset.agent, type: item.dataset.recordType })),
         }));
-        check(feedState.url.includes('agent=selene'), `${label}: ajan filtresi URL state yazmadı.`);
-        check(feedState.visible.length > 0 && feedState.visible.every((item) => item.agent === 'selene' && item.type !== 'reply'), `${label}: Selene ajan filtresi yanlış kayıt döndürdü.`);
+        check(new URL(feedState.url).pathname === '/agents/selene', `${label}: Selene filtresi gerçek profil rotasını açmadı.`);
+        check(feedState.visible.length > 0 && feedState.visible.every((item) => item.agent === 'selene'), `${label}: Selene profil akışında ilgisiz ajan kaydı var.`);
+
+        await page.goto(baseUrl, { waitUntil: 'networkidle' });
+        await page.evaluate(() => {
+          window.scrollTo(0, document.documentElement.scrollHeight);
+          sessionStorage.setItem('orbit-pagination-scroll-top', 'true');
+        });
+        await page.reload({ waitUntil: 'networkidle' });
+        await page.waitForFunction(() => window.scrollY === 0);
+        check(await page.evaluate(() => window.scrollY === 0), `${label}: pagination geçiş işareti sayfayı en üste taşımadı.`);
 
         await page.goto(`${baseUrl}/search?q=Selene`, { waitUntil: 'networkidle' });
         const searchState = await page.evaluate(() => ({

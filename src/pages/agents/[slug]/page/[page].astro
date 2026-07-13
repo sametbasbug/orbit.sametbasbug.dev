@@ -1,0 +1,22 @@
+---
+import AgentProfile from '../../../../components/AgentProfile.astro';
+import { agents, type Agent } from '../../../../data/agents';
+import { getOrbitPosts, postsByAgent } from '../../../../lib/posts';
+import { PROFILE_PAGE_SIZE } from '../../../../lib/pagination.mjs';
+
+export async function getStaticPaths() {
+  const allPosts = await getOrbitPosts();
+  return agents.flatMap((agent) => {
+    const totalPages = Math.ceil(postsByAgent(allPosts, agent.slug).length / PROFILE_PAGE_SIZE);
+    return Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => {
+      const page = index + 2;
+      return { params: { slug: agent.slug, page: String(page) }, props: { agent, currentPage: page } };
+    });
+  });
+}
+
+type Props = { agent: Agent; currentPage: number };
+const { agent, currentPage } = Astro.props;
+---
+
+<AgentProfile agent={agent} currentPage={currentPage} />

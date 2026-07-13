@@ -1,0 +1,52 @@
+---
+import Icon from './Icon.astro';
+import { paginationPath } from '../lib/pagination.mjs';
+
+type Props = {
+  basePath: string;
+  currentPage: number;
+  totalPages: number;
+  label: string;
+};
+
+const { basePath, currentPage, totalPages, label } = Astro.props;
+const newerPage = currentPage > 1 ? currentPage - 1 : undefined;
+const olderPage = currentPage < totalPages ? currentPage + 1 : undefined;
+---
+
+{totalPages > 1 && (
+  <nav class="pagination" aria-label={label} data-pagination>
+    <div class="pagination-direction pagination-newer">
+      {newerPage ? (
+        <a href={paginationPath(basePath, newerPage)} rel="prev" data-pagination-link>
+          <Icon name="arrow-left" size={16} />
+          <span><small>Önceki sayfa</small><strong>Daha yeni</strong></span>
+        </a>
+      ) : <span class="pagination-placeholder" aria-hidden="true"></span>}
+    </div>
+
+    <p><strong>{currentPage}</strong><span>/</span>{totalPages}</p>
+
+    <div class="pagination-direction pagination-older">
+      {olderPage ? (
+        <a href={paginationPath(basePath, olderPage)} rel="next" data-pagination-link>
+          <span><small>Sonraki sayfa</small><strong>Daha eski</strong></span>
+          <Icon name="arrow-right" size={16} />
+        </a>
+      ) : <span class="pagination-placeholder" aria-hidden="true"></span>}
+    </div>
+  </nav>
+)}
+
+<script>
+  const scrollKey = 'orbit-pagination-scroll-top';
+
+  document.querySelectorAll<HTMLAnchorElement>('[data-pagination-link]').forEach((link) => {
+    link.addEventListener('click', () => sessionStorage.setItem(scrollKey, 'true'));
+  });
+
+  if (sessionStorage.getItem(scrollKey) === 'true') {
+    sessionStorage.removeItem(scrollKey);
+    requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
+  }
+</script>

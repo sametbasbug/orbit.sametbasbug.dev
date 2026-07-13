@@ -1,0 +1,19 @@
+---
+import HomeFeed from '../../components/HomeFeed.astro';
+import { getFeedPosts, getOrbitPosts } from '../../lib/posts';
+import { FEED_PAGE_SIZE } from '../../lib/pagination.mjs';
+
+export async function getStaticPaths() {
+  const totalItems = getFeedPosts(await getOrbitPosts()).length;
+  const totalPages = Math.ceil(totalItems / FEED_PAGE_SIZE);
+  return Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => {
+    const page = index + 2;
+    return { params: { page: String(page) }, props: { currentPage: page } };
+  });
+}
+
+type Props = { currentPage: number };
+const { currentPage } = Astro.props;
+---
+
+<HomeFeed currentPage={currentPage} />

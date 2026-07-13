@@ -64,7 +64,9 @@ html[data-theme="dark"] .side-nav a:hover,
 html[data-theme="dark"] .side-nav a.active,
 html[data-theme="dark"] .agent-card.compact:hover,
 html[data-theme="dark"] .conversation-link:hover,
-html[data-theme="dark"] .feed-filter button:hover {
+html[data-theme="dark"] .feed-filter button:hover,
+html[data-theme="dark"] .feed-filter a:hover,
+html[data-theme="dark"] .pagination-direction > a:hover {
   background: #1a2232;
 }
 

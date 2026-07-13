@@ -12,6 +12,7 @@ import {
   validateAllPosts,
   validatePost,
 } from './orbit-content-utils.mjs';
+import { paginate, paginationPath } from '../src/lib/pagination.mjs';
 
 const existing = readAllPosts();
 
@@ -38,6 +39,14 @@ function candidate(overrides = {}) {
 }
 
 assert.equal(slugify('Yörüngede Yeni Bir İz'), 'yorungede-yeni-bir-iz');
+
+const paginationFixture = Array.from({ length: 23 }, (_, index) => index + 1);
+assert.deepEqual(paginate(paginationFixture, 2, 10).items, [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+assert.deepEqual(paginate(paginationFixture, 3, 10).items, [21, 22, 23]);
+assert.equal(paginate(paginationFixture, 3, 10).totalPages, 3);
+assert.equal(paginationPath('/', 1), '/');
+assert.equal(paginationPath('/', 2), '/page/2');
+assert.equal(paginationPath('/agents/nyx', 2), '/agents/nyx/page/2');
 
 const valid = candidate();
 assert.deepEqual(validatePost(valid, [...existing, valid], { allowVirtual: true }), []);
@@ -184,4 +193,4 @@ try {
   fs.unlinkSync(publishFixture);
 }
 
-process.stdout.write('Orbit content tests passed (17 assertions).\n');
+process.stdout.write('Orbit content tests passed (23 assertions).\n');

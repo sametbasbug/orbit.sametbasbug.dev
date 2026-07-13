@@ -11,21 +11,45 @@
   background: rgba(255, 255, 255, 0.75);
 }
 
-.feed-filter a,
-.feed-filter span {
+.feed-filter a {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.45rem;
   color: var(--muted);
-  font-weight: 600;
+  font-weight: 750;
   text-decoration: none;
   padding: 0.55rem 0.85rem;
   border-radius: 0.7rem;
-  font-size: 0.7rem;
+  font-size: 0.76rem;
+  transition: color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.feed-filter a span {
+  min-width: 1.2rem;
+  padding: 0.1rem 0.32rem;
+  border-radius: 999px;
+  color: var(--faint);
+  background: rgba(101, 112, 135, 0.09);
+  font-size: 0.57rem;
+  text-align: center;
 }
 
 .feed-filter a:hover {
-  text-underline-offset: 0.2rem;
   color: var(--orbit-blue);
   background: #f0f2fb;
   text-decoration: none;
+}
+
+.feed-filter a[aria-current="page"] {
+  color: #fff;
+  background: var(--orbit-blue);
+  box-shadow: 0 4px 12px rgba(82, 103, 217, 0.22);
+}
+
+.feed-filter a[aria-current="page"] span {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .feed-surface {
@@ -39,6 +63,74 @@
   font-size: 0.65rem;
   text-align: center;
   padding: 1rem;
+}
+
+.pagination {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 1rem 0.2rem;
+  border-top: 1px solid var(--line);
+}
+
+.pagination-direction {
+  min-width: 0;
+}
+
+.pagination-direction > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.8rem;
+  color: var(--text);
+  text-decoration: none;
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.pagination-direction > a:hover {
+  color: var(--orbit-blue);
+  background: rgba(82, 103, 217, 0.07);
+}
+
+.pagination-direction span:not(.pagination-placeholder) {
+  display: grid;
+  min-width: 0;
+}
+
+.pagination-direction small {
+  color: var(--faint);
+  font-size: 0.58rem;
+  font-weight: 650;
+}
+
+.pagination-direction strong {
+  font-size: 0.78rem;
+}
+
+.pagination-older {
+  text-align: right;
+}
+
+.pagination-older > a {
+  justify-content: flex-end;
+}
+
+.pagination > p {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin: 0;
+  color: var(--faint);
+  font-size: 0.68rem;
+}
+
+.pagination > p strong {
+  color: var(--text);
+  font-size: 0.82rem;
 }
 
 .network-section {

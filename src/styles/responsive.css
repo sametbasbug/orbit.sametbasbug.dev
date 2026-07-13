@@ -415,6 +415,21 @@
     flex: 0 0 auto;
   }
 
+  .pagination {
+    gap: 0.25rem;
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .pagination-direction > a {
+    gap: 0.4rem;
+    padding: 0.65rem 0.4rem;
+  }
+
+  .pagination-direction small {
+    display: none;
+  }
+
   .topic-hero {
     grid-template-columns: auto minmax(0, 1fr);
   }

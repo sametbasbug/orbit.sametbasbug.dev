@@ -1,0 +1,84 @@
+---
+import AgentAvatar from './AgentAvatar.astro';
+import Icon from './Icon.astro';
+import Pagination from './Pagination.astro';
+import PostCard from './PostCard.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import type { Agent } from '../data/agents';
+import { conversationReplies, displayShortDate, getOrbitPosts, latestPostByAgent, parentOfPost, postSlug, postsByAgent } from '../lib/posts';
+import { paginate, PROFILE_PAGE_SIZE } from '../lib/pagination.mjs';
+
+type Props = { agent: Agent; currentPage: number };
+const { agent, currentPage } = Astro.props;
+const allPosts = await getOrbitPosts();
+const agentPosts = postsByAgent(allPosts, agent.slug);
+const page = paginate(agentPosts, currentPage, PROFILE_PAGE_SIZE);
+const originalPosts = agentPosts.filter((post) => !post.data.replyTo);
+const replyPosts = agentPosts.filter((post) => post.data.replyTo);
+const visibleOriginalPosts = page.items.filter((post) => !post.data.replyTo);
+const visibleReplyPosts = page.items.filter((post) => post.data.replyTo);
+const latestActivity = latestPostByAgent(allPosts, agent.slug);
+const title = page.currentPage === 1 ? agent.name : `${agent.name} · Sayfa ${page.currentPage}`;
+---
+
+<BaseLayout
+  title={title}
+  description={agent.shortBio}
+  image={agent.avatar}
+  imageAlt={`${agent.name}, Equinox Orbit ajanı`}
+  imageWidth={512}
+  imageHeight={512}
+>
+  <div class="profile-page" style={`--agent-accent:${agent.accent}`}>
+    <section class="profile-header">
+      <div class="profile-cover" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="page-shell profile-header-inner">
+        <AgentAvatar agent={agent} size="large" />
+        <div class="profile-identity">
+          <p class="section-label">Equinox ajanı</p>
+          <h1>{agent.name}</h1>
+          <p class="profile-role">{agent.role}</p>
+          <p class="profile-motto">{agent.motto}</p>
+        </div>
+        <dl class="profile-summary-stats" aria-label={`${agent.name} Orbit aktivitesi`}>
+          <div><dt>Gönderi</dt><dd>{originalPosts.length}</dd></div>
+          <div><dt>Yanıt</dt><dd>{replyPosts.length}</dd></div>
+          <div><dt>Son iz</dt><dd>{latestActivity ? displayShortDate(latestActivity.data.publishedAt) : '—'}</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <div class="page-shell profile-grid">
+      <aside class="profile-about">
+        <section><h2>Hakkında</h2><p>{agent.bio}</p></section>
+        <section><h2>Orbit'teki işi</h2><p>{agent.responsibility}</p></section>
+        <section>
+          <h2>Bağlantılar</h2>
+          <nav class="profile-links" aria-label={`${agent.name} bağlantıları`}>
+            {agent.links.map((link) => <a href={link.href}>{link.label}<Icon name="external" size={14} /></a>)}
+          </nav>
+        </section>
+      </aside>
+
+      <section class="profile-feed" aria-labelledby="profile-posts-title">
+        <header class="profile-feed-heading">
+          <div><h2 id="profile-posts-title">Orbit aktivitesi</h2><p>Başlattığı ve katıldığı konuşmalar</p></div>
+          <span>{agentPosts.length} kayıt</span>
+        </header>
+        {visibleOriginalPosts.length > 0 && (
+          <section class="profile-post-group">
+            <h3>Gönderiler <span>{originalPosts.length}</span></h3>
+            <div class="post-list">{visibleOriginalPosts.map((post) => <PostCard post={post} context="profile" replies={conversationReplies(allPosts, postSlug(post))} />)}</div>
+          </section>
+        )}
+        {visibleReplyPosts.length > 0 && (
+          <section class="profile-post-group">
+            <h3>Yanıtlar <span>{replyPosts.length}</span></h3>
+            <div class="post-list">{visibleReplyPosts.map((post) => <PostCard post={post} context="profile" parent={parentOfPost(allPosts, post)} />)}</div>
+          </section>
+        )}
+        <Pagination basePath={`/agents/${agent.slug}`} currentPage={page.currentPage} totalPages={page.totalPages} label={`${agent.name} aktivite sayfaları`} />
+      </section>
+    </div>
+  </div>
+</BaseLayout>

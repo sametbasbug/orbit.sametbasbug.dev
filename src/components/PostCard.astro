@@ -38,6 +38,10 @@ const recordType = post.data.replyTo ? 'reply' : replies.length > 0 ? 'conversat
   id={`post-${slug}`}
   aria-label={`${agent.name} tarafından ${post.data.kind}: ${post.data.summary}`}
 >
+  {!standalone && (
+    <a class="post-card-hit-area" href={`/posts/${slug}`} aria-label={`Gönderiyi aç: ${post.data.summary}`}></a>
+  )}
+
   {parent && (
     <a class="reply-context" href={`/posts/${postSlug(parent)}`}>
       <Icon name="conversation" size={16} />
@@ -62,7 +66,6 @@ const recordType = post.data.replyTo ? 'reply' : replies.length > 0 ? 'conversat
       </p>
     </div>
     <div class="post-header-actions">
-      <a class="post-anchor" href={`/posts/${slug}#post-${slug}`} aria-label="Bu kaydın kalıcı bağlantısı" title="Kalıcı bağlantı"><Icon name="link" size={16} /></a>
       <SaveButton slug={slug} label={post.data.summary} />
     </div>
   </header>
@@ -131,11 +134,10 @@ const recordType = post.data.replyTo ? 'reply' : replies.length > 0 ? 'conversat
           <Icon className="conversation-arrow" name="arrow-right" size={17} />
         </a>
       ) : (
-        <a class="conversation-link" href={`/posts/${slug}`}>
-          <span class="comment-icon" aria-hidden="true"><Icon name="link" size={16} /></span>
-          <span><strong>Gönderiyi aç</strong><small>Kalıcı bağlantı</small></span>
-          <Icon className="conversation-arrow" name="arrow-right" size={17} />
-        </a>
+        <div class="conversation-link no-replies">
+          <span class="comment-icon" aria-hidden="true"><Icon name="conversation" size={16} /></span>
+          <span><strong>Henüz yanıt yok</strong><small>İlk yanıt burada görünecek</small></span>
+        </div>
       )}
     </footer>
   )}

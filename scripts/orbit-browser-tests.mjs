@@ -116,6 +116,9 @@ if (errors.length === 0) {
           feedReplyCount: feedPosts.filter((post) => post.dataset.recordType === 'reply').length,
           conversationCount: feedPosts.filter((post) => post.dataset.recordType === 'conversation').length,
           conversationIndicatorCount: document.querySelectorAll('.conversation-link.has-replies').length,
+          cardHitAreaCount: document.querySelectorAll('.post-card-hit-area').length,
+          noReplyStateCount: document.querySelectorAll('.conversation-link.no-replies').length,
+          postAnchorCount: document.querySelectorAll('.post-anchor').length,
           feedViewFilterCount: document.querySelectorAll('[data-feed-view], .feed-view-filter').length,
           heroExtraCount: document.querySelectorAll('.welcome-copy .section-label, .welcome-actions, .welcome-agents').length,
           resultText: document.querySelector('[data-feed-result]')?.textContent?.trim(),
@@ -146,6 +149,9 @@ if (errors.length === 0) {
       check(layout.filter.bottom <= layout.firstPost.y + 0.5, `${label}: filtre ile ilk gönderi çakışıyor.`);
       check(layout.feedPostCount > 0 && layout.feedReplyCount === 0, `${label}: ana akışta kök olmayan yanıt kaydı var.`);
       check(layout.conversationIndicatorCount === layout.conversationCount, `${label}: yanıtı olan gönderilerin konuşma göstergesi eksik.`);
+      check(layout.cardHitAreaCount === layout.feedPostCount, `${label}: bütün akış kartları tıklanabilir yüzey taşımıyor.`);
+      check(layout.noReplyStateCount === layout.feedPostCount - layout.conversationCount, `${label}: yanıtsız gönderi durumları eksik.`);
+      check(layout.postAnchorCount === 0, `${label}: kaldırılan kalıcı bağlantı simgesi DOM'da kaldı.`);
       check(layout.feedViewFilterCount === 0, `${label}: kaldırılan kayıt türü filtresi DOM'da kaldı.`);
       check(layout.heroExtraCount === 0, `${label}: kaldırılan hero öğeleri DOM'da kaldı.`);
       check(layout.resultText === `${layout.feedPostCount} kayıt · en yeni önce`, `${label}: akış kayıt özeti kök gönderi sayısıyla eşleşmiyor.`);
@@ -266,6 +272,19 @@ if (errors.length === 0) {
         check((await page.locator('[data-saved-summary]').textContent())?.includes('1 kayıt'), `${label}: Kaydedilenler özeti yanlış.`);
         await page.locator('[data-saved-card]:visible [data-save-button]').click();
         check(await page.locator('[data-saved-empty]').isVisible(), `${label}: kayıt kaldırılınca boş durum görünmedi.`);
+
+        if (viewport.width === 1440) {
+          await page.goto(baseUrl, { waitUntil: 'networkidle' });
+          const firstCard = page.locator('[data-feed-post]').first();
+          const cardBox = await firstCard.boundingBox();
+          const cardHref = await firstCard.locator('.post-card-hit-area').getAttribute('href');
+          check(Boolean(cardBox && cardHref), `${label}: kart tıklama yüzeyi ölçülemedi.`);
+          if (cardBox && cardHref) {
+            await page.mouse.click(cardBox.x + cardBox.width - 8, cardBox.y + cardBox.height / 2);
+            await page.waitForURL((url) => decodeURIComponent(url.pathname) === cardHref);
+            check(decodeURIComponent(new URL(page.url()).pathname) === cardHref, `${label}: kartın boş alanı gönderi sayfasını açmadı.`);
+          }
+        }
 
         await page.goto(`${baseUrl}/topics/ajanlar`, { waitUntil: 'networkidle' });
         check(await page.locator('.topic-feed [data-feed-post]').count() === 5, `${label}: Ajan muhakemesi konusu beş kayıt göstermedi.`);

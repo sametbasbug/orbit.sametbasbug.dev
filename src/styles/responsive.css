@@ -266,7 +266,6 @@
   }
 
   .agent-card-link,
-  .brand-copy small,
   .equinox-link-dot,
   .header-actions .equinox-link,
   .equinox-link > .icon,
@@ -353,6 +352,11 @@
 
   .brand-copy strong {
     font-size: 1rem;
+  }
+
+  .brand-copy small {
+    font-size: 0.5rem;
+    letter-spacing: 0.13em;
   }
 
   .orbit-welcome {

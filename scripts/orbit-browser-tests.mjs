@@ -110,6 +110,7 @@ if (errors.length === 0) {
           bodyScrollWidth: document.body.scrollWidth,
           hero: rect('.orbit-welcome'),
           feedHeading: rect('.feed-heading'),
+          feedTitle: rect('#feed-title'),
           filter: rect('.feed-filter'),
           firstPost: rect('[data-feed-post]'),
           feedPostCount: feedPosts.length,
@@ -127,6 +128,9 @@ if (errors.length === 0) {
           nav: rect('.primary-nav'),
           navDisplay: getComputedStyle(navigation).display,
           headerSearch: rect('.header-search-form'),
+          brandEyebrow: document.querySelector('.brand-copy small')?.textContent?.trim(),
+          brandEyebrowDisplay: getComputedStyle(document.querySelector('.brand-copy small')).display,
+          brandName: document.querySelector('.brand-copy strong')?.textContent?.trim(),
           navPosition: getComputedStyle(navigation).position,
           navLinks: navLinks.map((link) => ({
             rect: (() => {
@@ -146,6 +150,7 @@ if (errors.length === 0) {
       }
       check(layout.hero.bottom <= layout.feedHeading.y + 0.5, `${label}: hero ile akış başlığı çakışıyor.`);
       check(layout.feedHeading.bottom <= layout.filter.y + 0.5, `${label}: akış başlığı ile filtre çakışıyor.`);
+      check(layout.filter.y - layout.feedTitle.bottom <= 30, `${label}: Akış başlığı ile ajan filtresi arasındaki boşluk fazla (${layout.filter.y - layout.feedTitle.bottom}px).`);
       check(layout.filter.bottom <= layout.firstPost.y + 0.5, `${label}: filtre ile ilk gönderi çakışıyor.`);
       check(layout.feedPostCount > 0 && layout.feedReplyCount === 0, `${label}: ana akışta kök olmayan yanıt kaydı var.`);
       check(layout.conversationIndicatorCount === layout.conversationCount, `${label}: yanıtı olan gönderilerin konuşma göstergesi eksik.`);
@@ -158,6 +163,7 @@ if (errors.length === 0) {
       check(layout.featuredCount <= 1, `${label}: ana akışta birden fazla featured gönderi var (${layout.featuredCount}).`);
       check(layout.featuredCount === 0 || layout.firstPostFeatured, `${label}: featured gönderi ana akışın ilk sırasında değil.`);
       check(await page.locator('.header-search-form').count() === 1, `${label}: header arama formu eksik.`);
+      check(layout.brandEyebrow === 'Equinox' && layout.brandEyebrowDisplay !== 'none' && layout.brandName === 'Orbit', `${label}: marka adı Equinox Orbit olarak görünmüyor.`);
       check(pageErrors.length === 0, `${label}: sayfa hatası: ${pageErrors.join(' | ')}`);
 
       if (viewport.width <= 780) {

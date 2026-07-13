@@ -112,6 +112,13 @@ if (errors.length === 0) {
           feedHeading: rect('.feed-heading'),
           filter: rect('.feed-filter'),
           firstPost: rect('[data-feed-post]'),
+          feedPostCount: feedPosts.length,
+          feedReplyCount: feedPosts.filter((post) => post.dataset.recordType === 'reply').length,
+          conversationCount: feedPosts.filter((post) => post.dataset.recordType === 'conversation').length,
+          conversationIndicatorCount: document.querySelectorAll('.conversation-link.has-replies').length,
+          feedViewFilterCount: document.querySelectorAll('[data-feed-view], .feed-view-filter').length,
+          heroExtraCount: document.querySelectorAll('.welcome-copy .section-label, .welcome-actions, .welcome-agents').length,
+          resultText: document.querySelector('[data-feed-result]')?.textContent?.trim(),
           featuredCount: featuredPosts.length,
           firstPostFeatured: feedPosts[0]?.dataset.featured === 'true',
           nav: rect('.primary-nav'),
@@ -137,6 +144,11 @@ if (errors.length === 0) {
       check(layout.hero.bottom <= layout.feedHeading.y + 0.5, `${label}: hero ile akış başlığı çakışıyor.`);
       check(layout.feedHeading.bottom <= layout.filter.y + 0.5, `${label}: akış başlığı ile filtre çakışıyor.`);
       check(layout.filter.bottom <= layout.firstPost.y + 0.5, `${label}: filtre ile ilk gönderi çakışıyor.`);
+      check(layout.feedPostCount > 0 && layout.feedReplyCount === 0, `${label}: ana akışta kök olmayan yanıt kaydı var.`);
+      check(layout.conversationIndicatorCount === layout.conversationCount, `${label}: yanıtı olan gönderilerin konuşma göstergesi eksik.`);
+      check(layout.feedViewFilterCount === 0, `${label}: kaldırılan kayıt türü filtresi DOM'da kaldı.`);
+      check(layout.heroExtraCount === 0, `${label}: kaldırılan hero öğeleri DOM'da kaldı.`);
+      check(layout.resultText === `${layout.feedPostCount} kayıt · en yeni önce`, `${label}: akış kayıt özeti kök gönderi sayısıyla eşleşmiyor.`);
       check(layout.featuredCount <= 1, `${label}: ana akışta birden fazla featured gönderi var (${layout.featuredCount}).`);
       check(layout.featuredCount === 0 || layout.firstPostFeatured, `${label}: featured gönderi ana akışın ilk sırasında değil.`);
       check(await page.locator('.header-search-form').count() === 1, `${label}: header arama formu eksik.`);
@@ -194,26 +206,27 @@ if (errors.length === 0) {
       }
 
       if (viewport.width === 390 || viewport.width === 1440) {
-        await page.goto(baseUrl, { waitUntil: 'networkidle' });
-        await page.locator('[data-feed-view="replies"]').click();
+        await page.goto(`${baseUrl}/?view=replies`, { waitUntil: 'networkidle' });
         let feedState = await page.evaluate(() => ({
           url: location.href,
+          summary: document.querySelector('[data-feed-result]')?.textContent?.trim(),
           visible: [...document.querySelectorAll('[data-feed-post]')]
             .filter((item) => !item.hidden)
             .map((item) => ({ agent: item.dataset.agent, type: item.dataset.recordType })),
         }));
-        check(feedState.url.includes('view=replies'), `${label}: yanıt görünümü URL state yazmadı.`);
-        check(feedState.visible.length === 5, `${label}: yanıt görünümü beş gerçek yanıt döndürmedi (${feedState.visible.length}).`);
-        check(feedState.visible.every((item) => item.type === 'reply'), `${label}: yanıt görünümünde kök gönderi kaldı.`);
+        check(!feedState.url.includes('view='), `${label}: kaldırılan görünüm filtresi URL'de kaldı.`);
+        check(feedState.visible.length > 0 && feedState.visible.every((item) => item.type !== 'reply'), `${label}: ana akışta yanıt kaydı kaldı.`);
         await page.locator('[data-feed-filter="selene"]').click();
         feedState = await page.evaluate(() => ({
           url: location.href,
+          summary: document.querySelector('[data-feed-result]')?.textContent?.trim(),
           visible: [...document.querySelectorAll('[data-feed-post]')]
             .filter((item) => !item.hidden)
             .map((item) => ({ agent: item.dataset.agent, type: item.dataset.recordType })),
         }));
-        check(feedState.url.includes('agent=selene'), `${label}: birleşik ajan filtresi URL state yazmadı.`);
-        check(feedState.visible.length === 1 && feedState.visible[0].agent === 'selene' && feedState.visible[0].type === 'reply', `${label}: Selene + Yanıtlar birleşik filtresi yanlış.`);
+        check(feedState.url.includes('agent=selene'), `${label}: ajan filtresi URL state yazmadı.`);
+        check(feedState.visible.length > 0 && feedState.visible.every((item) => item.agent === 'selene' && item.type !== 'reply'), `${label}: Selene ajan filtresi yanlış kayıt döndürdü.`);
+        check(feedState.summary === `${feedState.visible.length} kayıt · en yeni önce`, `${label}: Selene filtre özeti yanlış.`);
 
         await page.goto(`${baseUrl}/search?q=Selene`, { waitUntil: 'networkidle' });
         const searchState = await page.evaluate(() => ({

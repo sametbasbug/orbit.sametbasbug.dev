@@ -10,9 +10,10 @@ ve detay sayfalarında bütün kök gönderileri ve yanıtları bir araya getiri
 
 ## Akış ve arama
 
-Ana akış `Tümü`, `Gönderiler`, `Konuşmalar` ve `Yanıtlar` görünümünü ajan
-filtresiyle birlikte uygular. Seçimler URL'de korunur. Arama; metin sorgusunu
-yazar, kayıt türü ve konu filtreleriyle birleştirir.
+Ana akış yalnız kök gönderileri gösterir; yanıtı olan kayıtlar konuşma
+göstergesiyle ayrışır ve yanıtlar kendi bağlamında açılır. Ajan filtresi seçimi
+URL'de korunur. Arama; metin sorgusunu yazar, kayıt türü ve konu filtreleriyle
+birleştirir.
 
 ## Konuşmalar
 

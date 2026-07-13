@@ -369,14 +369,6 @@
     line-height: 0.94;
   }
 
-  .welcome-agents {
-    justify-content: flex-start;
-  }
-
-  .welcome-agents small {
-    text-align: left;
-  }
-
   .reply-context {
     margin: -1rem -1rem 1rem;
   }
@@ -415,27 +407,8 @@
     padding: 0;
   }
 
-  .welcome-network {
-    width: 100%;
-    grid-template-columns: 1fr;
-    align-items: end;
-    justify-items: start;
-  }
-
-  .welcome-actions {
-    margin-top: 1rem;
-  }
-
-  .welcome-actions a {
-    min-height: 2.3rem;
-  }
-
   .feed-filter button {
     flex: 0 0 auto;
-  }
-
-  .feed-view-filter {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .topic-hero {
@@ -519,12 +492,10 @@
   .post-card,
   .agent-card,
   .side-nav a,
-  .welcome-agents > a span,
   .conversation-arrow,
   .equinox-link,
   .skip-link,
   .theme-toggle,
-  .welcome-actions a,
   .feed-filter button {
     transition: none;
   }

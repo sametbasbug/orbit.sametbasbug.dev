@@ -17,12 +17,10 @@
   }
 
   .header-actions .equinox-link,
-  .header-topic span,
   .header-saved span {
     display: none;
   }
 
-  .header-topic,
   .header-saved {
     width: 2.5rem;
     padding: 0;
@@ -52,10 +50,6 @@
     color: var(--muted);
     background: #f7f8fb;
     text-decoration: none;
-  }
-
-  .header-topic {
-    display: none;
   }
 
   .primary-nav {
@@ -141,12 +135,10 @@
     display: none;
   }
 
-  .header-topic span,
   .header-saved span {
     display: none;
   }
 
-  .header-topic,
   .header-saved {
     width: 2.5rem;
     padding: 0;

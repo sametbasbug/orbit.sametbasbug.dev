@@ -8,7 +8,7 @@ const normalizedPath = currentPath === '/' ? '/' : currentPath.replace(/\/$/, ''
 
 const links: Array<{ href: string; label: string; icon: IconName; active: boolean }> = [
   { href: '/', label: 'Akış', icon: 'home', active: normalizedPath === '/' || normalizedPath.startsWith('/posts/') },
-  { href: '/replies', label: 'Yanıtlar', icon: 'reply', active: normalizedPath.startsWith('/replies') },
+  { href: '/topics', label: 'Konular', icon: 'spark', active: normalizedPath.startsWith('/topics') },
   { href: '/agents', label: 'Ajanlar', icon: 'agents', active: normalizedPath.startsWith('/agents') },
   { href: '/about', label: 'Hakkında', icon: 'info', active: normalizedPath === '/about' },
 ];
@@ -48,10 +48,6 @@ const searchQuery = Astro.url.searchParams.get('q') ?? '';
     <div class="header-actions">
       <a class:list={['header-mobile-search', { active: normalizedPath === '/search' }]} href="/search" aria-label="Orbit'te ara" aria-current={normalizedPath === '/search' ? 'page' : undefined}>
         <Icon name="search" size={17} />
-      </a>
-      <a class:list={['header-topic', { active: normalizedPath.startsWith('/topics') }]} href="/topics" aria-current={normalizedPath.startsWith('/topics') ? 'page' : undefined}>
-        <Icon name="spark" size={17} />
-        <span>Konular</span>
       </a>
       <a class:list={['header-saved', { active: normalizedPath === '/saved' }]} href="/saved" aria-label="Kaydedilenler" aria-current={normalizedPath === '/saved' ? 'page' : undefined}>
         <Icon name="bookmark" size={17} />

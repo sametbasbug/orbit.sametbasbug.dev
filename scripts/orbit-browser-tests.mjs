@@ -129,6 +129,8 @@ if (errors.length === 0) {
           nav: rect('.primary-nav'),
           navDisplay: getComputedStyle(navigation).display,
           headerSearch: rect('.header-search-form'),
+          headerTopicCount: document.querySelectorAll('.header-topic').length,
+          sideTopicVisible: (rect('.side-nav a[href="/topics"]')?.width || 0) > 0,
           brandEyebrow: document.querySelector('.brand-copy small')?.textContent?.trim(),
           brandEyebrowDisplay: getComputedStyle(document.querySelector('.brand-copy small')).display,
           brandName: document.querySelector('.brand-copy strong')?.textContent?.trim(),
@@ -166,6 +168,8 @@ if (errors.length === 0) {
       check(layout.featuredCount <= 1, `${label}: ana akışta birden fazla featured gönderi var (${layout.featuredCount}).`);
       check(layout.featuredCount === 0 || layout.firstPostFeatured, `${label}: featured gönderi ana akışın ilk sırasında değil.`);
       check(await page.locator('.header-search-form').count() === 1, `${label}: header arama formu eksik.`);
+      check(layout.headerTopicCount === 0, `${label}: üst barda yinelenen Konular düğmesi kaldı.`);
+      check(layout.sideTopicVisible === (viewport.width > 1260), `${label}: masaüstü sol rayındaki Konular bağlantısı yanlış.`);
       check(layout.brandEyebrow === 'Equinox' && layout.brandEyebrowDisplay !== 'none' && layout.brandName === 'Orbit', `${label}: marka adı Equinox Orbit olarak görünmüyor.`);
       check(pageErrors.length === 0, `${label}: sayfa hatası: ${pageErrors.join(' | ')}`);
 
@@ -176,7 +180,9 @@ if (errors.length === 0) {
         check(layout.navPosition === 'fixed', `${label}: mobil alt navigasyon fixed değil.`);
         check(layout.nav.x >= 0 && layout.nav.right <= layout.innerWidth && layout.nav.bottom <= viewport.height, `${label}: mobil alt navigasyon kırpılıyor.`);
         check(layout.navLinks.length === 4, `${label}: mobil navigasyonda dört öğe yok.`);
-        check((await page.locator('.primary-nav').textContent())?.includes('Yanıtlar'), `${label}: mobil navigasyonda Yanıtlar bağlantısı yok.`);
+        const mobileNavText = (await page.locator('.primary-nav').textContent()) || '';
+        check(mobileNavText.includes('Konular'), `${label}: mobil navigasyonda Konular bağlantısı yok.`);
+        check(!mobileNavText.includes('Yanıtlar'), `${label}: mobil navigasyonda kaldırılan Yanıtlar bağlantısı kaldı.`);
         check(layout.navLinks.every((link) => link.flex.startsWith('1 1 0') && link.minWidth === '0px'), `${label}: mobil navigasyon öğeleri eşit flex tabanında değil.`);
         const navWidths = layout.navLinks.map((link) => link.rect.width);
         check(Math.max(...navWidths) - Math.min(...navWidths) <= 1, `${label}: mobil navigasyon öğeleri eşit genişlikte değil (${navWidths.join(', ')}).`);
@@ -318,9 +324,6 @@ if (errors.length === 0) {
         check(await page.locator('.topic-feed [data-feed-post]').count() === 5, `${label}: Ajan muhakemesi konusu beş kayıt göstermedi.`);
         check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: konu sayfası yatay taşıyor.`);
 
-        await page.goto(`${baseUrl}/replies`, { waitUntil: 'networkidle' });
-        check(await page.locator('[data-feed-post][data-record-type="reply"]').count() === 5, `${label}: Yanıtlar sayfası beş yanıt göstermedi.`);
-        check(await page.locator('h1').textContent() === 'Yanıtlar', `${label}: Yanıtlar sayfası başlığı yanlış.`);
       }
       await context.close();
     }

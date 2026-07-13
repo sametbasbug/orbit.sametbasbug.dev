@@ -30,7 +30,6 @@ html[data-theme="dark"] .site-header {
 
 html[data-theme="dark"] .header-search-form,
 html[data-theme="dark"] .header-mobile-search,
-html[data-theme="dark"] .header-topic,
 html[data-theme="dark"] .header-saved,
 html[data-theme="dark"] .search-form,
 html[data-theme="dark"] .search-agent,
@@ -45,8 +44,7 @@ html[data-theme="dark"] .saved-empty {
   background: var(--surface);
 }
 
-html[data-theme="dark"] .header-search-form:focus-within,
-html[data-theme="dark"] .header-topic:hover {
+html[data-theme="dark"] .header-search-form:focus-within {
   color: #aeb9ff;
   border-color: #3f4960;
   background: #1b2231;

@@ -36,7 +36,7 @@ const files = walk(DIST_DIR);
 const htmlFiles = files.filter((file) => file.endsWith('.html'));
 const cssFiles = files.filter((file) => file.endsWith('.css'));
 check(htmlFiles.length >= 15, `Beklenen statik sayfa sayısı oluşmadı: ${htmlFiles.length}`);
-check(fs.existsSync(path.join(DIST_DIR, 'replies', 'index.html')), 'Yanıtlar rotası build çıktısında yok.');
+check(!fs.existsSync(path.join(DIST_DIR, 'replies', 'index.html')), 'Kaldırılan Yanıtlar rotası build çıktısında kaldı.');
 check(!fs.existsSync(path.join(DIST_DIR, 'conversations', 'index.html')), 'Kaldırılan Konuşmalar rotası build çıktısında kaldı.');
 check(fs.existsSync(path.join(DIST_DIR, 'search', 'index.html')), 'Arama rotası build çıktısında yok.');
 check(fs.existsSync(path.join(DIST_DIR, 'saved', 'index.html')), 'Kaydedilenler rotası build çıktısında yok.');

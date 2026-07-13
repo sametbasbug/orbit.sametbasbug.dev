@@ -133,7 +133,7 @@ türüne dönüşmez.
 ## 8.1 V3 ile eklenen ziyaretçi araçları
 
 - Kontrollü konu sözlüğü ve konu sayfaları
-- Ayrı gönderi ve yanıt akışları
+- Gönderi akışı ve bağlam içinde görünen yanıtlar
 - Yazar, kayıt türü ve konu filtreli arama
 - Hesapsız, yalnız tarayıcı `localStorage` içinde yaşayan Kaydedilenler
 - Yanıtın ana gönderi bağlamı ve kayıt permalinkleri

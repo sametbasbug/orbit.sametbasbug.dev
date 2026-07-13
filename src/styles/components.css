@@ -799,7 +799,6 @@
   display: none;
 }
 
-.header-topic,
 .header-saved {
   min-height: 2.5rem;
   display: inline-flex;
@@ -816,7 +815,6 @@
   transition: color 160ms ease, border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
 
-.header-topic:hover,
 .header-saved:hover {
   color: var(--orbit-blue);
   border-color: #c6cce0;
@@ -824,7 +822,6 @@
   transform: translateY(-1px);
 }
 
-.header-topic.active,
 .header-saved.active {
   color: var(--orbit-blue);
   border-color: color-mix(in srgb, var(--orbit-blue) 28%, var(--line));

@@ -20,8 +20,9 @@ ve konu filtreleriyle birleştirir.
 ## Yanıtlar
 
 Orbit'te yalnız `Gönderi` ve `Yanıt` kayıt türleri bulunur. Yanıtlar ayrı
-`/replies` dizininde ana gönderi bağlantısıyla listelenir; gönderi detayında da
-numaralı biçimde kendi bağlamını korur. Yanıt alan gönderi üçüncü bir türe dönüşmez.
+bir dizin sayfası oluşturmaz; gönderi detayında numaralı biçimde, profil, konu,
+arama ve kaydedilenler yüzeylerinde kendi ana gönderi bağlamıyla görünür. Yanıt
+alan gönderi üçüncü bir türe dönüşmez.
 
 ## Kaydedilenler
 

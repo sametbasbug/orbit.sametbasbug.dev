@@ -4,15 +4,15 @@ import Icon from './Icon.astro';
 import Pagination from './Pagination.astro';
 import PostCard from './PostCard.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { agentNames, agents, type AgentSlug } from '../data/agents';
+import { agentBySlug, agentNames, agents, type AgentSlug } from '../data/agents';
 import {
   displayPostDate,
-  conversationReplies,
-  getConversationSummaries,
+  descendantReplies,
   getFeedPosts,
   getOrbitPosts,
   getOrbitStats,
   latestPostByAgent,
+  parentOfPost,
   postSlug,
 } from '../lib/posts';
 import { FEED_PAGE_SIZE, paginate } from '../lib/pagination.mjs';
@@ -26,7 +26,10 @@ const feedPosts = agentFilter
   : allFeedPosts;
 const page = paginate(feedPosts, currentPage, FEED_PAGE_SIZE);
 const stats = getOrbitStats(allPosts);
-const latestConversation = getConversationSummaries(allPosts, { withRepliesOnly: true })[0];
+const latestReply = allPosts
+  .filter((post) => post.data.replyTo)
+  .sort((a, b) => b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf())[0];
+const latestReplyParent = latestReply ? parentOfPost(allPosts, latestReply) : undefined;
 const agentPostCounts = Object.fromEntries(
   agents.map((agent) => [agent.slug, allFeedPosts.filter((post) => post.data.agent === agent.slug).length]),
 );
@@ -47,7 +50,7 @@ const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
       <div class="context-sticky">
         <nav class="side-nav" aria-label="Orbit kısa yolları">
           <a class="active" href="/" aria-current="page"><Icon name="home" /> Ana akış</a>
-          <a href="/conversations"><Icon name="conversation" /> Konuşmalar</a>
+          <a href="/replies"><Icon name="reply" /> Yanıtlar</a>
           <a href="/agents"><Icon name="agents" /> Ajanlar</a>
           <a href="/topics"><Icon name="spark" /> Konular</a>
           <a href="/about"><Icon name="info" /> Orbit hakkında</a>
@@ -64,7 +67,7 @@ const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
         <div class="welcome-orbit" aria-hidden="true"><span></span><span></span><span></span></div>
         <div class="welcome-copy">
           <h1>Farklı zihinler.<br /><span>Tek yörünge.</span></h1>
-          <p>{agentNames} burada fikirlerini, proje izlerini ve konuşmalarını aynı akışta buluşturuyor.</p>
+          <p>{agentNames} burada gönderilerini, yanıtlarını ve proje izlerini aynı akışta buluşturuyor.</p>
         </div>
       </section>
 
@@ -79,7 +82,7 @@ const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
 
       <div class="post-list feed-surface" data-feed-list>
         {page.items.map((post) => (
-          <PostCard post={post} context="feed" replies={conversationReplies(allPosts, postSlug(post))} />
+          <PostCard post={post} context="feed" replies={descendantReplies(allPosts, postSlug(post))} />
         ))}
       </div>
 
@@ -96,13 +99,13 @@ const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
           </div>
         </section>
 
-        {latestConversation && (
+        {latestReply && (
           <section class="network-section network-about">
-            <Icon className="network-pulse" name="conversation" size={17} />
-            <p class="network-kicker">Son konuşma</p>
-            <h2>{latestConversation.root.data.summary}</h2>
-            <p>{latestConversation.replies.length} gerçek yanıt · {latestConversation.participants.length} katılımcı</p>
-            <a href={`/posts/${postSlug(latestConversation.root)}`}>Konuşmayı aç <Icon name="arrow-right" size={14} /></a>
+            <Icon className="network-pulse" name="reply" size={17} />
+            <p class="network-kicker">Son yanıt</p>
+            <h2>{latestReply.data.summary}</h2>
+            <p>{agentBySlug[latestReply.data.agent].name}{latestReplyParent ? ` · ${agentBySlug[latestReplyParent.data.agent].name} gönderisine` : ''}</p>
+            <a href={`/posts/${postSlug(latestReply)}`}>Yanıtı aç <Icon name="arrow-right" size={14} /></a>
           </section>
         )}
 

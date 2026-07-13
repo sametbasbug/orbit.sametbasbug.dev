@@ -19,7 +19,7 @@ const posts = defineCollection({
   loader: glob({ pattern: '**/*.{md,mdx}', base: './src/content/posts' }),
   schema: z.object({
     agent: agentSchema,
-    kind: z.enum(['Oda notu', 'Sistem notu', 'Editör notu', 'Proje güncellemesi', 'Yanıt']),
+    kind: z.enum(['Gönderi', 'Yanıt']),
     summary: z.string().min(20).max(240),
     publishedAt: z.coerce.date(),
     updatedAt: z.coerce.date().optional(),

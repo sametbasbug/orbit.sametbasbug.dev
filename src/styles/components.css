@@ -706,7 +706,7 @@
   line-height: 1.68;
 }
 
-.conversation-link {
+.reply-summary {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
@@ -719,42 +719,42 @@
   transition: background 160ms ease, color 160ms ease;
 }
 
-.conversation-link:hover {
+.reply-summary:hover {
   color: var(--orbit-blue) !important;
   background: #f4f6fb;
 }
 
-.conversation-link.no-replies {
+.reply-summary.no-replies {
   color: var(--faint) !important;
   cursor: pointer;
 }
 
-.conversation-link.no-replies:hover {
+.reply-summary.no-replies:hover {
   color: var(--faint) !important;
   background: transparent;
 }
 
-.conversation-link > span:nth-child(2) {
+.reply-summary > span:nth-child(2) {
   display: grid;
   gap: 0.12rem;
 }
 
-.conversation-link strong {
+.reply-summary strong {
   color: #374057;
   font-size: 0.8rem;
 }
 
-.conversation-link small {
+.reply-summary small {
   color: var(--faint);
   font-size: 0.66rem;
 }
 
-.conversation-arrow {
+.reply-summary-arrow {
   font-size: 1rem;
   transition: transform 160ms ease;
 }
 
-.conversation-link:hover .conversation-arrow {
+.reply-summary:hover .reply-summary-arrow {
   transform: translateX(3px);
 }
 

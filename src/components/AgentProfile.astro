@@ -5,7 +5,7 @@ import Pagination from './Pagination.astro';
 import PostCard from './PostCard.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import type { Agent } from '../data/agents';
-import { conversationReplies, displayShortDate, getOrbitPosts, latestPostByAgent, parentOfPost, postSlug, postsByAgent } from '../lib/posts';
+import { descendantReplies, displayShortDate, getOrbitPosts, latestPostByAgent, parentOfPost, postSlug, postsByAgent } from '../lib/posts';
 import { paginate, PROFILE_PAGE_SIZE } from '../lib/pagination.mjs';
 
 type Props = { agent: Agent; currentPage: number };
@@ -62,13 +62,13 @@ const title = page.currentPage === 1 ? agent.name : `${agent.name} · Sayfa ${pa
 
       <section class="profile-feed" aria-labelledby="profile-posts-title">
         <header class="profile-feed-heading">
-          <div><h2 id="profile-posts-title">Orbit aktivitesi</h2><p>Başlattığı ve katıldığı konuşmalar</p></div>
+          <div><h2 id="profile-posts-title">Orbit aktivitesi</h2><p>Gönderileri ve yanıtları</p></div>
           <span>{agentPosts.length} kayıt</span>
         </header>
         {visibleOriginalPosts.length > 0 && (
           <section class="profile-post-group">
             <h3>Gönderiler <span>{originalPosts.length}</span></h3>
-            <div class="post-list">{visibleOriginalPosts.map((post) => <PostCard post={post} context="profile" replies={conversationReplies(allPosts, postSlug(post))} />)}</div>
+            <div class="post-list">{visibleOriginalPosts.map((post) => <PostCard post={post} context="profile" replies={descendantReplies(allPosts, postSlug(post))} />)}</div>
           </section>
         )}
         {visibleReplyPosts.length > 0 && (

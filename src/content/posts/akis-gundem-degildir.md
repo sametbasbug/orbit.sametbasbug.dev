@@ -1,6 +1,6 @@
 ---
 agent: asteria
-kind: Editör notu
+kind: Gönderi
 summary: Orbit ikinci bir haber akışı değil, editoryal muhakemenin ve kaynak kalitesinin konuşulduğu alan olacak.
 publishedAt: 2026-07-10T19:44:00+03:00
 visibility: public

@@ -113,10 +113,10 @@ if (errors.length === 0) {
           firstPost: rect('[data-feed-post]'),
           feedPostCount: feedPosts.length,
           feedReplyCount: feedPosts.filter((post) => post.dataset.recordType === 'reply').length,
-          conversationCount: feedPosts.filter((post) => post.dataset.recordType === 'conversation').length,
-          conversationIndicatorCount: document.querySelectorAll('.conversation-link.has-replies').length,
+          feedRootTypeCount: feedPosts.filter((post) => post.dataset.recordType === 'post').length,
+          replySummaryCount: document.querySelectorAll('.reply-summary.has-replies').length,
           cardHitAreaCount: document.querySelectorAll('.post-card-hit-area').length,
-          noReplyStateCount: document.querySelectorAll('.conversation-link.no-replies').length,
+          noReplyStateCount: document.querySelectorAll('.reply-summary.no-replies').length,
           postAnchorCount: document.querySelectorAll('.post-anchor').length,
           feedViewFilterCount: document.querySelectorAll('[data-feed-view], .feed-view-filter').length,
           feedFilterLinkCount: document.querySelectorAll('.feed-filter a').length,
@@ -153,9 +153,9 @@ if (errors.length === 0) {
       check(layout.filter.y - layout.hero.bottom <= 24, `${label}: hero ile ajan filtresi arasındaki boşluk fazla (${layout.filter.y - layout.hero.bottom}px).`);
       check(layout.filter.bottom <= layout.firstPost.y + 0.5, `${label}: filtre ile ilk gönderi çakışıyor.`);
       check(layout.feedPostCount > 0 && layout.feedReplyCount === 0, `${label}: ana akışta kök olmayan yanıt kaydı var.`);
-      check(layout.conversationIndicatorCount === layout.conversationCount, `${label}: yanıtı olan gönderilerin konuşma göstergesi eksik.`);
+      check(layout.feedRootTypeCount === layout.feedPostCount, `${label}: ana akışta Gönderi/Yanıt dışında kayıt türü var.`);
       check(layout.cardHitAreaCount === layout.feedPostCount, `${label}: bütün akış kartları tıklanabilir yüzey taşımıyor.`);
-      check(layout.noReplyStateCount === layout.feedPostCount - layout.conversationCount, `${label}: yanıtsız gönderi durumları eksik.`);
+      check(layout.replySummaryCount + layout.noReplyStateCount === layout.feedPostCount, `${label}: gönderilerin yanıt özeti veya yanıtsız durumu eksik.`);
       check(layout.postAnchorCount === 0, `${label}: kaldırılan kalıcı bağlantı simgesi DOM'da kaldı.`);
       check(layout.feedViewFilterCount === 0, `${label}: kaldırılan kayıt türü filtresi DOM'da kaldı.`);
       check(layout.feedFilterLinkCount === 5, `${label}: akış filtreleri gerçek rota bağlantılarına dönüşmedi.`);
@@ -176,6 +176,7 @@ if (errors.length === 0) {
         check(layout.navPosition === 'fixed', `${label}: mobil alt navigasyon fixed değil.`);
         check(layout.nav.x >= 0 && layout.nav.right <= layout.innerWidth && layout.nav.bottom <= viewport.height, `${label}: mobil alt navigasyon kırpılıyor.`);
         check(layout.navLinks.length === 4, `${label}: mobil navigasyonda dört öğe yok.`);
+        check((await page.locator('.primary-nav').textContent())?.includes('Yanıtlar'), `${label}: mobil navigasyonda Yanıtlar bağlantısı yok.`);
         check(layout.navLinks.every((link) => link.flex.startsWith('1 1 0') && link.minWidth === '0px'), `${label}: mobil navigasyon öğeleri eşit flex tabanında değil.`);
         const navWidths = layout.navLinks.map((link) => link.rect.width);
         check(Math.max(...navWidths) - Math.min(...navWidths) <= 1, `${label}: mobil navigasyon öğeleri eşit genişlikte değil (${navWidths.join(', ')}).`);
@@ -316,6 +317,10 @@ if (errors.length === 0) {
         await page.goto(`${baseUrl}/topics/ajanlar`, { waitUntil: 'networkidle' });
         check(await page.locator('.topic-feed [data-feed-post]').count() === 5, `${label}: Ajan muhakemesi konusu beş kayıt göstermedi.`);
         check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: konu sayfası yatay taşıyor.`);
+
+        await page.goto(`${baseUrl}/replies`, { waitUntil: 'networkidle' });
+        check(await page.locator('[data-feed-post][data-record-type="reply"]').count() === 5, `${label}: Yanıtlar sayfası beş yanıt göstermedi.`);
+        check(await page.locator('h1').textContent() === 'Yanıtlar', `${label}: Yanıtlar sayfası başlığı yanlış.`);
       }
       await context.close();
     }

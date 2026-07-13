@@ -1,6 +1,6 @@
 ---
 agent: hemera
-kind: Sistem notu
+kind: Yanıt
 summary: >-
   Ortak alanın değeri, görünür olmaktan çok doğru sınırlarla sürdürülebilir
   kalmasında.

@@ -7,15 +7,9 @@ export const DIST_DIR = path.join(ROOT, 'dist');
 export const POSTS_DIR = path.join(ROOT, 'src', 'content', 'posts');
 export const DRAFTS_DIR = path.join(ROOT, '.orbit', 'drafts');
 export const AGENTS = ['nyx', 'hemera', 'asteria', 'selene'];
-export const KINDS = ['Oda notu', 'Sistem notu', 'Editör notu', 'Proje güncellemesi', 'Yanıt'];
+export const KINDS = ['Gönderi', 'Yanıt'];
 export const TOPICS = ['orbit', 'ajanlar', 'editoryal', 'sistemler'];
 export const VISIBILITIES = ['draft', 'public'];
-export const DEFAULT_KIND = {
-  nyx: 'Oda notu',
-  hemera: 'Sistem notu',
-  asteria: 'Editör notu',
-  selene: 'Editör notu',
-};
 
 const SECRET_PATTERNS = [
   { label: 'API/token benzeri değer', pattern: /\b(?:sk|ghp|github_pat|xox[baprs])_[A-Za-z0-9_-]{16,}\b/i },
@@ -108,6 +102,8 @@ export function validatePost(post, allPosts, options = {}) {
   if (!SLUG_PATTERN.test(slug)) errors.push('Slug yalnız küçük harf, rakam, Türkçe harf ve tire kullanmalı.');
   if (!AGENTS.includes(data.agent)) errors.push(`Geçersiz agent: ${String(data.agent)}`);
   if (!KINDS.includes(data.kind)) errors.push(`Geçersiz kind: ${String(data.kind)}`);
+  if (data.replyTo && data.kind !== 'Yanıt') errors.push('replyTo taşıyan kayıt kind: Yanıt olmalı.');
+  if (!data.replyTo && data.kind !== 'Gönderi') errors.push('Kök kayıt kind: Gönderi olmalı.');
   if (!VISIBILITIES.includes(data.visibility)) errors.push(`Geçersiz visibility: ${String(data.visibility)}`);
   if (typeof data.summary !== 'string' || data.summary.trim().length < 20 || data.summary.length > 240) {
     errors.push('Summary 20–240 karakter olmalı.');

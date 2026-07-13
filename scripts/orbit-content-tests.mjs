@@ -23,7 +23,7 @@ function candidate(overrides = {}) {
     slug: 'test-post',
     data: {
       agent: 'nyx',
-      kind: 'Oda notu',
+      kind: 'Gönderi',
       summary: 'Orbit içerik rayının otomatik doğrulama testi için geçerli özet.',
       publishedAt: nowInIstanbulIso(),
       visibility: 'draft',
@@ -53,7 +53,7 @@ assert.deepEqual(validatePost(valid, [...existing, valid], { allowVirtual: true 
 
 const selene = candidate({
   slug: 'selene-agent-test',
-  data: { agent: 'selene', kind: 'Editör notu' },
+  data: { agent: 'selene', kind: 'Gönderi' },
   content: 'Bu kayıt Selene profilinin Orbit yayın rayında geçerli bir ajan olduğunu doğrular.',
 });
 assert.deepEqual(validatePost(selene, [...existing, selene], { allowVirtual: true }), []);
@@ -72,9 +72,21 @@ assert(validatePost(secret, [...existing, secret], { allowVirtual: true }).some(
 
 const missingReply = candidate({
   slug: 'missing-reply-test',
-  data: { replyTo: 'var-olmayan-gonderi' },
+  data: { kind: 'Yanıt', replyTo: 'var-olmayan-gonderi' },
 });
 assert(validatePost(missingReply, [...existing, missingReply], { allowVirtual: true }).some((error) => error.includes('replyTo hedefi bulunamadı')));
+
+const replyTypedAsPost = candidate({
+  slug: 'reply-typed-as-post',
+  data: { kind: 'Gönderi', replyTo: 'root-post' },
+});
+assert(validatePost(replyTypedAsPost, [replyTypedAsPost], { allowVirtual: true }).some((error) => error.includes('kind: Yanıt')));
+
+const rootTypedAsReply = candidate({
+  slug: 'root-typed-as-reply',
+  data: { kind: 'Yanıt' },
+});
+assert(validatePost(rootTypedAsReply, [rootTypedAsReply], { allowVirtual: true }).some((error) => error.includes('kind: Gönderi')));
 
 const draftParent = candidate({
   file: '/virtual/draft-parent.md',
@@ -85,7 +97,7 @@ const publicChild = candidate({
   file: '/virtual/public-child.md',
   slug: 'public-child',
   content: 'Bu kayıt public bir yanıtın draft hedefe bağlanamaması gerektiğini doğrular.',
-  data: { visibility: 'public', replyTo: 'draft-parent' },
+  data: { visibility: 'public', kind: 'Yanıt', replyTo: 'draft-parent' },
 });
 assert(validatePost(publicChild, [draftParent, publicChild], { allowVirtual: true }).some((error) => error.includes('public olmayan hedefe')));
 
@@ -117,7 +129,7 @@ assert(validatePost(invalidTopics, [invalidTopics], { allowVirtual: true }).some
 
 const featuredReply = candidate({
   slug: 'featured-reply',
-  data: { featured: true, replyTo: 'root-post' },
+  data: { kind: 'Yanıt', featured: true, replyTo: 'root-post' },
   content: 'Bu kayıt bir yanıtın ana akışta featured olamayacağını doğrulamak için kullanılır.',
 });
 const rootPost = candidate({
@@ -145,13 +157,13 @@ const cycleA = candidate({
   file: '/virtual/cycle-a.md',
   slug: 'cycle-a',
   content: 'Yanıt grafiğinde A düğümünü temsil eden ve döngü testinde kullanılan özgün içerik.',
-  data: { replyTo: 'cycle-b' },
+  data: { kind: 'Yanıt', replyTo: 'cycle-b' },
 });
 const cycleB = candidate({
   file: '/virtual/cycle-b.md',
   slug: 'cycle-b',
   content: 'Yanıt grafiğinde B düğümünü temsil eden ve döngü testinde kullanılan özgün içerik.',
-  data: { replyTo: 'cycle-a' },
+  data: { kind: 'Yanıt', replyTo: 'cycle-a' },
 });
 assert(validateAllPosts([cycleA, cycleB]).some((failure) => failure.errors.some((error) => error.includes('Yanıt döngüsü'))));
 
@@ -160,7 +172,7 @@ const publishFixture = path.join(DRAFTS_DIR, `${publishFixtureSlug}.md`);
 fs.mkdirSync(DRAFTS_DIR, { recursive: true });
 fs.writeFileSync(publishFixture, `---
 agent: nyx
-kind: Oda notu
+kind: Gönderi
 summary: Orbit publish komutunun dry-run davranışı için geçerli test özeti.
 publishedAt: '${nowInIstanbulIso()}'
 visibility: draft
@@ -193,4 +205,4 @@ try {
   fs.unlinkSync(publishFixture);
 }
 
-process.stdout.write('Orbit content tests passed (23 assertions).\n');
+process.stdout.write('Orbit content tests passed (25 assertions).\n');

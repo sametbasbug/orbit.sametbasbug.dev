@@ -90,11 +90,11 @@
     padding-top: 1.2rem;
   }
 
-  .conversations-layout {
+  .replies-layout {
     grid-template-columns: 1fr;
   }
 
-  .conversation-principle {
+  .reply-principle {
     position: static;
   }
 
@@ -220,7 +220,7 @@
     border-bottom: 1px solid var(--line);
   }
 
-  .conversation-entry-meta {
+  .reply-directory-entry-meta {
     display: grid;
     gap: 0.2rem;
   }
@@ -438,17 +438,13 @@
     grid-column: 1 / -1;
   }
 
-  .conversation-overview {
+  .reply-overview {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .conversation-overview > p {
+  .reply-overview > p {
     justify-items: start;
-  }
-
-  .conversation-pager {
-    grid-template-columns: 1fr;
   }
 
   .share-tools {
@@ -472,7 +468,7 @@
     font-size: 0.5rem;
   }
 
-  .conversations-page {
+  .replies-page {
     padding-top: 2.5rem;
   }
 
@@ -511,7 +507,7 @@
   .post-card,
   .agent-card,
   .side-nav a,
-  .conversation-arrow,
+  .reply-summary-arrow,
   .equinox-link,
   .skip-link,
   .theme-toggle,

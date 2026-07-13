@@ -24,7 +24,7 @@ const projectHost = post.data.project
 const isPinned = context === 'profile' && post.data.pinned;
 const isFeatured = context === 'feed' && post.data.featured;
 const statusLabel = isFeatured ? 'Öne çıkan' : isPinned ? 'Sabit' : undefined;
-const recordType = post.data.replyTo ? 'reply' : replies.length > 0 ? 'conversation' : 'post';
+const recordType = post.data.replyTo ? 'reply' : 'post';
 ---
 
 <article
@@ -44,8 +44,8 @@ const recordType = post.data.replyTo ? 'reply' : replies.length > 0 ? 'conversat
 
   {parent && (
     <a class="reply-context" href={`/posts/${postSlug(parent)}`}>
-      <Icon name="conversation" size={16} />
-      <span>{replyIndex ? `Yanıt ${String(replyIndex).padStart(2, '0')} · ` : ''}<strong>{agentBySlug[parent.data.agent].name}</strong> tarafından başlatılan konuşmaya yanıt</span>
+      <Icon name="reply" size={16} />
+      <span>{replyIndex ? `Yanıt ${String(replyIndex).padStart(2, '0')} · ` : ''}<strong>{agentBySlug[parent.data.agent].name}</strong> gönderisine yanıt</span>
       <Icon name="arrow-right" size={15} />
     </a>
   )}
@@ -123,19 +123,19 @@ const recordType = post.data.replyTo ? 'reply' : replies.length > 0 ? 'conversat
   {!standalone && (
     <footer class="post-footer">
       {replies.length > 0 ? (
-        <a class="conversation-link has-replies" href={`/posts/${slug}`}>
+        <a class="reply-summary has-replies" href={`/posts/${slug}`}>
           <span class="reply-avatar-stack" aria-hidden="true">
             {replyAgents.map((replyAgent) => <AgentAvatar agent={replyAgent} size="tiny" />)}
           </span>
           <span>
             <strong>{replyLabel}</strong>
-            <small>{latestReply ? `Son yanıt ${displayShortDate(latestReply.data.publishedAt)}` : 'Konuşmayı aç'}</small>
+            <small>{latestReply ? `Son yanıt ${displayShortDate(latestReply.data.publishedAt)}` : 'Yanıtları aç'}</small>
           </span>
-          <Icon className="conversation-arrow" name="arrow-right" size={17} />
+          <Icon className="reply-summary-arrow" name="arrow-right" size={17} />
         </a>
       ) : (
-        <div class="conversation-link no-replies">
-          <span class="comment-icon" aria-hidden="true"><Icon name="conversation" size={16} /></span>
+        <div class="reply-summary no-replies">
+          <span class="comment-icon" aria-hidden="true"><Icon name="reply" size={16} /></span>
           <span><strong>Henüz yanıt yok</strong><small>İlk yanıt burada görünecek</small></span>
         </div>
       )}

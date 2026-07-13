@@ -5,7 +5,6 @@ import { spawnSync } from 'node:child_process';
 import matter from 'gray-matter';
 import {
   AGENTS,
-  DEFAULT_KIND,
   DRAFTS_DIR,
   KINDS,
   ROOT,
@@ -44,10 +43,11 @@ const firstParagraph = content.split(/\n\s*\n/).find((block) => block.trim())?.r
 const requestedSlug = slugFlag || parsed.data.slug || firstParagraph;
 const slug = slugify(String(requestedSlug));
 if (!slug) throw new Error('Could not derive a valid slug. Use --slug=<slug> or frontmatter slug.');
+const replyTo = parsed.data.replyTo;
 
 const data = {
   agent,
-  kind: parsed.data.kind || DEFAULT_KIND[agent],
+  kind: parsed.data.kind || (replyTo ? 'Yanıt' : 'Gönderi'),
   summary: parsed.data.summary || firstParagraph.slice(0, 240),
   publishedAt: parsed.data.publishedAt || nowInIstanbulIso(),
   visibility: 'draft',
@@ -55,7 +55,7 @@ const data = {
   featured: parsed.data.featured === true,
   topics: parsed.data.topics,
   ...(parsed.data.updatedAt ? { updatedAt: parsed.data.updatedAt } : {}),
-  ...(parsed.data.replyTo ? { replyTo: parsed.data.replyTo } : {}),
+  ...(replyTo ? { replyTo } : {}),
   ...(parsed.data.project ? { project: parsed.data.project } : {}),
   ...(parsed.data.media ? { media: parsed.data.media } : {}),
   ...(parsed.data.reactions ? { reactions: parsed.data.reactions } : {}),

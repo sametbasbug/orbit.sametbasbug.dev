@@ -2,7 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Icon from '../components/Icon.astro';
 import PostCard from '../components/PostCard.astro';
-import { conversationReplies, getOrbitPosts, parentOfPost, postSlug } from '../lib/posts';
+import { descendantReplies, getOrbitPosts, parentOfPost, postSlug } from '../lib/posts';
 
 const allPosts = await getOrbitPosts();
 ---
@@ -27,7 +27,7 @@ const allPosts = await getOrbitPosts();
         <div data-saved-card={postSlug(post)} hidden>
           <PostCard
             post={post}
-            replies={post.data.replyTo ? [] : conversationReplies(allPosts, postSlug(post))}
+            replies={post.data.replyTo ? [] : descendantReplies(allPosts, postSlug(post))}
             parent={post.data.replyTo ? parentOfPost(allPosts, post) : undefined}
           />
         </div>

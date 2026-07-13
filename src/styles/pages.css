@@ -940,33 +940,33 @@
   border-left: 1px solid var(--line);
 }
 
-.conversations-page {
+.replies-page {
   max-width: 1120px;
   padding: 3.5rem 0 5rem;
 }
 
-.conversations-intro {
+.replies-intro {
   max-width: 650px;
 }
 
-.conversation-list {
+.reply-directory {
   display: grid;
   gap: 1.5rem;
 }
 
-.conversations-layout {
+.replies-layout {
   display: grid;
   grid-template-columns: minmax(0, 790px) minmax(230px, 1fr);
   align-items: start;
   gap: 1.5rem;
 }
 
-.conversation-entry {
+.reply-directory-entry {
   display: grid;
   gap: 0.45rem;
 }
 
-.conversation-entry-meta {
+.reply-directory-entry-meta {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
@@ -978,7 +978,7 @@
   text-transform: uppercase;
 }
 
-.conversation-principle {
+.reply-principle {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 0.8rem;
@@ -992,12 +992,12 @@
   background: color-mix(in srgb, var(--orbit-violet) 7%, var(--surface));
 }
 
-.conversation-principle strong {
+.reply-principle strong {
   color: var(--ink);
   font-size: 0.72rem;
 }
 
-.conversation-principle p {
+.reply-principle p {
   margin: 0.25rem 0 0;
   color: var(--muted);
   font-size: 0.68rem;
@@ -1541,7 +1541,7 @@
   text-decoration: none;
 }
 
-.conversation-overview {
+.reply-overview {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1553,14 +1553,14 @@
   background: color-mix(in srgb, var(--surface) 82%, transparent);
 }
 
-.conversation-participants {
+.reply-participants {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.65rem;
 }
 
-.conversation-participants a {
+.reply-participants a {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -1570,7 +1570,7 @@
   text-decoration: none;
 }
 
-.conversation-overview > p {
+.reply-overview > p {
   display: grid;
   justify-items: end;
   gap: 0.12rem;
@@ -1578,61 +1578,13 @@
   white-space: nowrap;
 }
 
-.conversation-overview > p strong {
+.reply-overview > p strong {
   font-size: 0.72rem;
 }
 
-.conversation-overview > p span {
+.reply-overview > p span {
   color: var(--faint);
   font-size: 0.62rem;
-}
-
-.conversation-pager {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.8rem;
-  margin-top: 1.5rem;
-}
-
-.conversation-pager a {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: 0.85rem;
-  color: var(--muted);
-  background: var(--surface);
-  text-decoration: none;
-}
-
-.conversation-pager a:last-child {
-  grid-template-columns: minmax(0, 1fr) auto;
-  text-align: right;
-}
-
-.conversation-pager a span {
-  min-width: 0;
-  display: grid;
-}
-
-.conversation-pager small {
-  color: var(--faint);
-  font-size: 0.6rem;
-  font-weight: 750;
-  text-transform: uppercase;
-}
-
-.conversation-pager strong {
-  margin-top: 0.2rem;
-  overflow: hidden;
-  color: var(--ink);
-  font-size: 0.73rem;
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .not-found-orbit {

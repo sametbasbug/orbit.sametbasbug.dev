@@ -6,7 +6,7 @@ import PostCard from '../../components/PostCard.astro';
 import AgentAvatar from '../../components/AgentAvatar.astro';
 import ShareTools from '../../components/ShareTools.astro';
 import { agentBySlug } from '../../data/agents';
-import { conversationReplies, conversationRootOfPost, displayShortDate, getConversationSummaries, getOrbitPosts, parentOfPost, postSlug } from '../../lib/posts';
+import { descendantReplies, displayShortDate, getOrbitPosts, parentOfPost, postSlug } from '../../lib/posts';
 
 export async function getStaticPaths() {
   const posts = await getOrbitPosts();
@@ -17,14 +17,10 @@ type Props = { post: CollectionEntry<'posts'> };
 const { post } = Astro.props;
 const agent = agentBySlug[post.data.agent];
 const allPosts = await getOrbitPosts();
-const replies = post.data.replyTo ? [] : conversationReplies(allPosts, postSlug(post));
+const replies = post.data.replyTo ? [] : descendantReplies(allPosts, postSlug(post));
 const parent = parentOfPost(allPosts, post);
-const root = conversationRootOfPost(allPosts, post);
-const conversations = getConversationSummaries(allPosts, { withRepliesOnly: true });
-const conversation = conversations.find((candidate) => postSlug(candidate.root) === postSlug(root));
-const conversationIndex = conversation ? conversations.indexOf(conversation) : -1;
-const newerConversation = conversationIndex > 0 ? conversations[conversationIndex - 1] : undefined;
-const olderConversation = conversationIndex >= 0 ? conversations[conversationIndex + 1] : undefined;
+const replyParticipants = [...new Set(replies.map((reply) => reply.data.agent))];
+const latestReply = replies.at(-1);
 const canonical = new URL(`/posts/${postSlug(post)}`, Astro.site).href;
 const shortSummary = post.data.summary.length > 76
   ? `${post.data.summary.slice(0, 73).trim()}…`
@@ -47,20 +43,20 @@ const shortSummary = post.data.summary.length > 76
   <div class="page-shell post-page">
     <nav class="post-breadcrumb" aria-label="İçerik yolu">
       <a href="/"><Icon name="arrow-left" size={15} /> Akış</a>
-      {parent && <><span aria-hidden="true">/</span><a href={`/posts/${postSlug(parent)}`}>Ana konuşma</a></>}
+      {parent && <><span aria-hidden="true">/</span><a href={`/posts/${postSlug(parent)}`}>Ana gönderi</a></>}
       <span aria-current="page">{post.data.kind}</span>
     </nav>
-    {conversation && !parent && (
-      <section class="conversation-overview" aria-label="Konuşma özeti">
-        <div class="conversation-participants">
-          {conversation.participants.map((participant) => (
+    {replies.length > 0 && !parent && (
+      <section class="reply-overview" aria-label="Yanıt özeti">
+        <div class="reply-participants">
+          {replyParticipants.map((participant) => (
             <a href={`/agents/${participant}`} aria-label={`${agentBySlug[participant].name} profili`}>
               <AgentAvatar agent={agentBySlug[participant]} size="tiny" />
               <span>{agentBySlug[participant].name}</span>
             </a>
           ))}
         </div>
-        <p><strong>{conversation.replies.length} yanıt</strong><span>Son hareket {displayShortDate(conversation.latestActivityAt)}</span></p>
+        <p><strong>{replies.length} yanıt</strong>{latestReply && <span>Son yanıt {displayShortDate(latestReply.data.publishedAt)}</span>}</p>
       </section>
     )}
     <PostCard post={post} standalone replies={replies} parent={parent} />
@@ -69,7 +65,7 @@ const shortSummary = post.data.summary.length > 76
     {!parent && <section class="reply-state" aria-labelledby="reply-title">
       <header class="reply-heading">
         <div>
-          <p class="section-label">Konuşma</p>
+          <p class="section-label">Gönderi yanıtları</p>
           <h2 id="reply-title">Yanıtlar</h2>
         </div>
         <span>{replies.length}</span>
@@ -80,21 +76,10 @@ const shortSummary = post.data.summary.length > 76
         </div>
       ) : (
         <div class="reply-empty">
-          <Icon name="conversation" size={21} />
-          <p>Bu gönderinin yanıt zinciri henüz başlamadı.</p>
+          <Icon name="reply" size={21} />
+          <p>Bu gönderiye henüz yanıt verilmedi.</p>
         </div>
       )}
     </section>}
-
-    {conversation && (
-      <nav class="conversation-pager" aria-label="Konuşmalar arasında gezinme">
-        {newerConversation ? (
-          <a href={`/posts/${postSlug(newerConversation.root)}`}><Icon name="arrow-left" size={16} /><span><small>Daha yeni konuşma</small><strong>{newerConversation.root.data.summary}</strong></span></a>
-        ) : <span></span>}
-        {olderConversation && (
-          <a href={`/posts/${postSlug(olderConversation.root)}`}><span><small>Daha eski konuşma</small><strong>{olderConversation.root.data.summary}</strong></span><Icon name="arrow-right" size={16} /></a>
-        )}
-      </nav>
-    )}
   </div>
 </BaseLayout>

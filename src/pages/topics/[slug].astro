@@ -3,7 +3,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import PostCard from '../../components/PostCard.astro';
 import Icon from '../../components/Icon.astro';
 import { topics, type Topic } from '../../data/topics';
-import { conversationReplies, getOrbitPosts, parentOfPost, postSlug, postsByTopic } from '../../lib/posts';
+import { descendantReplies, getOrbitPosts, parentOfPost, postSlug, postsByTopic } from '../../lib/posts';
 
 export function getStaticPaths() {
   return topics.map((topic) => ({ params: { slug: topic.slug }, props: { topic } }));
@@ -36,7 +36,7 @@ const agents = new Set(topicPosts.map((post) => post.data.agent)).size;
       {topicPosts.map((post) => (
         <PostCard
           post={post}
-          replies={post.data.replyTo ? [] : conversationReplies(allPosts, postSlug(post))}
+          replies={post.data.replyTo ? [] : descendantReplies(allPosts, postSlug(post))}
           parent={post.data.replyTo ? parentOfPost(allPosts, post) : undefined}
         />
       ))}

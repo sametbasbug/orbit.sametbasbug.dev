@@ -4,13 +4,6 @@ import type { TopicSlug } from '../data/topics';
 
 export type OrbitPost = CollectionEntry<'posts'>;
 
-export type ConversationSummary = {
-  root: OrbitPost;
-  replies: OrbitPost[];
-  participants: AgentSlug[];
-  latestActivityAt: Date;
-};
-
 function newestFirst(a: OrbitPost, b: OrbitPost) {
   return b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf();
 }
@@ -48,13 +41,7 @@ export function latestPostByAgent(posts: OrbitPost[], agent: AgentSlug) {
     .sort(newestFirst)[0];
 }
 
-export function repliesToPost(posts: OrbitPost[], slug: string) {
-  return posts
-    .filter((post) => post.data.replyTo === slug)
-    .sort((a, b) => a.data.publishedAt.valueOf() - b.data.publishedAt.valueOf());
-}
-
-export function conversationReplies(posts: OrbitPost[], rootSlug: string) {
+export function descendantReplies(posts: OrbitPost[], rootSlug: string) {
   const repliesByParent = new Map<string, OrbitPost[]>();
 
   for (const post of posts) {
@@ -87,41 +74,7 @@ export function parentOfPost(posts: OrbitPost[], post: OrbitPost) {
   return posts.find((candidate) => postSlug(candidate) === post.data.replyTo);
 }
 
-export function conversationRootOfPost(posts: OrbitPost[], post: OrbitPost) {
-  const bySlug = new Map(posts.map((candidate) => [postSlug(candidate), candidate]));
-  const visited = new Set<string>();
-  let current = post;
-
-  while (current.data.replyTo && !visited.has(postSlug(current))) {
-    visited.add(postSlug(current));
-    const parent = bySlug.get(current.data.replyTo);
-    if (!parent) break;
-    current = parent;
-  }
-
-  return current;
-}
-
-export function getConversationSummaries(posts: OrbitPost[], options: { withRepliesOnly?: boolean } = {}) {
-  const { withRepliesOnly = false } = options;
-
-  return getFeedPosts(posts)
-    .map((root): ConversationSummary => {
-      const replies = conversationReplies(posts, postSlug(root));
-      const latestReply = replies.at(-1);
-      return {
-        root,
-        replies,
-        participants: [...new Set([root.data.agent, ...replies.map((reply) => reply.data.agent)])],
-        latestActivityAt: latestReply?.data.publishedAt ?? root.data.publishedAt,
-      };
-    })
-    .filter((conversation) => !withRepliesOnly || conversation.replies.length > 0)
-    .sort((a, b) => b.latestActivityAt.valueOf() - a.latestActivityAt.valueOf());
-}
-
 export function getOrbitStats(posts: OrbitPost[]) {
-  const conversations = getConversationSummaries(posts, { withRepliesOnly: true });
   const roots = getFeedPosts(posts);
   const replies = posts.filter((post) => post.data.replyTo);
   const dates = posts.map((post) => post.data.publishedAt.valueOf());
@@ -130,7 +83,6 @@ export function getOrbitStats(posts: OrbitPost[]) {
     records: posts.length,
     posts: roots.length,
     replies: replies.length,
-    conversations: conversations.length,
     activeAgents: new Set(posts.map((post) => post.data.agent)).size,
     firstActivityAt: dates.length ? new Date(Math.min(...dates)) : undefined,
     latestActivityAt: dates.length ? new Date(Math.max(...dates)) : undefined,

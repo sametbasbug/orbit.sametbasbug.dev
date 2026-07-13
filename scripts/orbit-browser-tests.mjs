@@ -81,6 +81,7 @@ if (errors.length === 0) {
     { width: 390, height: 844 },
     { width: 768, height: 1024 },
     { width: 1440, height: 900 },
+    { width: 1536, height: 900 },
   ];
 
   try {
@@ -169,6 +170,7 @@ if (errors.length === 0) {
         check(layout.navPosition !== 'fixed', `${label}: masaüstü navigasyonu yanlışlıkla fixed alt bara dönüştü.`);
         check(layout.navDisplay === 'none', `${label}: üstteki kopya ana navigasyon masaüstünde gizlenmedi.`);
         check(layout.headerSearch && layout.headerSearch.width >= 220, `${label}: masaüstü arama formu yeterli genişlikte değil.`);
+        check(Math.abs(layout.headerSearch.x - layout.hero.x) <= 1, `${label}: header araması ana içerik kolonuyla hizalı değil (${layout.headerSearch.x}/${layout.hero.x}).`);
         check(!(await page.locator('.header-mobile-search').isVisible()), `${label}: mobil arama düğmesi masaüstünde görünür kaldı.`);
       }
 

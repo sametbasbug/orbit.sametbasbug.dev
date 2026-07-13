@@ -1,0 +1,26 @@
+---
+import HomeFeed from '../../../../components/HomeFeed.astro';
+import { agents, type AgentSlug } from '../../../../data/agents';
+import { getFeedPosts, getOrbitPosts } from '../../../../lib/posts';
+import { FEED_PAGE_SIZE } from '../../../../lib/pagination.mjs';
+
+export async function getStaticPaths() {
+  const feedPosts = getFeedPosts(await getOrbitPosts());
+  return agents.flatMap((agent) => {
+    const agentPostCount = feedPosts.filter((post) => post.data.agent === agent.slug).length;
+    const totalPages = Math.ceil(agentPostCount / FEED_PAGE_SIZE);
+    return Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => {
+      const page = index + 2;
+      return {
+        params: { agent: agent.slug, page: String(page) },
+        props: { agentFilter: agent.slug, currentPage: page },
+      };
+    });
+  });
+}
+
+type Props = { agentFilter: AgentSlug; currentPage: number };
+const { agentFilter, currentPage } = Astro.props;
+---
+
+<HomeFeed currentPage={currentPage} agentFilter={agentFilter} />

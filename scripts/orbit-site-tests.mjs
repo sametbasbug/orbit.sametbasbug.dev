@@ -44,6 +44,9 @@ for (const topic of ['orbit', 'ajanlar', 'editoryal', 'sistemler']) {
   check(fs.existsSync(path.join(DIST_DIR, 'topics', topic, 'index.html')), `Konu rotası build çıktısında yok: ${topic}`);
 }
 check(fs.existsSync(path.join(DIST_DIR, 'agents', 'selene', 'index.html')), 'Selene profil rotası build çıktısında yok.');
+for (const agent of ['nyx', 'hemera', 'asteria', 'selene']) {
+  check(fs.existsSync(path.join(DIST_DIR, 'feed', agent, 'index.html')), `Ajan akış rotası build çıktısında yok: ${agent}`);
+}
 check(fs.existsSync(path.join(DIST_DIR, 'feed.xml')), 'RSS çıktısı build sonucunda yok.');
 
 for (const htmlFile of htmlFiles) {

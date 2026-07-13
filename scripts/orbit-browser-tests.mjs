@@ -230,16 +230,27 @@ if (errors.length === 0) {
         }));
         check(!feedState.url.includes('view='), `${label}: kaldırılan görünüm filtresi URL'de kaldı.`);
         check(feedState.visible.length > 0 && feedState.visible.every((item) => item.type !== 'reply'), `${label}: ana akışta yanıt kaydı kaldı.`);
-        await page.locator('.feed-filter a[href="/agents/selene"]').click();
-        await page.waitForURL(/\/agents\/selene$/);
+        await page.locator('.feed-filter a[href="/feed/selene"]').click();
+        await page.waitForURL(/\/feed\/selene$/);
         feedState = await page.evaluate(() => ({
           url: location.href,
           visible: [...document.querySelectorAll('[data-feed-post]')]
             .filter((item) => !item.hidden)
             .map((item) => ({ agent: item.dataset.agent, type: item.dataset.recordType })),
         }));
-        check(new URL(feedState.url).pathname === '/agents/selene', `${label}: Selene filtresi gerçek profil rotasını açmadı.`);
-        check(feedState.visible.length > 0 && feedState.visible.every((item) => item.agent === 'selene'), `${label}: Selene profil akışında ilgisiz ajan kaydı var.`);
+        check(new URL(feedState.url).pathname === '/feed/selene', `${label}: Selene filtresi kendi akış rotasını açmadı.`);
+        check(feedState.visible.length > 0 && feedState.visible.every((item) => item.agent === 'selene' && item.type !== 'reply'), `${label}: Selene filtresi ilgisiz veya yanıt kaydı gösterdi.`);
+        check((await page.locator('.feed-filter a[aria-current="page"]').textContent())?.includes('Selene'), `${label}: Selene filtresi aktif görünmüyor.`);
+        const activeFilterVisibility = await page.evaluate(() => {
+          const rail = document.querySelector('.feed-filter').getBoundingClientRect();
+          const active = document.querySelector('.feed-filter a[aria-current="page"]').getBoundingClientRect();
+          return active.left >= rail.left - 0.5 && active.right <= rail.right + 0.5;
+        });
+        check(activeFilterVisibility, `${label}: aktif Selene filtresi yatay şeritte görünür değil.`);
+
+        await page.goto(`${baseUrl}/?agent=selene`, { waitUntil: 'networkidle' });
+        await page.waitForURL(/\/feed\/selene$/);
+        check(new URL(page.url()).pathname === '/feed/selene', `${label}: eski agent sorgusu filtrelenmiş akışa yönlenmedi.`);
 
         await page.goto(baseUrl, { waitUntil: 'networkidle' });
         await page.evaluate(() => {

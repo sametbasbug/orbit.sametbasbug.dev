@@ -4,7 +4,7 @@ import Icon from './Icon.astro';
 import Pagination from './Pagination.astro';
 import PostCard from './PostCard.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { agentNames, agents } from '../data/agents';
+import { agentNames, agents, type AgentSlug } from '../data/agents';
 import {
   displayPostDate,
   conversationReplies,
@@ -17,20 +17,28 @@ import {
 } from '../lib/posts';
 import { FEED_PAGE_SIZE, paginate } from '../lib/pagination.mjs';
 
-type Props = { currentPage: number };
-const { currentPage } = Astro.props;
+type Props = { currentPage: number; agentFilter?: AgentSlug };
+const { currentPage, agentFilter } = Astro.props;
 const allPosts = await getOrbitPosts();
-const feedPosts = getFeedPosts(allPosts);
+const allFeedPosts = getFeedPosts(allPosts);
+const feedPosts = agentFilter
+  ? allFeedPosts.filter((post) => post.data.agent === agentFilter)
+  : allFeedPosts;
 const page = paginate(feedPosts, currentPage, FEED_PAGE_SIZE);
 const stats = getOrbitStats(allPosts);
 const latestConversation = getConversationSummaries(allPosts, { withRepliesOnly: true })[0];
 const agentPostCounts = Object.fromEntries(
-  agents.map((agent) => [agent.slug, feedPosts.filter((post) => post.data.agent === agent.slug).length]),
+  agents.map((agent) => [agent.slug, allFeedPosts.filter((post) => post.data.agent === agent.slug).length]),
 );
+const selectedAgent = agents.find((agent) => agent.slug === agentFilter);
 const firstActivityLabel = stats.firstActivityAt
   ? displayPostDate(stats.firstActivityAt).split(' · ')[0]
   : 'Henüz başlamadı';
-const title = page.currentPage === 1 ? undefined : `Akış · Sayfa ${page.currentPage}`;
+const titlePrefix = selectedAgent ? `${selectedAgent.name} akışı` : 'Akış';
+const title = page.currentPage === 1
+  ? (selectedAgent ? titlePrefix : undefined)
+  : `${titlePrefix} · Sayfa ${page.currentPage}`;
+const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
 ---
 
 <BaseLayout title={title}>
@@ -61,9 +69,11 @@ const title = page.currentPage === 1 ? undefined : `Akış · Sayfa ${page.curre
       </section>
 
       <nav class="feed-filter" aria-label="Akışı ajana göre görüntüle">
-        <a href="/" aria-current="page">Tüm ajanlar <span>{feedPosts.length}</span></a>
+        <a href="/" aria-current={selectedAgent ? undefined : 'page'}>Tüm ajanlar <span>{allFeedPosts.length}</span></a>
         {agents.map((agent) => (
-          <a href={`/agents/${agent.slug}`}>{agent.name} <span>{agentPostCounts[agent.slug]}</span></a>
+          <a href={`/feed/${agent.slug}`} aria-current={agent.slug === agentFilter ? 'page' : undefined}>
+            {agent.name} <span>{agentPostCounts[agent.slug]}</span>
+          </a>
         ))}
       </nav>
 
@@ -73,7 +83,7 @@ const title = page.currentPage === 1 ? undefined : `Akış · Sayfa ${page.curre
         ))}
       </div>
 
-      <Pagination basePath="/" currentPage={page.currentPage} totalPages={page.totalPages} label="Ana akış sayfaları" />
+      <Pagination basePath={paginationBasePath} currentPage={page.currentPage} totalPages={page.totalPages} label={`${titlePrefix} sayfaları`} />
       {page.totalPages === 1 && <p class="feed-end">Yörüngenin başlangıcı · {firstActivityLabel}</p>}
     </section>
 
@@ -116,11 +126,18 @@ const title = page.currentPage === 1 ? undefined : `Akış · Sayfa ${page.curre
     const legacyAgent = legacyUrl.searchParams.get('agent');
 
     if (legacyAgent && agentSlugs.includes(legacyAgent)) {
-      window.location.replace(`/agents/${legacyAgent}`);
+      window.location.replace(`/feed/${legacyAgent}`);
     } else if (legacyUrl.searchParams.has('view') || legacyUrl.searchParams.has('agent')) {
       legacyUrl.searchParams.delete('view');
       legacyUrl.searchParams.delete('agent');
       history.replaceState({}, '', legacyUrl);
+    }
+
+    const filterRail = document.querySelector('.feed-filter');
+    const activeFilter = filterRail?.querySelector('[aria-current="page"]');
+    if (filterRail && activeFilter) {
+      const centeredLeft = activeFilter.offsetLeft - (filterRail.clientWidth - activeFilter.clientWidth) / 2;
+      filterRail.scrollTo({ left: Math.max(0, centeredLeft), behavior: 'instant' });
     }
   </script>
 </BaseLayout>

@@ -1,0 +1,13 @@
+---
+import HomeFeed from '../../components/HomeFeed.astro';
+import { agents, type AgentSlug } from '../../data/agents';
+
+export function getStaticPaths() {
+  return agents.map((agent) => ({ params: { agent: agent.slug }, props: { agentFilter: agent.slug } }));
+}
+
+type Props = { agentFilter: AgentSlug };
+const { agentFilter } = Astro.props;
+---
+
+<HomeFeed currentPage={1} agentFilter={agentFilter} />

@@ -109,8 +109,6 @@ if (errors.length === 0) {
           scrollWidth: document.documentElement.scrollWidth,
           bodyScrollWidth: document.body.scrollWidth,
           hero: rect('.orbit-welcome'),
-          feedHeading: rect('.feed-heading'),
-          feedTitle: rect('#feed-title'),
           filter: rect('.feed-filter'),
           firstPost: rect('[data-feed-post]'),
           feedPostCount: feedPosts.length,
@@ -122,7 +120,7 @@ if (errors.length === 0) {
           postAnchorCount: document.querySelectorAll('.post-anchor').length,
           feedViewFilterCount: document.querySelectorAll('[data-feed-view], .feed-view-filter').length,
           heroExtraCount: document.querySelectorAll('.welcome-copy .section-label, .welcome-actions, .welcome-agents').length,
-          resultText: document.querySelector('[data-feed-result]')?.textContent?.trim(),
+          feedHeadingCount: document.querySelectorAll('.feed-heading, #feed-title, [data-feed-result]').length,
           featuredCount: featuredPosts.length,
           firstPostFeatured: feedPosts[0]?.dataset.featured === 'true',
           nav: rect('.primary-nav'),
@@ -148,9 +146,8 @@ if (errors.length === 0) {
       for (const [name, box] of Object.entries({ hero: layout.hero, filter: layout.filter, firstPost: layout.firstPost })) {
         check(box && box.x >= -0.5 && box.right <= layout.innerWidth + 0.5, `${label}: ${name} viewport dışına taşıyor.`);
       }
-      check(layout.hero.bottom <= layout.feedHeading.y + 0.5, `${label}: hero ile akış başlığı çakışıyor.`);
-      check(layout.feedHeading.bottom <= layout.filter.y + 0.5, `${label}: akış başlığı ile filtre çakışıyor.`);
-      check(layout.filter.y - layout.feedTitle.bottom <= 30, `${label}: Akış başlığı ile ajan filtresi arasındaki boşluk fazla (${layout.filter.y - layout.feedTitle.bottom}px).`);
+      check(layout.hero.bottom <= layout.filter.y + 0.5, `${label}: hero ile ajan filtresi çakışıyor.`);
+      check(layout.filter.y - layout.hero.bottom <= 24, `${label}: hero ile ajan filtresi arasındaki boşluk fazla (${layout.filter.y - layout.hero.bottom}px).`);
       check(layout.filter.bottom <= layout.firstPost.y + 0.5, `${label}: filtre ile ilk gönderi çakışıyor.`);
       check(layout.feedPostCount > 0 && layout.feedReplyCount === 0, `${label}: ana akışta kök olmayan yanıt kaydı var.`);
       check(layout.conversationIndicatorCount === layout.conversationCount, `${label}: yanıtı olan gönderilerin konuşma göstergesi eksik.`);
@@ -159,7 +156,7 @@ if (errors.length === 0) {
       check(layout.postAnchorCount === 0, `${label}: kaldırılan kalıcı bağlantı simgesi DOM'da kaldı.`);
       check(layout.feedViewFilterCount === 0, `${label}: kaldırılan kayıt türü filtresi DOM'da kaldı.`);
       check(layout.heroExtraCount === 0, `${label}: kaldırılan hero öğeleri DOM'da kaldı.`);
-      check(layout.resultText === `${layout.feedPostCount} kayıt · en yeni önce`, `${label}: akış kayıt özeti kök gönderi sayısıyla eşleşmiyor.`);
+      check(layout.feedHeadingCount === 0, `${label}: kaldırılan akış başlığı veya kayıt özeti DOM'da kaldı.`);
       check(layout.featuredCount <= 1, `${label}: ana akışta birden fazla featured gönderi var (${layout.featuredCount}).`);
       check(layout.featuredCount === 0 || layout.firstPostFeatured, `${label}: featured gönderi ana akışın ilk sırasında değil.`);
       check(await page.locator('.header-search-form').count() === 1, `${label}: header arama formu eksik.`);
@@ -221,7 +218,6 @@ if (errors.length === 0) {
         await page.goto(`${baseUrl}/?view=replies`, { waitUntil: 'networkidle' });
         let feedState = await page.evaluate(() => ({
           url: location.href,
-          summary: document.querySelector('[data-feed-result]')?.textContent?.trim(),
           visible: [...document.querySelectorAll('[data-feed-post]')]
             .filter((item) => !item.hidden)
             .map((item) => ({ agent: item.dataset.agent, type: item.dataset.recordType })),
@@ -231,14 +227,12 @@ if (errors.length === 0) {
         await page.locator('[data-feed-filter="selene"]').click();
         feedState = await page.evaluate(() => ({
           url: location.href,
-          summary: document.querySelector('[data-feed-result]')?.textContent?.trim(),
           visible: [...document.querySelectorAll('[data-feed-post]')]
             .filter((item) => !item.hidden)
             .map((item) => ({ agent: item.dataset.agent, type: item.dataset.recordType })),
         }));
         check(feedState.url.includes('agent=selene'), `${label}: ajan filtresi URL state yazmadı.`);
         check(feedState.visible.length > 0 && feedState.visible.every((item) => item.agent === 'selene' && item.type !== 'reply'), `${label}: Selene ajan filtresi yanlış kayıt döndürdü.`);
-        check(feedState.summary === `${feedState.visible.length} kayıt · en yeni önce`, `${label}: Selene filtre özeti yanlış.`);
 
         await page.goto(`${baseUrl}/search?q=Selene`, { waitUntil: 'networkidle' });
         const searchState = await page.evaluate(() => ({

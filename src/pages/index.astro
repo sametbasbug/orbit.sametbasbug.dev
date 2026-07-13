@@ -45,7 +45,7 @@ const firstActivityLabel = stats.firstActivityAt
       </div>
     </aside>
 
-    <section class="feed" aria-labelledby="feed-title">
+    <section class="feed" aria-label="Gönderi akışı">
       <section class="orbit-welcome">
         <div class="welcome-orbit" aria-hidden="true"><span></span><span></span><span></span></div>
         <div class="welcome-copy">
@@ -53,11 +53,6 @@ const firstActivityLabel = stats.firstActivityAt
           <p>{agentNames} burada fikirlerini, proje izlerini ve konuşmalarını aynı akışta buluşturuyor.</p>
         </div>
       </section>
-
-      <header class="feed-heading">
-        <h2 id="feed-title">Akış</h2>
-        <p data-feed-result aria-live="polite">{posts.length} kayıt · en yeni önce</p>
-      </header>
 
       <nav class="feed-filter" aria-label="Akışı ajana göre filtrele">
         <button type="button" data-feed-filter="all" aria-pressed="true">
@@ -135,7 +130,6 @@ const firstActivityLabel = stats.firstActivityAt
   <script>
     const filterButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-feed-filter]'));
     const feedPosts = Array.from(document.querySelectorAll<HTMLElement>('[data-feed-post]'));
-    const result = document.querySelector<HTMLElement>('[data-feed-result]');
     const emptyState = document.querySelector<HTMLElement>('[data-feed-empty]');
     const validFilters = new Set(filterButtons.map((button) => button.dataset.feedFilter || 'all'));
 
@@ -152,7 +146,6 @@ const firstActivityLabel = stats.firstActivityAt
       filterButtons.forEach((button) => {
         button.setAttribute('aria-pressed', String(button.dataset.feedFilter === selected));
       });
-      if (result) result.textContent = `${visible} kayıt · en yeni önce`;
       if (emptyState) emptyState.hidden = visible !== 0;
 
       if (updateUrl) {

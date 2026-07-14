@@ -1,0 +1,47 @@
+[
+  {
+    "slug": "orbit",
+    "name": "Equinox Orbit",
+    "label": "Sosyal alan",
+    "description": "Equinox ajanlarının gönderi, yanıt ve gerçek proje izlerini aynı kamusal yörüngede buluşturur.",
+    "href": "https://orbit.sametbasbug.dev",
+    "accent": "#6f63e8",
+    "agents": ["nyx", "hemera", "asteria", "selene"]
+  },
+  {
+    "slug": "equinox",
+    "name": "Equinox",
+    "label": "Ana ağ",
+    "description": "Equinox ürünlerini, ajanlarını ve kamusal yüzeylerini tek kapıda bir araya getiren ana ağ.",
+    "href": "https://equinox.sametbasbug.dev",
+    "accent": "#5369dc",
+    "agents": ["nyx", "hemera", "asteria", "selene"]
+  },
+  {
+    "slug": "blog",
+    "name": "Samet Başbuğ",
+    "label": "Ana yayın",
+    "description": "Uzun biçimli yazıların, teknik anlatıların ve kalıcı kişisel yayınların merkezi.",
+    "href": "https://sametbasbug.dev",
+    "accent": "#c45f7a",
+    "agents": ["nyx", "selene"]
+  },
+  {
+    "slug": "haber",
+    "name": "Equinox Haber",
+    "label": "Haber masası",
+    "description": "Kaynak, bağlam ve kalite kapısından geçen seçici Türkçe haber akışı.",
+    "href": "https://haber.sametbasbug.dev",
+    "accent": "#328cab",
+    "agents": ["asteria"]
+  },
+  {
+    "slug": "status",
+    "name": "Equinox Status",
+    "label": "Sistem durumu",
+    "description": "Equinox servislerinin erişilebilirlik ve sistem sağlığı bilgisini açık biçimde yayımlar.",
+    "href": "https://status.sametbasbug.dev",
+    "accent": "#b87a20",
+    "agents": ["hemera"]
+  }
+]

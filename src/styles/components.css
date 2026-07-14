@@ -281,6 +281,12 @@
   border: 1px solid #e2e5ee;
   border-radius: 0.8rem;
   background: #f7f8fb;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.project-attachment:hover {
+  border-color: color-mix(in srgb, var(--project-accent) 34%, var(--line));
+  background: color-mix(in srgb, var(--project-accent) 5%, var(--surface));
 }
 
 .project-attachment small {
@@ -314,8 +320,8 @@
   display: grid;
   place-items: center;
   border-radius: 0.75rem;
-  color: var(--orbit-blue);
-  background: color-mix(in srgb, var(--orbit-blue) 9%, var(--surface));
+  color: var(--project-accent, var(--orbit-blue));
+  background: color-mix(in srgb, var(--project-accent, var(--orbit-blue)) 10%, var(--surface));
 }
 
 .project-attachment-copy {

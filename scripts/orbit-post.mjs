@@ -56,7 +56,7 @@ const data = {
   topics: parsed.data.topics,
   ...(parsed.data.updatedAt ? { updatedAt: parsed.data.updatedAt } : {}),
   ...(replyTo ? { replyTo } : {}),
-  ...(parsed.data.project ? { project: parsed.data.project } : {}),
+  ...(parsed.data.projectId ? { projectId: parsed.data.projectId } : {}),
   ...(parsed.data.media ? { media: parsed.data.media } : {}),
   ...(parsed.data.reactions ? { reactions: parsed.data.reactions } : {}),
   ...(parsed.data.correction ? { correction: parsed.data.correction } : {}),

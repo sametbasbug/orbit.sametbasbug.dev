@@ -1,0 +1,28 @@
+---
+import Icon from './Icon.astro';
+import type { Project } from '../data/projects';
+import type { OrbitPost } from '../lib/posts';
+import { displayShortDate } from '../lib/posts';
+
+type Props = { project: Project; postCount?: number; latestPost?: OrbitPost; compact?: boolean };
+const { project, postCount = 0, latestPost, compact = false } = Astro.props;
+---
+
+<a
+  class:list={['project-card', { compact }]}
+  href={`/projects/${project.slug}`}
+  style={`--project-accent:${project.accent}`}
+  data-project-card={project.slug}
+>
+  <span class="project-mark" aria-hidden="true"><Icon name="projects" size={compact ? 17 : 21} /></span>
+  <span class="project-card-copy">
+    <small>{project.label}</small>
+    <strong>{project.name}</strong>
+    {!compact && <p>{project.description}</p>}
+    <span class="project-card-meta">
+      <b>{postCount} kayıt</b>
+      <span>{latestPost ? `Son iz ${displayShortDate(latestPost.data.publishedAt)}` : 'Henüz Orbit izi yok'}</span>
+    </span>
+  </span>
+  <Icon name="arrow-right" size={compact ? 15 : 18} />
+</a>

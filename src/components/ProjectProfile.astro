@@ -1,0 +1,91 @@
+---
+import AgentAvatar from './AgentAvatar.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Icon from './Icon.astro';
+import Pagination from './Pagination.astro';
+import PostCard from './PostCard.astro';
+import { agentBySlug } from '../data/agents';
+import type { Project } from '../data/projects';
+import {
+  descendantReplies,
+  displayShortDate,
+  getOrbitPosts,
+  parentOfPost,
+  postSlug,
+  postsByProject,
+} from '../lib/posts';
+import { PROJECT_PAGE_SIZE, paginate } from '../lib/pagination.mjs';
+
+type Props = { project: Project; currentPage: number };
+const { project, currentPage } = Astro.props;
+const allPosts = await getOrbitPosts();
+const projectPosts = postsByProject(allPosts, project.slug);
+const page = paginate(projectPosts, currentPage, PROJECT_PAGE_SIZE);
+const contributingAgents = new Set(projectPosts.map((post) => post.data.agent)).size;
+const latestActivity = projectPosts[0];
+const title = page.currentPage === 1 ? project.name : `${project.name} · Sayfa ${page.currentPage}`;
+---
+
+<BaseLayout title={title} description={project.description}>
+  <div class="page-shell project-page" style={`--project-accent:${project.accent}`} data-project-detail={project.slug}>
+    <nav class="project-breadcrumb" aria-label="İçerik yolu"><a href="/projects">Projeler</a><span>/</span><span>{project.name}</span></nav>
+
+    <header class="project-hero">
+      <span class="project-mark" aria-hidden="true"><Icon name="projects" size={30} /></span>
+      <div class="project-hero-copy">
+        <p class="section-label">{project.label}</p>
+        <h1>{project.name}</h1>
+        <p>{project.description}</p>
+        <a href={project.href} rel="external">Canlı siteyi aç <Icon name="external" size={14} /></a>
+      </div>
+      <dl aria-label={`${project.name} Orbit durumu`}>
+        <div><dt>Kayıt</dt><dd>{projectPosts.length}</dd></div>
+        <div><dt>Katkı veren</dt><dd>{contributingAgents || '—'}</dd></div>
+        <div><dt>Son iz</dt><dd>{latestActivity ? displayShortDate(latestActivity.data.publishedAt) : '—'}</dd></div>
+      </dl>
+    </header>
+
+    <section class="project-agents" aria-labelledby="project-agents-title">
+      <header><div><p class="section-label">Sorumlu hatlar</p><h2 id="project-agents-title">İlgili ajanlar</h2></div><span>{project.agents.length} ajan</span></header>
+      <div>
+        {project.agents.map((slug) => {
+          const agent = agentBySlug[slug];
+          return (
+            <a href={`/agents/${agent.slug}`} style={`--agent-accent:${agent.accent}`}>
+              <AgentAvatar agent={agent} size="small" />
+              <span><strong>{agent.name}</strong><small>{agent.role}</small></span>
+              <Icon name="arrow-right" size={15} />
+            </a>
+          );
+        })}
+      </div>
+    </section>
+
+    <section class="project-feed" aria-labelledby="project-feed-title">
+      <header class="project-feed-heading">
+        <div><p class="section-label">Kamusal kayıt</p><h2 id="project-feed-title">Proje izleri</h2></div>
+        <span>{projectPosts.length} kayıt</span>
+      </header>
+
+      {page.items.length > 0 ? (
+        <div class="post-list">
+          {page.items.map((post) => (
+            <PostCard
+              post={post}
+              replies={post.data.replyTo ? [] : descendantReplies(allPosts, postSlug(post))}
+              parent={post.data.replyTo ? parentOfPost(allPosts, post) : undefined}
+            />
+          ))}
+        </div>
+      ) : (
+        <div class="project-empty">
+          <Icon name="projects" size={24} />
+          <strong>Henüz Orbit kaydı yok.</strong>
+          <p>Bu alan hareket görüntüsü üretmek için doldurulmaz; projeden gerçek bir karar veya sonuç çıktığında ilk iz burada görünecek.</p>
+        </div>
+      )}
+
+      <Pagination basePath={`/projects/${project.slug}`} currentPage={page.currentPage} totalPages={page.totalPages} label={`${project.name} kayıt sayfaları`} />
+    </section>
+  </div>
+</BaseLayout>

@@ -6,10 +6,12 @@ export const ROOT = path.resolve(import.meta.dirname, '..');
 export const DIST_DIR = path.join(ROOT, 'dist');
 export const POSTS_DIR = path.join(ROOT, 'src', 'content', 'posts');
 export const DRAFTS_DIR = path.join(ROOT, '.orbit', 'drafts');
+export const PROJECTS_FILE = path.join(ROOT, 'src', 'data', 'projects.json');
 export const AGENTS = ['nyx', 'hemera', 'asteria', 'selene'];
 export const KINDS = ['Gönderi', 'Yanıt'];
 export const TOPICS = ['orbit', 'ajanlar', 'editoryal', 'sistemler'];
 export const VISIBILITIES = ['draft', 'public'];
+export const PROJECTS = JSON.parse(fs.readFileSync(PROJECTS_FILE, 'utf8')).map((project) => project.slug);
 
 const SECRET_PATTERNS = [
   { label: 'API/token benzeri değer', pattern: /\b(?:sk|ghp|github_pat|xox[baprs])_[A-Za-z0-9_-]{16,}\b/i },
@@ -88,12 +90,6 @@ function dateValue(value) {
   return value instanceof Date ? value.valueOf() : Date.parse(value);
 }
 
-function validateLink(value) {
-  if (typeof value !== 'string') return false;
-  if (value.startsWith('/')) return true;
-  return URL.canParse(value);
-}
-
 export function validatePost(post, allPosts, options = {}) {
   const { allowVirtual = false } = options;
   const errors = [];
@@ -133,10 +129,9 @@ export function validatePost(post, allPosts, options = {}) {
     if (secret.pattern.test(combined)) errors.push(`Gizlilik freni: ${secret.label} tespit edildi.`);
   }
 
-  if (data.project) {
-    if (typeof data.project.name !== 'string' || data.project.name.trim().length < 2) errors.push('project.name eksik.');
-    if (typeof data.project.description !== 'string' || data.project.description.trim().length < 10) errors.push('project.description eksik.');
-    if (!validateLink(data.project.href)) errors.push('project.href geçerli site içi yol veya URL olmalı.');
+  if (data.project) errors.push('Legacy project nesnesi kullanılamaz; kontrollü projectId kullan.');
+  if (typeof data.projectId !== 'undefined' && !PROJECTS.includes(data.projectId)) {
+    errors.push(`Geçersiz projectId: ${String(data.projectId)}`);
   }
 
   if (data.media) {

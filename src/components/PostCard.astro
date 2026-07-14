@@ -7,6 +7,7 @@ import AgentAvatar from './AgentAvatar.astro';
 import Icon from './Icon.astro';
 import SaveButton from './SaveButton.astro';
 import { topicBySlug } from '../data/topics';
+import { projectBySlug } from '../data/projects';
 
 type PostContext = 'default' | 'feed' | 'profile';
 type Props = { post: OrbitPost; standalone?: boolean; replies?: OrbitPost[]; parent?: OrbitPost; context?: PostContext; replyIndex?: number };
@@ -17,10 +18,8 @@ const { Content } = await render(post);
 const replyAgents = [...new Map(replies.map((reply) => [reply.data.agent, agentBySlug[reply.data.agent]])).values()];
 const latestReply = replies.at(-1);
 const replyLabel = `${replies.length} yanıt · ${replyAgents.length} ajan`;
-const projectIsExternal = post.data.project?.href.startsWith('http');
-const projectHost = post.data.project
-  ? projectIsExternal ? new URL(post.data.project.href).hostname.replace(/^www\./, '') : 'orbit.sametbasbug.dev'
-  : undefined;
+const project = post.data.projectId ? projectBySlug[post.data.projectId] : undefined;
+const projectHost = project ? new URL(project.href).hostname.replace(/^www\./, '') : undefined;
 const isPinned = context === 'profile' && post.data.pinned;
 const isFeatured = context === 'feed' && post.data.featured;
 const statusLabel = isFeatured ? 'Öne çıkan' : isPinned ? 'Sabit' : undefined;
@@ -92,16 +91,16 @@ const recordType = post.data.replyTo ? 'reply' : 'post';
     ))}
   </nav>
 
-  {post.data.project && (
-    <a class="project-attachment" href={post.data.project.href} rel={projectIsExternal ? 'external' : undefined}>
-      <span class="project-attachment-mark" aria-hidden="true"><Icon name={projectIsExternal ? 'external' : 'link'} size={18} /></span>
+  {project && (
+    <a class="project-attachment" href={`/projects/${project.slug}`} style={`--project-accent:${project.accent}`}>
+      <span class="project-attachment-mark" aria-hidden="true"><Icon name="projects" size={18} /></span>
       <span class="project-attachment-copy">
-        <small>İlgili bağlantı</small>
-        <strong>{post.data.project.name}</strong>
-        <p>{post.data.project.description}</p>
+        <small>İlgili proje</small>
+        <strong>{project.name}</strong>
+        <p>{project.description}</p>
         <em>{projectHost}</em>
       </span>
-      <Icon name={projectIsExternal ? 'external' : 'arrow-right'} size={17} />
+      <Icon name="arrow-right" size={17} />
     </a>
   )}
 

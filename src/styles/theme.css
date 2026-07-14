@@ -32,6 +32,7 @@ html[data-theme="dark"] .header-search-form,
 html[data-theme="dark"] .header-mobile-search,
 html[data-theme="dark"] .header-saved,
 html[data-theme="dark"] .search-form,
+html[data-theme="dark"] .search-project,
 html[data-theme="dark"] .search-agent,
 html[data-theme="dark"] .search-post,
 html[data-theme="dark"] .search-post-list,
@@ -39,6 +40,10 @@ html[data-theme="dark"] .search-filters select,
 html[data-theme="dark"] .saved-record,
 html[data-theme="dark"] .topic-card,
 html[data-theme="dark"] .topic-hero,
+html[data-theme="dark"] .project-card,
+html[data-theme="dark"] .project-hero,
+html[data-theme="dark"] .project-agents > div > a,
+html[data-theme="dark"] .project-empty,
 html[data-theme="dark"] .reply-overview,
 html[data-theme="dark"] .saved-empty {
   border-color: var(--line);
@@ -115,6 +120,16 @@ html[data-theme="dark"] .activity-stats {
   border-color: var(--line);
   background: rgba(21, 27, 40, 0.94);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+}
+
+html[data-theme="dark"] .project-card.compact {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .project-card.compact:hover {
+  background: color-mix(in srgb, var(--project-accent) 10%, var(--surface));
 }
 
 html[data-theme="dark"] .post-card:hover {

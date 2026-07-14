@@ -1,5 +1,6 @@
 export const FEED_PAGE_SIZE = 10;
 export const PROFILE_PAGE_SIZE = 10;
+export const PROJECT_PAGE_SIZE = 10;
 
 /**
  * @template T

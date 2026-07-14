@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
-import { DIST_DIR, ROOT, readAllPosts } from './orbit-content-utils.mjs';
+import { AGENTS, DIST_DIR, PROJECTS_FILE, ROOT, readAllPosts } from './orbit-content-utils.mjs';
 
 const errors = [];
 let assertions = 0;
@@ -46,6 +46,11 @@ function outputCandidates(urlPath) {
 }
 
 check(fs.existsSync(DIST_DIR), 'dist/ bulunamadı; site:test yalnız build sonrasında çalıştırılmalı.');
+const projects = JSON.parse(fs.readFileSync(PROJECTS_FILE, 'utf8'));
+check(projects.length === 5, `Kontrollü proje sözlüğü beş proje taşımıyor: ${projects.length}`);
+check(new Set(projects.map((project) => project.slug)).size === projects.length, 'Proje sözlüğünde duplicate slug var.');
+check(projects.every((project) => /^https:\/\//.test(project.href)), 'Proje sözlüğünde güvenli olmayan canlı site bağlantısı var.');
+check(projects.every((project) => project.agents.length > 0 && project.agents.every((agent) => AGENTS.includes(agent))), 'Proje sözlüğünde geçersiz ilgili ajan var.');
 
 const files = walk(DIST_DIR);
 const htmlFiles = files.filter((file) => file.endsWith('.html'));
@@ -56,6 +61,10 @@ check(!fs.existsSync(path.join(DIST_DIR, 'conversations', 'index.html')), 'Kald�
 check(fs.existsSync(path.join(DIST_DIR, 'search', 'index.html')), 'Arama rotası build çıktısında yok.');
 check(fs.existsSync(path.join(DIST_DIR, 'search-index.json')), 'Kompakt arama indeksi build çıktısında yok.');
 check(fs.existsSync(path.join(DIST_DIR, 'saved', 'index.html')), 'Kaydedilenler rotası build çıktısında yok.');
+check(fs.existsSync(path.join(DIST_DIR, 'projects', 'index.html')), 'Projeler rotası build çıktısında yok.');
+for (const project of projects) {
+  check(fs.existsSync(path.join(DIST_DIR, 'projects', project.slug, 'index.html')), `Proje detay rotası build çıktısında yok: ${project.slug}`);
+}
 check(fs.existsSync(path.join(DIST_DIR, 'topics', 'index.html')), 'Konular rotası build çıktısında yok.');
 for (const topic of ['orbit', 'ajanlar', 'editoryal', 'sistemler']) {
   check(fs.existsSync(path.join(DIST_DIR, 'topics', topic, 'index.html')), `Konu rotası build çıktısında yok: ${topic}`);
@@ -68,10 +77,20 @@ check(fs.existsSync(path.join(DIST_DIR, 'feed.xml')), 'RSS çıktısı build son
 
 const publicPosts = readAllPosts().filter((entry) => entry.data.visibility === 'public');
 const searchIndex = JSON.parse(fs.readFileSync(path.join(DIST_DIR, 'search-index.json'), 'utf8'));
-check(searchIndex.version === 1, 'Arama indeksi şema sürümü yanlış.');
+check(searchIndex.version === 2, 'Arama indeksi şema sürümü yanlış.');
 check(Array.isArray(searchIndex.items), 'Arama indeksi items dizisi taşımıyor.');
-check(searchIndex.items.length === publicPosts.length + 4, `Arama indeksi kayıt sayısı yanlış: ${searchIndex.items.length}`);
+check(searchIndex.items.length === publicPosts.length + 4 + projects.length, `Arama indeksi kayıt sayısı yanlış: ${searchIndex.items.length}`);
 check(new Set(searchIndex.items.map((item) => item.id)).size === searchIndex.items.length, 'Arama indeksinde duplicate id var.');
+check(searchIndex.items.filter((item) => item.entity === 'project').length === projects.length, 'Arama indeksi bütün projeleri taşımıyor.');
+check(searchIndex.items.filter((item) => item.entity === 'project').every((item) => item.agents.length > 0 && item.project), 'Arama indeksindeki proje ilişkileri eksik.');
+
+for (const project of projects) {
+  const projectHtml = fs.readFileSync(path.join(DIST_DIR, 'projects', project.slug, 'index.html'), 'utf8');
+  const linkedPosts = publicPosts.filter((post) => post.data.projectId === project.slug);
+  check(projectHtml.includes(`data-project-detail="${project.slug}"`), `Proje detay kimliği eksik: ${project.slug}`);
+  check((projectHtml.match(/data-feed-post/g) ?? []).length === linkedPosts.length, `Proje kayıt sayısı yanlış: ${project.slug}`);
+  check(linkedPosts.length > 0 || projectHtml.includes('Henüz Orbit kaydı yok.'), `Boş proje dürüst boş durum taşımıyor: ${project.slug}`);
+}
 
 const searchHtml = fs.readFileSync(path.join(DIST_DIR, 'search', 'index.html'), 'utf8');
 const savedHtml = fs.readFileSync(path.join(DIST_DIR, 'saved', 'index.html'), 'utf8');
@@ -129,6 +148,12 @@ for (const post of publicPosts) {
   check(fs.existsSync(ogImage), `Gönderiye özel OG görseli eksik: ${post.slug}`);
   const dimensions = fs.existsSync(ogImage) ? pngDimensions(ogImage) : null;
   check(dimensions?.width === 1200 && dimensions?.height === 630, `OG görsel ölçüsü yanlış: ${post.slug}`);
+  if (post.data.projectId) {
+    const project = projects.find((entry) => entry.slug === post.data.projectId);
+    check(Boolean(project), `Gönderi bilinmeyen projeye bağlı: ${post.slug}`);
+    check(postHtml.includes(`href="/projects/${post.data.projectId}"`), `Gönderi kontrollü proje detayına bağlanmıyor: ${post.slug}`);
+    check(feed.includes(`<category>${xmlEscape(project?.name ?? '')}</category>`), `RSS proje kategorisi eksik: ${post.slug}`);
+  }
 }
 
 const css = Buffer.concat(cssFiles.map((file) => fs.readFileSync(file)));

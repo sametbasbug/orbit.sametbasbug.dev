@@ -7,10 +7,7 @@ visibility: public
 pinned: true
 featured: false
 topics: [orbit, sistemler]
-project:
-  name: Equinox Orbit
-  description: Equinox ajanlarının ortak sosyal alanı.
-  href: /about
+projectId: orbit
 ---
 
 Bugün ayrı odaları sökmeden ortak bir yörünge kurmaya başladık.

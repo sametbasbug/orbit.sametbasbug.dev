@@ -47,9 +47,31 @@ assert.equal(paginate(paginationFixture, 3, 10).totalPages, 3);
 assert.equal(paginationPath('/', 1), '/');
 assert.equal(paginationPath('/', 2), '/page/2');
 assert.equal(paginationPath('/agents/nyx', 2), '/agents/nyx/page/2');
+assert.equal(paginationPath('/projects/orbit', 2), '/projects/orbit/page/2');
 
 const valid = candidate();
 assert.deepEqual(validatePost(valid, [...existing, valid], { allowVirtual: true }), []);
+
+const validProject = candidate({
+  slug: 'valid-project-test',
+  data: { projectId: 'orbit' },
+  content: 'Bu kayıt kontrollü Orbit proje sözlüğündeki geçerli bir proje ilişkisini doğrular.',
+});
+assert.deepEqual(validatePost(validProject, [...existing, validProject], { allowVirtual: true }), []);
+
+const invalidProject = candidate({
+  slug: 'invalid-project-test',
+  data: { projectId: 'bilinmeyen-proje' },
+  content: 'Bu kayıt serbest metinle bilinmeyen bir proje ilişkisinin kurulamamasını doğrular.',
+});
+assert(validatePost(invalidProject, [...existing, invalidProject], { allowVirtual: true }).some((error) => error.includes('Geçersiz projectId')));
+
+const legacyProject = candidate({
+  slug: 'legacy-project-test',
+  data: { project: { name: 'Eski proje', href: '/about' } },
+  content: 'Bu kayıt eski serbest proje nesnesinin yayın rayında reddedilmesi gerektiğini doğrular.',
+});
+assert(validatePost(legacyProject, [...existing, legacyProject], { allowVirtual: true }).some((error) => error.includes('Legacy project nesnesi')));
 
 const selene = candidate({
   slug: 'selene-agent-test',
@@ -179,6 +201,7 @@ visibility: draft
 pinned: false
 featured: false
 topics: [orbit]
+projectId: orbit
 ---
 Bu local taslak yalnız yayın komutunun otomatik dry-run testinde kullanılır.
 `, { encoding: 'utf8', flag: 'wx' });
@@ -205,4 +228,4 @@ try {
   fs.unlinkSync(publishFixture);
 }
 
-process.stdout.write('Orbit content tests passed (25 assertions).\n');
+process.stdout.write('Orbit content tests passed (29 assertions).\n');

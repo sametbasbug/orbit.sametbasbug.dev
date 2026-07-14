@@ -894,7 +894,7 @@
 .profile-summary-stats {
   display: grid;
   margin: 0 0 0 auto;
-  grid-template-columns: repeat(3, auto);
+  grid-template-columns: repeat(4, auto);
   align-self: end;
   gap: 0.8rem;
   padding-bottom: 0.45rem;
@@ -1134,7 +1134,7 @@
 
 .search-filters {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.75rem;
   margin-top: 0.85rem;
 }
@@ -1208,6 +1208,13 @@
   gap: 0.75rem;
 }
 
+.search-project-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.search-project,
 .search-agent,
 .search-post {
   display: grid;
@@ -1219,6 +1226,7 @@
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
+.search-project,
 .search-agent {
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 0.8rem;
@@ -1226,16 +1234,19 @@
   border-radius: 0.9rem;
 }
 
+.search-project > span,
 .search-agent > span,
 .search-post > span {
   min-width: 0;
   display: grid;
 }
 
+.search-project strong,
 .search-agent strong {
   font-size: 0.86rem;
 }
 
+.search-project small,
 .search-agent small {
   overflow: hidden;
   margin-top: 0.16rem;
@@ -1280,12 +1291,350 @@
   white-space: nowrap;
 }
 
+.search-project:hover,
 .search-agent:hover,
 .search-post:hover {
   z-index: 1;
   border-color: color-mix(in srgb, var(--agent-accent) 32%, var(--line));
   box-shadow: 0 10px 25px rgba(31, 42, 70, 0.075);
   transform: translateY(-1px);
+}
+
+.search-project-mark {
+  width: 2.9rem;
+  height: 2.9rem;
+  display: grid !important;
+  place-items: center;
+  border-radius: 0.85rem;
+  color: var(--project-accent);
+  background: color-mix(in srgb, var(--project-accent) 10%, var(--surface));
+}
+
+.projects-page {
+  max-width: 1120px;
+  padding: 3.5rem 0 6rem;
+}
+
+.projects-intro {
+  max-width: 780px;
+}
+
+.project-directory {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 2.5rem;
+}
+
+.project-directory > .project-card:first-child {
+  grid-column: 1 / -1;
+}
+
+.project-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  min-height: 10.5rem;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 5px 18px rgba(31, 42, 70, 0.045);
+  text-decoration: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.project-card:hover {
+  border-color: color-mix(in srgb, var(--project-accent) 42%, var(--line));
+  box-shadow: 0 12px 28px rgba(31, 42, 70, 0.08);
+  transform: translateY(-2px);
+}
+
+.project-mark {
+  width: 3.4rem;
+  height: 3.4rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.95rem;
+  color: var(--project-accent);
+  background: color-mix(in srgb, var(--project-accent) 10%, var(--surface));
+}
+
+.project-card-copy {
+  min-width: 0;
+  display: grid;
+}
+
+.project-card-copy > small {
+  color: var(--project-accent);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.project-card-copy > strong {
+  margin-top: 0.24rem;
+  font-size: 1.08rem;
+  letter-spacing: -0.02em;
+}
+
+.project-card-copy > p {
+  margin: 0.42rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.project-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.8rem;
+  margin-top: 0.7rem;
+  color: var(--faint);
+  font-size: 0.65rem;
+}
+
+.project-card-meta b {
+  color: var(--project-accent);
+}
+
+.project-card.compact {
+  min-height: 0;
+  gap: 0.65rem;
+  padding: 0.62rem;
+  border: 0;
+  border-radius: 0.72rem;
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-card.compact:hover {
+  background: color-mix(in srgb, var(--project-accent) 6%, var(--surface));
+  box-shadow: none;
+  transform: translateX(2px);
+}
+
+.project-card.compact .project-mark {
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 0.62rem;
+}
+
+.project-card.compact .project-card-copy > strong {
+  font-size: 0.78rem;
+}
+
+.project-card.compact .project-card-copy > small {
+  font-size: 0.52rem;
+}
+
+.project-card.compact .project-card-meta {
+  margin-top: 0.2rem;
+  font-size: 0.58rem;
+}
+
+.project-card.compact .project-card-meta > span {
+  display: none;
+}
+
+.rail-project-list {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0.65rem -0.4rem -0.35rem;
+}
+
+.project-directory-note {
+  margin-top: 1.5rem;
+}
+
+.project-page {
+  max-width: 1080px;
+  padding: 2.5rem 0 6rem;
+}
+
+.project-breadcrumb {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  color: var(--faint);
+  font-size: 0.7rem;
+}
+
+.project-breadcrumb a {
+  color: var(--muted);
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.project-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1.3rem;
+  padding: 1.6rem;
+  border: 1px solid color-mix(in srgb, var(--project-accent) 24%, var(--line));
+  border-radius: 1.15rem;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--project-accent) 9%, var(--surface)), var(--surface));
+}
+
+.project-hero > .project-mark {
+  width: 5rem;
+  height: 5rem;
+  border-radius: 1.3rem;
+}
+
+.project-hero h1 {
+  margin: 0;
+  font-size: clamp(2.3rem, 5vw, 4.2rem);
+  letter-spacing: -0.06em;
+  line-height: 0.98;
+}
+
+.project-hero-copy > p:not(.section-label) {
+  max-width: 620px;
+  margin: 0.65rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.project-hero-copy > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.85rem;
+  color: var(--project-accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.project-hero dl {
+  display: grid;
+  min-width: 9rem;
+  gap: 0.7rem;
+  margin: 0;
+}
+
+.project-hero dl div {
+  padding-left: 1rem;
+  border-left: 1px solid var(--line);
+}
+
+.project-hero dt {
+  color: var(--faint);
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.project-hero dd {
+  margin: 0.22rem 0 0;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 820;
+}
+
+.project-agents,
+.project-feed {
+  margin-top: 1.5rem;
+}
+
+.project-agents > header,
+.project-feed-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 0.3rem 0.8rem;
+}
+
+.project-agents h2,
+.project-feed-heading h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+}
+
+.project-agents > header > span,
+.project-feed-heading > span {
+  color: var(--faint);
+  font-size: 0.65rem;
+}
+
+.project-agents > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.project-agents > div > a {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  color: var(--ink);
+  background: var(--surface);
+  text-decoration: none;
+}
+
+.project-agents > div > a > span:nth-child(2) {
+  min-width: 0;
+  display: grid;
+}
+
+.project-agents strong {
+  font-size: 0.8rem;
+}
+
+.project-agents small {
+  overflow: hidden;
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-feed {
+  max-width: 860px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.project-empty {
+  display: grid;
+  place-items: center;
+  gap: 0.45rem;
+  padding: 4rem 1.5rem;
+  border: 1px dashed color-mix(in srgb, var(--project-accent) 35%, var(--line));
+  border-radius: 1rem;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--project-accent) 4%, var(--surface));
+  text-align: center;
+}
+
+.project-empty > .icon {
+  color: var(--project-accent);
+}
+
+.project-empty strong {
+  color: var(--ink);
+}
+
+.project-empty p {
+  max-width: 560px;
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
 }
 
 .search-empty {

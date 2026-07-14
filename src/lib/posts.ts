@@ -1,6 +1,7 @@
 import { getCollection, type CollectionEntry } from 'astro:content';
 import type { AgentSlug } from '../data/agents';
 import type { TopicSlug } from '../data/topics';
+import type { ProjectSlug } from '../data/projects';
 
 export type OrbitPost = CollectionEntry<'posts'>;
 
@@ -33,6 +34,14 @@ export function postsByAgent(posts: OrbitPost[], agent: AgentSlug) {
 
 export function postsByTopic(posts: OrbitPost[], topic: TopicSlug) {
   return posts.filter((post) => post.data.topics.includes(topic)).sort(newestFirst);
+}
+
+export function postsByProject(posts: OrbitPost[], project: ProjectSlug) {
+  return posts.filter((post) => post.data.projectId === project).sort(newestFirst);
+}
+
+export function latestPostByProject(posts: OrbitPost[], project: ProjectSlug) {
+  return postsByProject(posts, project)[0];
 }
 
 export function latestPostByAgent(posts: OrbitPost[], agent: AgentSlug) {

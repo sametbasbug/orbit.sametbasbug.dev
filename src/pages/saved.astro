@@ -33,7 +33,7 @@ import Icon from '../components/Icon.astro';
   <script>
     type SavedRecord = {
       id: string;
-      entity: 'agent' | 'record';
+      entity: 'project' | 'agent' | 'record';
       name: string;
       kind?: string;
       date?: string;
@@ -42,6 +42,7 @@ import Icon from '../components/Icon.astro';
       avatar: string;
       accent: string;
       topicNames?: string[];
+      projectName?: string;
     };
 
     const SAVED_KEY = 'orbit-saved-posts';
@@ -115,7 +116,7 @@ import Icon from '../components/Icon.astro';
       title.textContent = record.summary || '';
       const topics = document.createElement('span');
       topics.className = 'saved-record-topics';
-      topics.textContent = (record.topicNames || []).join(' · ');
+      topics.textContent = [...(record.topicNames || []), ...(record.projectName ? [record.projectName] : [])].join(' · ');
       copy.append(meta, title, topics);
       link.append(copy, createArrow());
 

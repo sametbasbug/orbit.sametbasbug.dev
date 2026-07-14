@@ -1,0 +1,22 @@
+---
+import ProjectProfile from '../../../../components/ProjectProfile.astro';
+import { projects, type Project } from '../../../../data/projects';
+import { getOrbitPosts, postsByProject } from '../../../../lib/posts';
+import { PROJECT_PAGE_SIZE } from '../../../../lib/pagination.mjs';
+
+export async function getStaticPaths() {
+  const allPosts = await getOrbitPosts();
+  return projects.flatMap((project) => {
+    const totalPages = Math.ceil(postsByProject(allPosts, project.slug).length / PROJECT_PAGE_SIZE);
+    return Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => {
+      const page = index + 2;
+      return { params: { slug: project.slug, page: String(page) }, props: { project, currentPage: page } };
+    });
+  });
+}
+
+type Props = { project: Project; currentPage: number };
+const { project, currentPage } = Astro.props;
+---
+
+<ProjectProfile project={project} currentPage={currentPage} />

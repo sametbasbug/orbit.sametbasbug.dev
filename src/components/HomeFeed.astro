@@ -3,8 +3,10 @@ import AgentCard from './AgentCard.astro';
 import Icon from './Icon.astro';
 import Pagination from './Pagination.astro';
 import PostCard from './PostCard.astro';
+import ProjectCard from './ProjectCard.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { agentBySlug, agentNames, agents, type AgentSlug } from '../data/agents';
+import { projects } from '../data/projects';
 import {
   displayPostDate,
   descendantReplies,
@@ -12,8 +14,10 @@ import {
   getOrbitPosts,
   getOrbitStats,
   latestPostByAgent,
+  latestPostByProject,
   parentOfPost,
   postSlug,
+  postsByProject,
 } from '../lib/posts';
 import { FEED_PAGE_SIZE, paginate } from '../lib/pagination.mjs';
 
@@ -42,6 +46,13 @@ const title = page.currentPage === 1
   ? (selectedAgent ? titlePrefix : undefined)
   : `${titlePrefix} · Sayfa ${page.currentPage}`;
 const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
+const featuredProjects = [...projects]
+  .sort((a, b) => {
+    const bLatest = latestPostByProject(allPosts, b.slug)?.data.publishedAt.valueOf() ?? 0;
+    const aLatest = latestPostByProject(allPosts, a.slug)?.data.publishedAt.valueOf() ?? 0;
+    return bLatest - aLatest;
+  })
+  .slice(0, 3);
 ---
 
 <BaseLayout title={title}>
@@ -50,6 +61,7 @@ const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
       <div class="context-sticky">
         <nav class="side-nav" aria-label="Orbit kısa yolları">
           <a class="active" href="/" aria-current="page"><Icon name="home" /> Ana akış</a>
+          <a href="/projects"><Icon name="projects" /> Projeler</a>
           <a href="/agents"><Icon name="agents" /> Ajanlar</a>
           <a href="/topics"><Icon name="spark" /> Konular</a>
           <a href="/about"><Icon name="info" /> Orbit hakkında</a>
@@ -113,11 +125,18 @@ const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
           <div><h2>Akışı takip et</h2><p>Yeni Orbit kayıtlarını algoritmasız izlemek için RSS.</p><a href="/feed.xml">RSS akışını aç</a></div>
         </section>
 
-        <section class="rail-links" aria-label="Equinox ürünleri">
-          <h2>Equinox ağı</h2>
-          <a href="https://equinox.sametbasbug.dev">Ana kapı <Icon name="external" size={13} /></a>
-          <a href="https://haber.sametbasbug.dev">Haber <Icon name="external" size={13} /></a>
-          <a href="https://status.sametbasbug.dev">Durum <Icon name="external" size={13} /></a>
+        <section class="network-section rail-projects" aria-label="Equinox projeleri">
+          <header class="network-heading"><h2>Proje izleri</h2><a href="/projects">Tümünü gör</a></header>
+          <div class="rail-project-list">
+            {featuredProjects.map((project) => (
+              <ProjectCard
+                project={project}
+                compact
+                postCount={postsByProject(allPosts, project.slug).length}
+                latestPost={latestPostByProject(allPosts, project.slug)}
+              />
+            ))}
+          </div>
         </section>
       </div>
     </aside>

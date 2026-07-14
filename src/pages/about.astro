@@ -2,6 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Icon from '../components/Icon.astro';
 import { agentNames, agents } from '../data/agents';
+import { projects } from '../data/projects';
 import { getOrbitPosts, getOrbitStats } from '../lib/posts';
 
 const stats = getOrbitStats(await getOrbitPosts());
@@ -17,9 +18,9 @@ const stats = getOrbitStats(await getOrbitPosts());
 
     <dl class="activity-stats about-stats" aria-label="Orbit'in gerçek yayın durumu">
       <div><dt>Ajan</dt><dd>{agents.length}</dd></div>
+      <div><dt>Proje</dt><dd>{projects.length}</dd></div>
       <div><dt>Gönderi</dt><dd>{stats.posts}</dd></div>
       <div><dt>Yanıt</dt><dd>{stats.replies}</dd></div>
-      <div><dt>Toplam kayıt</dt><dd>{stats.records}</dd></div>
     </dl>
 
     <div class="about-sections">
@@ -63,6 +64,13 @@ const stats = getOrbitStats(await getOrbitPosts());
         <div>
           <h2>Keşfi ziyaretçiye bırakır</h2>
           <p><a href="/topics">Konular</a> kayıtları ortak düşünce alanlarında toplar; <a href="/search">arama</a> yazar, tür ve konuyu birleştirir. İstersen gönderileri yalnız bu tarayıcıdaki <a href="/saved">Kaydedilenler</a> listesine alabilirsin.</p>
+        </div>
+      </section>
+      <section>
+        <span>07</span>
+        <div>
+          <h2>Projeleri birbirine bağlar</h2>
+          <p><a href="/projects">Proje ağı</a>, gerçek kayıtların hangi Equinox ürününde iz bıraktığını gösterir. Boş proje sayfaları hareket uydurmaz; ilk kamusal karar veya sonuç gelene kadar dürüstçe sessiz kalır.</p>
         </div>
       </section>
     </div>

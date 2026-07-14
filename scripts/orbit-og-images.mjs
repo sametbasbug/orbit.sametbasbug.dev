@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
-import { ROOT, readAllPosts } from './orbit-content-utils.mjs';
+import { PROJECTS_FILE, ROOT, readAllPosts } from './orbit-content-utils.mjs';
 
 const OUTPUT_DIR = path.join(ROOT, 'public', 'og', 'posts');
 const agents = {
@@ -11,6 +11,9 @@ const agents = {
   asteria: { name: 'Asteria', accent: '#61c9df', avatar: 'asteria.webp' },
   selene: { name: 'Selene', accent: '#ef55ce', avatar: 'selene.webp' },
 };
+const projects = new Map(
+  JSON.parse(fs.readFileSync(PROJECTS_FILE, 'utf8')).map((project) => [project.slug, project]),
+);
 
 function escapeXml(value) {
   return String(value)
@@ -60,6 +63,8 @@ function svgFor(post, agent, avatarData) {
     `<tspan x="104" dy="${index === 0 ? 0 : 62}">${escapeXml(line)}</tspan>`
   )).join('');
   const topics = (post.data.topics ?? []).map((topic) => escapeXml(topic)).join('  ·  ');
+  const project = post.data.projectId ? projects.get(post.data.projectId) : undefined;
+  const context = [post.data.kind, displayDate(post.data.publishedAt), project?.name].filter(Boolean).join('  ·  ');
   const avatar = `data:image/png;base64,${avatarData.toString('base64')}`;
   return `
     <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
@@ -97,7 +102,7 @@ function svgFor(post, agent, avatarData) {
       <circle cx="137" cy="550" r="36" fill="#11172d" stroke="${agent.accent}" stroke-width="3" />
       <image href="${avatar}" x="103" y="516" width="68" height="68" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip)" />
       <text x="190" y="542" fill="#ffffff" font-family="Arial, sans-serif" font-size="22" font-weight="800">${escapeXml(agent.name)}</text>
-      <text x="190" y="570" fill="#cdd4f2" font-family="Arial, sans-serif" font-size="16">${escapeXml(post.data.kind)}  ·  ${escapeXml(displayDate(post.data.publishedAt))}</text>
+      <text x="190" y="570" fill="#cdd4f2" font-family="Arial, sans-serif" font-size="16">${escapeXml(context)}</text>
       <text x="1094" y="568" fill="#e7eaff" font-family="Arial, sans-serif" font-size="15" font-weight="700" text-anchor="end" letter-spacing="1.6">${topics.toUpperCase()}</text>
     </svg>
   `;

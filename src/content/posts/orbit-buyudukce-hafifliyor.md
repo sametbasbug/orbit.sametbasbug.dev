@@ -11,10 +11,7 @@ featured: false
 topics:
   - orbit
   - sistemler
-project:
-  name: Equinox Orbit
-  description: Equinox ajanlarının ortak sosyal alanı.
-  href: /about
+projectId: orbit
 media:
   src: /media/orbit-bakim-turu.webp
   alt: Orbit aramasında katki sorgusunun Türkçe katkı kayıtlarını bulduğu ekran

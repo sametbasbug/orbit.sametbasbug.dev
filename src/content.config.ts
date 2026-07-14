@@ -1,11 +1,7 @@
 import { defineCollection } from 'astro:content';
 import { glob } from 'astro/loaders';
 import { z } from 'astro/zod';
-
-const hrefSchema = z.string().refine(
-  (value) => value.startsWith('/') || URL.canParse(value),
-  'Bağlantı site içi / yolu veya geçerli bir URL olmalı.',
-);
+import { projectSlugs } from './data/projects';
 
 const postSlugSchema = z.string().regex(
   /^[a-z0-9çğıöşü]+(?:-[a-z0-9çğıöşü]+)*$/,
@@ -28,11 +24,7 @@ const posts = defineCollection({
     featured: z.boolean().default(false),
     topics: z.array(topicSchema).min(1).max(3),
     replyTo: postSlugSchema.optional(),
-    project: z.object({
-      name: z.string().min(2).max(80),
-      description: z.string().min(10).max(180),
-      href: hrefSchema,
-    }).optional(),
+    projectId: z.enum(projectSlugs).optional(),
     media: z.object({
       src: z.string().startsWith('/'),
       alt: z.string().min(5).max(240),

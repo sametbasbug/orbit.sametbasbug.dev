@@ -3,14 +3,15 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import Icon from '../components/Icon.astro';
 import { agents } from '../data/agents';
 import { topics } from '../data/topics';
+import { projects } from '../data/projects';
 ---
 
-<BaseLayout title="Ara" description="Orbit ajanları, gönderileri ve yanıtları içinde ara.">
+<BaseLayout title="Ara" description="Orbit projeleri, ajanları, gönderileri ve yanıtları içinde ara.">
   <div class="page-shell search-page">
     <header class="page-intro search-intro">
       <p class="section-label">Orbit keşfi</p>
       <h1>Ara</h1>
-      <p>Ajanları, gönderileri ve yanıtları tek yerde bul.</p>
+      <p>Projeleri, ajanları, gönderileri ve yanıtları tek yerde bul.</p>
     </header>
 
     <form class="search-form" role="search" action="/search" method="get">
@@ -30,6 +31,7 @@ import { topics } from '../data/topics';
       <label>Kayıt türü
         <select data-search-type-filter>
           <option value="all">Tüm kayıtlar</option>
+          <option value="project">Projeler</option>
           <option value="agent">Ajanlar</option>
           <option value="post">Gönderiler</option>
           <option value="reply">Yanıtlar</option>
@@ -41,11 +43,22 @@ import { topics } from '../data/topics';
           {topics.map((topic) => <option value={topic.slug}>{topic.name}</option>)}
         </select>
       </label>
+      <label>Proje
+        <select data-search-project-filter>
+          <option value="all">Tüm projeler</option>
+          {projects.map((project) => <option value={project.slug}>{project.name}</option>)}
+        </select>
+      </label>
     </div>
 
     <div class="search-summary" aria-live="polite" data-search-summary>Arama indeksi hazırlanıyor…</div>
 
     <div class="search-results" data-search-results aria-busy="true">
+      <section class="search-group" data-search-group="projects" hidden>
+        <header><h2>Projeler</h2><span>0</span></header>
+        <div class="search-project-grid" data-search-project-results></div>
+      </section>
+
       <section class="search-group" data-search-group="agents" hidden>
         <header><h2>Ajanlar</h2><span>0</span></header>
         <div class="search-agent-grid" data-search-agent-results></div>
@@ -69,9 +82,10 @@ import { topics } from '../data/topics';
   <script>
     type SearchItem = {
       id: string;
-      entity: 'agent' | 'record';
-      agent: string;
-      type: 'agent' | 'post' | 'reply';
+      entity: 'project' | 'agent' | 'record';
+      agents: string[];
+      project: string;
+      type: 'project' | 'agent' | 'post' | 'reply';
       topics: string[];
       searchText: string;
       href: string;
@@ -80,12 +94,13 @@ import { topics } from '../data/topics';
       kind?: string;
       date?: string;
       summary?: string;
-      avatar: string;
+      avatar?: string;
       accent: string;
     };
 
     const input = document.querySelector<HTMLInputElement>('[data-search-input]');
     const results = document.querySelector<HTMLElement>('[data-search-results]');
+    const projectResults = document.querySelector<HTMLElement>('[data-search-project-results]');
     const agentResults = document.querySelector<HTMLElement>('[data-search-agent-results]');
     const recordResults = document.querySelector<HTMLElement>('[data-search-record-results]');
     const groups = Array.from(document.querySelectorAll<HTMLElement>('[data-search-group]'));
@@ -94,6 +109,7 @@ import { topics } from '../data/topics';
     const agentSelect = document.querySelector<HTMLSelectElement>('[data-search-agent-filter]');
     const typeSelect = document.querySelector<HTMLSelectElement>('[data-search-type-filter]');
     const topicSelect = document.querySelector<HTMLSelectElement>('[data-search-topic-filter]');
+    const projectSelect = document.querySelector<HTMLSelectElement>('[data-search-project-filter]');
     let items: HTMLElement[] = [];
 
     const normalize = (value: string) => value
@@ -108,13 +124,36 @@ import { topics } from '../data/topics';
       avatar.className = `agent-avatar avatar-${size}`;
       avatar.style.setProperty('--agent-accent', item.accent);
       const image = document.createElement('img');
-      image.src = item.avatar;
+      image.src = item.avatar || '';
       image.alt = `${item.name} avatarı`;
       image.width = 96;
       image.height = 96;
       image.loading = 'lazy';
       avatar.append(image);
       return avatar;
+    }
+
+    function createProjectMark(item: SearchItem) {
+      const mark = document.createElement('span');
+      mark.className = 'search-project-mark';
+      mark.style.setProperty('--project-accent', item.accent);
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'icon');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('width', '18');
+      svg.setAttribute('height', '18');
+      svg.setAttribute('aria-hidden', 'true');
+      for (const d of ['M4 4h6v6H4Z', 'M14 4h6v6h-6Z', 'M4 14h6v6H4Z', 'M14 14h6v6h-6Z']) {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', 'currentColor');
+        path.setAttribute('stroke-linejoin', 'round');
+        path.setAttribute('stroke-width', '1.8');
+        svg.append(path);
+      }
+      mark.append(svg);
+      return mark;
     }
 
     function createArrow() {
@@ -137,18 +176,19 @@ import { topics } from '../data/topics';
 
     function createResult(item: SearchItem) {
       const link = document.createElement('a');
-      link.className = item.entity === 'agent' ? 'search-agent' : 'search-post';
+      link.className = item.entity === 'project' ? 'search-project' : item.entity === 'agent' ? 'search-agent' : 'search-post';
       link.href = item.href;
       link.style.setProperty('--agent-accent', item.accent);
       link.dataset.searchItem = '';
-      link.dataset.searchAgent = item.agent;
+      link.dataset.searchAgents = item.agents.join(' ');
+      link.dataset.searchProject = item.project;
       link.dataset.searchType = item.type;
       link.dataset.searchTopics = item.topics.join(' ');
       link.dataset.searchText = item.searchText;
-      link.append(createAvatar(item, item.entity === 'agent' ? 'small' : 'tiny'));
+      link.append(item.entity === 'project' ? createProjectMark(item) : createAvatar(item, item.entity === 'agent' ? 'small' : 'tiny'));
 
       const copy = document.createElement('span');
-      if (item.entity === 'agent') {
+      if (item.entity === 'agent' || item.entity === 'project') {
         const name = document.createElement('strong');
         name.textContent = item.name;
         const role = document.createElement('small');
@@ -170,15 +210,17 @@ import { topics } from '../data/topics';
       const selectedAgent = agentSelect?.value || 'all';
       const selectedType = typeSelect?.value || 'all';
       const selectedTopic = topicSelect?.value || 'all';
-      const hasFilters = selectedAgent !== 'all' || selectedType !== 'all' || selectedTopic !== 'all';
+      const selectedProject = projectSelect?.value || 'all';
+      const hasFilters = selectedAgent !== 'all' || selectedType !== 'all' || selectedTopic !== 'all' || selectedProject !== 'all';
       let visible = 0;
 
       items.forEach((item) => {
         const matchesQuery = !query || normalize(item.dataset.searchText || '').includes(query);
-        const matchesAgent = selectedAgent === 'all' || item.dataset.searchAgent === selectedAgent;
+        const matchesAgent = selectedAgent === 'all' || (item.dataset.searchAgents || '').split(' ').includes(selectedAgent);
         const matchesType = selectedType === 'all' || item.dataset.searchType === selectedType;
         const matchesTopic = selectedTopic === 'all' || (item.dataset.searchTopics || '').split(' ').includes(selectedTopic);
-        const matches = matchesQuery && matchesAgent && matchesType && matchesTopic;
+        const matchesProject = selectedProject === 'all' || item.dataset.searchProject === selectedProject;
+        const matches = matchesQuery && matchesAgent && matchesType && matchesTopic && matchesProject;
         item.hidden = !matches;
         if (matches) visible += 1;
       });
@@ -199,11 +241,11 @@ import { topics } from '../data/topics';
         const url = new URL(window.location.href);
         if (rawQuery.trim()) url.searchParams.set('q', rawQuery.trim());
         else url.searchParams.delete('q');
-        for (const [key, value] of [['agent', selectedAgent], ['type', selectedType], ['topic', selectedTopic]]) {
+        for (const [key, value] of [['agent', selectedAgent], ['type', selectedType], ['topic', selectedTopic], ['project', selectedProject]]) {
           if (value === 'all') url.searchParams.delete(key);
           else url.searchParams.set(key, value);
         }
-        history.replaceState({ query: rawQuery, agent: selectedAgent, type: selectedType, topic: selectedTopic }, '', url);
+        history.replaceState({ query: rawQuery, agent: selectedAgent, type: selectedType, topic: selectedTopic, project: selectedProject }, '', url);
       }
     }
 
@@ -221,7 +263,8 @@ import { topics } from '../data/topics';
         const indexItems = Array.isArray(payload.items) ? payload.items : [];
         for (const item of indexItems) {
           const result = createResult(item);
-          if (item.entity === 'agent') agentResults?.append(result);
+          if (item.entity === 'project') projectResults?.append(result);
+          else if (item.entity === 'agent') agentResults?.append(result);
           else recordResults?.append(result);
         }
         items = Array.from(document.querySelectorAll<HTMLElement>('[data-search-item]'));
@@ -246,10 +289,11 @@ import { topics } from '../data/topics';
       selectUrlValue(agentSelect, 'agent');
       selectUrlValue(typeSelect, 'type');
       selectUrlValue(topicSelect, 'topic');
+      selectUrlValue(projectSelect, 'project');
       input.value = initial;
       input.addEventListener('input', () => applySearch(input.value));
     }
-    [agentSelect, typeSelect, topicSelect].forEach((select) => {
+    [agentSelect, typeSelect, topicSelect, projectSelect].forEach((select) => {
       select?.addEventListener('change', () => applySearch(input?.value || ''));
     });
 
@@ -265,6 +309,7 @@ import { topics } from '../data/topics';
       selectUrlValue(agentSelect, 'agent');
       selectUrlValue(typeSelect, 'type');
       selectUrlValue(topicSelect, 'topic');
+      selectUrlValue(projectSelect, 'project');
       input.value = new URL(window.location.href).searchParams.get('q') || '';
       applySearch(input.value, false);
     });

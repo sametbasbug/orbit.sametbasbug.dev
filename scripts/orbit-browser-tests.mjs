@@ -178,8 +178,9 @@ if (errors.length === 0) {
         check(await page.locator('.header-mobile-search').isVisible(), `${label}: mobil arama erişimi görünür değil.`);
         check(layout.navPosition === 'fixed', `${label}: mobil alt navigasyon fixed değil.`);
         check(layout.nav.x >= 0 && layout.nav.right <= layout.innerWidth && layout.nav.bottom <= viewport.height, `${label}: mobil alt navigasyon kırpılıyor.`);
-        check(layout.navLinks.length === 4, `${label}: mobil navigasyonda dört öğe yok.`);
+        check(layout.navLinks.length === 5, `${label}: mobil navigasyonda beş öğe yok.`);
         const mobileNavText = (await page.locator('.primary-nav').textContent()) || '';
+        check(mobileNavText.includes('Projeler'), `${label}: mobil navigasyonda Projeler bağlantısı yok.`);
         check(mobileNavText.includes('Konular'), `${label}: mobil navigasyonda Konular bağlantısı yok.`);
         check(!mobileNavText.includes('Yanıtlar'), `${label}: mobil navigasyonda kaldırılan Yanıtlar bağlantısı kaldı.`);
         check(layout.navLinks.every((link) => link.flex.startsWith('1 1 0') && link.minWidth === '0px'), `${label}: mobil navigasyon öğeleri eşit flex tabanında değil.`);
@@ -316,6 +317,42 @@ if (errors.length === 0) {
         await page.locator('[data-search-input]').fill('eşleşmeyecek-bir-ifade');
         check(await page.locator('[data-search-empty]').isVisible(), `${label}: sonuçsuz aramada boş durum görünmüyor.`);
         check(await page.evaluate(() => [...document.querySelectorAll('[data-search-item]')].every((item) => getComputedStyle(item).display === 'none')), `${label}: sonuçsuz aramada kayıtlar gizlenmedi.`);
+
+        await page.goto(`${baseUrl}/search?q=Equinox%20Haber`, { waitUntil: 'networkidle' });
+        await page.waitForSelector('[data-search-item]:not([hidden])');
+        const projectSearch = await page.evaluate(() => ({
+          hrefs: [...document.querySelectorAll('[data-search-item]')]
+            .filter((item) => getComputedStyle(item).display !== 'none')
+            .map((item) => item.getAttribute('href')),
+          overflow: document.documentElement.scrollWidth > innerWidth,
+        }));
+        check(projectSearch.hrefs.includes('/projects/haber'), `${label}: Equinox Haber aramasında proje sonucu yok.`);
+        check(projectSearch.hrefs.includes('/posts/akis-gundem-degildir'), `${label}: Equinox Haber aramasında bağlı kayıt yok.`);
+        check(!projectSearch.overflow, `${label}: proje araması yatay taşıyor.`);
+
+        await page.goto(`${baseUrl}/search?project=orbit`, { waitUntil: 'networkidle' });
+        await page.waitForSelector('[data-search-item]:not([hidden])');
+        const projectFiltered = await page.evaluate(() => ({
+          items: [...document.querySelectorAll('[data-search-item]')]
+            .filter((item) => getComputedStyle(item).display !== 'none')
+            .map((item) => ({ href: item.getAttribute('href'), project: item.dataset.searchProject })),
+          summary: document.querySelector('[data-search-summary]')?.textContent?.trim(),
+        }));
+        check(projectFiltered.items.length === 4 && projectFiltered.items.every((item) => item.project === 'orbit'), `${label}: Orbit proje filtresi proje + üç bağlı kaydı döndürmedi.`);
+        check(projectFiltered.summary === '4 eşleşme bulundu', `${label}: Orbit proje filtresi özeti yanlış (${projectFiltered.summary}).`);
+
+        await page.goto(`${baseUrl}/projects`, { waitUntil: 'networkidle' });
+        check(await page.locator('.project-directory [data-project-card]').count() === 5, `${label}: proje dizini beş kontrollü proje göstermiyor.`);
+        check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: proje dizini yatay taşıyor.`);
+
+        await page.goto(`${baseUrl}/projects/orbit`, { waitUntil: 'networkidle' });
+        check(await page.locator('[data-project-detail="orbit"] .project-feed [data-feed-post]').count() === 3, `${label}: Orbit proje sayfası üç gerçek kaydı göstermiyor.`);
+        check((await page.locator('.primary-nav a[aria-current="page"]').textContent())?.includes('Projeler'), `${label}: proje detayında Projeler navigasyonu aktif değil.`);
+        check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: Orbit proje sayfası yatay taşıyor.`);
+
+        await page.goto(`${baseUrl}/projects/status`, { waitUntil: 'networkidle' });
+        check(await page.locator('.project-empty').isVisible(), `${label}: kayıtsız projede dürüst boş durum görünmüyor.`);
+        check((await page.locator('.project-empty').textContent())?.includes('Henüz Orbit kaydı yok.'), `${label}: kayıtsız proje boş durum metni yanlış.`);
 
         await page.goto(baseUrl, { waitUntil: 'networkidle' });
         const firstSave = page.locator('[data-feed-post]:not([hidden]) [data-save-button]').first();

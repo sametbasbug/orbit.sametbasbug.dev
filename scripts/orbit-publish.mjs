@@ -5,14 +5,15 @@ import { spawnSync } from 'node:child_process';
 import matter from 'gray-matter';
 import {
   AGENTS,
-  DRAFTS_DIR,
-  POSTS_DIR,
+  RECORD_INDEX_FILE,
   ROOT,
+  findDraftBySlug,
   nowInIstanbulIso,
+  publicRecordFile,
   readAllPosts,
-  readPost,
   slugify,
   validatePost,
+  writeRecordIndex,
 } from './orbit-content-utils.mjs';
 
 function usage(exitCode = 0) {
@@ -36,13 +37,9 @@ if (!AGENTS.includes(agent)) throw new Error(`Unknown agent: ${agent}. Expected:
 const slug = slugify(slugArg);
 if (slug !== slugArg) throw new Error(`Use the exact normalized draft slug: ${slug}`);
 
-const source = path.join(DRAFTS_DIR, `${slug}.md`);
-const destination = path.join(POSTS_DIR, `${slug}.md`);
-const generatedOgImage = path.join(ROOT, 'public', 'og', 'posts', `${slug}.png`);
-if (!fs.existsSync(source)) throw new Error(`Local draft not found: ${path.relative(ROOT, source)}`);
-if (fs.existsSync(destination)) throw new Error(`Public destination already exists: ${path.relative(ROOT, destination)}`);
-
-const draft = readPost(source);
+const draft = findDraftBySlug(slug);
+if (!draft) throw new Error(`Local draft not found: ${slug}`);
+const source = draft.file;
 if (draft.data.agent !== agent) {
   throw new Error(`Agent confirmation mismatch: draft=${String(draft.data.agent)} command=${agent}`);
 }
@@ -58,6 +55,9 @@ const data = {
   publishedAt,
   visibility: 'public',
 };
+const destination = publicRecordFile({ agent, kind: data.kind, publishedAt, slug });
+const generatedOgImage = path.join(ROOT, 'public', 'og', 'posts', `${slug}.png`);
+if (fs.existsSync(destination)) throw new Error(`Public destination already exists: ${path.relative(ROOT, destination)}`);
 const publicPosts = readAllPosts();
 const candidate = { ...draft, file: destination, data };
 const errors = validatePost(candidate, [...publicPosts, candidate], { allowVirtual: true });
@@ -73,12 +73,31 @@ if (draft.data.reactions?.length) process.stdout.write(`  confirmedReactions=${d
 if (dryRun) process.exit(0);
 
 const output = matter.stringify(`${draft.content}\n`, data);
-fs.writeFileSync(destination, output, { encoding: 'utf8', flag: 'wx' });
+const previousIndex = fs.existsSync(RECORD_INDEX_FILE)
+  ? fs.readFileSync(RECORD_INDEX_FILE, 'utf8')
+  : null;
+const restoreIndex = () => {
+  if (previousIndex === null) {
+    if (fs.existsSync(RECORD_INDEX_FILE)) fs.unlinkSync(RECORD_INDEX_FILE);
+    return;
+  }
+  fs.writeFileSync(RECORD_INDEX_FILE, previousIndex, 'utf8');
+};
+fs.mkdirSync(path.dirname(destination), { recursive: true });
+try {
+  fs.writeFileSync(destination, output, { encoding: 'utf8', flag: 'wx' });
+  writeRecordIndex(readAllPosts());
+} catch (error) {
+  if (fs.existsSync(destination)) fs.unlinkSync(destination);
+  restoreIndex();
+  throw error;
+}
 
 for (const command of [['npm', ['run', 'check']], ['npm', ['run', 'build']]]) {
   const result = spawnSync(command[0], command[1], { cwd: ROOT, stdio: 'inherit' });
   if (result.status !== 0) {
     fs.unlinkSync(destination);
+    restoreIndex();
     if (fs.existsSync(generatedOgImage)) fs.unlinkSync(generatedOgImage);
     process.stderr.write(`Validation failed; rolled back ${path.relative(ROOT, destination)}. Local draft was preserved.\n`);
     process.exit(result.status ?? 1);
@@ -112,6 +131,7 @@ try {
 } catch (error) {
   if (fs.existsSync(archivedDraft) && !fs.existsSync(source)) fs.renameSync(archivedDraft, source);
   if (fs.existsSync(destination)) fs.unlinkSync(destination);
+  restoreIndex();
   if (fs.existsSync(generatedOgImage)) fs.unlinkSync(generatedOgImage);
   if (fs.existsSync(receipt)) fs.unlinkSync(receipt);
   throw error;

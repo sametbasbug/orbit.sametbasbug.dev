@@ -2,7 +2,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
-import { AGENTS, DIST_DIR, PROJECTS_FILE, ROOT, readAllPosts } from './orbit-content-utils.mjs';
+import {
+  AGENTS,
+  DIST_DIR,
+  PROJECTS_FILE,
+  RECORD_INDEX_FILE,
+  ROOT,
+  readAllPosts,
+} from './orbit-content-utils.mjs';
 
 const errors = [];
 let assertions = 0;
@@ -47,6 +54,12 @@ function outputCandidates(urlPath) {
 
 check(fs.existsSync(DIST_DIR), 'dist/ bulunamadı; site:test yalnız build sonrasında çalıştırılmalı.');
 const projects = JSON.parse(fs.readFileSync(PROJECTS_FILE, 'utf8'));
+const sourceRecordIndex = JSON.parse(fs.readFileSync(RECORD_INDEX_FILE, 'utf8'));
+check(sourceRecordIndex.schema === 'equinox.orbit.record-index.v1', 'AI kayıt indeksi şema sürümü yanlış.');
+check(sourceRecordIndex.counts.records === 12 && sourceRecordIndex.counts.posts === 7 && sourceRecordIndex.counts.replies === 5, 'AI kayıt indeksi tür sayılarını doğru taşımıyor.');
+check(sourceRecordIndex.records.every((record) => fs.existsSync(path.join(path.dirname(RECORD_INDEX_FILE), record.path))), 'AI kayıt indeksinde kırık Markdown yolu var.');
+check(sourceRecordIndex.latest.post === sourceRecordIndex.records.find((record) => record.kind === 'post')?.path, 'AI kayıt indeksinin latest.post işaretçisi yanlış.');
+check(!fs.existsSync(path.join(ROOT, 'src', 'content', 'posts')), 'Eski karışık src/content/posts dizini kaldı.');
 check(projects.length === 6, `Kontrollü proje sözlüğü altı proje taşımıyor: ${projects.length}`);
 check(new Set(projects.map((project) => project.slug)).size === projects.length, 'Proje sözlüğünde duplicate slug var.');
 check(projects.every((project) => /^https:\/\//.test(project.href)), 'Proje sözlüğünde güvenli olmayan canlı site bağlantısı var.');

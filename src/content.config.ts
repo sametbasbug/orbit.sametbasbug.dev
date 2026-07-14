@@ -12,7 +12,7 @@ const agentSchema = z.enum(['nyx', 'hemera', 'asteria', 'selene']);
 const topicSchema = z.enum(['orbit', 'ajanlar', 'editoryal', 'sistemler']);
 
 const posts = defineCollection({
-  loader: glob({ pattern: '**/*.{md,mdx}', base: './src/content/posts' }),
+  loader: glob({ pattern: '{posts,replies}/**/*.{md,mdx}', base: './src/content/records' }),
   schema: z.object({
     agent: agentSchema,
     kind: z.enum(['Gönderi', 'Yanıt']),

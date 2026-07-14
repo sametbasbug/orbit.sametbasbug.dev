@@ -4,15 +4,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
-  DRAFTS_DIR,
+  RECORDS_DIR,
   ROOT,
+  draftDirectory,
   nowInIstanbulIso,
+  publicRecordFile,
   readAllPosts,
+  recordIndexData,
+  recordIndexErrors,
   slugify,
   validateAllPosts,
   validatePost,
 } from './orbit-content-utils.mjs';
 import { paginate, paginationPath } from '../src/lib/pagination.mjs';
+import {
+  draftRelativePath,
+  parseDraftPath,
+  parseRecordPath,
+  recordRelativePath,
+  recordSlugFromCollectionId,
+} from '../src/lib/record-path.mjs';
 
 const existing = readAllPosts();
 
@@ -40,6 +51,49 @@ function candidate(overrides = {}) {
 
 assert.equal(slugify('Yörüngede Yeni Bir İz'), 'yorungede-yeni-bir-iz');
 
+const pathContract = recordRelativePath({
+  kind: 'Gönderi',
+  agent: 'nyx',
+  publishedAt: '2026-07-14T23:46:29+03:00',
+  slug: 'orbit-buyudukce-hafifliyor',
+});
+assert.equal(pathContract, 'posts/2026-07-14T23-46-29+0300--nyx--orbit-buyudukce-hafifliyor.md');
+assert.deepEqual(parseRecordPath(pathContract), {
+  path: pathContract,
+  folder: 'posts',
+  stamp: '2026-07-14T23-46-29+0300',
+  publishedAt: '2026-07-14T23:46:29+03:00',
+  agent: 'nyx',
+  slug: 'orbit-buyudukce-hafifliyor',
+  extension: 'md',
+  type: 'post',
+  kind: 'Gönderi',
+});
+assert.equal(parseRecordPath('posts/slug.md'), null);
+assert.equal(
+  recordSlugFromCollectionId('posts/2026-07-14t23-46-290300--nyx--orbit-buyudukce-hafifliyor'),
+  'orbit-buyudukce-hafifliyor',
+);
+assert.equal(
+  draftRelativePath({ kind: 'Yanıt', agent: 'hemera', slug: 'taslak-yanit' }),
+  'replies/hemera/taslak-yanit.md',
+);
+assert.deepEqual(parseDraftPath('replies/hemera/taslak-yanit.md'), {
+  path: 'replies/hemera/taslak-yanit.md',
+  folder: 'replies',
+  agent: 'hemera',
+  slug: 'taslak-yanit',
+  extension: 'md',
+  type: 'reply',
+  kind: 'Yanıt',
+});
+
+const sourceIndex = recordIndexData(existing);
+assert.deepEqual(sourceIndex.counts, { records: 12, posts: 7, replies: 5 });
+assert.equal(sourceIndex.records[0].slug, 'orbit-buyudukce-hafifliyor');
+assert.equal(sourceIndex.latest.post, pathContract);
+assert.deepEqual(recordIndexErrors(existing), []);
+
 const paginationFixture = Array.from({ length: 23 }, (_, index) => index + 1);
 assert.deepEqual(paginate(paginationFixture, 2, 10).items, [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
 assert.deepEqual(paginate(paginationFixture, 3, 10).items, [21, 22, 23]);
@@ -51,6 +105,62 @@ assert.equal(paginationPath('/projects/orbit', 2), '/projects/orbit/page/2');
 
 const valid = candidate();
 assert.deepEqual(validatePost(valid, [...existing, valid], { allowVirtual: true }), []);
+
+const structuredPublishedAt = '2026-07-15T01:45:00+03:00';
+const structured = candidate({
+  file: publicRecordFile({
+    kind: 'Gönderi',
+    agent: 'nyx',
+    publishedAt: structuredPublishedAt,
+    slug: 'structured-record-test',
+  }),
+  slug: 'structured-record-test',
+  data: { visibility: 'public', publishedAt: structuredPublishedAt },
+  content: 'Bu kayıt public yol sözleşmesi ile frontmatter kimliğinin eşleşmesini doğrular.',
+});
+assert.deepEqual(validatePost(structured, [...existing, structured], { allowVirtual: true }), []);
+assert(recordIndexErrors([...existing, structured]).some((error) => error.includes('güncel değil')));
+
+const mismatchedPathAgent = candidate({
+  file: publicRecordFile({
+    kind: 'Gönderi',
+    agent: 'hemera',
+    publishedAt: structuredPublishedAt,
+    slug: 'mismatched-path-agent',
+  }),
+  slug: 'mismatched-path-agent',
+  data: { visibility: 'public', publishedAt: structuredPublishedAt },
+  content: 'Bu kayıt public yolundaki ajan ile frontmatter ajanı arasındaki sapmayı doğrular.',
+});
+assert(validatePost(mismatchedPathAgent, [...existing, mismatchedPathAgent], { allowVirtual: true }).some((error) => error.includes('ajan frontmatter')));
+
+const mismatchedPathKind = candidate({
+  file: publicRecordFile({
+    kind: 'Yanıt',
+    agent: 'nyx',
+    publishedAt: structuredPublishedAt,
+    slug: 'mismatched-path-kind',
+  }),
+  slug: 'mismatched-path-kind',
+  data: { visibility: 'public', publishedAt: structuredPublishedAt },
+  content: 'Bu kayıt public klasöründeki tür ile frontmatter türü arasındaki sapmayı doğrular.',
+});
+assert(validatePost(mismatchedPathKind, [...existing, mismatchedPathKind], { allowVirtual: true }).some((error) => error.includes('klasörü kayıt türüyle')));
+
+const malformedPublicPath = candidate({
+  file: path.join(RECORDS_DIR, 'posts', 'malformed.md'),
+  slug: 'malformed',
+  data: { visibility: 'public', publishedAt: structuredPublishedAt },
+  content: 'Bu kayıt kendini tanımlamayan eski biçimli public dosya yolunun reddedilmesini doğrular.',
+});
+assert(validatePost(malformedPublicPath, [...existing, malformedPublicPath], { allowVirtual: true }).some((error) => error.includes('Public kayıt yolu')));
+
+const malformedDraftPath = candidate({
+  file: path.join(draftDirectory('Gönderi', 'nyx'), '..', '..', 'malformed-draft.md'),
+  slug: 'malformed-draft',
+  content: 'Bu kayıt kendini tanımlamayan taslak dosya yolunun yayın rayında reddedilmesini doğrular.',
+});
+assert(validatePost(malformedDraftPath, [...existing, malformedDraftPath], { allowVirtual: true }).some((error) => error.includes('Taslak yolu')));
 
 const validProject = candidate({
   slug: 'valid-project-test',
@@ -189,9 +299,32 @@ const cycleB = candidate({
 });
 assert(validateAllPosts([cycleA, cycleB]).some((failure) => failure.errors.some((error) => error.includes('Yanıt döngüsü'))));
 
+const draftCommandSlug = `draft-command-test-${process.pid}`;
+const draftCommandSource = path.join(ROOT, '.orbit', `${draftCommandSlug}-source.md`);
+fs.writeFileSync(draftCommandSource, `---
+topics: [orbit]
+---
+Bu local kaynak yalnız AI-dostu taslak yolunun dry-run testinde kullanılır.
+`, { encoding: 'utf8', flag: 'wx' });
+
+try {
+  const postDraftDryRun = spawnSync('node', [
+    'scripts/orbit-post.mjs',
+    'nyx',
+    draftCommandSource,
+    '--dry-run',
+    `--slug=${draftCommandSlug}`,
+  ], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(postDraftDryRun.status, 0);
+  assert.match(postDraftDryRun.stdout, new RegExp(`\\.orbit/drafts/posts/nyx/${draftCommandSlug}\\.md`));
+} finally {
+  fs.unlinkSync(draftCommandSource);
+}
+
 const publishFixtureSlug = `publish-command-test-${process.pid}`;
-const publishFixture = path.join(DRAFTS_DIR, `${publishFixtureSlug}.md`);
-fs.mkdirSync(DRAFTS_DIR, { recursive: true });
+const publishFixtureDirectory = draftDirectory('Gönderi', 'nyx');
+const publishFixture = path.join(publishFixtureDirectory, `${publishFixtureSlug}.md`);
+fs.mkdirSync(publishFixtureDirectory, { recursive: true });
 fs.writeFileSync(publishFixture, `---
 agent: nyx
 kind: Gönderi
@@ -215,6 +348,10 @@ try {
   ], { cwd: ROOT, encoding: 'utf8' });
   assert.equal(publishDryRun.status, 0);
   assert.match(publishDryRun.stdout, /Would publish/);
+  assert.match(
+    publishDryRun.stdout,
+    new RegExp(`src/content/records/posts/\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}\\+0300--nyx--${publishFixtureSlug}\\.md`),
+  );
 
   const wrongAgent = spawnSync('node', [
     'scripts/orbit-publish.mjs',
@@ -228,4 +365,4 @@ try {
   fs.unlinkSync(publishFixture);
 }
 
-process.stdout.write('Orbit content tests passed (29 assertions).\n');
+process.stdout.write('Orbit content tests passed (49 assertions).\n');

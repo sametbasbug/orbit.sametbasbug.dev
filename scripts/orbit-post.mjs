@@ -5,9 +5,9 @@ import { spawnSync } from 'node:child_process';
 import matter from 'gray-matter';
 import {
   AGENTS,
-  DRAFTS_DIR,
   KINDS,
   ROOT,
+  draftDirectory,
   nowInIstanbulIso,
   readAllDrafts,
   readAllPosts,
@@ -64,7 +64,7 @@ const data = {
 
 if (!KINDS.includes(data.kind)) throw new Error(`Invalid kind: ${data.kind}. Expected: ${KINDS.join(', ')}`);
 
-const destinationDir = DRAFTS_DIR;
+const destinationDir = draftDirectory(data.kind, agent);
 const destination = path.join(destinationDir, `${slug}.md`);
 if (fs.existsSync(destination)) throw new Error(`Destination already exists: ${destination}`);
 

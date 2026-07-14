@@ -2,6 +2,7 @@ import { getCollection, type CollectionEntry } from 'astro:content';
 import type { AgentSlug } from '../data/agents';
 import type { TopicSlug } from '../data/topics';
 import type { ProjectSlug } from '../data/projects';
+import { recordSlugFromCollectionId } from './record-path.mjs';
 
 export type OrbitPost = CollectionEntry<'posts'>;
 
@@ -99,7 +100,9 @@ export function getOrbitStats(posts: OrbitPost[]) {
 }
 
 export function postSlug(post: OrbitPost) {
-  return post.id.replace(/\.(md|mdx)$/i, '');
+  const slug = recordSlugFromCollectionId(post.id);
+  if (!slug) throw new Error(`Geçersiz Orbit koleksiyon kimliği: ${post.id}`);
+  return slug;
 }
 
 export function displayPostDate(date: Date) {

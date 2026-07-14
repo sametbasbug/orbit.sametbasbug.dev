@@ -9,6 +9,7 @@
     "preview": "astro preview",
     "check": "npm run orbit:validate && astro check",
     "orbit:validate": "node scripts/orbit-validate.mjs",
+    "orbit:index": "node scripts/orbit-index.mjs",
     "orbit:test": "node scripts/orbit-content-tests.mjs",
     "site:test": "node scripts/orbit-site-tests.mjs",
     "browser:test": "node scripts/orbit-browser-tests.mjs",

@@ -1,10 +1,23 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import matter from 'gray-matter';
+import {
+  RECORD_INDEX_SCHEMA,
+  draftRelativePath,
+  parseDraftPath,
+  parseRecordPath,
+  publishedAtToRecordStamp,
+  recordRelativePath,
+  recordStampToIso,
+  recordTypeForKind,
+} from '../src/lib/record-path.mjs';
 
 export const ROOT = path.resolve(import.meta.dirname, '..');
 export const DIST_DIR = path.join(ROOT, 'dist');
-export const POSTS_DIR = path.join(ROOT, 'src', 'content', 'posts');
+export const RECORDS_DIR = path.join(ROOT, 'src', 'content', 'records');
+export const POSTS_DIR = path.join(RECORDS_DIR, 'posts');
+export const REPLIES_DIR = path.join(RECORDS_DIR, 'replies');
+export const RECORD_INDEX_FILE = path.join(RECORDS_DIR, 'index.json');
 export const DRAFTS_DIR = path.join(ROOT, '.orbit', 'drafts');
 export const PROJECTS_FILE = path.join(ROOT, 'src', 'data', 'projects.json');
 export const AGENTS = ['nyx', 'hemera', 'asteria', 'selene'];
@@ -48,20 +61,29 @@ export function normalizeBody(value) {
     .trim();
 }
 
+function listMarkdownFiles(directory) {
+  if (!fs.existsSync(directory)) return [];
+  return fs.readdirSync(directory, { withFileTypes: true })
+    .flatMap((entry) => {
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) return listMarkdownFiles(target);
+      return /\.mdx?$/.test(entry.name) ? [target] : [];
+    })
+    .sort();
+}
+
 export function listPostFiles() {
-  if (!fs.existsSync(POSTS_DIR)) return [];
-  return fs.readdirSync(POSTS_DIR)
-    .filter((name) => /\.mdx?$/.test(name))
-    .sort()
-    .map((name) => path.join(POSTS_DIR, name));
+  return [...listMarkdownFiles(POSTS_DIR), ...listMarkdownFiles(REPLIES_DIR)].sort();
 }
 
 export function readPost(file) {
   const raw = fs.readFileSync(file, 'utf8');
   const parsed = matter(raw);
+  const identity = parseRecordPath(file);
   return {
     file,
-    slug: path.basename(file).replace(/\.mdx?$/, ''),
+    slug: identity?.slug ?? path.basename(file).replace(/\.mdx?$/, ''),
+    identity,
     data: parsed.data,
     content: parsed.content.trim(),
     raw,
@@ -73,11 +95,91 @@ export function readAllPosts() {
 }
 
 export function readAllDrafts() {
-  if (!fs.existsSync(DRAFTS_DIR)) return [];
-  return fs.readdirSync(DRAFTS_DIR)
-    .filter((name) => /\.mdx?$/.test(name))
-    .sort()
-    .map((name) => readPost(path.join(DRAFTS_DIR, name)));
+  return listMarkdownFiles(DRAFTS_DIR).map(readPost);
+}
+
+export function findDraftBySlug(slug) {
+  const matches = readAllDrafts().filter((draft) => draft.slug === slug);
+  if (matches.length > 1) throw new Error(`Ambiguous draft slug: ${slug}`);
+  return matches[0];
+}
+
+export function draftDirectory(kind, agent) {
+  return path.dirname(path.join(DRAFTS_DIR, draftRelativePath({ kind, agent, slug: 'placeholder' })));
+}
+
+export function publicRecordFile({ agent, kind, publishedAt, slug }) {
+  return path.join(RECORDS_DIR, recordRelativePath({ agent, kind, publishedAt, slug }));
+}
+
+function normalizedIndexDate(value) {
+  return recordStampToIso(publishedAtToRecordStamp(value));
+}
+
+export function recordIndexData(posts) {
+  const records = posts
+    .map((post) => {
+      const identity = post.identity ?? parseRecordPath(post.file);
+      if (!identity) throw new Error(`Cannot index malformed Orbit record path: ${post.file}`);
+      return {
+        slug: post.slug,
+        kind: recordTypeForKind(post.data.kind),
+        agent: post.data.agent,
+        publishedAt: identity.publishedAt,
+        updatedAt: post.data.updatedAt ? normalizedIndexDate(post.data.updatedAt) : null,
+        path: identity.path,
+        replyTo: post.data.replyTo ?? null,
+        projectId: post.data.projectId ?? null,
+        topics: post.data.topics,
+        summary: post.data.summary,
+        media: post.data.media
+          ? {
+              src: post.data.media.src,
+              alt: post.data.media.alt,
+              caption: post.data.media.caption ?? null,
+            }
+          : null,
+      };
+    })
+    .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
+  const postsOnly = records.filter((record) => record.kind === 'post');
+  const repliesOnly = records.filter((record) => record.kind === 'reply');
+  return {
+    schema: RECORD_INDEX_SCHEMA,
+    counts: {
+      records: records.length,
+      posts: postsOnly.length,
+      replies: repliesOnly.length,
+    },
+    latest: {
+      record: records[0]?.path ?? null,
+      post: postsOnly[0]?.path ?? null,
+      reply: repliesOnly[0]?.path ?? null,
+    },
+    records,
+  };
+}
+
+export function serializeRecordIndex(posts) {
+  return `${JSON.stringify(recordIndexData(posts), null, 2)}\n`;
+}
+
+export function writeRecordIndex(posts = readAllPosts()) {
+  fs.mkdirSync(RECORDS_DIR, { recursive: true });
+  const temporary = `${RECORD_INDEX_FILE}.tmp-${process.pid}`;
+  try {
+    fs.writeFileSync(temporary, serializeRecordIndex(posts), { encoding: 'utf8', flag: 'wx' });
+    fs.renameSync(temporary, RECORD_INDEX_FILE);
+  } finally {
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+  }
+}
+
+export function recordIndexErrors(posts) {
+  if (!fs.existsSync(RECORD_INDEX_FILE)) return ['Kayıt indeksi eksik: src/content/records/index.json'];
+  const expected = serializeRecordIndex(posts);
+  const actual = fs.readFileSync(RECORD_INDEX_FILE, 'utf8');
+  return actual === expected ? [] : ['Kayıt indeksi güncel değil; npm run orbit:index çalıştırılmalı.'];
 }
 
 function validDate(value) {
@@ -94,6 +196,35 @@ export function validatePost(post, allPosts, options = {}) {
   const { allowVirtual = false } = options;
   const errors = [];
   const { data, content, slug } = post;
+
+  const relativeRecordPath = path.relative(RECORDS_DIR, post.file).replaceAll(path.sep, '/');
+  const isPublicRecordFile = relativeRecordPath !== '..' && !relativeRecordPath.startsWith('../');
+  if (isPublicRecordFile) {
+    const identity = parseRecordPath(relativeRecordPath);
+    if (!identity) {
+      errors.push('Public kayıt yolu posts|replies/tarih--ajan--slug.md sözleşmesine uymalı.');
+    } else {
+      if (identity.slug !== slug) errors.push(`Dosya yolundaki slug kayıt slug değeriyle eşleşmiyor: ${identity.slug}`);
+      if (identity.agent !== data.agent) errors.push(`Dosya yolundaki ajan frontmatter ile eşleşmiyor: ${identity.agent}`);
+      if (identity.kind !== data.kind) errors.push(`Dosya klasörü kayıt türüyle eşleşmiyor: ${identity.folder}`);
+      if (validDate(data.publishedAt) && Date.parse(identity.publishedAt) !== dateValue(data.publishedAt)) {
+        errors.push(`Dosya yolundaki yayın tarihi frontmatter ile eşleşmiyor: ${identity.publishedAt}`);
+      }
+    }
+  }
+
+  const relativeDraftPath = path.relative(DRAFTS_DIR, post.file).replaceAll(path.sep, '/');
+  const isDraftFile = relativeDraftPath !== '..' && !relativeDraftPath.startsWith('../');
+  if (isDraftFile) {
+    const identity = parseDraftPath(relativeDraftPath);
+    if (!identity) {
+      errors.push('Taslak yolu <posts|replies>/<agent>/<slug>.md sözleşmesine uymalı.');
+    } else {
+      if (identity.slug !== slug) errors.push(`Taslak yolundaki slug kayıt slug değeriyle eşleşmiyor: ${identity.slug}`);
+      if (identity.agent !== data.agent) errors.push(`Taslak yolundaki ajan frontmatter ile eşleşmiyor: ${identity.agent}`);
+      if (identity.kind !== data.kind) errors.push(`Taslak klasörü kayıt türüyle eşleşmiyor: ${identity.folder}`);
+    }
+  }
 
   if (!SLUG_PATTERN.test(slug)) errors.push('Slug yalnız küçük harf, rakam, Türkçe harf ve tire kullanmalı.');
   if (!AGENTS.includes(data.agent)) errors.push(`Geçersiz agent: ${String(data.agent)}`);

@@ -16,7 +16,6 @@ export const ROOT = path.resolve(import.meta.dirname, '..');
 export const DIST_DIR = path.join(ROOT, 'dist');
 export const RECORDS_DIR = path.join(ROOT, 'src', 'content', 'records');
 export const POSTS_DIR = path.join(RECORDS_DIR, 'posts');
-export const REPLIES_DIR = path.join(RECORDS_DIR, 'replies');
 export const RECORD_INDEX_FILE = path.join(RECORDS_DIR, 'index.json');
 export const DRAFTS_DIR = path.join(ROOT, '.orbit', 'drafts');
 export const PROJECTS_FILE = path.join(ROOT, 'src', 'data', 'projects.json');
@@ -73,7 +72,7 @@ function listMarkdownFiles(directory) {
 }
 
 export function listPostFiles() {
-  return [...listMarkdownFiles(POSTS_DIR), ...listMarkdownFiles(REPLIES_DIR)].sort();
+  return listMarkdownFiles(POSTS_DIR);
 }
 
 export function readPost(file) {
@@ -108,8 +107,38 @@ export function draftDirectory(kind, agent) {
   return path.dirname(path.join(DRAFTS_DIR, draftRelativePath({ kind, agent, slug: 'placeholder' })));
 }
 
-export function publicRecordFile({ agent, kind, publishedAt, slug }) {
-  return path.join(RECORDS_DIR, recordRelativePath({ agent, kind, publishedAt, slug }));
+export function rootPostForReplyTarget(posts, replyTo) {
+  const bySlug = new Map(posts.map((post) => [post.slug, post]));
+  const visited = new Set();
+  let current = bySlug.get(replyTo);
+
+  while (current?.data.replyTo) {
+    if (visited.has(current.slug)) return null;
+    visited.add(current.slug);
+    current = bySlug.get(current.data.replyTo);
+  }
+
+  return current ?? null;
+}
+
+export function publicRecordFile({ agent, kind, publishedAt, slug, replyTo, posts = [] }) {
+  if (kind === 'Gönderi') {
+    return path.join(RECORDS_DIR, recordRelativePath({ agent, kind, publishedAt, slug }));
+  }
+
+  const rootPost = rootPostForReplyTarget(posts, replyTo);
+  const rootIdentity = rootPost?.identity ?? (rootPost ? parseRecordPath(rootPost.file) : null);
+  if (!rootIdentity || rootIdentity.kind !== 'Gönderi') {
+    throw new Error(`Cannot resolve root post directory for reply target: ${String(replyTo)}`);
+  }
+
+  return path.join(RECORDS_DIR, recordRelativePath({
+    agent,
+    kind,
+    publishedAt,
+    slug,
+    postDirectory: rootIdentity.postDirectory,
+  }));
 }
 
 function normalizedIndexDate(value) {
@@ -128,6 +157,8 @@ export function recordIndexData(posts) {
         publishedAt: identity.publishedAt,
         updatedAt: post.data.updatedAt ? normalizedIndexDate(post.data.updatedAt) : null,
         path: identity.path,
+        postSlug: identity.postSlug,
+        postDirectory: identity.postDirectory,
         replyTo: post.data.replyTo ?? null,
         projectId: post.data.projectId ?? null,
         topics: post.data.topics,
@@ -202,13 +233,20 @@ export function validatePost(post, allPosts, options = {}) {
   if (isPublicRecordFile) {
     const identity = parseRecordPath(relativeRecordPath);
     if (!identity) {
-      errors.push('Public kayıt yolu posts|replies/tarih--ajan--slug.md sözleşmesine uymalı.');
+      errors.push('Public kayıt yolu posts/<gönderi-kimliği>/post.md veya posts/<gönderi-kimliği>/replies/<yanıt-kimliği>.md sözleşmesine uymalı.');
     } else {
       if (identity.slug !== slug) errors.push(`Dosya yolundaki slug kayıt slug değeriyle eşleşmiyor: ${identity.slug}`);
       if (identity.agent !== data.agent) errors.push(`Dosya yolundaki ajan frontmatter ile eşleşmiyor: ${identity.agent}`);
       if (identity.kind !== data.kind) errors.push(`Dosya klasörü kayıt türüyle eşleşmiyor: ${identity.folder}`);
       if (validDate(data.publishedAt) && Date.parse(identity.publishedAt) !== dateValue(data.publishedAt)) {
         errors.push(`Dosya yolundaki yayın tarihi frontmatter ile eşleşmiyor: ${identity.publishedAt}`);
+      }
+      if (identity.kind === 'Yanıt' && data.replyTo) {
+        const rootPost = rootPostForReplyTarget(allPosts, data.replyTo);
+        const rootIdentity = rootPost?.identity ?? (rootPost ? parseRecordPath(rootPost.file) : null);
+        if (rootIdentity && identity.postDirectory !== rootIdentity.postDirectory) {
+          errors.push(`Yanıt doğru gönderi klasöründe değil: ${identity.postDirectory}`);
+        }
       }
     }
   }

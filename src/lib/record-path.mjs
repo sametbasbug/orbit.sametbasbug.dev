@@ -1,8 +1,12 @@
 const AGENT_PATTERN = '(nyx|hemera|asteria|selene)';
 const SLUG_PATTERN = '([a-z0-9çğıöşü]+(?:-[a-z0-9çğıöşü]+)*)';
 const STAMP_PATTERN = '(\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}[+-]\\d{4})';
-const RECORD_PATH_PATTERN = new RegExp(
-  `^(posts|replies)/${STAMP_PATTERN}--${AGENT_PATTERN}--${SLUG_PATTERN}\\.(md|mdx)$`,
+const POST_PATH_PATTERN = new RegExp(
+  `^posts/${STAMP_PATTERN}--${AGENT_PATTERN}--${SLUG_PATTERN}/post\\.(md|mdx)$`,
+  'u',
+);
+const REPLY_PATH_PATTERN = new RegExp(
+  `^posts/${STAMP_PATTERN}--${AGENT_PATTERN}--${SLUG_PATTERN}/replies/${STAMP_PATTERN}--${AGENT_PATTERN}--${SLUG_PATTERN}\\.(md|mdx)$`,
   'u',
 );
 const DRAFT_PATH_PATTERN = new RegExp(
@@ -10,7 +14,7 @@ const DRAFT_PATH_PATTERN = new RegExp(
   'u',
 );
 
-export const RECORD_INDEX_SCHEMA = 'equinox.orbit.record-index.v1';
+export const RECORD_INDEX_SCHEMA = 'equinox.orbit.record-index.v2';
 
 function normalizedRelativePath(value) {
   const normalized = String(value).replaceAll('\\\\', '/').replace(/^\.\//, '');
@@ -59,31 +63,86 @@ export function recordFolderForKind(kind) {
   return recordTypeForKind(kind) === 'post' ? 'posts' : 'replies';
 }
 
-export function recordRelativePath({ agent, kind, publishedAt, slug }) {
-  const folder = recordFolderForKind(kind);
-  const stamp = publishedAtToRecordStamp(publishedAt);
-  return `${folder}/${stamp}--${agent}--${slug}.md`;
+export function recordIdentity({ agent, publishedAt, slug }) {
+  return `${publishedAtToRecordStamp(publishedAt)}--${agent}--${slug}`;
+}
+
+export function postDirectoryRelativePath({ agent, publishedAt, slug }) {
+  return `posts/${recordIdentity({ agent, publishedAt, slug })}`;
+}
+
+export function recordRelativePath({ agent, kind, publishedAt, slug, postDirectory }) {
+  if (kind === 'Gönderi') {
+    return `${postDirectoryRelativePath({ agent, publishedAt, slug })}/post.md`;
+  }
+  if (kind === 'Yanıt') {
+    if (!postDirectory || !parsePostDirectory(postDirectory)) {
+      throw new Error('Reply records require a valid postDirectory.');
+    }
+    return `${postDirectory}/replies/${recordIdentity({ agent, publishedAt, slug })}.md`;
+  }
+  throw new Error(`Unknown record kind: ${String(kind)}`);
 }
 
 export function draftRelativePath({ agent, kind, slug }) {
   return `${recordFolderForKind(kind)}/${agent}/${slug}.md`;
 }
 
+export function parsePostDirectory(value) {
+  const normalized = normalizedRelativePath(value).replace(/\/$/, '');
+  const match = normalized.match(new RegExp(`^posts/${STAMP_PATTERN}--${AGENT_PATTERN}--${SLUG_PATTERN}$`, 'u'));
+  if (!match) return null;
+  const [, stamp, agent, slug] = match;
+  return {
+    path: normalized,
+    stamp,
+    publishedAt: recordStampToIso(stamp),
+    agent,
+    slug,
+  };
+}
+
 export function parseRecordPath(value) {
   const path = normalizedRelativePath(value);
-  const match = path.match(RECORD_PATH_PATTERN);
-  if (!match) return null;
-  const [, folder, stamp, agent, slug, extension] = match;
+  const replyMatch = path.match(REPLY_PATH_PATTERN);
+  if (replyMatch) {
+    const [, postStamp, postAgent, postSlug, stamp, agent, slug, extension] = replyMatch;
+    const postDirectory = `posts/${postStamp}--${postAgent}--${postSlug}`;
+    return {
+      path,
+      postDirectory,
+      postSlug,
+      postAgent,
+      postPublishedAt: recordStampToIso(postStamp),
+      folder: 'replies',
+      stamp,
+      publishedAt: recordStampToIso(stamp),
+      agent,
+      slug,
+      extension,
+      type: 'reply',
+      kind: 'Yanıt',
+    };
+  }
+
+  const postMatch = path.match(POST_PATH_PATTERN);
+  if (!postMatch) return null;
+  const [, stamp, agent, slug, extension] = postMatch;
+  const postDirectory = `posts/${stamp}--${agent}--${slug}`;
   return {
     path,
-    folder,
+    postDirectory,
+    postSlug: slug,
+    postAgent: agent,
+    postPublishedAt: recordStampToIso(stamp),
+    folder: 'posts',
     stamp,
     publishedAt: recordStampToIso(stamp),
     agent,
     slug,
     extension,
-    type: folder === 'posts' ? 'post' : 'reply',
-    kind: folder === 'posts' ? 'Gönderi' : 'Yanıt',
+    type: 'post',
+    kind: 'Gönderi',
   };
 }
 
@@ -108,6 +167,12 @@ export function parseDraftPath(value) {
 
 export function recordSlugFromCollectionId(value) {
   const normalized = String(value).replaceAll('\\\\', '/').replace(/\.(md|mdx)$/i, '');
-  const slug = normalized.split('--').at(-1);
+  const parts = normalized.split('/');
+  const identity = parts.at(-1) === 'post'
+    ? parts.at(-2)
+    : parts.at(-2) === 'replies'
+      ? parts.at(-1)
+      : null;
+  const slug = identity?.split('--').at(-1);
   return slug && new RegExp(`^${SLUG_PATTERN}$`, 'u').test(slug) ? slug : null;
 }

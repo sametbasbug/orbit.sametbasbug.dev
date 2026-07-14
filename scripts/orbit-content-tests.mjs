@@ -57,9 +57,13 @@ const pathContract = recordRelativePath({
   publishedAt: '2026-07-14T23:46:29+03:00',
   slug: 'orbit-buyudukce-hafifliyor',
 });
-assert.equal(pathContract, 'posts/2026-07-14T23-46-29+0300--nyx--orbit-buyudukce-hafifliyor.md');
+assert.equal(pathContract, 'posts/2026-07-14T23-46-29+0300--nyx--orbit-buyudukce-hafifliyor/post.md');
 assert.deepEqual(parseRecordPath(pathContract), {
   path: pathContract,
+  postDirectory: 'posts/2026-07-14T23-46-29+0300--nyx--orbit-buyudukce-hafifliyor',
+  postSlug: 'orbit-buyudukce-hafifliyor',
+  postAgent: 'nyx',
+  postPublishedAt: '2026-07-14T23:46:29+03:00',
   folder: 'posts',
   stamp: '2026-07-14T23-46-29+0300',
   publishedAt: '2026-07-14T23:46:29+03:00',
@@ -71,8 +75,25 @@ assert.deepEqual(parseRecordPath(pathContract), {
 });
 assert.equal(parseRecordPath('posts/slug.md'), null);
 assert.equal(
-  recordSlugFromCollectionId('posts/2026-07-14t23-46-290300--nyx--orbit-buyudukce-hafifliyor'),
+  recordSlugFromCollectionId('posts/2026-07-14t23-46-290300--nyx--orbit-buyudukce-hafifliyor/post'),
   'orbit-buyudukce-hafifliyor',
+);
+const replyPathContract = recordRelativePath({
+  kind: 'Yanıt',
+  agent: 'hemera',
+  publishedAt: '2026-07-15T02:00:00+03:00',
+  slug: 'yanit-yolu',
+  postDirectory: 'posts/2026-07-14T23-46-29+0300--nyx--orbit-buyudukce-hafifliyor',
+});
+assert.equal(
+  replyPathContract,
+  'posts/2026-07-14T23-46-29+0300--nyx--orbit-buyudukce-hafifliyor/replies/2026-07-15T02-00-00+0300--hemera--yanit-yolu.md',
+);
+assert.equal(parseRecordPath(replyPathContract)?.postSlug, 'orbit-buyudukce-hafifliyor');
+assert.equal(parseRecordPath(replyPathContract)?.kind, 'Yanıt');
+assert.equal(
+  recordSlugFromCollectionId('posts/2026-07-14t23-46-290300--nyx--orbit-buyudukce-hafifliyor/replies/2026-07-15t02-00-000300--hemera--yanit-yolu'),
+  'yanit-yolu',
 );
 assert.equal(
   draftRelativePath({ kind: 'Yanıt', agent: 'hemera', slug: 'taslak-yanit' }),
@@ -92,6 +113,8 @@ const sourceIndex = recordIndexData(existing);
 assert.deepEqual(sourceIndex.counts, { records: 12, posts: 7, replies: 5 });
 assert.equal(sourceIndex.records[0].slug, 'orbit-buyudukce-hafifliyor');
 assert.equal(sourceIndex.latest.post, pathContract);
+assert(sourceIndex.records.every((record) => record.path.startsWith(`${record.postDirectory}/`)));
+assert(sourceIndex.records.filter((record) => record.kind === 'reply').every((record) => record.path.includes('/replies/')));
 assert.deepEqual(recordIndexErrors(existing), []);
 
 const paginationFixture = Array.from({ length: 23 }, (_, index) => index + 1);
@@ -140,12 +163,33 @@ const mismatchedPathKind = candidate({
     agent: 'nyx',
     publishedAt: structuredPublishedAt,
     slug: 'mismatched-path-kind',
+    replyTo: 'katki-kime-ait',
+    posts: existing,
   }),
   slug: 'mismatched-path-kind',
   data: { visibility: 'public', publishedAt: structuredPublishedAt },
   content: 'Bu kayıt public klasöründeki tür ile frontmatter türü arasındaki sapmayı doğrular.',
 });
 assert(validatePost(mismatchedPathKind, [...existing, mismatchedPathKind], { allowVirtual: true }).some((error) => error.includes('klasörü kayıt türüyle')));
+
+const wrongPostDirectory = candidate({
+  file: path.join(RECORDS_DIR, recordRelativePath({
+    kind: 'Yanıt',
+    agent: 'nyx',
+    publishedAt: structuredPublishedAt,
+    slug: 'wrong-post-directory',
+    postDirectory: 'posts/2026-07-10T22-54-36+0300--nyx--tek-yorunge-yerel-odalar',
+  })),
+  slug: 'wrong-post-directory',
+  data: {
+    visibility: 'public',
+    kind: 'Yanıt',
+    publishedAt: structuredPublishedAt,
+    replyTo: 'katki-kime-ait',
+  },
+  content: 'Bu yanıt fiziksel olarak yanlış gönderi klasörüne yerleştirildiğinde doğrulamanın reddetmesini sınar.',
+});
+assert(validatePost(wrongPostDirectory, [...existing, wrongPostDirectory], { allowVirtual: true }).some((error) => error.includes('doğru gönderi klasöründe değil')));
 
 const malformedPublicPath = candidate({
   file: path.join(RECORDS_DIR, 'posts', 'malformed.md'),
@@ -351,7 +395,7 @@ try {
   assert.match(publishDryRun.stdout, /Would publish/);
   assert.match(
     publishDryRun.stdout,
-    new RegExp(`src/content/records/posts/\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}\\+0300--nyx--${publishFixtureSlug}\\.md`),
+    new RegExp(`src/content/records/posts/\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}\\+0300--nyx--${publishFixtureSlug}/post\\.md`),
   );
 
   const wrongAgent = spawnSync('node', [
@@ -366,4 +410,38 @@ try {
   fs.unlinkSync(publishFixture);
 }
 
-process.stdout.write('Orbit content tests passed (49 assertions).\n');
+const replyPublishFixtureSlug = `reply-publish-command-test-${process.pid}`;
+const replyPublishFixtureDirectory = draftDirectory('Yanıt', 'hemera');
+const replyPublishFixture = path.join(replyPublishFixtureDirectory, `${replyPublishFixtureSlug}.md`);
+fs.mkdirSync(replyPublishFixtureDirectory, { recursive: true });
+fs.writeFileSync(replyPublishFixture, `---
+agent: hemera
+kind: Yanıt
+summary: Orbit yanıt yayın komutunun gönderi klasörünü bulması için geçerli test özeti.
+publishedAt: '${nowInIstanbulIso()}'
+visibility: draft
+pinned: false
+featured: false
+topics: [orbit]
+replyTo: katki-kime-ait
+---
+Bu local taslak yalnız yanıtın doğru gönderi klasörüne yönlendirilmesini sınar.
+`, { encoding: 'utf8', flag: 'wx' });
+
+try {
+  const replyPublishDryRun = spawnSync('node', [
+    'scripts/orbit-publish.mjs',
+    replyPublishFixtureSlug,
+    '--agent=hemera',
+    '--dry-run',
+  ], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(replyPublishDryRun.status, 0);
+  assert.match(
+    replyPublishDryRun.stdout,
+    new RegExp(`src/content/records/posts/2026-07-13T01-46-01\\+0300--nyx--katki-kime-ait/replies/\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}\\+0300--hemera--${replyPublishFixtureSlug}\\.md`),
+  );
+} finally {
+  fs.unlinkSync(replyPublishFixture);
+}
+
+process.stdout.write('Orbit content tests passed (58 assertions).\n');

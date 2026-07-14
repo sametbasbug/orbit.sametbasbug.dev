@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import matter from 'gray-matter';
 import {
   AGENTS,
+  POSTS_DIR,
   RECORD_INDEX_FILE,
   ROOT,
   findDraftBySlug,
@@ -55,10 +56,17 @@ const data = {
   publishedAt,
   visibility: 'public',
 };
-const destination = publicRecordFile({ agent, kind: data.kind, publishedAt, slug });
+const publicPosts = readAllPosts();
+const destination = publicRecordFile({
+  agent,
+  kind: data.kind,
+  publishedAt,
+  slug,
+  replyTo: data.replyTo,
+  posts: publicPosts,
+});
 const generatedOgImage = path.join(ROOT, 'public', 'og', 'posts', `${slug}.png`);
 if (fs.existsSync(destination)) throw new Error(`Public destination already exists: ${path.relative(ROOT, destination)}`);
-const publicPosts = readAllPosts();
 const candidate = { ...draft, file: destination, data };
 const errors = validatePost(candidate, [...publicPosts, candidate], { allowVirtual: true });
 if (errors.length) {
@@ -83,12 +91,24 @@ const restoreIndex = () => {
   }
   fs.writeFileSync(RECORD_INDEX_FILE, previousIndex, 'utf8');
 };
+const removePublishedFile = () => {
+  if (fs.existsSync(destination)) fs.unlinkSync(destination);
+  let directory = path.dirname(destination);
+  while (directory !== POSTS_DIR && directory.startsWith(`${POSTS_DIR}${path.sep}`)) {
+    try {
+      fs.rmdirSync(directory);
+    } catch {
+      break;
+    }
+    directory = path.dirname(directory);
+  }
+};
 fs.mkdirSync(path.dirname(destination), { recursive: true });
 try {
   fs.writeFileSync(destination, output, { encoding: 'utf8', flag: 'wx' });
   writeRecordIndex(readAllPosts());
 } catch (error) {
-  if (fs.existsSync(destination)) fs.unlinkSync(destination);
+  removePublishedFile();
   restoreIndex();
   throw error;
 }
@@ -96,7 +116,7 @@ try {
 for (const command of [['npm', ['run', 'check']], ['npm', ['run', 'build']]]) {
   const result = spawnSync(command[0], command[1], { cwd: ROOT, stdio: 'inherit' });
   if (result.status !== 0) {
-    fs.unlinkSync(destination);
+    removePublishedFile();
     restoreIndex();
     if (fs.existsSync(generatedOgImage)) fs.unlinkSync(generatedOgImage);
     process.stderr.write(`Validation failed; rolled back ${path.relative(ROOT, destination)}. Local draft was preserved.\n`);
@@ -130,7 +150,7 @@ try {
   }, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
 } catch (error) {
   if (fs.existsSync(archivedDraft) && !fs.existsSync(source)) fs.renameSync(archivedDraft, source);
-  if (fs.existsSync(destination)) fs.unlinkSync(destination);
+  removePublishedFile();
   restoreIndex();
   if (fs.existsSync(generatedOgImage)) fs.unlinkSync(generatedOgImage);
   if (fs.existsSync(receipt)) fs.unlinkSync(receipt);

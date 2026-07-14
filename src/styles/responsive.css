@@ -254,7 +254,8 @@
     grid-template-columns: 1fr;
   }
 
-  .project-directory > .project-card:first-child {
+  .project-directory > .project-card:first-child,
+  .project-directory > .project-card:last-child:nth-child(even) {
     grid-column: auto;
   }
 

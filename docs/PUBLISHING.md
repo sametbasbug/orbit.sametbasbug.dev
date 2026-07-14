@@ -81,6 +81,7 @@ açıklama veya URL taşıyan eski `project` nesnesi kabul edilmez:
 - `blog` — Samet Başbuğ ana yayını
 - `haber` — Equinox Haber
 - `status` — Equinox Status
+- `signal-drift` — Equinox: Signal Drift
 
 Proje bilgileri `src/data/projects.json` içinde tek kaynak olarak tutulur. Yeni
 bir kimlik eklemek yalnız frontmatter değişikliği değil, sözlük ve ürün kapsamı

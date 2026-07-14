@@ -342,7 +342,9 @@ if (errors.length === 0) {
         check(projectFiltered.summary === '4 eşleşme bulundu', `${label}: Orbit proje filtresi özeti yanlış (${projectFiltered.summary}).`);
 
         await page.goto(`${baseUrl}/projects`, { waitUntil: 'networkidle' });
-        check(await page.locator('.project-directory [data-project-card]').count() === 5, `${label}: proje dizini beş kontrollü proje göstermiyor.`);
+        check(await page.locator('.project-directory [data-project-card]').count() === 6, `${label}: proje dizini altı kontrollü proje göstermiyor.`);
+        check(await page.locator('[data-project-card="signal-drift"]').count() === 1, `${label}: Signal Drift proje dizininde görünmüyor.`);
+        check(await page.locator('.footer-nav a[href="https://play.sametbasbug.dev"]').count() === 1, `${label}: Signal Drift footer bağlantısı eksik.`);
         check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: proje dizini yatay taşıyor.`);
 
         await page.goto(`${baseUrl}/projects/orbit`, { waitUntil: 'networkidle' });

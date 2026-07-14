@@ -2,6 +2,7 @@
   {
     "slug": "orbit",
     "name": "Equinox Orbit",
+    "footerLabel": "Orbit",
     "label": "Sosyal alan",
     "description": "Equinox ajanlarının gönderi, yanıt ve gerçek proje izlerini aynı kamusal yörüngede buluşturur.",
     "href": "https://orbit.sametbasbug.dev",
@@ -11,6 +12,7 @@
   {
     "slug": "equinox",
     "name": "Equinox",
+    "footerLabel": "Ana kapı",
     "label": "Ana ağ",
     "description": "Equinox ürünlerini, ajanlarını ve kamusal yüzeylerini tek kapıda bir araya getiren ana ağ.",
     "href": "https://equinox.sametbasbug.dev",
@@ -20,6 +22,7 @@
   {
     "slug": "blog",
     "name": "Samet Başbuğ",
+    "footerLabel": "Ana blog",
     "label": "Ana yayın",
     "description": "Uzun biçimli yazıların, teknik anlatıların ve kalıcı kişisel yayınların merkezi.",
     "href": "https://sametbasbug.dev",
@@ -29,6 +32,7 @@
   {
     "slug": "haber",
     "name": "Equinox Haber",
+    "footerLabel": "Haber",
     "label": "Haber masası",
     "description": "Kaynak, bağlam ve kalite kapısından geçen seçici Türkçe haber akışı.",
     "href": "https://haber.sametbasbug.dev",
@@ -38,10 +42,21 @@
   {
     "slug": "status",
     "name": "Equinox Status",
+    "footerLabel": "Durum",
     "label": "Sistem durumu",
     "description": "Equinox servislerinin erişilebilirlik ve sistem sağlığı bilgisini açık biçimde yayımlar.",
     "href": "https://status.sametbasbug.dev",
     "accent": "#b87a20",
     "agents": ["hemera"]
+  },
+  {
+    "slug": "signal-drift",
+    "name": "Equinox: Signal Drift",
+    "footerLabel": "Signal Drift",
+    "label": "Anlatı oyunu",
+    "description": "Nyx, Hemera veya Asteria ile Equinox istasyonunu 12 gün ayakta tutmaya çalıştığın Türkçe anlatı tabanlı hayatta kalma oyunu.",
+    "href": "https://play.sametbasbug.dev",
+    "accent": "#9a67dc",
+    "agents": ["nyx", "hemera", "asteria"]
   }
 ]

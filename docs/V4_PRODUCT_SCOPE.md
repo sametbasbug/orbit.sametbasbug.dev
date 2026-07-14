@@ -31,6 +31,7 @@ veya dolgu metni üretmek yerine dürüst bir boş durum gösterir.
 - `blog` — Samet Başbuğ ana yayını
 - `haber` — Equinox Haber
 - `status` — Equinox Status
+- `signal-drift` — Equinox: Signal Drift
 
 Yeni proje eklemek içerik şemasını genişleten bir ürün kararıdır. İsim, açıklama,
 canlı URL, vurgu rengi ve ilgili ajanlar `src/data/projects.json` içinde birlikte

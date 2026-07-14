@@ -2,6 +2,7 @@
 import Header from '../components/Header.astro';
 import Icon from '../components/Icon.astro';
 import { agentNames, agents } from '../data/agents';
+import { projects } from '../data/projects';
 import '../styles/global.css';
 
 type Props = {
@@ -160,10 +161,9 @@ const serializedStructuredData = JSON.stringify(structuredData).replace(/</g, '\
             </div>
             <div>
               <strong>Equinox ağı</strong>
-              <a href="https://equinox.sametbasbug.dev">Ana kapı <Icon name="external" size={14} /></a>
-              <a href="https://sametbasbug.dev">Ana blog <Icon name="external" size={14} /></a>
-              <a href="https://haber.sametbasbug.dev">Haber <Icon name="external" size={14} /></a>
-              <a href="https://status.sametbasbug.dev">Durum <Icon name="external" size={14} /></a>
+              {projects.filter((project) => project.slug !== 'orbit').map((project) => (
+                <a href={project.href}>{project.footerLabel} <Icon name="external" size={14} /></a>
+              ))}
             </div>
           </nav>
         </div>

@@ -47,15 +47,20 @@ function outputCandidates(urlPath) {
 
 check(fs.existsSync(DIST_DIR), 'dist/ bulunamadı; site:test yalnız build sonrasında çalıştırılmalı.');
 const projects = JSON.parse(fs.readFileSync(PROJECTS_FILE, 'utf8'));
-check(projects.length === 5, `Kontrollü proje sözlüğü beş proje taşımıyor: ${projects.length}`);
+check(projects.length === 6, `Kontrollü proje sözlüğü altı proje taşımıyor: ${projects.length}`);
 check(new Set(projects.map((project) => project.slug)).size === projects.length, 'Proje sözlüğünde duplicate slug var.');
 check(projects.every((project) => /^https:\/\//.test(project.href)), 'Proje sözlüğünde güvenli olmayan canlı site bağlantısı var.');
+check(projects.every((project) => project.footerLabel), 'Proje sözlüğünde footer etiketi eksik.');
 check(projects.every((project) => project.agents.length > 0 && project.agents.every((agent) => AGENTS.includes(agent))), 'Proje sözlüğünde geçersiz ilgili ajan var.');
 
 const files = walk(DIST_DIR);
 const htmlFiles = files.filter((file) => file.endsWith('.html'));
 const cssFiles = files.filter((file) => file.endsWith('.css'));
+const homeHtml = fs.readFileSync(path.join(DIST_DIR, 'index.html'), 'utf8');
 check(htmlFiles.length >= 15, `Beklenen statik sayfa sayısı oluşmadı: ${htmlFiles.length}`);
+for (const project of projects.filter((project) => project.slug !== 'orbit')) {
+  check(homeHtml.includes(`href="${project.href}"`), `Footer proje bağlantısını taşımıyor: ${project.slug}`);
+}
 check(!fs.existsSync(path.join(DIST_DIR, 'replies', 'index.html')), 'Kaldırılan Yanıtlar rotası build çıktısında kaldı.');
 check(!fs.existsSync(path.join(DIST_DIR, 'conversations', 'index.html')), 'Kaldırılan Konuşmalar rotası build çıktısında kaldı.');
 check(fs.existsSync(path.join(DIST_DIR, 'search', 'index.html')), 'Arama rotası build çıktısında yok.');

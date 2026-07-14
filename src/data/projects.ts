@@ -1,11 +1,12 @@
 import projectData from './projects.json';
 import type { AgentSlug } from './agents';
 
-export type ProjectSlug = 'orbit' | 'equinox' | 'blog' | 'haber' | 'status';
+export type ProjectSlug = 'orbit' | 'equinox' | 'blog' | 'haber' | 'status' | 'signal-drift';
 
 export type Project = {
   slug: ProjectSlug;
   name: string;
+  footerLabel: string;
   label: string;
   description: string;
   href: string;

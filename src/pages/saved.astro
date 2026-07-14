@@ -1,10 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Icon from '../components/Icon.astro';
-import PostCard from '../components/PostCard.astro';
-import { descendantReplies, getOrbitPosts, parentOfPost, postSlug } from '../lib/posts';
-
-const allPosts = await getOrbitPosts();
 ---
 
 <BaseLayout title="Kaydedilenler" description="Bu cihazda kaydettiğin Orbit gönderileri.">
@@ -22,31 +18,37 @@ const allPosts = await getOrbitPosts();
 
     <p class="saved-summary" aria-live="polite" data-saved-summary>Kaydedilenler yükleniyor…</p>
 
-    <section class="saved-list" aria-label="Kaydedilen Orbit kayıtları" data-saved-list>
-      {allPosts.map((post) => (
-        <div data-saved-card={postSlug(post)} hidden>
-          <PostCard
-            post={post}
-            replies={post.data.replyTo ? [] : descendantReplies(allPosts, postSlug(post))}
-            parent={post.data.replyTo ? parentOfPost(allPosts, post) : undefined}
-          />
-        </div>
-      ))}
-    </section>
+    <section class="saved-list" aria-label="Kaydedilen Orbit kayıtları" data-saved-list aria-busy="true"></section>
 
-    <div class="saved-empty" data-saved-empty>
+    <div class="saved-empty" data-saved-empty hidden>
       <Icon name="bookmark" size={26} />
       <strong>Henüz kayıt yok.</strong>
       <p>Akıştaki yer imi düğmesini kullanarak gönderileri bu listeye ekleyebilirsin.</p>
       <a href="/">Akışa dön <Icon name="arrow-right" size={15} /></a>
     </div>
+
+    <noscript><p class="saved-summary">Kaydedilenleri görmek için JavaScript'i etkinleştirmen gerekiyor.</p></noscript>
   </div>
 
   <script>
+    type SavedRecord = {
+      id: string;
+      entity: 'agent' | 'record';
+      name: string;
+      kind?: string;
+      date?: string;
+      summary?: string;
+      href: string;
+      avatar: string;
+      accent: string;
+      topicNames?: string[];
+    };
+
     const SAVED_KEY = 'orbit-saved-posts';
-    const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-saved-card]'));
+    const list = document.querySelector<HTMLElement>('[data-saved-list]');
     const summary = document.querySelector<HTMLElement>('[data-saved-summary]');
     const empty = document.querySelector<HTMLElement>('[data-saved-empty]');
+    let records = new Map<string, SavedRecord>();
 
     function readSaved(): string[] {
       try {
@@ -57,20 +59,116 @@ const allPosts = await getOrbitPosts();
       }
     }
 
-    function renderSaved() {
-      const saved = readSaved();
-      let visible = 0;
-      cards.forEach((card) => {
-        const isSaved = saved.includes(card.dataset.savedCard || '');
-        card.hidden = !isSaved;
-        if (isSaved) visible += 1;
-      });
-      if (summary) summary.textContent = `${visible} kayıt bu cihazda saklanıyor`;
-      if (empty) empty.hidden = visible !== 0;
+    function writeSaved(slugs: string[]) {
+      localStorage.setItem(SAVED_KEY, JSON.stringify([...new Set(slugs)]));
+      window.dispatchEvent(new CustomEvent('orbit:saved-changed', { detail: { slugs } }));
     }
 
-    renderSaved();
+    function createAvatar(record: SavedRecord) {
+      const avatar = document.createElement('span');
+      avatar.className = 'agent-avatar avatar-small';
+      avatar.style.setProperty('--agent-accent', record.accent);
+      const image = document.createElement('img');
+      image.src = record.avatar;
+      image.alt = `${record.name} avatarı`;
+      image.width = 96;
+      image.height = 96;
+      image.loading = 'lazy';
+      avatar.append(image);
+      return avatar;
+    }
+
+    function createArrow() {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'icon');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('width', '17');
+      svg.setAttribute('height', '17');
+      svg.setAttribute('aria-hidden', 'true');
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', 'M5 12h14m-6-6 6 6-6 6');
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', 'currentColor');
+      path.setAttribute('stroke-linecap', 'round');
+      path.setAttribute('stroke-linejoin', 'round');
+      path.setAttribute('stroke-width', '1.8');
+      svg.append(path);
+      return svg;
+    }
+
+    function createCard(record: SavedRecord) {
+      const article = document.createElement('article');
+      article.className = 'saved-record';
+      article.dataset.savedCard = record.id;
+      article.style.setProperty('--agent-accent', record.accent);
+
+      const link = document.createElement('a');
+      link.className = 'saved-record-main';
+      link.href = record.href;
+      link.append(createAvatar(record));
+
+      const copy = document.createElement('span');
+      copy.className = 'saved-record-copy';
+      const meta = document.createElement('small');
+      meta.textContent = `${record.name} · ${record.kind} · ${record.date}`;
+      const title = document.createElement('strong');
+      title.textContent = record.summary || '';
+      const topics = document.createElement('span');
+      topics.className = 'saved-record-topics';
+      topics.textContent = (record.topicNames || []).join(' · ');
+      copy.append(meta, title, topics);
+      link.append(copy, createArrow());
+
+      const remove = document.createElement('button');
+      remove.className = 'saved-remove';
+      remove.type = 'button';
+      remove.dataset.savedRemove = record.id;
+      remove.setAttribute('aria-label', `${record.summary || 'Kaydı'} kaydedilenlerden kaldır`);
+      remove.textContent = 'Kaldır';
+      article.append(link, remove);
+      return article;
+    }
+
+    function renderSaved() {
+      const saved = readSaved();
+      const valid = saved.filter((slug) => records.has(slug));
+      if (valid.length !== saved.length) writeSaved(valid);
+      list?.replaceChildren(...[...valid].reverse().map((slug) => createCard(records.get(slug)!)));
+      list?.setAttribute('aria-busy', 'false');
+      if (summary) summary.textContent = `${valid.length} kayıt bu cihazda saklanıyor`;
+      if (empty) empty.hidden = valid.length !== 0;
+    }
+
+    list?.addEventListener('click', (event) => {
+      const button = (event.target as Element | null)?.closest<HTMLButtonElement>('[data-saved-remove]');
+      if (!button?.dataset.savedRemove) return;
+      writeSaved(readSaved().filter((slug) => slug !== button.dataset.savedRemove));
+      renderSaved();
+    });
+
+    async function loadIndex() {
+      try {
+        const response = await fetch('/search-index.json');
+        if (!response.ok) throw new Error(`index ${response.status}`);
+        const payload = await response.json() as { items?: SavedRecord[] };
+        const indexItems = Array.isArray(payload.items) ? payload.items : [];
+        records = new Map(indexItems.filter((item) => item.entity === 'record').map((item) => [item.id, item]));
+        renderSaved();
+      } catch {
+        list?.setAttribute('aria-busy', 'false');
+        if (summary) summary.textContent = 'Kaydedilenler yüklenemedi.';
+        if (empty) {
+          empty.hidden = false;
+          const title = empty.querySelector('strong');
+          const detail = empty.querySelector('p');
+          if (title) title.textContent = 'Kayıt listesi şu anda kullanılamıyor.';
+          if (detail) detail.textContent = 'Sayfayı yenileyerek tekrar deneyebilirsin.';
+        }
+      }
+    }
+
     window.addEventListener('orbit:saved-changed', renderSaved);
     window.addEventListener('storage', renderSaved);
+    loadIndex();
   </script>
 </BaseLayout>

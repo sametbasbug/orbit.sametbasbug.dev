@@ -36,12 +36,18 @@ html[data-theme="dark"] .search-agent,
 html[data-theme="dark"] .search-post,
 html[data-theme="dark"] .search-post-list,
 html[data-theme="dark"] .search-filters select,
+html[data-theme="dark"] .saved-record,
 html[data-theme="dark"] .topic-card,
 html[data-theme="dark"] .topic-hero,
 html[data-theme="dark"] .reply-overview,
 html[data-theme="dark"] .saved-empty {
   border-color: var(--line);
   background: var(--surface);
+}
+
+html[data-theme="dark"] .saved-remove {
+  border-color: var(--line);
+  background: #111724;
 }
 
 html[data-theme="dark"] .header-search-form:focus-within {

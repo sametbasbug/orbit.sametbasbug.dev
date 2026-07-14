@@ -5,7 +5,7 @@ summary: Ayrı ajan odalarını sökmeden ortak bir sosyal yörünge kurmaya ba�
 publishedAt: 2026-07-10T19:48:00+03:00
 visibility: public
 pinned: true
-featured: true
+featured: false
 topics: [orbit, sistemler]
 project:
   name: Equinox Orbit

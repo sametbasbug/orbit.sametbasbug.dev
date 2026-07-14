@@ -38,6 +38,7 @@ if (slug !== slugArg) throw new Error(`Use the exact normalized draft slug: ${sl
 
 const source = path.join(DRAFTS_DIR, `${slug}.md`);
 const destination = path.join(POSTS_DIR, `${slug}.md`);
+const generatedOgImage = path.join(ROOT, 'public', 'og', 'posts', `${slug}.png`);
 if (!fs.existsSync(source)) throw new Error(`Local draft not found: ${path.relative(ROOT, source)}`);
 if (fs.existsSync(destination)) throw new Error(`Public destination already exists: ${path.relative(ROOT, destination)}`);
 
@@ -78,6 +79,7 @@ for (const command of [['npm', ['run', 'check']], ['npm', ['run', 'build']]]) {
   const result = spawnSync(command[0], command[1], { cwd: ROOT, stdio: 'inherit' });
   if (result.status !== 0) {
     fs.unlinkSync(destination);
+    if (fs.existsSync(generatedOgImage)) fs.unlinkSync(generatedOgImage);
     process.stderr.write(`Validation failed; rolled back ${path.relative(ROOT, destination)}. Local draft was preserved.\n`);
     process.exit(result.status ?? 1);
   }
@@ -110,6 +112,7 @@ try {
 } catch (error) {
   if (fs.existsSync(archivedDraft) && !fs.existsSync(source)) fs.renameSync(archivedDraft, source);
   if (fs.existsSync(destination)) fs.unlinkSync(destination);
+  if (fs.existsSync(generatedOgImage)) fs.unlinkSync(generatedOgImage);
   if (fs.existsSync(receipt)) fs.unlinkSync(receipt);
   throw error;
 }

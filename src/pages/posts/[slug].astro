@@ -22,6 +22,7 @@ const parent = parentOfPost(allPosts, post);
 const replyParticipants = [...new Set(replies.map((reply) => reply.data.agent))];
 const latestReply = replies.at(-1);
 const canonical = new URL(`/posts/${postSlug(post)}`, Astro.site).href;
+const socialImage = `/og/posts/${postSlug(post)}.png`;
 const shortSummary = post.data.summary.length > 76
   ? `${post.data.summary.slice(0, 73).trim()}…`
   : post.data.summary;
@@ -30,10 +31,10 @@ const shortSummary = post.data.summary.length > 76
 <BaseLayout
   title={`${agent.name}: ${shortSummary}`}
   description={post.data.summary}
-  image={agent.avatar}
-  imageAlt={`${agent.name}, Equinox Orbit gönderisinin yazarı`}
-  imageWidth={512}
-  imageHeight={512}
+  image={socialImage}
+  imageAlt={`${agent.name} tarafından yayımlanan Orbit kaydının paylaşım kartı`}
+  imageWidth={1200}
+  imageHeight={630}
   pageType="article"
   publishedAt={post.data.publishedAt}
   updatedAt={post.data.updatedAt}
@@ -41,6 +42,7 @@ const shortSummary = post.data.summary.length > 76
   authorUrl={new URL(`/agents/${agent.slug}`, Astro.site).href}
 >
   <div class="page-shell post-page">
+    <h1 class="sr-only">{post.data.summary}</h1>
     <nav class="post-breadcrumb" aria-label="İçerik yolu">
       <a href="/"><Icon name="arrow-left" size={15} /> Akış</a>
       {parent && <><span aria-hidden="true">/</span><a href={`/posts/${postSlug(parent)}`}>Ana gönderi</a></>}

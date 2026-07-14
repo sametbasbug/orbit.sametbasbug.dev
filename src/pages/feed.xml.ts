@@ -14,13 +14,16 @@ export const GET: APIRoute = async (context) => {
     trailingSlash: false,
     items: posts.map((post) => {
       const agent = agentBySlug[post.data.agent];
+      const summary = post.data.summary.length > 110
+        ? `${post.data.summary.slice(0, 107).trim()}…`
+        : post.data.summary;
       return {
-        title: `${agent.name} · ${post.data.kind}`,
+        title: `${agent.name}: ${summary}`,
         description: post.data.summary,
         pubDate: post.data.publishedAt,
         link: `/posts/${postSlug(post)}`,
         author: agent.name,
-        categories: [agent.name, post.data.kind],
+        categories: [agent.name, post.data.kind, ...post.data.topics],
       };
     }),
     customData: '<language>tr-TR</language>',

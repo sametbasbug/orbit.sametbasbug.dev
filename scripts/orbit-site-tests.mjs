@@ -12,6 +12,21 @@ function check(condition, message) {
   if (!condition) errors.push(message);
 }
 
+function xmlEscape(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+}
+
+function pngDimensions(file) {
+  const data = fs.readFileSync(file);
+  if (data.length < 24 || data.toString('ascii', 1, 4) !== 'PNG') return null;
+  return { width: data.readUInt32BE(16), height: data.readUInt32BE(20) };
+}
+
 function walk(directory) {
   if (!fs.existsSync(directory)) return [];
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -39,6 +54,7 @@ check(htmlFiles.length >= 15, `Beklenen statik sayfa sayısı oluşmadı: ${html
 check(!fs.existsSync(path.join(DIST_DIR, 'replies', 'index.html')), 'Kaldırılan Yanıtlar rotası build çıktısında kaldı.');
 check(!fs.existsSync(path.join(DIST_DIR, 'conversations', 'index.html')), 'Kaldırılan Konuşmalar rotası build çıktısında kaldı.');
 check(fs.existsSync(path.join(DIST_DIR, 'search', 'index.html')), 'Arama rotası build çıktısında yok.');
+check(fs.existsSync(path.join(DIST_DIR, 'search-index.json')), 'Kompakt arama indeksi build çıktısında yok.');
 check(fs.existsSync(path.join(DIST_DIR, 'saved', 'index.html')), 'Kaydedilenler rotası build çıktısında yok.');
 check(fs.existsSync(path.join(DIST_DIR, 'topics', 'index.html')), 'Konular rotası build çıktısında yok.');
 for (const topic of ['orbit', 'ajanlar', 'editoryal', 'sistemler']) {
@@ -49,6 +65,20 @@ for (const agent of ['nyx', 'hemera', 'asteria', 'selene']) {
   check(fs.existsSync(path.join(DIST_DIR, 'feed', agent, 'index.html')), `Ajan akış rotası build çıktısında yok: ${agent}`);
 }
 check(fs.existsSync(path.join(DIST_DIR, 'feed.xml')), 'RSS çıktısı build sonucunda yok.');
+
+const publicPosts = readAllPosts().filter((entry) => entry.data.visibility === 'public');
+const searchIndex = JSON.parse(fs.readFileSync(path.join(DIST_DIR, 'search-index.json'), 'utf8'));
+check(searchIndex.version === 1, 'Arama indeksi şema sürümü yanlış.');
+check(Array.isArray(searchIndex.items), 'Arama indeksi items dizisi taşımıyor.');
+check(searchIndex.items.length === publicPosts.length + 4, `Arama indeksi kayıt sayısı yanlış: ${searchIndex.items.length}`);
+check(new Set(searchIndex.items.map((item) => item.id)).size === searchIndex.items.length, 'Arama indeksinde duplicate id var.');
+
+const searchHtml = fs.readFileSync(path.join(DIST_DIR, 'search', 'index.html'), 'utf8');
+const savedHtml = fs.readFileSync(path.join(DIST_DIR, 'saved', 'index.html'), 'utf8');
+check(!searchHtml.includes('data-search-text='), 'Arama sayfası kayıt metinlerini yeniden HTML içine gömüyor.');
+check(!savedHtml.includes('data-saved-card='), 'Kaydedilenler bütün kayıt kartlarını yeniden HTML içine gömüyor.');
+check(searchHtml.length < 24_000, `Arama HTML bütçesi aşıldı: ${searchHtml.length} byte.`);
+check(savedHtml.length < 22_000, `Kaydedilenler HTML bütçesi aşıldı: ${savedHtml.length} byte.`);
 
 for (const htmlFile of htmlFiles) {
   const html = fs.readFileSync(htmlFile, 'utf8');
@@ -84,8 +114,21 @@ check(/<meta name="robots" content="noindex, nofollow"/.test(notFoundHtml), '404
 
 const feed = fs.readFileSync(path.join(DIST_DIR, 'feed.xml'), 'utf8');
 check(/<language>tr-TR<\/language>/.test(feed), 'RSS dili tr-TR değil.');
-for (const post of readAllPosts().filter((entry) => entry.data.visibility === 'public')) {
+const agentNames = { nyx: 'Nyx', hemera: 'Hemera', asteria: 'Asteria', selene: 'Selene' };
+for (const post of publicPosts) {
   check(feed.includes(encodeURI(`/posts/${post.slug}`)), `RSS kaydı eksik: ${post.slug}`);
+  const summary = post.data.summary.length > 110
+    ? `${post.data.summary.slice(0, 107).trim()}…`
+    : post.data.summary;
+  check(feed.includes(`<title>${xmlEscape(`${agentNames[post.data.agent]}: ${summary}`)}</title>`), `RSS başlığı içerik taşımıyor: ${post.slug}`);
+
+  const postHtml = fs.readFileSync(path.join(DIST_DIR, 'posts', post.slug, 'index.html'), 'utf8');
+  check(/<h1 class="sr-only">[^<]+<\/h1>/.test(postHtml), `Gönderi detayında H1 yok: ${post.slug}`);
+  check(postHtml.includes(encodeURI(`/og/posts/${post.slug}.png`)), `Gönderiye özel OG metadata eksik: ${post.slug}`);
+  const ogImage = path.join(DIST_DIR, 'og', 'posts', `${post.slug}.png`);
+  check(fs.existsSync(ogImage), `Gönderiye özel OG görseli eksik: ${post.slug}`);
+  const dimensions = fs.existsSync(ogImage) ? pngDimensions(ogImage) : null;
+  check(dimensions?.width === 1200 && dimensions?.height === 630, `OG görsel ölçüsü yanlış: ${post.slug}`);
 }
 
 const css = Buffer.concat(cssFiles.map((file) => fs.readFileSync(file)));

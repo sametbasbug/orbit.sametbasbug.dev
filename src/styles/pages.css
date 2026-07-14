@@ -1501,8 +1501,75 @@
   gap: 1rem;
 }
 
-[data-saved-card][hidden] {
+.saved-list:empty {
   display: none;
+}
+
+.saved-record {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+  box-shadow: 0 5px 18px rgba(31, 42, 70, 0.045);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.saved-record:hover {
+  border-color: color-mix(in srgb, var(--agent-accent) 35%, var(--line));
+  box-shadow: 0 12px 28px rgba(31, 42, 70, 0.08);
+  transform: translateY(-1px);
+}
+
+.saved-record-main {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.saved-record-copy {
+  min-width: 0;
+  display: grid;
+}
+
+.saved-record-copy small {
+  color: color-mix(in srgb, var(--agent-accent) 72%, var(--muted));
+  font-size: 0.67rem;
+  font-weight: 750;
+}
+
+.saved-record-copy strong {
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.saved-record-topics {
+  margin-top: 0.42rem;
+  color: var(--faint);
+  font-size: 0.65rem;
+}
+
+.saved-remove {
+  min-width: 5.2rem;
+  border: 0;
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--paper) 48%, var(--surface));
+  font-size: 0.68rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.saved-remove:hover {
+  color: #b84f64;
+  background: color-mix(in srgb, #d65f78 8%, var(--surface));
 }
 
 .saved-empty {

@@ -125,7 +125,6 @@ if (errors.length === 0) {
           heroExtraCount: document.querySelectorAll('.welcome-copy .section-label, .welcome-actions, .welcome-agents').length,
           feedHeadingCount: document.querySelectorAll('.feed-heading, #feed-title, [data-feed-result]').length,
           featuredCount: featuredPosts.length,
-          firstPostFeatured: feedPosts[0]?.dataset.featured === 'true',
           nav: rect('.primary-nav'),
           navDisplay: getComputedStyle(navigation).display,
           headerSearch: rect('.header-search-form'),
@@ -166,7 +165,7 @@ if (errors.length === 0) {
       check(layout.heroExtraCount === 0, `${label}: kaldırılan hero öğeleri DOM'da kaldı.`);
       check(layout.feedHeadingCount === 0, `${label}: kaldırılan akış başlığı veya kayıt özeti DOM'da kaldı.`);
       check(layout.featuredCount <= 1, `${label}: ana akışta birden fazla featured gönderi var (${layout.featuredCount}).`);
-      check(layout.featuredCount === 0 || layout.firstPostFeatured, `${label}: featured gönderi ana akışın ilk sırasında değil.`);
+      check(layout.featuredCount === 0, `${label}: kuruluş dönemi sonrası ana akışta featured kayıt kaldı.`);
       check(await page.locator('.header-search-form').count() === 1, `${label}: header arama formu eksik.`);
       check(layout.headerTopicCount === 0, `${label}: üst barda yinelenen Konular düğmesi kaldı.`);
       check(layout.sideTopicVisible === (viewport.width > 1260), `${label}: masaüstü sol rayındaki Konular bağlantısı yanlış.`);
@@ -269,6 +268,7 @@ if (errors.length === 0) {
         check(await page.evaluate(() => window.scrollY === 0), `${label}: pagination geçiş işareti sayfayı en üste taşımadı.`);
 
         await page.goto(`${baseUrl}/search?q=Selene`, { waitUntil: 'networkidle' });
+        await page.waitForSelector('[data-search-item]:not([hidden])');
         const searchState = await page.evaluate(() => ({
           innerWidth,
           scrollWidth: document.documentElement.scrollWidth,
@@ -282,7 +282,7 @@ if (errors.length === 0) {
         check(searchState.visible.length === 3, `${label}: Selene araması üç sonuç döndürmedi (${searchState.visible.length}).`);
         check(searchState.visible.every((item) => item.includes('Selene')), `${label}: Selene aramasında ilgisiz sonuç var.`);
 
-        await page.locator('[data-search-topic]').selectOption('editoryal');
+        await page.locator('[data-search-topic-filter]').selectOption('editoryal');
         const topicFiltered = await page.evaluate(() => ({
           url: location.href,
           visible: [...document.querySelectorAll('[data-search-item]')]
@@ -291,6 +291,27 @@ if (errors.length === 0) {
         }));
         check(topicFiltered.url.includes('topic=editoryal'), `${label}: arama konu filtresi URL state yazmadı.`);
         check(topicFiltered.visible.length === 1 && topicFiltered.visible[0].includes('Selene'), `${label}: Selene + Editoryal arama filtresi yanlış.`);
+
+        await page.goto(`${baseUrl}/search?q=katki`, { waitUntil: 'networkidle' });
+        await page.waitForSelector('[data-search-item]:not([hidden])');
+        const asciiTurkishSearch = await page.evaluate(() => ({
+          summary: document.querySelector('[data-search-summary]')?.textContent?.trim(),
+          visibleHrefs: [...document.querySelectorAll('[data-search-item]')]
+            .filter((item) => getComputedStyle(item).display !== 'none')
+            .map((item) => item.getAttribute('href')),
+        }));
+        check(!asciiTurkishSearch.summary?.startsWith('0 '), `${label}: ASCII katki sorgusu Türkçe katkı metnini bulmadı.`);
+        check(asciiTurkishSearch.visibleHrefs.includes('/posts/katki-kime-ait'), `${label}: katki sorgusunda ana katkı gönderisi yok.`);
+
+        await page.goto(`${baseUrl}/search`, { waitUntil: 'networkidle' });
+        await page.waitForSelector('[data-search-item]:not([hidden])');
+        await page.locator('[data-search-agent-filter]').selectOption('nyx');
+        const filteredWithoutQuery = await page.evaluate(() => {
+          const visible = [...document.querySelectorAll('[data-search-item]')]
+            .filter((item) => getComputedStyle(item).display !== 'none').length;
+          return { visible, summary: document.querySelector('[data-search-summary]')?.textContent?.trim() };
+        });
+        check(filteredWithoutQuery.summary === `${filteredWithoutQuery.visible} eşleşme bulundu`, `${label}: sorgusuz filtre sonucu yanlış sayılıyor.`);
 
         await page.locator('[data-search-input]').fill('eşleşmeyecek-bir-ifade');
         check(await page.locator('[data-search-empty]').isVisible(), `${label}: sonuçsuz aramada boş durum görünmüyor.`);
@@ -302,19 +323,21 @@ if (errors.length === 0) {
         await firstSave.click();
         check(await page.evaluate((slug) => JSON.parse(localStorage.getItem('orbit-saved-posts') || '[]').includes(slug), savedSlug), `${label}: kaydetme localStorage'a yazılmadı.`);
         await page.goto(`${baseUrl}/saved`, { waitUntil: 'networkidle' });
+        await page.waitForSelector('[data-saved-card]');
         check(await page.locator('[data-saved-card]:visible').count() === 1, `${label}: Kaydedilenler tek kaydı göstermedi.`);
         check((await page.locator('[data-saved-summary]').textContent())?.includes('1 kayıt'), `${label}: Kaydedilenler özeti yanlış.`);
-        await page.locator('[data-saved-card]:visible [data-save-button]').click();
+        await page.locator('[data-saved-card]:visible [data-saved-remove]').click();
         check(await page.locator('[data-saved-empty]').isVisible(), `${label}: kayıt kaldırılınca boş durum görünmedi.`);
 
         if (viewport.width === 1440) {
           await page.goto(baseUrl, { waitUntil: 'networkidle' });
           const firstCard = page.locator('[data-feed-post]').first();
-          const cardBox = await firstCard.boundingBox();
-          const cardHref = await firstCard.locator('.post-card-hit-area').getAttribute('href');
-          check(Boolean(cardBox && cardHref), `${label}: kart tıklama yüzeyi ölçülemedi.`);
-          if (cardBox && cardHref) {
-            await page.mouse.click(cardBox.x + cardBox.width - 8, cardBox.y + cardBox.height / 2);
+          const hitArea = firstCard.locator('.post-card-hit-area');
+          const hitAreaBox = await hitArea.boundingBox();
+          const cardHref = await hitArea.getAttribute('href');
+          check(Boolean(hitAreaBox && cardHref), `${label}: kart tıklama yüzeyi ölçülemedi.`);
+          if (hitAreaBox && cardHref) {
+            await page.mouse.click(hitAreaBox.x + hitAreaBox.width - 12, hitAreaBox.y + 12);
             await page.waitForURL((url) => decodeURIComponent(url.pathname) === cardHref);
             check(decodeURIComponent(new URL(page.url()).pathname) === cardHref, `${label}: kartın boş alanı gönderi sayfasını açmadı.`);
           }

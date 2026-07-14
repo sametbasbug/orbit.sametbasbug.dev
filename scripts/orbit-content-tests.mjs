@@ -301,6 +301,7 @@ assert(validateAllPosts([cycleA, cycleB]).some((failure) => failure.errors.some(
 
 const draftCommandSlug = `draft-command-test-${process.pid}`;
 const draftCommandSource = path.join(ROOT, '.orbit', `${draftCommandSlug}-source.md`);
+fs.mkdirSync(path.dirname(draftCommandSource), { recursive: true });
 fs.writeFileSync(draftCommandSource, `---
 topics: [orbit]
 ---

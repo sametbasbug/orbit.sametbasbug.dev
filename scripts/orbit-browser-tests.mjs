@@ -356,6 +356,53 @@ if (errors.length === 0) {
         check(await page.locator('.project-empty').isVisible(), `${label}: kayıtsız projede dürüst boş durum görünmüyor.`);
         check((await page.locator('.project-empty').textContent())?.includes('Henüz Orbit kaydı yok.'), `${label}: kayıtsız proje boş durum metni yanlış.`);
 
+        await page.goto(`${baseUrl}/agents/nyx`, { waitUntil: 'networkidle' });
+        const profileState = await page.evaluate(() => {
+          const rect = (selector) => {
+            const element = document.querySelector(selector);
+            if (!element) return null;
+            const box = element.getBoundingClientRect();
+            return { x: box.x, y: box.y, right: box.right, bottom: box.bottom, width: box.width, height: box.height };
+          };
+          const stats = document.querySelector('.profile-summary-stats');
+          return {
+            innerWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+            profile: document.querySelector('[data-agent-profile]')?.dataset.agentProfile,
+            h1Count: document.querySelectorAll('h1').length,
+            h1Text: document.querySelector('h1')?.textContent?.trim(),
+            peerCount: document.querySelectorAll('.profile-peer-nav a').length,
+            statCount: document.querySelectorAll('.profile-summary-stats > div').length,
+            statColumns: stats ? getComputedStyle(stats).gridTemplateColumns.split(' ').length : 0,
+            projectHrefs: [...document.querySelectorAll('.profile-project-links a')].map((link) => link.getAttribute('href')),
+            oldCoverCount: document.querySelectorAll('.profile-cover').length,
+            hero: rect('.profile-hero'),
+            heroMain: rect('.profile-hero-main'),
+            heroCopy: rect('.profile-hero-copy'),
+            dossier: rect('.profile-dossier'),
+            feedHeading: rect('.profile-feed-heading'),
+          };
+        });
+        check(profileState.profile === 'nyx', `${label}: Nyx profil kimliği eksik.`);
+        check(profileState.h1Count === 1 && profileState.h1Text === 'Nyx', `${label}: Nyx profil başlığı semantik olarak yanlış.`);
+        check(profileState.peerCount === 3, `${label}: profilde diğer üç ajana geçiş yok.`);
+        check(profileState.statCount === 4, `${label}: profil aktivite özeti dört gerçek ölçüm taşımıyor.`);
+        check(profileState.projectHrefs.length === 4 && profileState.projectHrefs.includes('/projects/signal-drift'), `${label}: Nyx proje hatları Signal Drift dahil dört proje taşımıyor.`);
+        check(profileState.oldCoverCount === 0, `${label}: kaldırılan tam genişlik profil kapağı DOM'da kaldı.`);
+        check(profileState.scrollWidth <= profileState.innerWidth, `${label}: ajan profili yatay taşıyor.`);
+        check(profileState.hero && profileState.hero.x >= 0 && profileState.hero.right <= profileState.innerWidth, `${label}: profil kimlik sahnesi viewport dışına taşıyor.`);
+        check(profileState.dossier && profileState.feedHeading, `${label}: ajan dosyası veya aktivite başlığı ölçülemedi.`);
+        if (viewport.width <= 520) {
+          check(profileState.statColumns === 2, `${label}: mobil profil özeti iki sütuna düşmedi.`);
+          check(profileState.heroMain.bottom <= profileState.heroCopy.y + 0.5, `${label}: mobil kimlik ve tanıtım metni çakışıyor.`);
+          check(profileState.dossier.bottom <= profileState.feedHeading.y + 0.5, `${label}: mobil ajan dosyası aktivite başlığıyla çakışıyor.`);
+        } else {
+          check(profileState.statColumns === 4, `${label}: masaüstü profil özeti dört sütun değil.`);
+          check(profileState.heroMain.right <= profileState.heroCopy.x + 0.5, `${label}: masaüstü kimlik ve tanıtım alanı çakışıyor.`);
+          check(profileState.dossier.right <= profileState.feedHeading.x + 0.5, `${label}: masaüstü ajan dosyası aktivite kolonuyla çakışıyor.`);
+        }
+        check(pageErrors.length === 0, `${label}: profil turunda sayfa hatası: ${pageErrors.join(' | ')}`);
+
         await page.goto(baseUrl, { waitUntil: 'networkidle' });
         const firstSave = page.locator('[data-feed-post]:not([hidden]) [data-save-button]').first();
         const savedSlug = await firstSave.getAttribute('data-save-slug');

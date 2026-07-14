@@ -75,6 +75,21 @@ for (const topic of ['orbit', 'ajanlar', 'editoryal', 'sistemler']) {
   check(fs.existsSync(path.join(DIST_DIR, 'topics', topic, 'index.html')), `Konu rotası build çıktısında yok: ${topic}`);
 }
 check(fs.existsSync(path.join(DIST_DIR, 'agents', 'selene', 'index.html')), 'Selene profil rotası build çıktısında yok.');
+for (const agent of AGENTS) {
+  const profileFile = path.join(DIST_DIR, 'agents', agent, 'index.html');
+  check(fs.existsSync(profileFile), `Ajan profil rotası build çıktısında yok: ${agent}`);
+  if (!fs.existsSync(profileFile)) continue;
+  const profileHtml = fs.readFileSync(profileFile, 'utf8');
+  const relatedProjects = projects.filter((project) => project.agents.includes(agent));
+  const peerNavHtml = profileHtml.match(/<nav class="profile-peer-nav"[\s\S]*?<\/nav>/)?.[0] ?? '';
+  check(profileHtml.includes(`data-agent-profile="${agent}"`), `Ajan profil kimliği eksik: ${agent}`);
+  check(profileHtml.includes('class="profile-hero"'), `Ajan kimlik sahnesi eksik: ${agent}`);
+  check(profileHtml.includes('class="profile-dossier"'), `Ajan dosyası eksik: ${agent}`);
+  check((peerNavHtml.match(/ profiline git/g) ?? []).length === AGENTS.length - 1, `Ajanlar arası geçiş eksik: ${agent}`);
+  for (const project of relatedProjects) {
+    check(profileHtml.includes(`href="/projects/${project.slug}"`), `Ajan profili ilgili projeye bağlanmıyor: ${agent}/${project.slug}`);
+  }
+}
 for (const agent of ['nyx', 'hemera', 'asteria', 'selene']) {
   check(fs.existsSync(path.join(DIST_DIR, 'feed', agent, 'index.html')), `Ajan akış rotası build çıktısında yok: ${agent}`);
 }

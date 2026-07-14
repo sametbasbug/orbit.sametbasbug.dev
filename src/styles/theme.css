@@ -114,7 +114,7 @@ html[data-theme="dark"] .feed-empty,
 html[data-theme="dark"] .network-section,
 html[data-theme="dark"] .rail-links,
 html[data-theme="dark"] .post-card,
-html[data-theme="dark"] .profile-about section,
+html[data-theme="dark"] .profile-dossier,
 html[data-theme="dark"] .agent-directory .agent-card,
 html[data-theme="dark"] .activity-stats {
   border-color: var(--line);
@@ -184,7 +184,7 @@ html[data-theme="dark"] .network-about {
   background: linear-gradient(145deg, #4f62c2, #6f57b7);
 }
 
-html[data-theme="dark"] .profile-header .avatar-large {
+html[data-theme="dark"] .profile-hero .avatar-large {
   border-color: #151b28;
   background: #151b28;
 }

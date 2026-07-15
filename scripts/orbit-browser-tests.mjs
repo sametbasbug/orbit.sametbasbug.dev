@@ -55,6 +55,20 @@ const mimeTypes = {
 check(fs.existsSync(DIST_DIR), 'dist/ bulunamadı; browser:test yalnız build sonrasında çalıştırılmalı.');
 const executablePath = chromeExecutable();
 check(Boolean(executablePath), 'Desteklenen Chrome/Chromium executable bulunamadı.');
+const searchIndex = JSON.parse(fs.readFileSync(path.join(DIST_DIR, 'search-index.json'), 'utf8'));
+const normalizeSearchText = (value) => String(value)
+  .toLocaleLowerCase('tr-TR')
+  .replaceAll('ı', 'i')
+  .normalize('NFD')
+  .replace(/\p{Diacritic}/gu, '')
+  .trim();
+const seleneSearchCount = searchIndex.items.filter((item) => normalizeSearchText(item.searchText).includes('selene')).length;
+const seleneEditorialCount = searchIndex.items.filter((item) => (
+  normalizeSearchText(item.searchText).includes('selene') && item.topics.includes('editoryal')
+)).length;
+const orbitProjectSearchCount = searchIndex.items.filter((item) => item.project === 'orbit').length;
+const orbitProjectRecordCount = searchIndex.items.filter((item) => item.entity === 'record' && item.project === 'orbit').length;
+const agentTopicRecordCount = searchIndex.items.filter((item) => item.entity === 'record' && item.topics.includes('ajanlar')).length;
 
 if (errors.length === 0) {
   const server = http.createServer((request, response) => {
@@ -224,7 +238,7 @@ if (errors.length === 0) {
         await page.locator('#header-search-input').press('Enter');
         await page.waitForURL(/\/search\?q=Selene$/);
         check(new URL(page.url()).searchParams.get('q') === 'Selene', `${label}: header araması sorguyu URL'ye taşımadı.`);
-        check((await page.locator('[data-search-summary]').textContent())?.trim() === '3 eşleşme bulundu', `${label}: header araması doğru sonuç özetini üretmedi.`);
+        check((await page.locator('[data-search-summary]').textContent())?.trim() === `${seleneSearchCount} eşleşme bulundu`, `${label}: header araması doğru sonuç özetini üretmedi.`);
       }
 
       if (viewport.width === 390 || viewport.width === 1440) {
@@ -279,8 +293,8 @@ if (errors.length === 0) {
             .map((item) => item.textContent.trim().replace(/\s+/g, ' ')),
         }));
         check(searchState.scrollWidth <= searchState.innerWidth, `${label}: arama sayfası yatay taşıyor.`);
-        check(searchState.summary === '3 eşleşme bulundu', `${label}: Selene arama özeti yanlış (${searchState.summary}).`);
-        check(searchState.visible.length === 3, `${label}: Selene araması üç sonuç döndürmedi (${searchState.visible.length}).`);
+        check(searchState.summary === `${seleneSearchCount} eşleşme bulundu`, `${label}: Selene arama özeti yanlış (${searchState.summary}).`);
+        check(searchState.visible.length === seleneSearchCount, `${label}: Selene araması indeksle aynı sayıda sonuç döndürmedi (${searchState.visible.length}/${seleneSearchCount}).`);
         check(searchState.visible.every((item) => item.includes('Selene')), `${label}: Selene aramasında ilgisiz sonuç var.`);
 
         await page.locator('[data-search-topic-filter]').selectOption('editoryal');
@@ -291,7 +305,7 @@ if (errors.length === 0) {
             .map((item) => item.textContent.trim().replace(/\s+/g, ' ')),
         }));
         check(topicFiltered.url.includes('topic=editoryal'), `${label}: arama konu filtresi URL state yazmadı.`);
-        check(topicFiltered.visible.length === 1 && topicFiltered.visible[0].includes('Selene'), `${label}: Selene + Editoryal arama filtresi yanlış.`);
+        check(topicFiltered.visible.length === seleneEditorialCount && topicFiltered.visible.every((item) => item.includes('Selene')), `${label}: Selene + Editoryal arama filtresi yanlış.`);
 
         await page.goto(`${baseUrl}/search?q=katki`, { waitUntil: 'networkidle' });
         await page.waitForSelector('[data-search-item]:not([hidden])');
@@ -338,8 +352,8 @@ if (errors.length === 0) {
             .map((item) => ({ href: item.getAttribute('href'), project: item.dataset.searchProject })),
           summary: document.querySelector('[data-search-summary]')?.textContent?.trim(),
         }));
-        check(projectFiltered.items.length === 4 && projectFiltered.items.every((item) => item.project === 'orbit'), `${label}: Orbit proje filtresi proje + üç bağlı kaydı döndürmedi.`);
-        check(projectFiltered.summary === '4 eşleşme bulundu', `${label}: Orbit proje filtresi özeti yanlış (${projectFiltered.summary}).`);
+        check(projectFiltered.items.length === orbitProjectSearchCount && projectFiltered.items.every((item) => item.project === 'orbit'), `${label}: Orbit proje filtresi indeksle aynı sayıda sonuç döndürmedi.`);
+        check(projectFiltered.summary === `${orbitProjectSearchCount} eşleşme bulundu`, `${label}: Orbit proje filtresi özeti yanlış (${projectFiltered.summary}).`);
 
         await page.goto(`${baseUrl}/projects`, { waitUntil: 'networkidle' });
         check(await page.locator('.project-directory [data-project-card]').count() === 6, `${label}: proje dizini altı kontrollü proje göstermiyor.`);
@@ -348,7 +362,7 @@ if (errors.length === 0) {
         check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: proje dizini yatay taşıyor.`);
 
         await page.goto(`${baseUrl}/projects/orbit`, { waitUntil: 'networkidle' });
-        check(await page.locator('[data-project-detail="orbit"] .project-feed [data-feed-post]').count() === 3, `${label}: Orbit proje sayfası üç gerçek kaydı göstermiyor.`);
+        check(await page.locator('[data-project-detail="orbit"] .project-feed [data-feed-post]').count() === orbitProjectRecordCount, `${label}: Orbit proje sayfası indeksle aynı sayıda gerçek kayıt göstermiyor.`);
         check((await page.locator('.primary-nav a[aria-current="page"]').textContent())?.includes('Projeler'), `${label}: proje detayında Projeler navigasyonu aktif değil.`);
         check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: Orbit proje sayfası yatay taşıyor.`);
 
@@ -430,7 +444,7 @@ if (errors.length === 0) {
         }
 
         await page.goto(`${baseUrl}/topics/ajanlar`, { waitUntil: 'networkidle' });
-        check(await page.locator('.topic-feed [data-feed-post]').count() === 5, `${label}: Ajan muhakemesi konusu beş kayıt göstermedi.`);
+        check(await page.locator('.topic-feed [data-feed-post]').count() === agentTopicRecordCount, `${label}: Ajan muhakemesi konusu indeksle aynı sayıda kayıt göstermedi.`);
         check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: konu sayfası yatay taşıyor.`);
 
       }

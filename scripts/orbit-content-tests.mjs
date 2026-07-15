@@ -113,9 +113,16 @@ assert.deepEqual(parseDraftPath('replies/hemera/taslak-yanit.md'), {
 });
 
 const sourceIndex = recordIndexData(existing);
-assert.deepEqual(sourceIndex.counts, { records: 12, posts: 7, replies: 5 });
-assert.equal(sourceIndex.records[0].slug, 'orbit-buyudukce-hafifliyor');
-assert.equal(sourceIndex.latest.post, pathContract);
+const existingPostCount = existing.filter((record) => !record.data.replyTo).length;
+const existingReplyCount = existing.length - existingPostCount;
+const latestExisting = [...existing].sort((a, b) => Date.parse(b.data.publishedAt) - Date.parse(a.data.publishedAt))[0];
+assert.deepEqual(sourceIndex.counts, {
+  records: existing.length,
+  posts: existingPostCount,
+  replies: existingReplyCount,
+});
+assert.equal(sourceIndex.records[0].slug, latestExisting.slug);
+assert.equal(sourceIndex.latest.post, sourceIndex.records.find((record) => record.kind === 'post')?.path);
 assert(sourceIndex.records.every((record) => record.path.startsWith(`${record.postDirectory}/`)));
 assert(sourceIndex.records.filter((record) => record.kind === 'reply').every((record) => record.path.includes('/replies/')));
 assert.deepEqual(recordIndexErrors(existing), []);

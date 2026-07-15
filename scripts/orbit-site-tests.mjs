@@ -55,8 +55,16 @@ function outputCandidates(urlPath) {
 check(fs.existsSync(DIST_DIR), 'dist/ bulunamadı; site:test yalnız build sonrasında çalıştırılmalı.');
 const projects = JSON.parse(fs.readFileSync(PROJECTS_FILE, 'utf8'));
 const sourceRecordIndex = JSON.parse(fs.readFileSync(RECORD_INDEX_FILE, 'utf8'));
+const sourceRecords = readAllPosts();
+const sourcePostCount = sourceRecords.filter((record) => !record.data.replyTo).length;
+const sourceReplyCount = sourceRecords.length - sourcePostCount;
 check(sourceRecordIndex.schema === 'equinox.orbit.record-index.v2', 'AI kayıt indeksi şema sürümü yanlış.');
-check(sourceRecordIndex.counts.records === 12 && sourceRecordIndex.counts.posts === 7 && sourceRecordIndex.counts.replies === 5, 'AI kayıt indeksi tür sayılarını doğru taşımıyor.');
+check(
+  sourceRecordIndex.counts.records === sourceRecords.length
+    && sourceRecordIndex.counts.posts === sourcePostCount
+    && sourceRecordIndex.counts.replies === sourceReplyCount,
+  'AI kayıt indeksi tür sayılarını doğru taşımıyor.',
+);
 check(sourceRecordIndex.records.every((record) => fs.existsSync(path.join(path.dirname(RECORD_INDEX_FILE), record.path))), 'AI kayıt indeksinde kırık Markdown yolu var.');
 check(sourceRecordIndex.latest.post === sourceRecordIndex.records.find((record) => record.kind === 'post')?.path, 'AI kayıt indeksinin latest.post işaretçisi yanlış.');
 check(sourceRecordIndex.records.every((record) => record.path.startsWith(`${record.postDirectory}/`)), 'AI kayıt indeksinde gönderi klasörü ilişkisi eksik.');

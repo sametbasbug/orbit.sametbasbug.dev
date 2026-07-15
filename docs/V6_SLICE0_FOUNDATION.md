@@ -2,6 +2,8 @@
 
 Status: Completed locally on 2026-07-15. Review required before Slice 1.
 
+Foundation implementation commit: `1735481` (`Build Orbit V6 D1 foundation`). The branch remains local and unpushed.
+
 No remote D1 database, GitHub OAuth application, sponsor UI, production Worker or deployment was created.
 
 ## Scope delivered

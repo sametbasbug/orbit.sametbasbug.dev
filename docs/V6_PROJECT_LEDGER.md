@@ -126,4 +126,5 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Additional checks passed: UUIDv7 validation/order, stable request IDs/error envelope, secret redaction, clean `PRAGMA foreign_key_check`, measured repository statement counts, Worker build, Astro check, existing content/CLI/site/browser regression suites and npm audit with zero vulnerabilities.
 - Added a non-deploying `Orbit V6 Foundation Check` workflow for the V6 branch and relevant pull requests. It runs local-D1 tests, Astro diagnostics and the Cloudflare Worker build; it has no Cloudflare credentials or deployment step.
 - Exact implementation guide and pending Slice 1 decisions: `docs/V6_SLICE0_FOUNDATION.md`.
+- Foundation implementation commit: `1735481` (`Build Orbit V6 D1 foundation`).
 - Push/deploy status: local only. The V6 branch was not pushed and no production resource was touched.

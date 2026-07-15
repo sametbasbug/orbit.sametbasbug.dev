@@ -99,9 +99,51 @@ A serious but still small invited beta that values boring, portable technology a
 
 Do not use for the first V6 release. Revisit only when managed hosting costs or platform constraints justify the operational burden.
 
+## Option E — Mac mini + Cloudflare Tunnel
+
+**Stack:** Isolated Linux VM on the Mac mini; Astro Node SSR/API and PostgreSQL inside the VM; `cloudflared` inside the same VM; R2 for untrusted media; Cloudflare DNS/CDN/WAF/rate limiting at the edge.
+
+### Strengths
+
+- No fixed hosting fee while retaining conventional Node + PostgreSQL and removing Workers' 10 ms CPU ceiling.
+- Cloudflare Tunnel creates outbound-only encrypted connections; no router port forwarding or public origin IP is required.
+- Existing Mac mini capacity is enough for a small invited beta.
+- The application remains portable to Railway, another container host or a VPS later.
+
+### Costs and risks
+
+- Home electricity, Internet and Mac availability become production dependencies; power/reboot/router failures cause downtime.
+- Tunnel protects ingress topology, not application vulnerabilities. Remote code execution in Orbit still compromises the account or VM running it.
+- The same physical host carries OpenClaw and private workspace data, so running Orbit directly as Samet's normal macOS user is prohibited.
+- Backups, upgrades, monitoring, incident response and restore drills become Samet/Nyx responsibilities.
+- No high availability without a second host/replica.
+
+### Mandatory safety boundary
+
+- Run the complete public stack in a dedicated Linux VM with no shared host folders and no mount of `~/.openclaw`, KIOXIA projects or personal directories.
+- Tunnel terminates inside the VM and routes only to the Orbit application port.
+- PostgreSQL listens only inside the VM; it is never published through Tunnel or LAN.
+- Public uploads go directly to R2 and are never executed or stored in application directories.
+- Admin routes use Cloudflare Access in addition to Orbit authentication; public API routes use Orbit tokens and application rate limits.
+- Host firewall and FileVault must be enabled before public beta.
+- Automated encrypted database backups and a tested restore procedure are required before admitting an external agent.
+
+### Local readiness audit (2026-07-15)
+
+- Mac mini: 16 GB RAM.
+- OpenClaw gateway correctly listens on loopback, but the host also contains sensitive agent data.
+- `cloudflared`, Docker/Colima/Podman and PostgreSQL are not currently installed.
+- macOS Application Firewall is disabled.
+- FileVault is disabled.
+- An unrelated `tunnel-client` process exists for the `orbit-readonly` profile; it is not Cloudflare Tunnel and must not be reused as the public ingress layer.
+
+### Verdict
+
+Good **closed-alpha** option after isolation and hardening; unsafe if Orbit runs directly beside OpenClaw under Samet's account. Treat the Mac mini as a temporary origin, not an irreplaceable permanent production host.
+
 ## Nyx recommendation
 
-Start with **Option A: Cloudflare-native**, using a static/cache-heavy hybrid rather than making every public page uncached SSR.
+For the lowest operational risk, start with **Option A: Cloudflare-native**, using a static/cache-heavy hybrid rather than making every public page uncached SSR.
 
 The deciding constraint is zero fixed monthly cost. Current Free-plan allocations are far beyond an invited beta: Workers includes 100,000 requests/day; D1 includes 5 million rows read/day, 100,000 rows written/day and 5 GB total account storage; R2 includes 10 GB-month standard storage. D1's individual Free database limit is 500 MB and its Free Time Travel window is 7 days.
 
@@ -110,6 +152,8 @@ The main engineering constraint is Workers Free's 10 ms CPU budget per request. 
 Railway is no longer the recommendation because its fixed monthly fee conflicts with Samet's explicit cost requirement. Supabase Free is also weaker as a production default because inactive projects may pause after one week. Both remain migration targets if real usage later justifies paid infrastructure.
 
 Portability defense: keep SQL migrations explicit, isolate D1 bindings behind a repository layer, avoid database-specific business logic where practical, and maintain deterministic Markdown/JSON exports.
+
+If Samet prefers full Node/PostgreSQL without a monthly bill and accepts home-hosting responsibility, **Option E becomes the better closed-alpha development target**, provided the mandatory VM/hardening boundary is completed first. Option A remains the safer public fallback.
 
 ## Decisions independent of hosting choice
 
@@ -137,3 +181,6 @@ Portability defense: keep SQL migrations explicit, isolate D1 bindings behind a 
 - Railway PostgreSQL: https://docs.railway.com/databases/postgresql
 - Cloudflare D1 limits: https://developers.cloudflare.com/d1/platform/limits/
 - Supabase Free project pausing: https://supabase.com/docs/guides/platform/free-project-pausing
+- Cloudflare Tunnel overview: https://developers.cloudflare.com/tunnel/
+- Cloudflare Tunnel availability: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-availability/
+- Cloudflare Tunnel firewall model: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/

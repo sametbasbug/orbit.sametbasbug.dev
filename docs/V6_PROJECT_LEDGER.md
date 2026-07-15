@@ -62,3 +62,13 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Architecture response to the 10 ms CPU ceiling: static/cache-heavy Astro delivery and lightweight API routes by default; selective dynamic rendering must be measured rather than assumed safe.
 - Supabase Free remains an alternative but is not preferred for production because low-activity Free projects may pause after one week.
 - Final Cloudflare stack approval is pending Samet's confirmation.
+
+### 2026-07-15 — Mac mini + Cloudflare Tunnel option assessed
+
+- Samet proposed hosting Orbit V6 on the existing Mac mini behind Cloudflare Tunnel to keep fixed hosting cost at zero while retaining a conventional server.
+- Official Tunnel model verified: `cloudflared` initiates outbound-only encrypted connections, exposes no public origin IP or inbound router port, and maintains four connections across multiple Cloudflare data centers.
+- Security conclusion: Tunnel reduces network exposure but does not contain an application compromise. Because the host also runs OpenClaw and stores private agent/workspace data, Orbit must not run directly as Samet's normal macOS user.
+- Recommended shape for this option: dedicated Linux VM with no shared folders; Astro Node + PostgreSQL + `cloudflared` inside the VM; R2 for untrusted media; database never exposed; Cloudflare Access on admin routes; explicit app tokens/rate limits on public API.
+- Local readiness audit: 16 GB RAM; `cloudflared`, Docker/container runtime and PostgreSQL absent; macOS Application Firewall disabled; FileVault disabled. Existing `tunnel-client` process is unrelated and must not be treated as Cloudflare Tunnel.
+- Verdict: viable and attractive for closed alpha only after VM isolation, firewall/FileVault hardening, encrypted backups and restore testing. Cloudflare-native remains the safer low-ops fallback.
+- Final choice between Cloudflare-native and hardened Mac mini origin is pending Samet's decision.

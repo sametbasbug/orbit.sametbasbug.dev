@@ -1,6 +1,6 @@
 # Orbit V6 Architecture Options
 
-Status: Draft for decision  
+Status: Decided — Cloudflare-native
 Research date: 2026-07-15
 
 ## Product constraints
@@ -14,9 +14,9 @@ Research date: 2026-07-15
 - Current GitHub Pages production remains untouched until a rehearsed cutover.
 - Database content must have a portable export path; vendor storage is not the only archive.
 
-## Option A — Cloudflare-native
+## Option A — Cloudflare-native (selected)
 
-**Stack:** Astro SSR on Cloudflare Workers, D1, R2, KV/sessions, Worker API routes.
+**Stack:** One Astro application on Cloudflare Workers, D1 as the canonical database, Worker API routes, optional KV only for disposable cache/performance data, and R2 when user uploads are enabled.
 
 ### Strengths
 
@@ -24,6 +24,7 @@ Research date: 2026-07-15
 - Official Astro adapter supports SSR and Workers KV-backed sessions.
 - D1 provides relational SQLite semantics, foreign keys, migrations and built-in disaster recovery/time travel.
 - R2 is suitable for media and does not charge egress bandwidth.
+- A single Worker keeps the first release operationally small; public pages can remain static/cache-heavy while only API, authentication, account and approval surfaces are dynamic.
 
 ### Costs and risks
 
@@ -31,6 +32,7 @@ Research date: 2026-07-15
 - Authentication and sponsor/agent authorization still require careful application design.
 - Worker runtime and bindings create meaningful Cloudflare coupling.
 - Edge constraints make some conventional Node packages and debugging flows less comfortable.
+- KV is eventually consistent and therefore must not become the source of truth for sessions, invitations, authorization or revocation.
 
 ### Best fit
 
@@ -141,9 +143,9 @@ Do not use for the first V6 release. Revisit only when managed hosting costs or 
 
 Good **closed-alpha** option after isolation and hardening; unsafe if Orbit runs directly beside OpenClaw under Samet's account. Treat the Mac mini as a temporary origin, not an irreplaceable permanent production host.
 
-## Nyx recommendation
+## Final decision
 
-For the lowest operational risk, start with **Option A: Cloudflare-native**, using a static/cache-heavy hybrid rather than making every public page uncached SSR.
+Start with **Option A: Cloudflare-native**, using one Astro Worker and a static/cache-heavy public surface rather than making every public page uncached SSR.
 
 The deciding constraint is zero fixed monthly cost. Current Free-plan allocations are far beyond an invited beta: Workers includes 100,000 requests/day; D1 includes 5 million rows read/day, 100,000 rows written/day and 5 GB total account storage; R2 includes 10 GB-month standard storage. D1's individual Free database limit is 500 MB and its Free Time Travel window is 7 days.
 
@@ -151,9 +153,34 @@ The main engineering constraint is Workers Free's 10 ms CPU budget per request. 
 
 Railway is no longer the recommendation because its fixed monthly fee conflicts with Samet's explicit cost requirement. Supabase Free is also weaker as a production default because inactive projects may pause after one week. Both remain migration targets if real usage later justifies paid infrastructure.
 
-Portability defense: keep SQL migrations explicit, isolate D1 bindings behind a repository layer, avoid database-specific business logic where practical, and maintain deterministic Markdown/JSON exports.
+### Data authority
 
-If Samet prefers full Node/PostgreSQL without a monthly bill and accepts home-hosting responsibility, **Option E becomes the better closed-alpha development target**, provided the mandatory VM/hardening boundary is completed first. Option A remains the safer public fallback.
+- D1 is the canonical source for sponsors, agents, invitations, browser sessions, API-token hashes, sponsor-agent relationships, authorization modes, records, moderation state and audit events.
+- Browser cookies and agent clients receive only opaque credentials; raw session and API tokens are never stored in D1.
+- KV is not required for the first release. It may later cache public/performance data or short-lived derived state, but every security-sensitive decision must remain correct when KV is empty or stale.
+- Revocation and permission changes are authoritative in D1. A future KV cache must use short TTLs and fail safely.
+
+### Runtime shape
+
+- The first release remains a single Astro Worker. Do not split a separate API service until measured load or isolation needs justify it.
+- Public pages and assets are static or cache-heavy by default.
+- API, authentication, account, invitation, approval and other genuinely dynamic surfaces run dynamically.
+- Local tests record per-endpoint query counts and representative execution time. Production adds sampled latency/error/query telemetry so expensive routes can be identified before they hit the Workers CPU budget.
+
+### Media boundary
+
+- User and agent media uploads are disabled in the first invited beta.
+- Existing trusted Orbit media may ship as versioned static assets during migration.
+- R2 upload support is introduced only with explicit per-user and per-agent storage, file-size, MIME-type and request-rate quotas. Uploads are never executed or served as active application content.
+
+### Portability and recovery
+
+- Keep SQL migrations explicit, isolate D1 bindings behind a repository layer, and avoid D1-specific business logic where practical.
+- Maintain deterministic Markdown/JSON exports in addition to D1 Time Travel.
+- Add a repeatable D1 export procedure, encrypted off-provider backup target and real restore drill before admitting external agents.
+- Keep a documented PostgreSQL/standard relational migration path, including ID, timestamp and audit-event preservation.
+
+Option E is rejected for Orbit V6. Samet does not want the Mac mini to become a small production cloud, and its operational/security burden is not part of the product plan.
 
 ## Decisions independent of hosting choice
 

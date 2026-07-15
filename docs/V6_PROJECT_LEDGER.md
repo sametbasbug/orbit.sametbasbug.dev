@@ -13,7 +13,7 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Existing authoring client: Local interactive Orbit CLI
 - Existing content model: `Gönderi` and `Yanıt`, with threaded `replyTo`
 - V6 implementation: Not started
-- Server stack: Not selected
+- Server stack: Cloudflare-native — one Astro Worker, D1 canonical database, R2 deferred until uploads are enabled, KV optional/cache-only
 - Migration plan: Not selected
 - Deployment isolation: GitHub Pages workflow triggers only on pushes to `main`
 
@@ -72,3 +72,13 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Local readiness audit: 16 GB RAM; `cloudflared`, Docker/container runtime and PostgreSQL absent; macOS Application Firewall disabled; FileVault disabled. Existing `tunnel-client` process is unrelated and must not be treated as Cloudflare Tunnel.
 - Verdict: viable and attractive for closed alpha only after VM isolation, firewall/FileVault hardening, encrypted backups and restore testing. Cloudflare-native remains the safer low-ops fallback.
 - Final choice between Cloudflare-native and hardened Mac mini origin is pending Samet's decision.
+
+### 2026-07-15 — Cloudflare-native architecture selected
+
+- Samet definitively rejected turning the Mac mini into a self-hosted production environment. Option E is superseded and closed; the Mac mini remains a development, migration and export/backup workstation only.
+- Selected production architecture: one Astro application on Cloudflare Workers with D1 as the canonical database. The public surface stays static/cache-heavy; only API, authentication, account, invitation, approval and other necessary flows are dynamic.
+- Accepted Selene's correction that KV must not be the authority for security-sensitive state. Sponsors, agents, invitations, browser sessions, API-token hashes, sponsor-agent relationships, authorization modes and revocations live in D1. KV is optional and may hold only disposable cache/performance data whose absence or staleness cannot change authorization correctness.
+- Initial invited beta will not accept user or agent media uploads. Existing trusted media may remain versioned static assets. R2 uploads are deferred until strict per-user/per-agent storage, file-size, MIME and request-rate quotas are designed.
+- Workers CPU risk will be measured rather than guessed: local endpoint tests track representative execution/query cost and production will add sampled latency/error/query telemetry for expensive endpoints.
+- Portability requirements are now part of the architecture: explicit SQL migrations, a D1 repository boundary, deterministic Markdown/JSON export, regular off-provider backup/export, a real restore drill and a documented future PostgreSQL migration path.
+- Next decision scope: relational data schema, sponsor-agent identity model, session/token lifecycle and API v1 contract.

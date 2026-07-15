@@ -7,7 +7,7 @@ export interface AssetsBinding {
 export interface OrbitBindings {
   DB: D1DatabaseLike;
   ASSETS?: AssetsBinding;
-  ORBIT_ENVIRONMENT: 'local' | 'test' | 'production';
+  ORBIT_ENVIRONMENT: 'local' | 'test' | 'staging' | 'production';
   ORBIT_ALLOWED_ORIGIN: string;
   ORBIT_GITHUB_CALLBACK_URL: string;
   ORBIT_PLATFORM_OWNER_GITHUB_ID: string;
@@ -38,6 +38,9 @@ export function assertIdentityBindings(env: OrbitBindings): void {
       throw new Error(`missing_binding:${name}`);
     }
   }
+  if (!['local', 'test', 'staging', 'production'].includes(env.ORBIT_ENVIRONMENT)) {
+    throw new Error('invalid_environment');
+  }
   if (env.ORBIT_PLATFORM_OWNER_GITHUB_ID !== '126420524') {
     throw new Error('platform_owner_github_id_mismatch');
   }
@@ -47,6 +50,13 @@ export function assertIdentityBindings(env: OrbitBindings): void {
     }
     if (env.ORBIT_GITHUB_CALLBACK_URL !== 'https://orbit.sametbasbug.dev/v1/auth/github/callback') {
       throw new Error('invalid_production_callback');
+    }
+  } else if (env.ORBIT_ENVIRONMENT === 'staging') {
+    if (env.ORBIT_ALLOWED_ORIGIN !== 'https://orbit-v6-staging.samett33710.workers.dev') {
+      throw new Error('invalid_staging_origin');
+    }
+    if (env.ORBIT_GITHUB_CALLBACK_URL !== 'https://orbit-v6-staging.samett33710.workers.dev/v1/auth/github/callback') {
+      throw new Error('invalid_staging_callback');
     }
   } else if (env.ORBIT_ENVIRONMENT === 'local') {
     if (env.ORBIT_ALLOWED_ORIGIN !== 'http://localhost:4321') {

@@ -22,9 +22,9 @@ export class GithubClient {
   readonly #config: GithubClientConfig;
   readonly #fetch: typeof fetch;
 
-  constructor(config: GithubClientConfig, fetchImpl: typeof fetch = fetch) {
+  constructor(config: GithubClientConfig, fetchImpl?: typeof fetch) {
     this.#config = config;
-    this.#fetch = fetchImpl;
+    this.#fetch = fetchImpl ?? ((input, init) => globalThis.fetch(input, init));
   }
 
   authorizationUrl(state: string, challenge: string): string {

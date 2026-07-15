@@ -22,13 +22,14 @@ CREATE TABLE oauth_flow_consumptions (
 CREATE TRIGGER oauth_flow_consumptions_validate_before_insert
 BEFORE INSERT ON oauth_flow_consumptions
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT, 'invalid_oauth_flow')
+  WHERE NOT EXISTS (
     SELECT 1
     FROM oauth_flows
     WHERE id = NEW.flow_id
       AND consumed_at IS NULL
       AND expires_at > NEW.consumed_at
-  ) THEN RAISE(ABORT, 'invalid_oauth_flow') END;
+  );
 END;
 
 CREATE TRIGGER oauth_flow_consumptions_mark_after_insert
@@ -48,14 +49,15 @@ CREATE TABLE invitation_revocations (
 CREATE TRIGGER invitation_revocations_validate_before_insert
 BEFORE INSERT ON invitation_revocations
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT, 'invitation_not_revocable')
+  WHERE NOT EXISTS (
     SELECT 1
     FROM invitations
     WHERE id = NEW.invitation_id
       AND revoked_at IS NULL
       AND redeemed_at IS NULL
       AND expires_at > NEW.revoked_at
-  ) THEN RAISE(ABORT, 'invitation_not_revocable') END;
+  );
 END;
 
 CREATE TRIGGER invitation_revocations_mark_after_insert
@@ -77,13 +79,14 @@ CREATE TABLE session_revocations (
 CREATE TRIGGER session_revocations_validate_before_insert
 BEFORE INSERT ON session_revocations
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT, 'session_not_revocable')
+  WHERE NOT EXISTS (
     SELECT 1
     FROM sessions
     WHERE id = NEW.session_id
       AND account_id = NEW.account_id
       AND revoked_at IS NULL
-  ) THEN RAISE(ABORT, 'session_not_revocable') END;
+  );
 END;
 
 CREATE TRIGGER session_revocations_mark_after_insert
@@ -98,9 +101,10 @@ END;
 CREATE TRIGGER sessions_require_active_account
 BEFORE INSERT ON sessions
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT, 'inactive_session_account')
+  WHERE NOT EXISTS (
     SELECT 1 FROM accounts WHERE id = NEW.account_id AND status = 'active'
-  ) THEN RAISE(ABORT, 'inactive_session_account') END;
+  );
 END;
 
 -- Platform-owner authorization is rooted in GitHub's immutable numeric ID.

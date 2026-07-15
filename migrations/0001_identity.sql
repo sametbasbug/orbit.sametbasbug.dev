@@ -82,7 +82,8 @@ CREATE TABLE invitation_redemptions (
 CREATE TRIGGER invitation_redemptions_validate_before_insert
 BEFORE INSERT ON invitation_redemptions
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT, 'invalid_invitation')
+  WHERE NOT EXISTS (
     SELECT 1
     FROM invitations
     WHERE id = NEW.invitation_id
@@ -93,7 +94,7 @@ BEGIN
         expected_github_user_id IS NULL
         OR expected_github_user_id = NEW.github_user_id
       )
-  ) THEN RAISE(ABORT, 'invalid_invitation') END;
+  );
 END;
 
 CREATE TRIGGER invitation_redemptions_mark_after_insert

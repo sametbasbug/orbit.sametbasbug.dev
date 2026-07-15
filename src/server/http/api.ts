@@ -1,5 +1,6 @@
 import { createErrorEnvelope } from '../foundation/errors';
 import { createEntityId, createRequestId } from '../foundation/ids';
+import { redactSecrets } from '../foundation/redaction';
 import {
   CSRF_COOKIE,
   CSRF_HEADER,
@@ -491,6 +492,14 @@ export async function handleApiRequest(
       return json(createErrorEnvelope(error.code, error.message, requestId, error.details), error.status);
     }
     const message = error instanceof Error ? error.message : 'unknown_error';
+    console.error(JSON.stringify(redactSecrets({
+      event: 'api.internal_error',
+      requestId,
+      method: request.method,
+      pathname: new URL(request.url).pathname,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+      errorMessage: message,
+    })));
     const isConflict = /constraint|invalid_invitation|invalid_oauth_flow|not_revocable|not_revocable/iu.test(message);
     return json(createErrorEnvelope(
       isConflict ? 'state_conflict' : 'internal_error',

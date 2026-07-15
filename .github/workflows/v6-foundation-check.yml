@@ -18,6 +18,7 @@ on:
       - 'src/server/**'
       - 'src/worker.ts'
       - 'wrangler.jsonc'
+      - 'wrangler.staging.jsonc'
       - 'wrangler.test.jsonc'
       - 'wrangler.slice1-test.jsonc'
   workflow_dispatch:
@@ -45,3 +46,6 @@ jobs:
 
       - name: Verify D1 foundation and Worker build
         run: npm run v6:check
+
+      - name: Verify isolated staging bundle
+        run: npm run worker:build:staging

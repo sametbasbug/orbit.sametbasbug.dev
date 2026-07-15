@@ -1,6 +1,6 @@
 # Orbit V6 Slice 1 — Identity, Invitation, OAuth and Session
 
-Status: completed locally on 2026-07-15. No production deploy and no branch push.
+Status: completed locally and validated in isolated Cloudflare staging on 2026-07-15. No production deploy or merge.
 
 Implementation commit: `9c9e119` (`Build Orbit V6 identity core`).
 
@@ -130,12 +130,14 @@ The integration ray uses a new temporary Wrangler/workerd D1 database and a fake
 
 Combined local-D1 suites: 21 assertions/tests. Existing Orbit regression: 63 content, 30 CLI, 2,331 site and 372 browser assertions. Astro diagnostics: 0 errors and 0 warnings; one pre-existing unused-import hint. npm audit: 0 vulnerabilities.
 
-## Explicitly not done
+## Staging validation
 
-- No GitHub OAuth App was created.
-- No real client ID or secret was stored.
-- No Keychain item was created by automation.
-- No remote D1 database or Cloudflare Worker was created.
+The Slice 1 implementation was exercised against a real Cloudflare Worker, remote D1 and separate `Orbit Staging` GitHub OAuth App. The complete evidence, discovered environment differences and cleanup record are in `docs/V6_STAGING_GATE.md`.
+
+## Explicitly not done in production
+
+- No production GitHub OAuth App or production secret was used.
+- No production D1 database or production Worker was created.
 - No production secret was installed.
-- No branch push or deployment occurred.
+- No merge, production deployment or production DNS change occurred.
 - Sponsor agent/credential management remains Slice 2.

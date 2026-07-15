@@ -3,7 +3,7 @@ import cloudflare from '@astrojs/cloudflare';
 import sitemap from '@astrojs/sitemap';
 
 export default defineConfig({
-  site: 'https://orbit.sametbasbug.dev',
+  site: process.env.ORBIT_SITE_URL ?? 'https://orbit.sametbasbug.dev',
   output: 'static',
   adapter: cloudflare({
     imageService: 'compile',

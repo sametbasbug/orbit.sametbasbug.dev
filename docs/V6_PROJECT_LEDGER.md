@@ -145,3 +145,17 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Canonical implementation/setup report: `docs/V6_SLICE1_IDENTITY.md`.
 - Local implementation commit: `9c9e119` (`Build Orbit V6 identity core`).
 - Push/deploy status: local only. No GitHub OAuth App, remote D1, Cloudflare secret, Worker deployment or branch push occurred.
+
+### 2026-07-15 — Slice 1 real staging gate passed
+
+- Published `v6/server-platform` and opened draft PR #9. The PR remains unmerged and no production workflow was triggered.
+- Provisioned isolated staging resources only: Worker `orbit-v6-staging`, D1 `orbit-v6-staging` in EEUR, and a separate `Orbit Staging` GitHub OAuth App. All seven confidential bindings live in Cloudflare Worker secrets and the macOS Keychain service `staging.orbit.sametbasbug`; no raw value entered the repository or project documentation.
+- The planned custom staging hostname was blocked by current DNS ownership: `sametbasbug.dev` uses Name.com nameservers and is not a Cloudflare zone. Used `https://orbit-v6-staging.samett33710.workers.dev` instead. Production DNS migration or delegation remains an explicit future decision.
+- Added staging-only crawler protection at three layers: HTML robots metadata, Static Assets `_headers`, and the Worker response wrapper. Added a staging-only OAuth browser entrypoint; production cannot serve it.
+- Remote D1 rejected nested `CASE ... END` syntax inside trigger migrations even though local workerd accepted it. Rewrote equivalent validation triggers as `SELECT RAISE(...) WHERE NOT EXISTS (...)`; all five migrations then applied remotely, reapplication was a no-op and foreign-key checks were clean.
+- Real GitHub OAuth initially failed after callback because Cloudflare requires the correct receiver when invoking global `fetch`. Wrapped `globalThis.fetch` instead of retaining the bare function. OAuth then completed for immutable GitHub ID `126420524`, created the expected platform-owner D1 session, and passed `/v1/me`.
+- Browser behavior confirmed that the session cookie is HttpOnly while the CSRF cookie is readable. Correct-CSRF logout returned 200 and immediately revoked access; `/v1/me` returned 401 afterward.
+- A remote scheduled-event rehearsal removed seeded expired OAuth, session and idempotency rows while preserving audit events.
+- Exported the remote staging D1 and restored 93 queries into a disposable empty D1. Five migration rows, account/identity/session/audit counts and GitHub numeric identity matched the source; `PRAGMA foreign_key_check` was clean.
+- Deleted both disposable parser/restore D1 databases and removed the local export after evidence collection. Only the isolated staging Worker and staging D1 remain.
+- Canonical report: `docs/V6_STAGING_GATE.md`. Next implementation slice remains sponsor, agent and credential management; production deployment still requires separate approval.

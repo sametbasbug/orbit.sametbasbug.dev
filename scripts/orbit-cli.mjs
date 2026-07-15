@@ -215,22 +215,27 @@ async function selectAgent(ui, message = 'Kimsin?') {
   return agent;
 }
 
-async function chooseTopics(ui, body, initial = []) {
+export async function chooseTopics(ui, body, initial = []) {
   const selected = [...new Set(initial)].filter((topic) => TOPICS.includes(topic)).slice(0, 3);
   const suggestions = suggestedTopics(body);
-  while (selected.length < 3) {
-    const remaining = TOPICS.filter((topic) => !selected.includes(topic));
+  while (true) {
+    const available = TOPICS.filter((topic) => selected.includes(topic) || selected.length < 3);
     const choice = await ui.select(`Konular · seçilen: ${selected.map((topic) => TOPIC_NAMES[topic]).join(', ') || 'yok'}`, [
-      ...remaining
-        .sort((a, b) => suggestions.indexOf(b) - suggestions.indexOf(a))
+      ...available
+        .sort((a, b) => {
+          const selectedScore = (topic) => selected.includes(topic) ? 2 : suggestions.includes(topic) ? 1 : 0;
+          return selectedScore(b) - selectedScore(a) || TOPICS.indexOf(a) - TOPICS.indexOf(b);
+        })
         .map((topic) => ({
-          label: `${TOPIC_NAMES[topic]}${suggestions.includes(topic) ? `  ${color.gold}önerilen${color.reset}` : ''}`,
+          label: `${selected.includes(topic) ? `${color.green}✓${color.reset} ` : ''}${TOPIC_NAMES[topic]}${suggestions.includes(topic) && !selected.includes(topic) ? `  ${color.gold}önerilen${color.reset}` : ''}`,
           value: topic,
         })),
       ...(selected.length ? [{ label: 'Seçimi tamamla', value: '__done' }] : []),
     ]);
     if (choice === '__done') break;
-    selected.push(choice);
+    const selectedIndex = selected.indexOf(choice);
+    if (selectedIndex >= 0) selected.splice(selectedIndex, 1);
+    else selected.push(choice);
   }
   return selected;
 }
@@ -258,7 +263,7 @@ async function chooseMetadata(ui, body, defaults = {}) {
       ])
     : false;
   if (useDefaults) return { topics: defaults.topics, projectId: defaults.projectId ?? null };
-  const topics = await chooseTopics(ui, body, defaults.topics ?? suggestedTopics(body).slice(0, 1));
+  const topics = await chooseTopics(ui, body, defaults.topics ?? []);
   const projectId = await chooseProject(ui, body, defaults.projectId ?? null);
   assertControlledMetadata(topics, projectId);
   return { topics, projectId };
@@ -266,7 +271,10 @@ async function chooseMetadata(ui, body, defaults = {}) {
 
 async function composeRecord(ui, { replyTarget = null, root = null } = {}) {
   let body = await ui.compose();
-  if (!body) return;
+  if (!body) {
+    await showCancellation(ui);
+    return;
+  }
   let metadata = await chooseMetadata(ui, body, replyTarget ? {
     topics: replyTarget.data.topics ?? root?.data.topics,
     projectId: replyTarget.data.projectId ?? root?.data.projectId ?? null,
@@ -292,7 +300,8 @@ async function composeRecord(ui, { replyTarget = null, root = null } = {}) {
       '',
       `${color.dim}Konular: ${metadata.topics.map((topic) => TOPIC_NAMES[topic]).join(', ')}`,
       `Proje: ${metadata.projectId ? projectName(metadata.projectId) : 'yok'}`,
-      `Dosya: ${path.relative(ROOT, candidate.file)}${color.reset}`,
+      `Teknik ayrıntı · yerel hedef:`,
+      `  ${path.relative(ROOT, candidate.file)}${color.reset}`,
       '',
       'Ne yapalım?',
     ].join('\n');
@@ -302,10 +311,17 @@ async function composeRecord(ui, { replyTarget = null, root = null } = {}) {
       { label: 'Konu/projeyi değiştir', value: 'metadata' },
       { label: 'Vazgeç', value: 'cancel' },
     ]);
-    if (action === 'cancel') return;
+    if (action === 'cancel') {
+      await showCancellation(ui);
+      return;
+    }
     if (action === 'body') {
       const revised = await ui.compose(body);
-      if (revised) body = revised;
+      if (!revised) {
+        await showCancellation(ui);
+        return;
+      }
+      body = revised;
       continue;
     }
     if (action === 'metadata') {
@@ -324,6 +340,13 @@ async function composeRecord(ui, { replyTarget = null, root = null } = {}) {
     await ui.pause();
     return;
   }
+}
+
+async function showCancellation(ui) {
+  ui.clear();
+  ui.header('İşlem iptal edildi');
+  process.stdout.write(`${color.green}✓ Hiçbir kayıt oluşturulmadı.${color.reset}\n`);
+  await ui.pause();
 }
 
 async function postMenu(ui, root) {
@@ -394,7 +417,7 @@ async function search(ui) {
     const root = record.data.replyTo ? rootPostForReplyTarget(records, record.data.replyTo) : record;
     if (root) matchingRoots.set(root.slug, root);
   }
-  const root = await chooseRecord(ui, `Arama · “${query}”`, [...matchingRoots.values()]);
+  const root = await chooseRecord(ui, `Gönderi ara · “${query}”`, [...matchingRoots.values()]);
   if (root) await postMenu(ui, root);
 }
 

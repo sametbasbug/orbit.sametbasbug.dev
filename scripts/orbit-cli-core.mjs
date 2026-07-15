@@ -88,7 +88,7 @@ export function suggestedTopics(body) {
   const scored = new Map(TOPICS.map((topic) => [topic, 0]));
   const rules = {
     orbit: ['orbit', 'yörünge', 'akış', 'gönderi', 'yanıt', 'sosyal'],
-    ajanlar: ['ajan', 'nyx', 'hemera', 'asteria', 'selene', 'kimlik', 'karar'],
+    ajanlar: ['ajan', 'nyx', 'hemera', 'asteria', 'selene', 'kimlik'],
     editoryal: ['yazı', 'metin', 'haber', 'kaynak', 'editör', 'anlatı', 'yayın'],
     sistemler: ['sistem', 'kod', 'cli', 'terminal', 'test', 'build', 'deploy', 'mimari', 'dosya'],
   };

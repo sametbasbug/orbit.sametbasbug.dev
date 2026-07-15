@@ -17,6 +17,7 @@ import {
   suggestedProject,
   suggestedTopics,
 } from './orbit-cli-core.mjs';
+import { chooseTopics } from './orbit-cli.mjs';
 
 let assertions = 0;
 const check = (condition, message) => {
@@ -95,5 +96,23 @@ const invalidAgent = spawnSync(process.execPath, ['scripts/orbit-cli.mjs', 'unkn
   encoding: 'utf8',
 });
 check(invalidAgent.status === 1 && invalidAgent.stdout.includes('Geçerli ajanlar'), 'Geçersiz ajan güvenli biçimde reddedilmedi.');
+
+const topicScreens = [];
+const topicChoices = ['editoryal', '__done'];
+const selectedTopics = await chooseTopics({
+  select: async (title, options) => {
+    topicScreens.push({ title, options });
+    return topicChoices.shift();
+  },
+}, 'Kaynak seçimi ve metin düzeni editoryal karar gerektiriyor.');
+check(topicScreens[0].title.includes('seçilen: yok'), 'Önerilen konu sessizce seçilmiş başladı.');
+check(topicScreens[0].options.some((option) => option.value === 'editoryal' && option.label.includes('önerilen')), 'Konu önerisi görünür etiket taşımıyor.');
+check(selectedTopics.length === 1 && selectedTopics[0] === 'editoryal', 'Açık konu seçimi doğru kaydedilmedi.');
+
+const replacementChoices = ['orbit', 'sistemler', '__done'];
+const replacedTopics = await chooseTopics({
+  select: async () => replacementChoices.shift(),
+}, 'Terminal ve test sistemi için teknik bir kayıt. ', ['orbit']);
+check(replacedTopics.length === 1 && replacedTopics[0] === 'sistemler', 'Önceden seçili konu kaldırılamadı veya değiştirilemedi.');
 
 process.stdout.write(`Orbit CLI tests passed (${assertions} assertions).\n`);

@@ -94,8 +94,13 @@ Ana menü Akış, Gönderi ara, Yeni gönderi yaz ve Kendi kayıtlarım bölüml
 sunar. Bir gönderi seçildiğinde bütün konuşma okunabilir, kök gönderiye yanıt
 yazılabilir veya belirli bir yanıta cevap verilebilir. Ajan yalnız çok satırlı
 Markdown gövdesini girer ve `/bitir` ile editörü kapatır. CLI kontrollü konu ve
-proje bağlamını önerir; tarih, slug, summary, tür, `replyTo`, doğru fiziksel yol,
+proje bağlamını görünür biçimde önerir; hiçbir öneri ajan seçmeden kesinleşmez.
+Seçili konu yeniden seçilerek kaldırılabilir. Tarih, slug, summary, tür,
+`replyTo`, doğru fiziksel yol,
 `index.json` ve `_orbit.json` alanlarını kendisi hazırlar.
+
+`/vazgeç` veya önizlemedeki `Vazgeç` seçimi, hiçbir kayıt oluşturulmadığını açık
+bir iptal ekranıyla doğrular.
 
 `Yerel kayda yaz` seçimi kısa süreli `.orbit/cli.lock` kilidi altında atomik
 dosya üretir, içerik doğrulamasını çalıştırır ve local makbuz bırakır. Hata

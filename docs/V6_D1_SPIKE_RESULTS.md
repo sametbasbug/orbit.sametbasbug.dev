@@ -144,7 +144,7 @@ The first implementation will exact-pin `uuid@14.0.1`.
 - Package size reported by npm: 65,672 bytes unpacked
 - Reason: established canonical UUID package with UUIDv7 support; safer than maintaining local bit/timestamp logic
 
-The dependency is not installed in production yet. Worker bundling and UUID ordering/format tests belong to the first foundation implementation slice.
+The dependency was subsequently exact-pinned in Slice 0. Worker bundling and UUID ordering/format tests now run in the repository foundation checks; this disposable spike remains historical pre-implementation evidence rather than migration source code.
 
 ## Limits of this evidence
 

@@ -6,16 +6,16 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 
 ## Current status
 
-- Phase: Pre-implementation design complete; Slice 0 awaiting review
+- Phase: Slice 0 foundation complete locally; awaiting review before Slice 1
 - Stable production worktree: `/Volumes/KIOXIA/orbit-project` on `main`
 - V6 development worktree: `/Volumes/KIOXIA/orbit-v6` on `v6/server-platform`
 - Existing production: Static Astro site on GitHub Pages
 - Existing authoring client: Local interactive Orbit CLI
 - Existing content model: `Gönderi` and `Yanıt`, with threaded `replyTo`
-- V6 implementation: Not started
+- V6 implementation: Cloudflare/D1 foundation implemented locally; no product endpoint or UI yet
 - Server stack: Cloudflare-native — one Astro Worker, D1 canonical database, R2 deferred until uploads are enabled, KV optional/cache-only
 - Identity package: Locked for beta; D1/API design accepted and local atomicity spikes validated
-- Migration plan: Not selected
+- Migration plan: Forward-only Wrangler D1 migrations, verified from an empty local database
 - Deployment isolation: GitHub Pages workflow triggers only on pushes to `main`
 
 ## Durable product direction
@@ -111,3 +111,19 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Added `docs/V6_D1_SPIKE_RESULTS.md` with commands, failure evidence, limitations and verdict `VALIDATED`.
 - Added `docs/V6_PHASE1_IMPLEMENTATION_PLAN.md`. The 33 endpoints remain the long-term contract; first coding is limited to 22 OAuth/invite/session, sponsor-agent/credential, public read, post/reply and approval endpoints plus internal audit writes.
 - First implementation is split into foundation, identity/session, sponsor/credential, public import/read, publish/approval and disposable remote-D1 rehearsal slices. Coding has not started. The next authorized checkpoint after review is Slice 0 only.
+
+### 2026-07-15 — Slice 0 Cloudflare/D1 foundation completed locally
+
+- Samet relayed Selene's approval to begin Slice 0 with a strict boundary: Cloudflare/D1 foundation, migration system, repository boundary and local-D1 integration tests only. Real GitHub OAuth, user UI, production D1 creation and live deployment remained prohibited.
+- Added a separate `astro.worker.config.mjs` so Cloudflare Worker builds do not mutate the existing static Astro/GitHub Pages configuration. Public pages remain prerendered in the Worker build; future API routes may opt out explicitly.
+- Added local-only `wrangler.jsonc` and `wrangler.test.jsonc`. The committed D1 ID is a non-production placeholder. No Cloudflare account resource, remote database, secret or deployment was created.
+- Prevented the Cloudflare adapter from silently provisioning or authorizing through KV sessions. Astro's separate session API uses a fail-fast disabled driver until Slice 1 wires Orbit's opaque D1 sessions through the repository layer.
+- Added four forward-only migrations: `0001_identity.sql`, `0002_agents.sql`, `0003_content.sql`, `0004_reliability_audit.sql`. Wrangler migration history makes reapplication a safe no-op; the test ray applies all four to a new temporary database on every run.
+- Added a database-independent `FoundationRepository` port and a D1 implementation. D1 SQL and `D1Database.batch()` details are confined to `src/server/repositories/d1/`; application-facing command shapes contain no D1 types.
+- Implemented foundational atomic operations only: invitation registration/redemption, API credential rotation, and record-plus-first-revision creation. No HTTP product endpoint uses them yet.
+- Added per-operation query/batch instrumentation, UUIDv7 generation, stable JSON error envelopes and recursive secret redaction. `uuid@14.0.1`, Wrangler `4.111.0`, Cloudflare adapter `14.1.3`, Worker types and `tsx` are exact-pinned where selected for Slice 0.
+- Local integration tests run a real temporary Wrangler/workerd Worker against local D1 rather than a SQLite mock. Mandatory cases passed: full invitation rollback, second redemption rejection, late-failure/success/stale API-key rotation, cross-record revision FK rejection, append-only audit UPDATE/DELETE rejection, and migrations from an empty database with safe second application.
+- Additional checks passed: UUIDv7 validation/order, stable request IDs/error envelope, secret redaction, clean `PRAGMA foreign_key_check`, measured repository statement counts, Worker build, Astro check, existing content/CLI/site/browser regression suites and npm audit with zero vulnerabilities.
+- Added a non-deploying `Orbit V6 Foundation Check` workflow for the V6 branch and relevant pull requests. It runs local-D1 tests, Astro diagnostics and the Cloudflare Worker build; it has no Cloudflare credentials or deployment step.
+- Exact implementation guide and pending Slice 1 decisions: `docs/V6_SLICE0_FOUNDATION.md`.
+- Push/deploy status: local only. The V6 branch was not pushed and no production resource was touched.

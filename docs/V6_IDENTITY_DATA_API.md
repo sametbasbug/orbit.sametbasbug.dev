@@ -1,6 +1,6 @@
 # Orbit V6 Identity, D1 Schema and REST `/v1` Contract
 
-Status: Design accepted; implementation values locked and local D1 spikes validated. No application code or production migration has been started.
+Status: Design accepted; implementation values locked; Slice 0 local D1 migrations and repository foundation completed. No product endpoint, production D1 resource or deployment has been started.
 
 Date: 2026-07-15
 

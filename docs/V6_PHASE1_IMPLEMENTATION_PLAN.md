@@ -168,6 +168,8 @@ No public-feed endpoint may issue one query per post, author or topic. N+1 query
 
 ### Slice 0 — Cloudflare/D1 foundation
 
+Status: **COMPLETED LOCALLY on 2026-07-15; awaiting review before Slice 1.** No remote D1 resource or deployment was created.
+
 - Add Astro Cloudflare adapter and Wrangler configuration for local/test environments.
 - Exact-pin `uuid@14.0.1` and add UUIDv7 format/order tests.
 - Add migration runner, D1 repository boundary and isolated local test database.

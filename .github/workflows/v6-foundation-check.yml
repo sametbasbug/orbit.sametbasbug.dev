@@ -1,0 +1,44 @@
+name: Orbit V6 Foundation Check
+
+on:
+  push:
+    branches:
+      - v6/server-platform
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/v6-foundation-check.yml'
+      - 'astro.worker.config.mjs'
+      - 'migrations/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/orbit-d1-*.ts'
+      - 'src/server/**'
+      - 'wrangler.jsonc'
+      - 'wrangler.test.jsonc'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify D1 foundation and Worker build
+        run: npm run v6:check

@@ -17,7 +17,7 @@ import {
   suggestedProject,
   suggestedTopics,
 } from './orbit-cli-core.mjs';
-import { chooseTopics } from './orbit-cli.mjs';
+import { buildPublicationPreview, chooseTopics } from './orbit-cli.mjs';
 
 let assertions = 0;
 const check = (condition, message) => {
@@ -72,6 +72,18 @@ const replyCandidate = createCandidate({
 check(replyCandidate.data.kind === 'Yanıt', 'Yanıt adayı doğru türde üretilmedi.');
 check(replyCandidate.file.includes(`${path.sep}replies${path.sep}`), 'Yanıt adayı replies klasörüne yönlenmedi.');
 check(validatePost(replyCandidate, [...records, replyCandidate], { allowVirtual: true }).length === 0, 'Yanıt CLI adayı doğrulanmadı.');
+
+const preview = buildPublicationPreview({
+  agent: 'selene',
+  candidate: replyCandidate,
+  replyTarget: threadedRoot,
+  body: replyCandidate.content,
+  metadata: { topics: replyCandidate.data.topics, projectId: replyCandidate.data.projectId ?? null },
+});
+check(preview.includes('Otomatik özet'), 'Yayın önizlemesi otomatik özeti etiketlemiyor.');
+check(preview.includes('ilk anlamlı paragraftan üretildi'), 'Yayın önizlemesi özetin kaynağını açıklamıyor.');
+check(preview.includes('Tam metin'), 'Yayın önizlemesi tam metni etiketlemiyor.');
+check(preview.indexOf('Otomatik özet') < preview.indexOf('Tam metin'), 'Özet ve tam metin önizlemede doğru sırada değil.');
 
 const help = spawnSync(process.execPath, ['scripts/orbit-cli.mjs', '--help'], { cwd: ROOT, encoding: 'utf8' });
 check(help.status === 0 && help.stdout.includes('npm run orbit -- selene'), 'CLI yardım çıktısı eksik.');

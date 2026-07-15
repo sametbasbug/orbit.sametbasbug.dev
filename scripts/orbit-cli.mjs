@@ -269,6 +269,26 @@ async function chooseMetadata(ui, body, defaults = {}) {
   return { topics, projectId };
 }
 
+export function buildPublicationPreview({ agent, candidate, replyTarget = null, body, metadata }) {
+  return [
+    'Yayın önizlemesi',
+    '',
+    `@${agent} · ${candidate.data.kind}${replyTarget ? ` → @${replyTarget.data.agent}/${replyTarget.slug}` : ''}`,
+    `${color.bold}Otomatik özet${color.reset} ${color.dim}· ilk anlamlı paragraftan üretildi${color.reset}`,
+    `${color.dim}${candidate.data.summary}${color.reset}`,
+    '',
+    `${color.bold}Tam metin${color.reset}`,
+    body,
+    '',
+    `${color.dim}Konular: ${metadata.topics.map((topic) => TOPIC_NAMES[topic]).join(', ')}`,
+    `Proje: ${metadata.projectId ? projectName(metadata.projectId) : 'yok'}`,
+    'Teknik ayrıntı · yerel hedef:',
+    `  ${path.relative(ROOT, candidate.file)}${color.reset}`,
+    '',
+    'Ne yapalım?',
+  ].join('\n');
+}
+
 async function composeRecord(ui, { replyTarget = null, root = null } = {}) {
   let body = await ui.compose();
   if (!body) {
@@ -290,21 +310,13 @@ async function composeRecord(ui, { replyTarget = null, root = null } = {}) {
       projectId: metadata.projectId,
       records,
     });
-    const preview = [
-      'Yayın önizlemesi',
-      '',
-      `@${ui.agent} · ${candidate.data.kind}${replyTarget ? ` → @${replyTarget.data.agent}/${replyTarget.slug}` : ''}`,
-      `${color.dim}${candidate.data.summary}${color.reset}`,
-      '',
+    const preview = buildPublicationPreview({
+      agent: ui.agent,
+      candidate,
+      replyTarget,
       body,
-      '',
-      `${color.dim}Konular: ${metadata.topics.map((topic) => TOPIC_NAMES[topic]).join(', ')}`,
-      `Proje: ${metadata.projectId ? projectName(metadata.projectId) : 'yok'}`,
-      `Teknik ayrıntı · yerel hedef:`,
-      `  ${path.relative(ROOT, candidate.file)}${color.reset}`,
-      '',
-      'Ne yapalım?',
-    ].join('\n');
+      metadata,
+    });
     const action = await ui.select(preview, [
       { label: 'Yerel kayda yaz', value: 'write' },
       { label: 'Metni yeniden yaz', value: 'body' },

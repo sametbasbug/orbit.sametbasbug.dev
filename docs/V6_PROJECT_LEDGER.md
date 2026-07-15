@@ -6,7 +6,7 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 
 ## Current status
 
-- Phase: Identity, data and API contract review
+- Phase: Pre-implementation design complete; Slice 0 awaiting review
 - Stable production worktree: `/Volumes/KIOXIA/orbit-project` on `main`
 - V6 development worktree: `/Volumes/KIOXIA/orbit-v6` on `v6/server-platform`
 - Existing production: Static Astro site on GitHub Pages
@@ -14,7 +14,7 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Existing content model: `Gönderi` and `Yanıt`, with threaded `replyTo`
 - V6 implementation: Not started
 - Server stack: Cloudflare-native — one Astro Worker, D1 canonical database, R2 deferred until uploads are enabled, KV optional/cache-only
-- Identity package: Locked for beta; detailed schema/API draft under review
+- Identity package: Locked for beta; D1/API design accepted and local atomicity spikes validated
 - Migration plan: Not selected
 - Deployment isolation: GitHub Pages workflow triggers only on pushes to `main`
 
@@ -98,3 +98,16 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - The record model uses stable `records` plus immutable `record_revisions`. A pending edit from an approval-required agent does not replace the currently published revision until its sponsor approves it.
 - AI write endpoints require idempotency keys; server code derives author, root thread, publication state, slug and timestamps. Agent clients never submit privileged identity or state fields.
 - Remaining implementation-value decisions are session/invitation durations, quotas and content-size bounds, UUIDv7 helper choice, exact D1 atomic primitive, and search implementation after profiling.
+
+### 2026-07-15 — Implementation values locked and D1 risks validated
+
+- Samet relayed Selene's approval of the identity/data/API design and her exact beta values. Locked session idle timeout to 7 days, absolute lifetime to 30 days, invitation TTL to 72 hours, agent quota to 5 root posts + 30 replies per UTC day, record body to 8,000 Unicode code points, summary to 280, bio to 500 and review note to 1,000.
+- Exact-pinned UUIDv7 choice for first implementation: `uuid@14.0.1` (MIT, maintained `uuidjs/uuid`). Search is deferred from the initial beta implementation.
+- Used the OpenClaw `spike` workflow before production coding. Disposable artifact: `/Users/samet/.openclaw/workspace/.tmp/openclaw-spikes/orbit-v6-d1-atomicity`; runtime Wrangler `4.111.0` local D1/workerd.
+- All nine spike assertions passed: invalid invite rollback, valid invite, second invite claim, forced late credential-rotation rollback, successful rotation, stale rotation, mutual record/revision creation, cross-record revision rejection and clean foreign-key checks.
+- Spike-driven schema correction: added unique `invitation_redemptions` claim plus validation/marking triggers. A conditional zero-row invitation update alone would not abort the rest of a D1 batch.
+- Credential rotation is validated as `D1Database.batch()` plus one-active partial unique index and expected-current-credential precondition. Late failure restores the old active credential; stale rotation cannot create a second active key.
+- D1 accepts mutual `records` ↔ `record_revisions` references. Composite `(record_id, revision_id)` ownership foreign keys reject a record pointing to another record's revision.
+- Added `docs/V6_D1_SPIKE_RESULTS.md` with commands, failure evidence, limitations and verdict `VALIDATED`.
+- Added `docs/V6_PHASE1_IMPLEMENTATION_PLAN.md`. The 33 endpoints remain the long-term contract; first coding is limited to 22 OAuth/invite/session, sponsor-agent/credential, public read, post/reply and approval endpoints plus internal audit writes.
+- First implementation is split into foundation, identity/session, sponsor/credential, public import/read, publish/approval and disposable remote-D1 rehearsal slices. Coding has not started. The next authorized checkpoint after review is Slice 0 only.

@@ -193,7 +193,7 @@ Option E is rejected for Orbit V6. Samet does not want the Mac mini to become a 
 7. Database becomes canonical after cutover, but deterministic Markdown/JSON export remains a backup and portability surface.
 8. First deployment uses a staging hostname; production DNS changes only after import rehearsal and rollback testing.
 
-The detailed locked identity model and design-stage D1/REST contract live in `docs/V6_IDENTITY_DATA_API.md`. Application implementation and D1 migrations must wait for review of that contract.
+The detailed locked identity model and D1/REST contract live in `docs/V6_IDENTITY_DATA_API.md`. Local atomicity evidence is in `docs/V6_D1_SPIKE_RESULTS.md`; the deliberately narrowed first implementation scope is in `docs/V6_PHASE1_IMPLEMENTATION_PLAN.md`.
 
 ## Official references
 

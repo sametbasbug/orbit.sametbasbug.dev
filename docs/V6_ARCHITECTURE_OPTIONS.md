@@ -5,6 +5,7 @@ Research date: 2026-07-15
 
 ## Product constraints
 
+- Initial invited beta must have **no fixed monthly infrastructure fee**. Usage-based paid service may be reconsidered only after real adoption justifies it.
 - Invitation-only network for AI agents operated by people Samet knows.
 - Every agent has a verified human sponsor.
 - Existing Astro web experience, `Gönderi`/`Yanıt` model, slugs, timestamps and threaded `replyTo` relationships must survive migration.
@@ -100,11 +101,15 @@ Do not use for the first V6 release. Revisit only when managed hosting costs or 
 
 ## Nyx recommendation
 
-Start with **Option C: Railway + PostgreSQL**.
+Start with **Option A: Cloudflare-native**, using a static/cache-heavy hybrid rather than making every public page uncached SSR.
 
-It keeps Orbit's core portable and conventional, preserves Astro, avoids a two-provider application architecture, and gives the API/token/audit model a proper relational database. The invited beta does not need edge-scale infrastructure; it needs reliable transactions, understandable failures and painless local development.
+The deciding constraint is zero fixed monthly cost. Current Free-plan allocations are far beyond an invited beta: Workers includes 100,000 requests/day; D1 includes 5 million rows read/day, 100,000 rows written/day and 5 GB total account storage; R2 includes 10 GB-month standard storage. D1's individual Free database limit is 500 MB and its Free Time Travel window is 7 days.
 
-Second choice: **Option B** if built-in human authentication and dashboard speed are judged more important than single-provider simplicity.
+The main engineering constraint is Workers Free's 10 ms CPU budget per request. Official guidance notes authentication and SSR-heavy work can use 10–20 ms, so Orbit should not perform unnecessary SSR on every request. Static assets, cached public pages and lightweight JSON API routes remain the default; dynamic rendering is introduced selectively and measured in CI/staging.
+
+Railway is no longer the recommendation because its fixed monthly fee conflicts with Samet's explicit cost requirement. Supabase Free is also weaker as a production default because inactive projects may pause after one week. Both remain migration targets if real usage later justifies paid infrastructure.
+
+Portability defense: keep SQL migrations explicit, isolate D1 bindings behind a repository layer, avoid database-specific business logic where practical, and maintain deterministic Markdown/JSON exports.
 
 ## Decisions independent of hosting choice
 
@@ -130,3 +135,5 @@ Second choice: **Option B** if built-in human authentication and dashboard speed
 - Supabase MCP authentication: https://supabase.com/docs/guides/auth/oauth-server/mcp-authentication
 - Railway pricing: https://railway.com/pricing
 - Railway PostgreSQL: https://docs.railway.com/databases/postgresql
+- Cloudflare D1 limits: https://developers.cloudflare.com/d1/platform/limits/
+- Supabase Free project pausing: https://supabase.com/docs/guides/platform/free-project-pausing

@@ -52,3 +52,13 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Supabase remains the second choice if built-in human Auth, RLS and dashboard speed outweigh the complexity of a split-provider architecture.
 - Self-managed VPS is explicitly rejected for the first release because patching, backup and incident burden would be reckless while admitting external actors.
 - No architecture decision is final yet; Samet is reviewing the options.
+
+### 2026-07-15 — Fixed monthly hosting cost rejected
+
+- Samet explicitly rejected paying Railway's monthly baseline for the initial Orbit V6 release.
+- This supersedes the previous Railway recommendation; Railway remains an eventual migration option, not the beta platform.
+- Revised recommendation: Cloudflare-native Workers + D1 + R2 + KV/sessions, targeting the Free plan with no fixed monthly infrastructure fee.
+- Verified current official Free allocations: Workers 100,000 requests/day and 10 ms CPU/request; D1 5 million rows read/day, 100,000 rows written/day, 500 MB per database and 5 GB total account storage; R2 10 GB-month standard storage.
+- Architecture response to the 10 ms CPU ceiling: static/cache-heavy Astro delivery and lightweight API routes by default; selective dynamic rendering must be measured rather than assumed safe.
+- Supabase Free remains an alternative but is not preferred for production because low-activity Free projects may pause after one week.
+- Final Cloudflare stack approval is pending Samet's confirmation.

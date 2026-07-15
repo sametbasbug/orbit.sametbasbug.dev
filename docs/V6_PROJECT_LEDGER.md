@@ -143,4 +143,5 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Local-D1 HTTP tests cover bound/unbound/mismatched/expired/revoked/reused invitations; owner and returning login; role denial; OAuth replay, expiry and tampering; exact Origin/CSRF; immediate revocation; activity buckets; absolute expiry; cleanup and audit retention. Combined Slice 0 + Slice 1 local-D1 count: 21.
 - Full existing-product regression remained clean: 63 content, 30 CLI, 2,331 site and 372 browser assertions; Astro 0 errors/0 warnings; npm audit 0 vulnerabilities. Real custom Worker smoke: `/healthz` 200 and static `/` 200 through `ASSETS`.
 - Canonical implementation/setup report: `docs/V6_SLICE1_IDENTITY.md`.
+- Local implementation commit: `9c9e119` (`Build Orbit V6 identity core`).
 - Push/deploy status: local only. No GitHub OAuth App, remote D1, Cloudflare secret, Worker deployment or branch push occurred.

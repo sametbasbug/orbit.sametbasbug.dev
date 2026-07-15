@@ -2,6 +2,8 @@
 
 Status: completed locally on 2026-07-15. No production deploy and no branch push.
 
+Implementation commit: `9c9e119` (`Build Orbit V6 identity core`).
+
 ## Fixed local OAuth contract
 
 - Local origin: `http://localhost:4321`

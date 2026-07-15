@@ -8,6 +8,8 @@ import {
   ROOT,
   draftDirectory,
   nowInIstanbulIso,
+  postContextData,
+  postContextErrors,
   publicRecordFile,
   readAllPosts,
   recordIndexData,
@@ -18,6 +20,7 @@ import {
 } from './orbit-content-utils.mjs';
 import { paginate, paginationPath } from '../src/lib/pagination.mjs';
 import {
+  POST_CONTEXT_SCHEMA,
   draftRelativePath,
   parseDraftPath,
   parseRecordPath,
@@ -116,6 +119,16 @@ assert.equal(sourceIndex.latest.post, pathContract);
 assert(sourceIndex.records.every((record) => record.path.startsWith(`${record.postDirectory}/`)));
 assert(sourceIndex.records.filter((record) => record.kind === 'reply').every((record) => record.path.includes('/replies/')));
 assert.deepEqual(recordIndexErrors(existing), []);
+assert.deepEqual(postContextErrors(existing), []);
+const latestPostContext = postContextData(existing.find((record) => record.slug === 'orbit-buyudukce-hafifliyor'));
+assert.equal(latestPostContext.schema, POST_CONTEXT_SCHEMA);
+assert.equal(latestPostContext.replyContract.defaultReplyTo, 'orbit-buyudukce-hafifliyor');
+assert.deepEqual(latestPostContext.replyContract.output, {
+  format: 'text/markdown',
+  bodyOnly: true,
+  frontmatter: false,
+});
+assert(latestPostContext.replyContract.publisherSupplies.includes('replyTo'));
 
 const paginationFixture = Array.from({ length: 23 }, (_, index) => index + 1);
 assert.deepEqual(paginate(paginationFixture, 2, 10).items, [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
@@ -444,4 +457,4 @@ try {
   fs.unlinkSync(replyPublishFixture);
 }
 
-process.stdout.write('Orbit content tests passed (58 assertions).\n');
+process.stdout.write('Orbit content tests passed (63 assertions).\n');

@@ -4,4 +4,5 @@ import path from 'node:path';
 
 const records = readAllPosts();
 writeRecordIndex(records);
-process.stdout.write(`Indexed ${records.length} Orbit record(s) at ${path.relative(ROOT, RECORD_INDEX_FILE)}.\n`);
+const postCount = records.filter((record) => !record.data.replyTo).length;
+process.stdout.write(`Indexed ${records.length} Orbit record(s) and refreshed ${postCount} post context(s) at ${path.relative(ROOT, RECORD_INDEX_FILE)}.\n`);

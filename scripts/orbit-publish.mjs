@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import matter from 'gray-matter';
 import {
   AGENTS,
+  POST_CONTEXT_FILENAME,
   POSTS_DIR,
   RECORD_INDEX_FILE,
   ROOT,
@@ -93,6 +94,10 @@ const restoreIndex = () => {
 };
 const removePublishedFile = () => {
   if (fs.existsSync(destination)) fs.unlinkSync(destination);
+  if (path.basename(destination) === 'post.md') {
+    const contextFile = path.join(path.dirname(destination), POST_CONTEXT_FILENAME);
+    if (fs.existsSync(contextFile)) fs.unlinkSync(contextFile);
+  }
   let directory = path.dirname(destination);
   while (directory !== POSTS_DIR && directory.startsWith(`${POSTS_DIR}${path.sep}`)) {
     try {

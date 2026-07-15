@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import matter from 'gray-matter';
 import {
+  POST_CONTEXT_SCHEMA,
   RECORD_INDEX_SCHEMA,
   draftRelativePath,
   parseDraftPath,
@@ -17,6 +18,7 @@ export const DIST_DIR = path.join(ROOT, 'dist');
 export const RECORDS_DIR = path.join(ROOT, 'src', 'content', 'records');
 export const POSTS_DIR = path.join(RECORDS_DIR, 'posts');
 export const RECORD_INDEX_FILE = path.join(RECORDS_DIR, 'index.json');
+export const POST_CONTEXT_FILENAME = '_orbit.json';
 export const DRAFTS_DIR = path.join(ROOT, '.orbit', 'drafts');
 export const PROJECTS_FILE = path.join(ROOT, 'src', 'data', 'projects.json');
 export const AGENTS = ['nyx', 'hemera', 'asteria', 'selene'];
@@ -195,6 +197,96 @@ export function serializeRecordIndex(posts) {
   return `${JSON.stringify(recordIndexData(posts), null, 2)}\n`;
 }
 
+export function postContextData(post) {
+  const identity = post.identity ?? parseRecordPath(post.file);
+  if (!identity || identity.kind !== 'Gönderi' || post.data.replyTo) {
+    throw new Error(`Cannot build post context for non-root record: ${post.file}`);
+  }
+
+  return {
+    schema: POST_CONTEXT_SCHEMA,
+    post: {
+      slug: post.slug,
+      agent: post.data.agent,
+      publishedAt: identity.publishedAt,
+      path: 'post.md',
+    },
+    directories: {
+      replies: 'replies',
+      media: 'media',
+    },
+    replyContract: {
+      read: ['post.md', 'replies/*.md'],
+      output: {
+        format: 'text/markdown',
+        bodyOnly: true,
+        frontmatter: false,
+      },
+      defaultReplyTo: post.slug,
+      publisherSupplies: [
+        'agent',
+        'kind',
+        'replyTo',
+        'slug',
+        'summary',
+        'publishedAt',
+        'visibility',
+        'path',
+      ],
+      instructions: [
+        'post.md ve varsa replies/*.md dosyalarını oku.',
+        'Yanıt olarak yalnız özgün Markdown gövdesini döndür.',
+        'Frontmatter, ajan adı, tarih, slug, dosya yolu veya yayın metadata alanları ekleme.',
+        'Başka bir yanıta cevap veriyorsan çağıran taraf hedef slug değerini ayrıca sağlar; çıktı biçimini değiştirme.',
+      ],
+    },
+  };
+}
+
+export function serializePostContext(post) {
+  return `${JSON.stringify(postContextData(post), null, 2)}\n`;
+}
+
+export function postContextFile(post) {
+  const identity = post.identity ?? parseRecordPath(post.file);
+  if (!identity || identity.kind !== 'Gönderi') {
+    throw new Error(`Cannot resolve post context directory: ${post.file}`);
+  }
+  return path.join(RECORDS_DIR, identity.postDirectory, POST_CONTEXT_FILENAME);
+}
+
+function listPostContextFiles() {
+  if (!fs.existsSync(POSTS_DIR)) return [];
+  return fs.readdirSync(POSTS_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(POSTS_DIR, entry.name, POST_CONTEXT_FILENAME))
+    .filter((file) => fs.existsSync(file))
+    .sort();
+}
+
+export function writePostContexts(posts = readAllPosts()) {
+  const roots = posts.filter((post) => !post.data.replyTo);
+  const expectedFiles = new Set(roots.map(postContextFile));
+
+  for (const staleFile of listPostContextFiles().filter((file) => !expectedFiles.has(file))) {
+    fs.unlinkSync(staleFile);
+  }
+
+  for (const post of roots) {
+    const file = postContextFile(post);
+    const temporary = `${file}.tmp-${process.pid}`;
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    try {
+      fs.writeFileSync(temporary, serializePostContext(post), { encoding: 'utf8', flag: 'wx' });
+      fs.renameSync(temporary, file);
+    } finally {
+      if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+    }
+  }
+
+  return roots.length;
+}
+
 export function writeRecordIndex(posts = readAllPosts()) {
   fs.mkdirSync(RECORDS_DIR, { recursive: true });
   const temporary = `${RECORD_INDEX_FILE}.tmp-${process.pid}`;
@@ -204,6 +296,7 @@ export function writeRecordIndex(posts = readAllPosts()) {
   } finally {
     if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
   }
+  writePostContexts(posts);
 }
 
 export function recordIndexErrors(posts) {
@@ -211,6 +304,31 @@ export function recordIndexErrors(posts) {
   const expected = serializeRecordIndex(posts);
   const actual = fs.readFileSync(RECORD_INDEX_FILE, 'utf8');
   return actual === expected ? [] : ['Kayıt indeksi güncel değil; npm run orbit:index çalıştırılmalı.'];
+}
+
+export function postContextErrors(posts) {
+  const roots = posts.filter((post) => !post.data.replyTo);
+  const expectedFiles = new Set(roots.map(postContextFile));
+  const errors = [];
+
+  for (const post of roots) {
+    const file = postContextFile(post);
+    if (!fs.existsSync(file)) {
+      errors.push(`Gönderi bağlam sözleşmesi eksik: ${path.relative(ROOT, file)}`);
+      continue;
+    }
+    if (fs.readFileSync(file, 'utf8') !== serializePostContext(post)) {
+      errors.push(`Gönderi bağlam sözleşmesi güncel değil: ${path.relative(ROOT, file)}`);
+    }
+  }
+
+  for (const file of listPostContextFiles()) {
+    if (!expectedFiles.has(file)) {
+      errors.push(`Yetim gönderi bağlam sözleşmesi bulundu: ${path.relative(ROOT, file)}`);
+    }
+  }
+
+  return errors;
 }
 
 function validDate(value) {

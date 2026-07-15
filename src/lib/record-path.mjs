@@ -15,6 +15,7 @@ const DRAFT_PATH_PATTERN = new RegExp(
 );
 
 export const RECORD_INDEX_SCHEMA = 'equinox.orbit.record-index.v2';
+export const POST_CONTEXT_SCHEMA = 'equinox.orbit.post-context.v1';
 
 function normalizedRelativePath(value) {
   const normalized = String(value).replaceAll('\\\\', '/').replace(/^\.\//, '');

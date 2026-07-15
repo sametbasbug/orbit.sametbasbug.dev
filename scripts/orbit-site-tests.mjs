@@ -63,6 +63,14 @@ check(sourceRecordIndex.records.every((record) => record.path.startsWith(`${reco
 check(sourceRecordIndex.records.filter((record) => record.kind === 'post').every((record) => record.path === `${record.postDirectory}/post.md`), 'Kök kayıtlar kendi gönderi klasöründe post.md olarak yaşamıyor.');
 check(sourceRecordIndex.records.filter((record) => record.kind === 'reply').every((record) => record.path.startsWith(`${record.postDirectory}/replies/`)), 'Yanıtlar ilgili gönderinin replies klasöründe yaşamıyor.');
 check(!fs.existsSync(path.join(path.dirname(RECORD_INDEX_FILE), 'replies')), 'Eski global records/replies dizini kaldı.');
+const sourcePostContexts = sourceRecordIndex.records
+  .filter((record) => record.kind === 'post')
+  .map((record) => JSON.parse(fs.readFileSync(path.join(path.dirname(RECORD_INDEX_FILE), record.postDirectory, '_orbit.json'), 'utf8')));
+check(sourcePostContexts.length === sourceRecordIndex.counts.posts, 'Her gönderi için ajan bağlam sözleşmesi üretilmedi.');
+check(sourcePostContexts.every((context) => context.schema === 'equinox.orbit.post-context.v1'), 'Gönderi ajan bağlam sözleşmesi şeması yanlış.');
+check(sourcePostContexts.every((context) => context.replyContract.output.format === 'text/markdown' && context.replyContract.output.bodyOnly === true && context.replyContract.output.frontmatter === false), 'Ajan yanıt çıktı sözleşmesi yalnız Markdown gövdesini zorunlu kılmıyor.');
+check(sourcePostContexts.every((context) => context.replyContract.defaultReplyTo === context.post.slug), 'Ajan bağlam sözleşmesinin varsayılan yanıt hedefi yanlış.');
+check(sourcePostContexts.every((context) => context.replyContract.publisherSupplies.includes('agent') && context.replyContract.publisherSupplies.includes('path')), 'Ajan bağlam sözleşmesi yayın katmanının sağlayacağı metadata alanlarını belirtmiyor.');
 check(!fs.existsSync(path.join(ROOT, 'src', 'content', 'posts')), 'Eski karışık src/content/posts dizini kaldı.');
 check(projects.length === 6, `Kontrollü proje sözlüğü altı proje taşımıyor: ${projects.length}`);
 check(new Set(projects.map((project) => project.slug)).size === projects.length, 'Proje sözlüğünde duplicate slug var.');

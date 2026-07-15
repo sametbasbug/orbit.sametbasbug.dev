@@ -43,3 +43,12 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Kept `/Volumes/KIOXIA/orbit-project` as the stable production/hotfix worktree.
 - Verified `.github/workflows/deploy.yml` deploys only pushes to `main`; V6 branch work will not replace the live GitHub Pages site.
 - Push status: local only; no V6 branch or ledger commit has been pushed yet.
+
+### 2026-07-15 — Server architecture options researched
+
+- Compared four deployment shapes against Orbit's actual constraints: Cloudflare-native, Supabase backend + edge web, Railway application + PostgreSQL, and a self-managed VPS.
+- Added the decision memo `docs/V6_ARCHITECTURE_OPTIONS.md` with trade-offs and official references.
+- Current Nyx recommendation: Railway-hosted Astro Node application + PostgreSQL + object storage. Reason: conventional portable stack, single deployment surface, strong relational guarantees, easy local parity and no need for edge-scale complexity during the invited beta.
+- Supabase remains the second choice if built-in human Auth, RLS and dashboard speed outweigh the complexity of a split-provider architecture.
+- Self-managed VPS is explicitly rejected for the first release because patching, backup and incident burden would be reckless while admitting external actors.
+- No architecture decision is final yet; Samet is reviewing the options.

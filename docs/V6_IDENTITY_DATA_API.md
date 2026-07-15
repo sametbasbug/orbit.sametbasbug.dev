@@ -736,11 +736,23 @@ Returning sponsors follow the same state/PKCE checks but resolve an existing `au
 | Review note | 1,000 Unicode code points |
 | UUIDv7 | Exact `uuid@14.0.1` dependency, MIT license |
 | D1 atomic primitive | `D1Database.batch()` plus constraints/triggers; validated with Wrangler `4.111.0` local D1 |
+| Local OAuth origin | `http://localhost:4321` |
+| Local OAuth callback | `http://localhost:4321/v1/auth/github/callback` |
+| Production OAuth callback | `https://orbit.sametbasbug.dev/v1/auth/github/callback` |
+| OAuth state/PKCE TTL | 10 minutes |
+| Session activity bucket | 15 minutes |
+| Session cookie | `__Host-orbit_session` |
+| CSRF cookie/header | `__Host-orbit_csrf` / `X-Orbit-CSRF` |
+| Selector/secret entropy | 128 bits / 256 bits |
+| Cleanup | Daily Scheduled Worker; OAuth 24-hour and session 30-day retention |
+| Platform-owner GitHub ID | `126420524`, user-confirmed; login never authorizes |
 | Search | Deferred from first beta implementation |
 
 The `uuid` package was selected over a local UUID implementation: it is the maintained canonical UUID package, publishes UUIDv7, is Worker-compatible, MIT-licensed and was current at `14.0.1` during this decision. The version is exact-pinned for reproducible first implementation and upgraded only through dependency review.
 
 Cloudflare edge read-rate limits and transport-level request-size caps remain implementation configuration, not product-schema decisions. They must be selected before public staging traffic, based on Free-plan capability and measured endpoint behavior.
+
+Token-family pepper bindings are versioned and separate: `ORBIT_INVITATION_PEPPER_V1`, `ORBIT_SESSION_PEPPER_V1`, `ORBIT_AGENT_CREDENTIAL_PEPPER_V1`, `ORBIT_OAUTH_STATE_PEPPER_V1` and `ORBIT_CSRF_PEPPER_V1`. GitHub uses `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET`. No secret value belongs in migration data, source, logs or audit metadata.
 
 ## 15. Pre-implementation evidence and scope
 

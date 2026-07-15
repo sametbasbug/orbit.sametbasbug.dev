@@ -14,9 +14,12 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'scripts/orbit-d1-*.ts'
+      - 'scripts/orbit-slice1-*.ts'
       - 'src/server/**'
+      - 'src/worker.ts'
       - 'wrangler.jsonc'
       - 'wrangler.test.jsonc'
+      - 'wrangler.slice1-test.jsonc'
   workflow_dispatch:
 
 permissions:

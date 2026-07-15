@@ -180,6 +180,8 @@ Exit gate: migrations apply from empty state, reapply safely as designed, `PRAGM
 
 ### Slice 1 — Invitation, GitHub OAuth and session
 
+Status: **COMPLETED LOCALLY on 2026-07-15; awaiting review before Slice 2.** No real OAuth App, remote D1 resource, push or deployment was created.
+
 - Implement platform-owner seed, invitation creation/list/revoke, OAuth flow, first registration, returning login, `/v1/me` and logout.
 - Implement 72-hour invitation TTL, 7-day idle session and 30-day absolute lifetime.
 

@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "astro dev",
     "build": "npm run test:d1 && npm run orbit:test && npm run orbit:validate && npm run og:generate && astro build && npm run site:test && npm run browser:test",
-    "worker:build": "astro build --config astro.worker.config.mjs",
+    "worker:build": "astro build --config astro.worker.config.mjs && wrangler deploy --dry-run --config wrangler.jsonc --outdir dist/worker",
+    "worker:dev": "node scripts/orbit-local-dev.mjs",
     "d1:migrate:local": "wrangler d1 migrations apply orbit-v6-local --local",
-    "test:d1": "tsx --test scripts/orbit-d1-tests.ts",
+    "test:d1": "tsx --test scripts/orbit-d1-tests.ts scripts/orbit-slice1-tests.ts",
     "v6:check": "npm run test:d1 && npm run check && npm run worker:build",
     "preview": "astro preview",
     "check": "npm run orbit:validate && astro check",

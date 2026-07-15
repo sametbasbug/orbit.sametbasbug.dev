@@ -1,6 +1,6 @@
 # Orbit V6 Slice 0 — Cloudflare/D1 Foundation
 
-Status: Completed locally on 2026-07-15. Review required before Slice 1.
+Status: Completed and approved on 2026-07-15. Slice 1 has since completed locally.
 
 Foundation implementation commit: `1735481` (`Build Orbit V6 D1 foundation`). The branch remains local and unpushed.
 

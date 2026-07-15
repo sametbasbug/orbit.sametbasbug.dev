@@ -6,13 +6,13 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 
 ## Current status
 
-- Phase: Slice 0 foundation complete locally; awaiting review before Slice 1
+- Phase: Slice 1 identity/invitation/OAuth/session core complete locally; awaiting review before Slice 2
 - Stable production worktree: `/Volumes/KIOXIA/orbit-project` on `main`
 - V6 development worktree: `/Volumes/KIOXIA/orbit-v6` on `v6/server-platform`
 - Existing production: Static Astro site on GitHub Pages
 - Existing authoring client: Local interactive Orbit CLI
 - Existing content model: `Gönderi` and `Yanıt`, with threaded `replyTo`
-- V6 implementation: Cloudflare/D1 foundation implemented locally; no product endpoint or UI yet
+- V6 implementation: Cloudflare/D1 foundation plus seven identity/invitation/session endpoints implemented locally; no sponsor UI yet
 - Server stack: Cloudflare-native — one Astro Worker, D1 canonical database, R2 deferred until uploads are enabled, KV optional/cache-only
 - Identity package: Locked for beta; D1/API design accepted and local atomicity spikes validated
 - Migration plan: Forward-only Wrangler D1 migrations, verified from an empty local database
@@ -128,3 +128,19 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Exact implementation guide and pending Slice 1 decisions: `docs/V6_SLICE0_FOUNDATION.md`.
 - Foundation implementation commit: `1735481` (`Build Orbit V6 D1 foundation`).
 - Push/deploy status: local only. The V6 branch was not pushed and no production resource was touched.
+
+### 2026-07-15 — Slice 1 identity, invitation, OAuth and session core completed locally
+
+- Samet approved the Slice 0 result and locked the pre-Slice-1 contract: separate owner-account GitHub OAuth Apps for local and production; local origin `http://localhost:4321`; 10-minute OAuth state/PKCE; versioned invitation/session/agent token prefixes; 128-bit selectors; 256-bit secrets; separate family peppers; 15-minute session activity writes; exact host cookies/CSRF header/origins; daily cleanup.
+- GitHub API resolved the platform-owner identity as numeric user ID `126420524`, login snapshot `sametbasbug`. Samet explicitly confirmed this ID. Migration authorization is seeded by numeric ID; the mutable username is never read for authorization.
+- Added forward-only migration `0005_slice1_identity.sql`: PKCE/redirect fields, one-use OAuth-flow claims, atomic invitation/session revocation claims, active-account session guard and the confirmed platform-owner account/identity/role/quota/audit seed.
+- Added opaque token, HMAC, OAuth/PKCE, cookie and binding primitives. Invitation/session/agent families use 16-byte selectors and 32-byte secrets. Raw secrets are never persisted; D1 keeps versioned HMAC digests.
+- Added a portable identity repository plus isolated D1 implementation. New registration and returning login consume OAuth flows in the same batch as session/audit state; registration additionally claims the invitation atomically.
+- Added the first seven HTTP endpoints: GitHub start/callback, `/v1/me`, logout and admin invitation create/list/revoke. Session-authenticated writes enforce exact Origin plus `X-Orbit-CSRF` against `__Host-orbit_csrf`; the session cookie is `__Host-orbit_session`.
+- Kept the public Orbit static/cache-heavy: `src/worker.ts` handles `/v1`, `/healthz` and scheduled cleanup, then delegates all other requests to the `ASSETS` binding. Astro prerendering remains Node build-time work; the custom Worker bundle was verified by Wrangler dry-run.
+- Added a macOS Keychain-backed local launcher. It reads all local OAuth/pepper bindings into process memory through Wrangler's programmatic dev API and never creates `.dev.vars` or `.env` files. No real secret or Keychain entry was created during implementation.
+- Scheduled cleanup is bound daily at `03:17 UTC`: OAuth rows after 24 hours, expired/revoked sessions after 30 days and expired idempotency keys. Audit events remain append-only and retained.
+- Local-D1 HTTP tests cover bound/unbound/mismatched/expired/revoked/reused invitations; owner and returning login; role denial; OAuth replay, expiry and tampering; exact Origin/CSRF; immediate revocation; activity buckets; absolute expiry; cleanup and audit retention. Combined Slice 0 + Slice 1 local-D1 count: 21.
+- Full existing-product regression remained clean: 63 content, 30 CLI, 2,331 site and 372 browser assertions; Astro 0 errors/0 warnings; npm audit 0 vulnerabilities. Real custom Worker smoke: `/healthz` 200 and static `/` 200 through `ASSETS`.
+- Canonical implementation/setup report: `docs/V6_SLICE1_IDENTITY.md`.
+- Push/deploy status: local only. No GitHub OAuth App, remote D1, Cloudflare secret, Worker deployment or branch push occurred.

@@ -175,6 +175,7 @@ describe('Orbit V6 Slice 0 local-D1 foundation', { concurrency: false }, () => {
       '0002_agents.sql',
       '0003_content.sql',
       '0004_reliability_audit.sql',
+      '0005_slice1_identity.sql',
     ]) {
       assert.match(firstMigrationOutput, new RegExp(migration.replace('.', '\\.')));
     }

@@ -1,11 +1,17 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "orbit-v6-local",
-  "main": "@astrojs/cloudflare/entrypoints/server",
+  "main": "src/worker.ts",
   "compatibility_date": "2026-07-15",
   "assets": {
     "binding": "ASSETS",
-    "directory": "./dist"
+    "directory": "./dist/client"
+  },
+  "vars": {
+    "ORBIT_ENVIRONMENT": "local",
+    "ORBIT_ALLOWED_ORIGIN": "http://localhost:4321",
+    "ORBIT_GITHUB_CALLBACK_URL": "http://localhost:4321/v1/auth/github/callback",
+    "ORBIT_PLATFORM_OWNER_GITHUB_ID": "126420524"
   },
   "d1_databases": [
     {
@@ -17,5 +23,8 @@
   ],
   "observability": {
     "enabled": false
+  },
+  "triggers": {
+    "crons": ["17 3 * * *"]
   }
 }

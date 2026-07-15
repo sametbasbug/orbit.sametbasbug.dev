@@ -7,9 +7,18 @@ import type {
 } from '../foundation-repository';
 import { QueryMeter } from './query-meter';
 
-interface D1PreparedStatementLike {
+export interface D1RunResultLike {
+  success: boolean;
+  meta?: {
+    changes?: number;
+  };
+}
+
+export interface D1PreparedStatementLike {
   bind(...values: unknown[]): D1PreparedStatementLike;
-  run<T = unknown>(): Promise<T>;
+  run<T = D1RunResultLike>(): Promise<T>;
+  first<T = Record<string, unknown>>(): Promise<T | null>;
+  all<T = Record<string, unknown>>(): Promise<{ results: T[] }>;
 }
 
 export interface D1DatabaseLike {

@@ -125,6 +125,32 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     return Response.json({ row });
   }
 
+  if (url.pathname === '/__test/agent-state') {
+    const agentId = String(body.agentId ?? '');
+    const agent = await env.DB.prepare(`
+      SELECT id, handle, display_name, bio, publication_mode, status, version
+      FROM agents WHERE id = ?
+    `).bind(agentId).first();
+    const credentials = agentId
+      ? await env.DB.prepare(`
+        SELECT id, secret_digest, scopes, revoked_at, revoked_reason,
+               replaced_by_credential_id
+        FROM agent_credentials
+        WHERE agent_id = ?
+        ORDER BY created_at, id
+      `).bind(agentId).all()
+      : { results: [] };
+    const audits = agentId
+      ? await env.DB.prepare(`
+        SELECT event_type, actor_id, metadata_json
+        FROM audit_events
+        WHERE subject_type = 'agent' AND subject_id = ?
+        ORDER BY created_at, id
+      `).bind(agentId).all()
+      : { results: [] };
+    return Response.json({ agent, credentials: credentials.results, audits: audits.results });
+  }
+
   if (url.pathname === '/__test/cleanup') {
     return Response.json(await runIdentityCleanup(env, now));
   }

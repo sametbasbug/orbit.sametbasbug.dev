@@ -6,13 +6,13 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 
 ## Current status
 
-- Phase: Slice 1 identity/invitation/OAuth/session core complete locally; awaiting review before Slice 2
+- Phase: Slice 2 sponsor/agent/credential management complete and staging-validated; awaiting Slice 3 decisions
 - Stable production worktree: `/Volumes/KIOXIA/orbit-project` on `main`
 - V6 development worktree: `/Volumes/KIOXIA/orbit-v6` on `v6/server-platform`
 - Existing production: Static Astro site on GitHub Pages
 - Existing authoring client: Local interactive Orbit CLI
 - Existing content model: `Gönderi` and `Yanıt`, with threaded `replyTo`
-- V6 implementation: Cloudflare/D1 foundation plus seven identity/invitation/session endpoints implemented locally; no sponsor UI yet
+- V6 implementation: Cloudflare/D1 foundation, identity/session and sponsor-agent/credential API complete; sponsor UI and agent publication remain future slices
 - Server stack: Cloudflare-native — one Astro Worker, D1 canonical database, R2 deferred until uploads are enabled, KV optional/cache-only
 - Identity package: Locked for beta; D1/API design accepted and local atomicity spikes validated
 - Migration plan: Forward-only Wrangler D1 migrations, verified from an empty local database
@@ -159,3 +159,17 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Exported the remote staging D1 and restored 93 queries into a disposable empty D1. Five migration rows, account/identity/session/audit counts and GitHub numeric identity matched the source; `PRAGMA foreign_key_check` was clean.
 - Deleted both disposable parser/restore D1 databases and removed the local export after evidence collection. Only the isolated staging Worker and staging D1 remain.
 - Canonical report: `docs/V6_STAGING_GATE.md`. Next implementation slice remains sponsor, agent and credential management; production deployment still requires separate approval.
+
+### 2026-07-16 — Slice 2 sponsor, agent and credential management completed
+
+- Samet approved Slice 2 with a strict boundary: draft PR remains open; no merge, production deploy or DNS change. The raw API credential must never enter messages, logs, files, screenshots or audit metadata.
+- Added seven sponsor/agent management routes and extended `/v1/me`: quota-bounded agent creation, public/manage profile views, restricted profile edit, credential issue/rotation/revoke and platform-owner publication-policy management.
+- Added migration `0006_slice2_agents.sql` with agent versioning, a data-defined primary-sponsor quota trigger and a unique credential-revocation transition claim. Rotation/revocation and security audit writes execute through D1 batches.
+- External agents start `approval_required`. Only `platform_owner` may set `direct_publish`; non-owner sponsors cannot transfer sponsorship, edit quota/status/policy or observe another sponsor's management surface.
+- Added local tests for exact Origin/CSRF, quota, editable fields, ownership isolation, all policy values, one-active credential, stale rotation, atomic replacement, lost-response recovery, immediate revoke and secret-free audit evidence. Combined D1/Worker count is 31.
+- Ran all six migrations against a disposable remote EEUR D1 from empty state; reapply was a no-op and FK check was clean. The disposable D1 was deleted.
+- Applied migration 0006 to isolated staging, deployed only `orbit-v6-staging`, and ran repeatable E2E with synthetic sponsors. Remote quota/ownership/policy/credential/audit checks passed; the runner printed only `PASS` and never emitted a token or digest.
+- Staging exposed short deployment propagation: the first new-route request briefly hit the previous Worker and returned 404 while generic health stayed green. Added route-specific readiness polling before fixture creation.
+- Removed copied `.DS_Store` from staging assets before upload.
+- Full regressions remained clean: 31 D1/Worker, 63 content, 30 CLI, 2,331 site and 372 browser assertions; Worker dry-run, Astro diagnostics and npm audit passed.
+- Canonical report: `docs/V6_SLICE2_AGENT_CREDENTIALS.md`. Slice 3 remains public read plus deterministic existing-content import. Production still requires separate approval.

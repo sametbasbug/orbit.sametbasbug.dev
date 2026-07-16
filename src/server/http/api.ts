@@ -27,6 +27,13 @@ import {
   verifyOpaqueToken,
 } from '../identity/tokens';
 import { D1IdentityRepository } from '../repositories/d1/d1-identity-repository';
+import { D1AgentRepository } from '../repositories/d1/d1-agent-repository';
+import type {
+  AgentProfileView,
+  AgentRepository,
+  ManagedAgentView,
+  PublicationMode,
+} from '../repositories/agent-repository';
 import type {
   AccountView,
   IdentityRepository,
@@ -44,6 +51,14 @@ interface AuthenticatedHuman {
   account: AccountView;
   csrfToken: string | null;
 }
+
+const AGENT_CREDENTIAL_SCOPES = 'feed:read records:write';
+const DEFAULT_AGENT_AVATAR = 'agents/default.webp';
+const PUBLICATION_MODES = new Set<PublicationMode>([
+  'read_only',
+  'approval_required',
+  'direct_publish',
+]);
 
 class ApiError extends Error {
   readonly status: number;
@@ -78,6 +93,42 @@ async function readJson(request: Request): Promise<Record<string, unknown>> {
   } catch {
     throw new ApiError(400, 'invalid_json', 'Request body is not valid JSON.');
   }
+}
+
+function requireExactFields(
+  body: Record<string, unknown>,
+  allowed: readonly string[],
+  code: string,
+): void {
+  const unexpected = Object.keys(body).filter((key) => !allowed.includes(key));
+  if (unexpected.length > 0) {
+    throw new ApiError(400, code, 'Request contains fields that are not editable.', { fields: unexpected });
+  }
+}
+
+function requiredString(
+  value: unknown,
+  field: string,
+  maximumCodePoints: number,
+  allowEmpty = false,
+): string {
+  if (typeof value !== 'string') {
+    throw new ApiError(400, 'invalid_agent_profile', `${field} must be a string.`);
+  }
+  const normalized = value.trim();
+  const length = [...normalized].length;
+  if ((!allowEmpty && length === 0) || length > maximumCodePoints) {
+    throw new ApiError(400, 'invalid_agent_profile', `${field} is outside its allowed length.`);
+  }
+  return normalized;
+}
+
+function normalizeAgentHandle(value: unknown): string {
+  const handle = requiredString(value, 'handle', 32).toLowerCase();
+  if (!/^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/u.test(handle)) {
+    throw new ApiError(400, 'invalid_agent_handle', 'Agent handle must be 3–32 lowercase ASCII characters.');
+  }
+  return handle;
 }
 
 function requireAllowedOrigin(request: Request, env: OrbitBindings): void {
@@ -176,6 +227,223 @@ function requirePlatformOwner(auth: AuthenticatedHuman): void {
   if (!auth.account.roles.includes('platform_owner')) {
     throw new ApiError(403, 'permission_denied', 'Platform owner permission is required.');
   }
+}
+
+function canManageAgent(auth: AuthenticatedHuman, agent: ManagedAgentView): boolean {
+  return auth.account.roles.includes('platform_owner')
+    || agent.primarySponsorAccountId === auth.account.id;
+}
+
+function requireAgentManagement(auth: AuthenticatedHuman, agent: ManagedAgentView | null): ManagedAgentView {
+  if (!agent || !canManageAgent(auth, agent)) {
+    throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
+  }
+  return agent;
+}
+
+function publicAgent(agent: AgentProfileView) {
+  return {
+    id: agent.id,
+    handle: agent.handle,
+    displayName: agent.displayName,
+    bio: agent.bio,
+    avatarAsset: agent.avatarAsset,
+    publicationMode: agent.publicationMode,
+    status: agent.status,
+    version: agent.version,
+    createdAt: agent.createdAt,
+    updatedAt: agent.updatedAt,
+  };
+}
+
+function managedAgent(agent: ManagedAgentView) {
+  return {
+    ...publicAgent(agent),
+    primarySponsorAccountId: agent.primarySponsorAccountId,
+    activeCredential: agent.activeCredential,
+  };
+}
+
+async function handleCreateAgent(
+  request: Request,
+  repository: AgentRepository,
+  auth: AuthenticatedHuman,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const body = await readJson(request);
+  requireExactFields(body, ['handle', 'displayName', 'bio'], 'invalid_agent_fields');
+  const handle = normalizeAgentHandle(body.handle);
+  const displayName = requiredString(body.displayName, 'displayName', 80);
+  const bio = body.bio === undefined ? '' : requiredString(body.bio, 'bio', 500, true);
+  const agentId = createEntityId();
+  const agent: AgentProfileView = {
+    id: agentId,
+    handle,
+    displayName,
+    bio,
+    avatarAsset: DEFAULT_AGENT_AVATAR,
+    publicationMode: 'approval_required',
+    status: 'active',
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await repository.createAgent({
+    agent,
+    membershipId: createEntityId(),
+    sponsorAccountId: auth.account.id,
+    auditEventId: createEntityId(),
+    requestId,
+  });
+  return json({ agent: publicAgent(agent) }, 201);
+}
+
+async function handlePatchAgent(
+  request: Request,
+  repository: AgentRepository,
+  auth: AuthenticatedHuman,
+  current: ManagedAgentView,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const body = await readJson(request);
+  requireExactFields(body, ['displayName', 'bio'], 'invalid_agent_fields');
+  if (Object.keys(body).length === 0) {
+    throw new ApiError(400, 'invalid_agent_profile', 'At least one editable profile field is required.');
+  }
+  const displayName = body.displayName === undefined
+    ? current.displayName
+    : requiredString(body.displayName, 'displayName', 80);
+  const bio = body.bio === undefined
+    ? current.bio
+    : requiredString(body.bio, 'bio', 500, true);
+  await repository.updateAgentProfile({
+    agentId: current.id,
+    actorAccountId: auth.account.id,
+    displayName,
+    bio,
+    auditEventId: createEntityId(),
+    requestId,
+    now,
+  });
+  const updated = await repository.getManagedAgent(current.id);
+  if (!updated) throw new Error('agent_profile_update_missing');
+  return json({ agent: managedAgent(updated) });
+}
+
+async function handleRotateCredential(
+  request: Request,
+  env: OrbitBindings,
+  repository: AgentRepository,
+  auth: AuthenticatedHuman,
+  current: ManagedAgentView,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const body = await readJson(request);
+  requireExactFields(body, ['expectedCredentialId'], 'invalid_credential_fields');
+  const expected = body.expectedCredentialId;
+  if (expected !== undefined && expected !== null && typeof expected !== 'string') {
+    throw new ApiError(400, 'invalid_credential', 'expectedCredentialId must be a string or null.');
+  }
+  if (current.activeCredential && expected !== current.activeCredential.id) {
+    throw new ApiError(409, 'stale_credential', 'The active credential changed. Refresh and retry.');
+  }
+  if (!current.activeCredential && expected !== undefined && expected !== null) {
+    throw new ApiError(409, 'stale_credential', 'The agent has no active credential.');
+  }
+
+  const token = await createOpaqueToken('agent', env.ORBIT_AGENT_CREDENTIAL_PEPPER_V1);
+  const credential = {
+    id: token.selector,
+    secretDigest: token.digest,
+    hashVersion: token.hashVersion,
+    scopes: AGENT_CREDENTIAL_SCOPES,
+    createdAt: now,
+  };
+  if (current.activeCredential) {
+    await repository.rotateCredential({
+      agentId: current.id,
+      expectedCredentialId: current.activeCredential.id,
+      actorAccountId: auth.account.id,
+      credential,
+      auditEventId: createEntityId(),
+      requestId,
+    });
+  } else {
+    await repository.issueFirstCredential({
+      agentId: current.id,
+      actorAccountId: auth.account.id,
+      credential,
+      auditEventId: createEntityId(),
+      requestId,
+    });
+  }
+  return json({
+    credential: {
+      id: token.selector,
+      token: token.token,
+      scopes: AGENT_CREDENTIAL_SCOPES.split(' '),
+      createdAt: now,
+    },
+  }, 201);
+}
+
+async function handleRevokeCredential(
+  request: Request,
+  repository: AgentRepository,
+  auth: AuthenticatedHuman,
+  current: ManagedAgentView,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const body = await readJson(request);
+  requireExactFields(body, ['expectedCredentialId'], 'invalid_credential_fields');
+  if (typeof body.expectedCredentialId !== 'string' || !body.expectedCredentialId) {
+    throw new ApiError(400, 'invalid_credential', 'expectedCredentialId is required.');
+  }
+  if (!current.activeCredential || body.expectedCredentialId !== current.activeCredential.id) {
+    throw new ApiError(409, 'stale_credential', 'The active credential changed. Refresh and retry.');
+  }
+  await repository.revokeCredential({
+    agentId: current.id,
+    expectedCredentialId: current.activeCredential.id,
+    actorAccountId: auth.account.id,
+    auditEventId: createEntityId(),
+    requestId,
+    now,
+  });
+  return json({ ok: true });
+}
+
+async function handleUpdateAgentPolicy(
+  request: Request,
+  repository: AgentRepository,
+  auth: AuthenticatedHuman,
+  current: ManagedAgentView,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  requirePlatformOwner(auth);
+  const body = await readJson(request);
+  requireExactFields(body, ['publicationMode'], 'invalid_policy_fields');
+  if (typeof body.publicationMode !== 'string' || !PUBLICATION_MODES.has(body.publicationMode as PublicationMode)) {
+    throw new ApiError(400, 'invalid_publication_mode', 'Publication mode is invalid.');
+  }
+  const publicationMode = body.publicationMode as PublicationMode;
+  await repository.updateAgentPolicy({
+    agentId: current.id,
+    actorAccountId: auth.account.id,
+    publicationMode,
+    previousPublicationMode: current.publicationMode,
+    auditEventId: createEntityId(),
+    requestId,
+    now,
+  });
+  const updated = await repository.getManagedAgent(current.id);
+  if (!updated) throw new Error('agent_policy_update_missing');
+  return json({ agent: managedAgent(updated) });
 }
 
 function sessionCookies(
@@ -423,6 +691,7 @@ export async function handleApiRequest(
     assertIdentityBindings(env);
     const now = dependencies.now?.() ?? Date.now();
     const repository = new D1IdentityRepository(env.DB);
+    const agentRepository = new D1AgentRepository(env.DB);
     const github = new GithubClient({
       clientId: env.GITHUB_OAUTH_CLIENT_ID,
       clientSecret: env.GITHUB_OAUTH_CLIENT_SECRET,
@@ -439,13 +708,14 @@ export async function handleApiRequest(
     }
     if (request.method === 'GET' && path === '/v1/me') {
       const auth = await authenticateHuman(request, env, repository, now, false);
+      const sponsoredAgents = await agentRepository.listSponsoredAgents(auth.account.id);
       return json({ account: auth.account, session: {
         id: auth.session.sessionId,
         createdAt: auth.session.createdAt,
         lastSeenAt: auth.session.lastSeenAt,
         idleExpiresAt: auth.session.idleExpiresAt,
         absoluteExpiresAt: auth.session.absoluteExpiresAt,
-      } });
+      }, sponsoredAgents: sponsoredAgents.map(publicAgent) });
     }
     if (request.method === 'POST' && path === '/v1/auth/logout') {
       const auth = await authenticateHuman(request, env, repository, now, true);
@@ -486,6 +756,65 @@ export async function handleApiRequest(
       return json({ ok: true });
     }
 
+    if (request.method === 'POST' && path === '/v1/agents') {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      return await handleCreateAgent(request, agentRepository, auth, now, requestId);
+    }
+
+    const manageMatch = /^\/v1\/agents\/([^/]+)\/manage$/u.exec(path);
+    if (request.method === 'GET' && manageMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, false);
+      const current = requireAgentManagement(
+        auth,
+        await agentRepository.getManagedAgent(decodeURIComponent(manageMatch[1])),
+      );
+      return json({ agent: managedAgent(current) });
+    }
+
+    const rotateMatch = /^\/v1\/agents\/([^/]+)\/credentials\/rotate$/u.exec(path);
+    if (request.method === 'POST' && rotateMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      const current = requireAgentManagement(
+        auth,
+        await agentRepository.getManagedAgent(decodeURIComponent(rotateMatch[1])),
+      );
+      return await handleRotateCredential(request, env, agentRepository, auth, current, now, requestId);
+    }
+
+    const credentialRevokeMatch = /^\/v1\/agents\/([^/]+)\/credentials\/revoke$/u.exec(path);
+    if (request.method === 'POST' && credentialRevokeMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      const current = requireAgentManagement(
+        auth,
+        await agentRepository.getManagedAgent(decodeURIComponent(credentialRevokeMatch[1])),
+      );
+      return await handleRevokeCredential(request, agentRepository, auth, current, now, requestId);
+    }
+
+    const policyMatch = /^\/v1\/admin\/agents\/([^/]+)\/policy$/u.exec(path);
+    if (request.method === 'PATCH' && policyMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      requirePlatformOwner(auth);
+      const current = await agentRepository.getManagedAgent(decodeURIComponent(policyMatch[1]));
+      if (!current) throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
+      return await handleUpdateAgentPolicy(request, agentRepository, auth, current, now, requestId);
+    }
+
+    const agentMatch = /^\/v1\/agents\/([^/]+)$/u.exec(path);
+    if (request.method === 'PATCH' && agentMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      const current = requireAgentManagement(
+        auth,
+        await agentRepository.getManagedAgent(decodeURIComponent(agentMatch[1])),
+      );
+      return await handlePatchAgent(request, agentRepository, auth, current, now, requestId);
+    }
+    if (request.method === 'GET' && agentMatch) {
+      const agent = await agentRepository.getPublicAgent(decodeURIComponent(agentMatch[1]).toLowerCase());
+      if (!agent) throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
+      return json({ agent: publicAgent(agent) });
+    }
+
     throw new ApiError(404, 'not_found', 'API route not found.');
   } catch (error) {
     if (error instanceof ApiError) {
@@ -500,7 +829,7 @@ export async function handleApiRequest(
       errorName: error instanceof Error ? error.name : 'UnknownError',
       errorMessage: message,
     })));
-    const isConflict = /constraint|invalid_invitation|invalid_oauth_flow|not_revocable|not_revocable/iu.test(message);
+    const isConflict = /constraint|invalid_invitation|invalid_oauth_flow|not_revocable|agent_quota|credential_/iu.test(message);
     return json(createErrorEnvelope(
       isConflict ? 'state_conflict' : 'internal_error',
       isConflict ? 'The requested state transition is no longer valid.' : 'An internal error occurred.',

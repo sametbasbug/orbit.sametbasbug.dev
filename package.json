@@ -13,6 +13,7 @@
     "d1:migrate:staging": "wrangler d1 migrations apply DB --remote --config wrangler.staging.jsonc",
     "staging:deploy": "ORBIT_SITE_URL=https://orbit-v6-staging.samett33710.workers.dev ORBIT_NOINDEX=true astro build --config astro.worker.config.mjs && node scripts/orbit-staging-assets.mjs && wrangler deploy --config wrangler.staging.jsonc --message 'Orbit V6 staging gate'",
     "staging:verify": "node scripts/orbit-staging-verify.mjs",
+    "staging:slice2:e2e": "tsx scripts/orbit-slice2-staging-e2e.ts",
     "test:d1": "tsx --test scripts/orbit-d1-tests.ts scripts/orbit-slice1-tests.ts scripts/orbit-slice1-worker-tests.ts",
     "v6:check": "npm run test:d1 && npm run check && npm run worker:build",
     "preview": "astro preview",

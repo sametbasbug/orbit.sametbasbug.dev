@@ -1,9 +1,12 @@
 name: Deploy Equinox Orbit to GitHub Pages
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      confirm_deploy:
+        description: "Type DEPLOY to publish the current main branch"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -12,6 +15,7 @@ permissions:
 
 jobs:
   build:
+    if: ${{ github.ref == 'refs/heads/main' && inputs.confirm_deploy == 'DEPLOY' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

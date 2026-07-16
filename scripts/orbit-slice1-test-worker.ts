@@ -1,5 +1,6 @@
 import { handleApiRequest, runIdentityCleanup } from '../src/server/http/api';
 import type { OrbitBindings } from '../src/server/identity/bindings';
+import { createDynamicBackup, restoreDynamicBackup } from '../src/server/backup/dynamic-backup';
 
 interface TestStatement {
   bind(...values: unknown[]): TestStatement;
@@ -170,6 +171,135 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     await env.DB.prepare(`UPDATE agents SET status = ? WHERE handle_normalized = ?`)
       .bind(String(body.status), String(body.handle).toLowerCase()).run();
     return Response.json({ ok: true });
+  }
+
+  if (url.pathname === '/__test/seed-publication-agent') {
+    const accountId = String(body.accountId ?? '019f64d2-0109-7644-9a4e-a0d25df888e2');
+    const agentId = String(body.agentId);
+    const handle = String(body.handle);
+    const now = Number(body.now ?? Date.now());
+    await env.DB.batch([
+      env.DB.prepare(`
+        INSERT OR IGNORE INTO agents (
+          id, handle, handle_normalized, display_name, bio, avatar_asset,
+          publication_mode, status, created_at, updated_at, version,
+          role, short_bio, motto, accent, responsibility, links_json
+        ) VALUES (?, ?, ?, ?, '', 'agents/default.webp', ?, ?, ?, ?, 1,
+          '', '', '', '#6f63e8', '', '[]')
+      `).bind(agentId, handle, handle.toLowerCase(), handle, String(body.publicationMode), String(body.status ?? 'active'), now, now),
+      env.DB.prepare(`
+        INSERT OR IGNORE INTO agent_memberships (
+          id, agent_id, account_id, role, created_by_account_id, created_at
+        ) VALUES (?, ?, ?, 'primary_sponsor', ?, ?)
+      `).bind(String(body.membershipId), agentId, accountId, accountId, now),
+      env.DB.prepare(`
+        INSERT OR IGNORE INTO agent_credentials (
+          id, agent_id, secret_digest, hash_version, scopes,
+          created_by_account_id, created_at
+        ) VALUES (?, ?, ?, 1, 'feed:read records:write', ?, ?)
+      `).bind(String(body.credentialId), agentId, String(body.secretDigest), accountId, now),
+    ]);
+    return Response.json({ ok: true });
+  }
+
+  if (url.pathname === '/__test/seed-human-session') {
+    await env.DB.prepare(`
+      INSERT INTO sessions (
+        id, account_id, secret_digest, hash_version, csrf_digest,
+        created_at, last_seen_at, idle_expires_at, absolute_expires_at
+      ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
+    `).bind(
+      String(body.sessionId),
+      String(body.accountId ?? '019f64d2-0109-7644-9a4e-a0d25df888e2'),
+      String(body.secretDigest), String(body.csrfDigest), now, now,
+      now + 7 * 86400000, now + 30 * 86400000,
+    ).run();
+    return Response.json({ ok: true });
+  }
+
+  if (url.pathname === '/__test/publication-state') {
+    const record = await env.DB.prepare(`
+      SELECT id, slug, lifecycle_state, current_revision_id, pending_revision_id,
+             deleted_at, version FROM records WHERE id = ? OR slug = ? LIMIT 1
+    `).bind(String(body.record), String(body.record)).first();
+    const revisions = record ? await env.DB.prepare(`
+      SELECT id, revision_number, body_markdown, summary, state, published_at
+      FROM record_revisions WHERE record_id = ? ORDER BY revision_number
+    `).bind((record as { id: string }).id).all() : { results: [] };
+    const reviews = record ? await env.DB.prepare(`
+      SELECT id, revision_id, status, reviewer_account_id, review_note
+      FROM publication_reviews WHERE record_id = ? ORDER BY requested_at
+    `).bind((record as { id: string }).id).all() : { results: [] };
+    return Response.json({ record, revisions: revisions.results, reviews: reviews.results });
+  }
+
+  if (url.pathname === '/__test/publication-evidence') {
+    const recordId = String(body.recordId);
+    const audits = await env.DB.prepare(`
+      SELECT event_type, actor_type, actor_id, metadata_json
+      FROM audit_events WHERE subject_type = 'record' AND subject_id = ? ORDER BY sequence
+    `).bind(recordId).all();
+    const moderation = await env.DB.prepare(`
+      SELECT action, actor_account_id, reason
+      FROM moderation_actions WHERE target_type = 'record' AND target_id = ? ORDER BY created_at, id
+    `).bind(recordId).all();
+    return Response.json({ audits: audits.results, moderation: moderation.results });
+  }
+
+  if (url.pathname === '/__test/usage') {
+    const rows = await env.DB.prepare(`
+      SELECT day_utc, posts_created, replies_created, write_attempts
+      FROM agent_usage_daily WHERE agent_id = ? ORDER BY day_utc
+    `).bind(String(body.agentId)).all();
+    return Response.json({ rows: rows.results });
+  }
+
+  if (url.pathname === '/__test/set-usage') {
+    await env.DB.prepare(`
+      INSERT INTO agent_usage_daily (
+        agent_id, day_utc, posts_created, replies_created, write_attempts, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(agent_id, day_utc) DO UPDATE SET
+        posts_created = excluded.posts_created,
+        replies_created = excluded.replies_created,
+        write_attempts = excluded.write_attempts,
+        updated_at = excluded.updated_at
+    `).bind(
+      String(body.agentId), String(body.dayUtc), Number(body.postsCreated ?? 0),
+      Number(body.repliesCreated ?? 0), Number(body.writeAttempts ?? 0), now,
+    ).run();
+    return Response.json({ ok: true });
+  }
+
+  if (url.pathname === '/__test/backup-export') {
+    return Response.json(await createDynamicBackup(env.DB, now, Boolean(body.includeSessions)));
+  }
+
+  if (url.pathname === '/__test/backup-restore') {
+    try {
+      const proof = await restoreDynamicBackup(env.DB, body.backup, {
+        revokeSecurity: Boolean(body.revokeSecurity), now,
+      });
+      return Response.json({ ok: true, proof });
+    } catch (error) {
+      return Response.json({
+        ok: false,
+        code: error instanceof Error ? error.message : 'restore_failed',
+      }, { status: 400 });
+    }
+  }
+
+  if (url.pathname === '/__test/backup-counts') {
+    const counts = await env.DB.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM agents) AS agents,
+        (SELECT COUNT(*) FROM records) AS records,
+        (SELECT COUNT(*) FROM projects) AS projects,
+        (SELECT COUNT(*) FROM topics) AS topics,
+        (SELECT COUNT(*) FROM backup_restore_validations) AS validations
+    `).first();
+    const fk = await env.DB.prepare(`PRAGMA foreign_key_check`).all();
+    return Response.json({ counts, foreignKeyViolations: fk.results.length });
   }
 
   if (url.pathname === '/__test/cleanup') {

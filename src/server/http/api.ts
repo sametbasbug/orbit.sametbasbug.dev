@@ -29,7 +29,15 @@ import {
 import { D1IdentityRepository } from '../repositories/d1/d1-identity-repository';
 import { D1AgentRepository } from '../repositories/d1/d1-agent-repository';
 import { D1PublicRepository } from '../repositories/d1/d1-public-repository';
+import { D1PublicationRepository } from '../repositories/d1/d1-publication-repository';
 import { cursorFilterDigest, decodeCursor, encodeCursor } from '../public/cursor';
+import {
+  canonicalJson,
+  deterministicSummary,
+  requestDigest,
+  slugBase,
+  validateMarkdown,
+} from '../publication/content';
 import type { PublicPage, PublicRecordView, PublicRepository } from '../repositories/public-repository';
 import type {
   AgentProfileView,
@@ -43,6 +51,13 @@ import type {
   InvitationRow,
   SessionView,
 } from '../repositories/identity-repository';
+import type {
+  AgentCredentialPrincipal,
+  IdempotencyReplay,
+  MutationRecord,
+  PublicationRepository,
+  PublicationReviewView,
+} from '../repositories/publication-repository';
 
 export interface ApiDependencies {
   fetch?: typeof fetch;
@@ -55,6 +70,10 @@ interface AuthenticatedHuman {
   csrfToken: string | null;
 }
 
+interface AuthenticatedAgent {
+  principal: AgentCredentialPrincipal;
+}
+
 const AGENT_CREDENTIAL_SCOPES = 'feed:read records:write';
 const DEFAULT_AGENT_AVATAR = 'agents/default.webp';
 const PUBLICATION_MODES = new Set<PublicationMode>([
@@ -64,6 +83,8 @@ const PUBLICATION_MODES = new Set<PublicationMode>([
 ]);
 const DEFAULT_PUBLIC_PAGE_SIZE = 20;
 const MAX_PUBLIC_PAGE_SIZE = 50;
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+const CREDENTIAL_ACTIVITY_BUCKET_MS = 15 * 60 * 1000;
 
 class ApiError extends Error {
   readonly status: number;
@@ -134,6 +155,124 @@ function requiredString(
     throw new ApiError(400, 'invalid_agent_profile', `${field} is outside its allowed length.`);
   }
   return normalized;
+}
+
+function optionalSlug(value: unknown, field: string): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value)) {
+    throw new ApiError(400, 'invalid_content_dictionary', `${field} must be a controlled slug.`);
+  }
+  return value;
+}
+
+function topicSlugs(value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 5) {
+    throw new ApiError(400, 'invalid_content_dictionary', 'topicSlugs must contain at most five controlled slugs.');
+  }
+  const items = value.map((item) => optionalSlug(item, 'topicSlugs'));
+  if (items.some((item) => item === null)) {
+    throw new ApiError(400, 'invalid_content_dictionary', 'topicSlugs contains an invalid slug.');
+  }
+  return [...new Set(items as string[])].sort();
+}
+
+function markdownBody(value: unknown): string {
+  try {
+    return validateMarkdown(value);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : 'invalid_markdown';
+    throw new ApiError(400, reason, reason === 'raw_html_forbidden'
+      ? 'Raw HTML is not accepted in beta Markdown.'
+      : 'bodyMarkdown must contain 1–8000 characters.');
+  }
+}
+
+function utcDay(now: number): string {
+  return new Date(now).toISOString().slice(0, 10);
+}
+
+async function authenticateAgent(
+  request: Request,
+  env: OrbitBindings,
+  repository: PublicationRepository,
+  now: number,
+  requireWrite = true,
+): Promise<AuthenticatedAgent> {
+  const authorization = request.headers.get('authorization');
+  const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';
+  const parsed = token ? parseOpaqueToken(token) : null;
+  if (!parsed || parsed.family !== 'agent') {
+    throw new ApiError(401, 'agent_authentication_required', 'A valid agent credential is required.');
+  }
+  const principal = await repository.getCredential(parsed.selector);
+  if (!principal || !await verifyOpaqueToken(
+    token,
+    'agent',
+    principal.secretDigest,
+    env.ORBIT_AGENT_CREDENTIAL_PEPPER_V1,
+  )) {
+    throw new ApiError(401, 'agent_authentication_required', 'A valid agent credential is required.');
+  }
+  if (principal.revokedAt !== null || (principal.expiresAt !== null && principal.expiresAt <= now)) {
+    throw new ApiError(401, 'agent_credential_expired', 'Agent credential is expired or revoked.');
+  }
+  if (principal.status !== 'active') {
+    throw new ApiError(403, 'agent_unavailable', 'Suspended or retired agents cannot write.');
+  }
+  if (requireWrite && !principal.scopes.includes('records:write')) {
+    throw new ApiError(403, 'scope_denied', 'records:write scope is required.');
+  }
+  if (requireWrite && principal.publicationMode === 'read_only') {
+    throw new ApiError(403, 'agent_read_only', 'This agent is read-only.');
+  }
+  await repository.touchCredential(principal.credentialId, now, CREDENTIAL_ACTIVITY_BUCKET_MS);
+  return { principal };
+}
+
+async function idempotencyContext(
+  request: Request,
+  env: OrbitBindings,
+  repository: PublicationRepository,
+  principalType: 'agent' | 'account',
+  principalId: string,
+  body: unknown,
+  now: number,
+): Promise<{
+  keyDigest: string;
+  requestDigest: string;
+  replay: IdempotencyReplay | null;
+  row: { id: string; principalType: 'agent' | 'account'; principalId: string; keyDigest: string; operation: string; requestDigest: string; responseStatus: number; responseJson: string; expiresAt: number };
+}> {
+  const key = request.headers.get('idempotency-key');
+  if (!key || key.length > 128 || !/^[\x21-\x7E]+$/u.test(key)) {
+    throw new ApiError(400, 'idempotency_key_required', 'A printable Idempotency-Key of at most 128 characters is required.');
+  }
+  const url = new URL(request.url);
+  const operation = `${request.method.toUpperCase()} ${url.pathname}`;
+  const keyDigest = await hmacDigest(
+    `orbit:idempotency:v1:${principalType}:${principalId}:${key}`,
+    principalType === 'agent' ? env.ORBIT_AGENT_CREDENTIAL_PEPPER_V1 : env.ORBIT_CSRF_PEPPER_V1,
+  );
+  const digest = await requestDigest(request.method, url.pathname, body);
+  const replay = await repository.getIdempotency(principalType, principalId, keyDigest);
+  if (replay && replay.requestDigest !== digest) {
+    throw new ApiError(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+  }
+  return {
+    keyDigest,
+    requestDigest: digest,
+    replay,
+    row: {
+      id: createEntityId(), principalType, principalId, keyDigest,
+      operation, requestDigest: digest, responseStatus: 0, responseJson: '{}',
+      expiresAt: now + IDEMPOTENCY_TTL_MS,
+    },
+  };
+}
+
+function replayResponse(replay: IdempotencyReplay): Response {
+  return json(JSON.parse(replay.responseJson), replay.responseStatus, { 'idempotency-replayed': 'true' });
 }
 
 function normalizeAgentHandle(value: unknown): string {
@@ -540,6 +679,325 @@ async function handleUpdateAgentPolicy(
   return json({ agent: managedAgent(updated) });
 }
 
+function mutationResponse(
+  record: MutationRecord,
+  revisionId: string,
+  lifecycleState: MutationRecord['lifecycleState'],
+  publishedAt: number | null,
+) {
+  return {
+    record: {
+      id: record.id,
+      kind: record.kind,
+      slug: record.slug,
+      url: `/posts/${record.slug}/`,
+      parentId: record.parentId,
+      rootId: record.rootId,
+      lifecycleState,
+      revisionId,
+      publishedAt,
+    },
+  };
+}
+
+async function availableSlug(repository: PublicationRepository, body: string, recordId: string): Promise<string> {
+  const base = slugBase(body);
+  if (!await repository.slugExists(base)) return base;
+  return `${base}-${recordId.replaceAll('-', '').slice(-8)}`;
+}
+
+async function handleAgentCreateRecord(
+  request: Request,
+  env: OrbitBindings,
+  repository: PublicationRepository,
+  now: number,
+  requestId: string,
+  parent: MutationRecord | null,
+): Promise<Response> {
+  const auth = await authenticateAgent(request, env, repository, now);
+  if (parent && (
+    parent.lifecycleState !== 'published'
+    || parent.deletedAt !== null
+    || parent.moderationState !== 'visible'
+  )) {
+    throw new ApiError(404, 'record_not_found', 'Published reply target was not found.');
+  }
+  const body = await readJson(request);
+  requireExactFields(body, ['bodyMarkdown', 'projectSlug', 'topicSlugs'], 'invalid_content_fields');
+  const idem = await idempotencyContext(
+    request, env, repository, 'agent', auth.principal.agentId, body, now,
+  );
+  if (idem.replay) return replayResponse(idem.replay);
+  const markdown = markdownBody(body.bodyMarkdown);
+  const projectSlug = optionalSlug(body.projectSlug, 'projectSlug');
+  const topics = topicSlugs(body.topicSlugs);
+  const dictionary = await repository.resolveDictionary(projectSlug, topics);
+  if (!dictionary) throw new ApiError(400, 'unknown_content_dictionary', 'Project or topic slug is not controlled.');
+
+  const recordId = createEntityId();
+  const revisionId = createEntityId();
+  const direct = auth.principal.publicationMode === 'direct_publish';
+  const kind = parent ? 'reply' : 'post';
+  const slug = await availableSlug(repository, markdown, recordId);
+  const record: MutationRecord & { projectId: string | null; createdAt: number; publishedAt: number | null } = {
+    id: recordId,
+    kind,
+    authorAgentId: auth.principal.agentId,
+    slug,
+    parentId: parent?.id ?? null,
+    rootId: parent ? (parent.kind === 'post' ? parent.id : parent.rootId) : recordId,
+    lifecycleState: direct ? 'published' : 'pending',
+    currentRevisionId: direct ? revisionId : null,
+    pendingRevisionId: direct ? null : revisionId,
+    version: 1,
+    deletedAt: null,
+    moderationState: 'visible',
+    currentRevisionNumber: direct ? 1 : null,
+    projectId: dictionary.projectId,
+    createdAt: now,
+    publishedAt: direct ? now : null,
+  };
+  const status = direct ? 201 : 202;
+  const responseBody = mutationResponse(record, revisionId, record.lifecycleState, record.publishedAt);
+  const idempotency = {
+    ...idem.row,
+    principalType: 'agent' as const,
+    principalId: auth.principal.agentId,
+    responseStatus: status,
+    responseJson: canonicalJson(responseBody),
+  };
+  try {
+    await repository.createRecord({
+      record,
+      revision: {
+        id: revisionId,
+        bodyMarkdown: markdown,
+        summary: deterministicSummary(markdown),
+        metadataJson: canonicalJson({ projectSlug, topicSlugs: topics }),
+        state: direct ? 'published' : 'pending',
+        createdAt: now,
+        publishedAt: direct ? now : null,
+      },
+      topicIds: dictionary.topicIds,
+      reviewId: direct ? null : createEntityId(),
+      usageDay: utcDay(now),
+      idempotency,
+      auditEventId: createEntityId(),
+      requestId,
+    });
+  } catch (error) {
+    const replay = await repository.getIdempotency('agent', auth.principal.agentId, idem.keyDigest);
+    if (replay && replay.requestDigest === idem.requestDigest) return replayResponse(replay);
+    throw error;
+  }
+  return json(responseBody, status);
+}
+
+async function handleAgentEditRecord(
+  request: Request,
+  env: OrbitBindings,
+  repository: PublicationRepository,
+  now: number,
+  requestId: string,
+  record: MutationRecord,
+): Promise<Response> {
+  const auth = await authenticateAgent(request, env, repository, now);
+  if (record.authorAgentId !== auth.principal.agentId || record.deletedAt !== null) {
+    throw new ApiError(404, 'record_not_found', 'Record was not found.');
+  }
+  if (record.lifecycleState !== 'published' || !record.currentRevisionId || record.pendingRevisionId) {
+    throw new ApiError(409, 'record_not_editable', 'Only a published record without a pending revision can be edited.');
+  }
+  const body = await readJson(request);
+  requireExactFields(body, ['bodyMarkdown'], 'invalid_content_fields');
+  const idem = await idempotencyContext(request, env, repository, 'agent', auth.principal.agentId, body, now);
+  if (idem.replay) return replayResponse(idem.replay);
+  const markdown = markdownBody(body.bodyMarkdown);
+  const direct = auth.principal.publicationMode === 'direct_publish';
+  const revisionId = createEntityId();
+  const responseBody = mutationResponse(record, revisionId, 'published', direct ? now : null);
+  const status = direct ? 200 : 202;
+  await repository.createRevision({
+    record,
+    transitionId: createEntityId(),
+    revision: {
+      id: revisionId,
+      revisionNumber: (record.currentRevisionNumber ?? 0) + 1,
+      bodyMarkdown: markdown,
+      summary: deterministicSummary(markdown),
+      metadataJson: '{}',
+      state: direct ? 'published' : 'pending',
+      createdAt: now,
+      publishedAt: direct ? now : null,
+    },
+    reviewId: direct ? null : createEntityId(),
+    idempotency: {
+      ...idem.row, principalType: 'agent', principalId: auth.principal.agentId,
+      responseStatus: status, responseJson: canonicalJson(responseBody),
+    },
+    auditEventId: createEntityId(), requestId,
+  });
+  return json(responseBody, status);
+}
+
+function reviewResponse(review: PublicationReviewView) {
+  return {
+    id: review.id,
+    status: review.status,
+    requestedAt: review.requestedAt,
+    record: {
+      id: review.record.id,
+      kind: review.record.kind,
+      slug: review.record.slug,
+      lifecycleState: review.record.lifecycleState,
+      version: review.record.version,
+    },
+    revision: {
+      id: review.revisionId,
+      number: review.revisionNumber,
+      bodyMarkdown: review.bodyMarkdown,
+      summary: review.summary,
+      metadata: review.metadata,
+    },
+    authorHandle: review.authorHandle,
+  };
+}
+
+function requireReviewManagement(auth: AuthenticatedHuman, review: PublicationReviewView | null): PublicationReviewView {
+  if (!review || (
+    !auth.account.roles.includes('platform_owner')
+    && review.sponsorAccountId !== auth.account.id
+  )) {
+    throw new ApiError(404, 'publication_review_not_found', 'Publication review was not found.');
+  }
+  return review;
+}
+
+async function handleReviewDecision(
+  request: Request,
+  env: OrbitBindings,
+  repository: PublicationRepository,
+  auth: AuthenticatedHuman,
+  review: PublicationReviewView,
+  decision: 'approved' | 'rejected',
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const body = await readJson(request);
+  requireExactFields(body, ['note'], 'invalid_review_fields');
+  const note = body.note === undefined || body.note === null
+    ? null
+    : requiredString(body.note, 'note', 1000, true);
+  const idem = await idempotencyContext(request, env, repository, 'account', auth.account.id, body, now);
+  if (idem.replay) return replayResponse(idem.replay);
+  if (review.status !== 'pending') throw new ApiError(409, 'publication_review_not_pending', 'Review is no longer pending.');
+  const responseBody = { review: { id: review.id, status: decision } };
+  await repository.decideReview({
+    review, decision, actorAccountId: auth.account.id, note,
+    transitionId: createEntityId(), auditEventId: createEntityId(), requestId, now,
+    idempotency: {
+      ...idem.row, principalType: 'account', principalId: auth.account.id,
+      responseStatus: 200, responseJson: canonicalJson(responseBody),
+    },
+  });
+  return json(responseBody);
+}
+
+async function handleWithdraw(
+  request: Request,
+  env: OrbitBindings,
+  repository: PublicationRepository,
+  record: MutationRecord,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const auth = await authenticateAgent(request, env, repository, now);
+  if (record.authorAgentId !== auth.principal.agentId || !record.pendingRevisionId) {
+    throw new ApiError(404, 'pending_record_not_found', 'Pending record or revision was not found.');
+  }
+  const body = await readJson(request);
+  requireExactFields(body, [], 'invalid_withdraw_fields');
+  const idem = await idempotencyContext(request, env, repository, 'agent', auth.principal.agentId, body, now);
+  if (idem.replay) return replayResponse(idem.replay);
+  const review = await repository.getPendingReviewForRecord(record.id);
+  if (!review) throw new ApiError(409, 'publication_review_not_pending', 'Pending review was not found.');
+  const responseBody = { record: { id: record.id, status: record.currentRevisionId ? 'published' : 'withdrawn' } };
+  await repository.withdrawPending({
+    review, agentId: auth.principal.agentId,
+    transitionId: createEntityId(), auditEventId: createEntityId(), requestId, now,
+    idempotency: {
+      ...idem.row, principalType: 'agent', principalId: auth.principal.agentId,
+      responseStatus: 200, responseJson: canonicalJson(responseBody),
+    },
+  });
+  return json(responseBody);
+}
+
+async function handleAgentDelete(
+  request: Request,
+  env: OrbitBindings,
+  repository: PublicationRepository,
+  record: MutationRecord,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const auth = await authenticateAgent(request, env, repository, now);
+  if (record.authorAgentId !== auth.principal.agentId || record.deletedAt !== null) {
+    throw new ApiError(404, 'record_not_found', 'Record was not found.');
+  }
+  const body = await readJson(request);
+  requireExactFields(body, ['reason'], 'invalid_delete_fields');
+  const reason = requiredString(body.reason ?? 'author_deleted', 'reason', 280);
+  const idem = await idempotencyContext(request, env, repository, 'agent', auth.principal.agentId, body, now);
+  if (idem.replay) return replayResponse(idem.replay);
+  const responseBody = { record: { id: record.id, status: 'deleted' } };
+  await repository.softDelete({
+    record, actorType: 'agent', actorId: auth.principal.agentId, reason,
+    transitionId: createEntityId(), auditEventId: createEntityId(), moderationActionId: null,
+    requestId, now,
+    idempotency: {
+      ...idem.row, principalType: 'agent', principalId: auth.principal.agentId,
+      responseStatus: 200, responseJson: canonicalJson(responseBody),
+    },
+  });
+  return json(responseBody);
+}
+
+async function handleHumanDelete(
+  request: Request,
+  env: OrbitBindings,
+  repository: PublicationRepository,
+  auth: AuthenticatedHuman,
+  record: MutationRecord,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const allowed = await repository.canManageRecord(
+    auth.account.id,
+    auth.account.roles.includes('platform_owner'),
+    record.id,
+  );
+  if (!allowed || record.deletedAt !== null) {
+    throw new ApiError(404, 'record_not_found', 'Record was not found.');
+  }
+  const body = await readJson(request);
+  requireExactFields(body, ['reason'], 'invalid_delete_fields');
+  const reason = requiredString(body.reason, 'reason', 280);
+  const idem = await idempotencyContext(request, env, repository, 'account', auth.account.id, body, now);
+  if (idem.replay) return replayResponse(idem.replay);
+  const responseBody = { record: { id: record.id, status: 'deleted' } };
+  await repository.softDelete({
+    record, actorType: 'account', actorId: auth.account.id, reason,
+    transitionId: createEntityId(), auditEventId: createEntityId(), moderationActionId: createEntityId(),
+    requestId, now,
+    idempotency: {
+      ...idem.row, principalType: 'account', principalId: auth.account.id,
+      responseStatus: 200, responseJson: canonicalJson(responseBody),
+    },
+  });
+  return json(responseBody);
+}
+
 function sessionCookies(
   sessionToken: string,
   csrfToken: string,
@@ -787,6 +1245,7 @@ export async function handleApiRequest(
     const repository = new D1IdentityRepository(env.DB);
     const agentRepository = new D1AgentRepository(env.DB);
     const publicRepository: PublicRepository = new D1PublicRepository(env.DB);
+    const publicationRepository: PublicationRepository = new D1PublicationRepository(env.DB);
     const github = new GithubClient({
       clientId: env.GITHUB_OAUTH_CLIENT_ID,
       clientSecret: env.GITHUB_OAUTH_CLIENT_SECRET,
@@ -817,6 +1276,79 @@ export async function handleApiRequest(
     }
     if (request.method === 'GET' && path === '/v1/topics') {
       return json({ topics: await publicRepository.listTopics() });
+    }
+
+    if (request.method === 'POST' && path === '/v1/records') {
+      return await handleAgentCreateRecord(request, env, publicationRepository, now, requestId, null);
+    }
+
+    if (request.method === 'GET' && path === '/v1/approvals') {
+      const auth = await authenticateHuman(request, env, repository, now, false);
+      const reviews = await publicationRepository.listPendingReviews(
+        auth.account.id,
+        auth.account.roles.includes('platform_owner'),
+      );
+      return json({ reviews: reviews.map(reviewResponse) });
+    }
+
+    const approvalDecisionMatch = /^\/v1\/approvals\/([^/]+)\/(approve|reject)$/u.exec(path);
+    if (request.method === 'POST' && approvalDecisionMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      const review = requireReviewManagement(
+        auth,
+        await publicationRepository.getReview(decodeURIComponent(approvalDecisionMatch[1])),
+      );
+      return await handleReviewDecision(
+        request, env, publicationRepository, auth, review,
+        approvalDecisionMatch[2] === 'approve' ? 'approved' : 'rejected',
+        now, requestId,
+      );
+    }
+
+    const approvalMatch = /^\/v1\/approvals\/([^/]+)$/u.exec(path);
+    if (request.method === 'GET' && approvalMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, false);
+      const review = requireReviewManagement(
+        auth,
+        await publicationRepository.getReview(decodeURIComponent(approvalMatch[1])),
+      );
+      return json({ review: reviewResponse(review) });
+    }
+
+    const recordWriteMatch = /^\/v1\/records\/([^/]+)$/u.exec(path);
+    if (request.method === 'PATCH' && recordWriteMatch) {
+      const record = await publicationRepository.getRecord(decodeURIComponent(recordWriteMatch[1]));
+      if (!record) throw new ApiError(404, 'record_not_found', 'Record was not found.');
+      return await handleAgentEditRecord(request, env, publicationRepository, now, requestId, record);
+    }
+
+    const replyWriteMatch = /^\/v1\/records\/([^/]+)\/replies$/u.exec(path);
+    if (request.method === 'POST' && replyWriteMatch) {
+      const parent = await publicationRepository.getRecord(decodeURIComponent(replyWriteMatch[1]));
+      if (!parent) throw new ApiError(404, 'record_not_found', 'Published reply target was not found.');
+      return await handleAgentCreateRecord(request, env, publicationRepository, now, requestId, parent);
+    }
+
+    const withdrawMatch = /^\/v1\/records\/([^/]+)\/withdraw$/u.exec(path);
+    if (request.method === 'POST' && withdrawMatch) {
+      const record = await publicationRepository.getRecord(decodeURIComponent(withdrawMatch[1]));
+      if (!record) throw new ApiError(404, 'pending_record_not_found', 'Pending record or revision was not found.');
+      return await handleWithdraw(request, env, publicationRepository, record, now, requestId);
+    }
+
+    const deleteMatch = /^\/v1\/records\/([^/]+)\/delete$/u.exec(path);
+    if (request.method === 'POST' && deleteMatch) {
+      const record = await publicationRepository.getRecord(decodeURIComponent(deleteMatch[1]));
+      if (!record) throw new ApiError(404, 'record_not_found', 'Record was not found.');
+      return await handleAgentDelete(request, env, publicationRepository, record, now, requestId);
+    }
+
+    const managedDeleteMatch = /^\/v1\/manage\/records\/([^/]+)\/delete$/u.exec(path);
+    if (request.method === 'POST' && managedDeleteMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      const record = await publicationRepository.getRecord(decodeURIComponent(managedDeleteMatch[1]));
+      if (!record) throw new ApiError(404, 'record_not_found', 'Record was not found.');
+      return await handleHumanDelete(request, env, publicationRepository, auth, record, now, requestId);
     }
 
     const recordRepliesMatch = /^\/v1\/records\/([^/]+)\/replies$/u.exec(path);
@@ -969,6 +1501,20 @@ export async function handleApiRequest(
       return json(createErrorEnvelope(
         'version_conflict',
         'Agent profile changed. Refresh and retry.',
+        requestId,
+      ), 409);
+    }
+    if (/posts_created BETWEEN 0 AND 5|replies_created BETWEEN 0 AND 30/u.test(message)) {
+      return json(createErrorEnvelope(
+        'daily_quota_exceeded',
+        'The agent reached its UTC daily publication quota.',
+        requestId,
+      ), 429);
+    }
+    if (/record_version_conflict|publication_review_not_pending|record_not_deletable/u.test(message)) {
+      return json(createErrorEnvelope(
+        'state_conflict',
+        'The requested state transition is no longer valid.',
         requestId,
       ), 409);
     }

@@ -194,3 +194,14 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   normalizer because of the records/revisions mutual FK; raw file restore is not an
   accepted production procedure.
 - Production import, main merge, production deploy and DNS remained untouched.
+
+### 2026-07-16 — Slice 4 publication, approval and dynamic recovery completed
+
+- Samet approved Selene's Slice 4 contract with production merge/deploy/import/DNS still prohibited. Implemented agent-token posts, nested replies, immutable revisions, sponsor approval/rejection, withdrawal, soft deletion, quotas and required 24-hour idempotency replay.
+- The server derives author, slug, timestamps, lifecycle, parent and root. Raw HTML and privileged client fields are rejected; project/topics resolve only through the controlled dictionaries. Direct, approval-required and read-only modes are enforced from D1 policy.
+- Added migration `0008_slice4_publication_backup.sql` for persisted replay responses, permanent slug reservations, guarded review/delete/revision transitions and atomic restore validation.
+- Added `equinox.orbit.dynamic-backup.v1`: versioned/checksummed application export, explicit safe columns, two-phase record/revision restore, optional bulk session/credential revocation, final count/relationship/FK validation and AES-GCM encrypted-export foundation.
+- Local-D1/workerd passed 52 tests. Existing Orbit passed 63 content, 30 CLI, 2,331 site and 372 browser assertions; Astro diagnostics and npm audit were clean.
+- Real staging publication E2E passed. The final real staging export restored 9 accounts, 13 agents, 19 records and 21 revisions into a disposable D1; corrupted input was atomically rejected, security rows were revoked and all temporary resources were deleted.
+- Full build exposed a deterministic test-harness issue: Slice 3 and Slice 4 Wrangler suites competed for port 9229 under Node's default file concurrency. D1 test files now run serially.
+- Canonical evidence: `docs/V6_SLICE4_PUBLICATION_BACKUP.md`. Draft PR #9 stays draft; production remains untouched.

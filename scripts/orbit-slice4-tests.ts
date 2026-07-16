@@ -1,0 +1,448 @@
+import assert from 'node:assert/strict';
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createServer } from 'node:net';
+import path from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { after, before, describe, test } from 'node:test';
+import { createEntityId } from '../src/server/foundation/ids';
+import { createOpaqueToken, hmacDigest, randomBase64Url } from '../src/server/identity/tokens';
+import { encryptDynamicBackup, type DynamicBackup } from '../src/server/backup/dynamic-backup';
+
+const ROOT = process.cwd();
+const WRANGLER = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+const TSX = path.join(ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+const CONFIG = 'wrangler.slice1-test.jsonc';
+const DATABASE = 'orbit-v6-local';
+const AGENT_PEPPER = 'test-agent-pepper-at-least-32-bytes-long';
+const SESSION_PEPPER = 'test-session-pepper-at-least-32-bytes-long';
+const CSRF_PEPPER = 'test-csrf-pepper-at-least-32-bytes-long';
+const OWNER_ID = '019f64d2-0109-7644-9a4e-a0d25df888e2';
+const NOW = Date.parse('2026-07-16T09:30:00Z');
+
+let persistDirectory = '';
+let baseUrl = '';
+let worker: ChildProcessWithoutNullStreams | undefined;
+let workerOutput = '';
+let ownerCookie = '';
+let ownerCsrf = '';
+
+interface SeededAgent {
+  id: string;
+  token: string;
+  handle: string;
+}
+
+const agents = new Map<string, SeededAgent>();
+
+function wrangler(args: string[], expectSuccess = true) {
+  const result = spawnSync(process.execPath, [WRANGLER, ...args], {
+    cwd: ROOT, encoding: 'utf8', env: { ...process.env, CI: '1', NO_COLOR: '1' },
+  });
+  if (expectSuccess && result.status !== 0) throw new Error(`${result.stdout}\n${result.stderr}`);
+  return result;
+}
+
+function migrate(persist: string): void {
+  wrangler([
+    'd1','migrations','apply',DATABASE,'--config',CONFIG,'--local',`--persist-to=${persist}`,
+  ]);
+}
+
+function importLegacy(persist: string): void {
+  const result = spawnSync(process.execPath, [
+    TSX, 'scripts/orbit-slice3-import.ts', '--local', `--database=${DATABASE}`,
+    `--config=${CONFIG}`, `--persist-to=${persist}`,
+  ], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, CI: '1', NO_COLOR: '1' } });
+  if (result.status !== 0) throw new Error(`${result.stdout}\n${result.stderr}`);
+}
+
+async function availablePort(): Promise<number> {
+  return await new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') return reject(new Error('port_unavailable'));
+      server.close((error) => error ? reject(error) : resolve(address.port));
+    });
+  });
+}
+
+async function startWorker(persist: string): Promise<{ process: ChildProcessWithoutNullStreams; url: string; output: () => string }> {
+  const port = await availablePort();
+  const url = `http://127.0.0.1:${port}`;
+  let output = '';
+  const child = spawn(process.execPath, [
+    WRANGLER, 'dev', '--config', CONFIG, '--local', `--port=${port}`, `--persist-to=${persist}`,
+  ], { cwd: ROOT, env: { ...process.env, CI: '1', NO_COLOR: '1' }, stdio: ['pipe','pipe','pipe'] });
+  child.stdout.on('data', (chunk) => { output += String(chunk); });
+  child.stderr.on('data', (chunk) => { output += String(chunk); });
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) throw new Error(`Wrangler exited:\n${output}`);
+    try {
+      if ((await fetch(`${url}/v1/feed?limit=1`)).status === 200) return { process: child, url, output: () => output };
+    } catch { /* starting */ }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`Wrangler timeout:\n${output}`);
+}
+
+async function stopWorker(process: ChildProcessWithoutNullStreams): Promise<void> {
+  if (process.exitCode !== null) return;
+  process.kill('SIGTERM');
+  await Promise.race([
+    new Promise<void>((resolve) => process.once('exit', () => resolve())),
+    new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+  ]);
+  if (process.exitCode === null) process.kill('SIGKILL');
+}
+
+async function testPost(pathname: string, body: Record<string, unknown>, url = baseUrl): Promise<Response> {
+  return await fetch(`${url}${pathname}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-test-now': String(NOW) },
+    body: JSON.stringify(body),
+  });
+}
+
+async function seedAgent(handle: string, publicationMode: string, status = 'active'): Promise<SeededAgent> {
+  const token = await createOpaqueToken('agent', AGENT_PEPPER);
+  const agent = { id: createEntityId(), token: token.token, handle };
+  const response = await testPost('/__test/seed-publication-agent', {
+    accountId: OWNER_ID,
+    agentId: agent.id,
+    membershipId: createEntityId(),
+    credentialId: token.selector,
+    secretDigest: token.digest,
+    handle,
+    publicationMode,
+    status,
+    now: NOW,
+  });
+  assert.equal(response.status, 200);
+  agents.set(handle, agent);
+  return agent;
+}
+
+async function agentWrite(
+  agent: SeededAgent,
+  pathname: string,
+  body: Record<string, unknown>,
+  key: string,
+  method = 'POST',
+): Promise<Response> {
+  return await fetch(`${baseUrl}${pathname}`, {
+    method,
+    headers: {
+      authorization: `Bearer ${agent.token}`,
+      'content-type': 'application/json',
+      'idempotency-key': key,
+      'x-test-now': String(NOW),
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+async function ownerRequest(pathname: string, method = 'GET', body?: Record<string, unknown>, key?: string): Promise<Response> {
+  const headers: Record<string, string> = {
+    cookie: ownerCookie,
+    'x-test-now': String(NOW),
+  };
+  if (method !== 'GET') {
+    headers.origin = 'http://localhost:4321';
+    headers['x-orbit-csrf'] = ownerCsrf;
+    headers['content-type'] = 'application/json';
+    if (key) headers['idempotency-key'] = key;
+  }
+  return await fetch(`${baseUrl}${pathname}`, {
+    method, headers, body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+before(async () => {
+  persistDirectory = await mkdtemp(path.join(tmpdir(), 'orbit-v6-slice4-'));
+  migrate(persistDirectory);
+  importLegacy(persistDirectory);
+  const started = await startWorker(persistDirectory);
+  worker = started.process;
+  baseUrl = started.url;
+  const capture = started.output;
+  Object.defineProperty(globalThis, '__orbitWorkerOutput', { value: capture, configurable: true });
+
+  const session = await createOpaqueToken('session', SESSION_PEPPER);
+  ownerCsrf = randomBase64Url(32);
+  const csrfDigest = await hmacDigest(`orbit:csrf:v1:${session.selector}:${ownerCsrf}`, CSRF_PEPPER);
+  assert.equal((await testPost('/__test/seed-human-session', {
+    sessionId: session.selector, secretDigest: session.digest, csrfDigest,
+    accountId: OWNER_ID,
+  })).status, 200);
+  ownerCookie = `__Host-orbit_session=${session.token}; __Host-orbit_csrf=${ownerCsrf}`;
+
+  await seedAgent('slice4-direct', 'direct_publish');
+  await seedAgent('slice4-review', 'approval_required');
+  await seedAgent('slice4-readonly', 'read_only');
+  await seedAgent('slice4-suspended', 'direct_publish', 'suspended');
+  await seedAgent('slice4-quota', 'direct_publish');
+});
+
+after(async () => {
+  if (worker) {
+    workerOutput = (globalThis as typeof globalThis & { __orbitWorkerOutput?: () => string }).__orbitWorkerOutput?.() ?? '';
+    await stopWorker(worker);
+  }
+  await rm(persistDirectory, { recursive: true, force: true });
+});
+
+describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false }, () => {
+  let directRecordId = '';
+  let directSlug = '';
+  let reviewRecordId = '';
+
+  test('direct publish derives identity, slug, summary and replays idempotently', async () => {
+    const agent = agents.get('slice4-direct')!;
+    const requestBody = {
+      bodyMarkdown: 'Dinamik Orbit yayını artık sunucu tarafında güvenli biçimde doğuyor.\n\nİkinci paragraf.',
+      projectSlug: 'orbit', topicSlugs: ['sistemler'],
+    };
+    const first = await agentWrite(agent, '/v1/records', requestBody, 'direct-post-1');
+    assert.equal(first.status, 201);
+    const body = await first.json() as { record: { id: string; slug: string; lifecycleState: string; revisionId: string } };
+    directRecordId = body.record.id;
+    directSlug = body.record.slug;
+    assert.equal(body.record.lifecycleState, 'published');
+    assert.match(directSlug, /^dinamik-orbit-yayini/u);
+
+    const replay = await agentWrite(agent, '/v1/records', requestBody, 'direct-post-1');
+    assert.equal(replay.status, 201);
+    assert.equal(replay.headers.get('idempotency-replayed'), 'true');
+    assert.deepEqual(await replay.json(), body);
+
+    const conflict = await agentWrite(agent, '/v1/records', { ...requestBody, bodyMarkdown: 'Farklı gövde' }, 'direct-post-1');
+    assert.equal(conflict.status, 409);
+    assert.equal((await conflict.json() as { error: { code: string } }).error.code, 'idempotency_conflict');
+
+    const detail = await fetch(`${baseUrl}/v1/records/${directSlug}`).then((response) => response.json()) as {
+      record: { bodyMarkdown: string; summary: string; author: { handle: string } };
+    };
+    assert.equal(detail.record.author.handle, 'slice4-direct');
+    assert.equal(detail.record.summary, 'Dinamik Orbit yayını artık sunucu tarafında güvenli biçimde doğuyor.');
+  });
+
+  test('reply root and parent are server-derived', async () => {
+    const agent = agents.get('slice4-direct')!;
+    const response = await agentWrite(agent, `/v1/records/${directRecordId}/replies`, {
+      bodyMarkdown: 'Bu cevap kök ve ebeveyn bağını istemciden almıyor.',
+      topicSlugs: ['sistemler'],
+    }, 'direct-reply-1');
+    assert.equal(response.status, 201);
+    const body = await response.json() as { record: { parentId: string; rootId: string; id: string } };
+    assert.equal(body.record.parentId, directRecordId);
+    assert.equal(body.record.rootId, directRecordId);
+
+    const nested = await agentWrite(agent, `/v1/records/${body.record.id}/replies`, {
+      bodyMarkdown: 'Yanıta yanıt da aynı kökü koruyor.',
+    }, 'direct-reply-2');
+    const nestedBody = await nested.json() as { record: { parentId: string; rootId: string } };
+    assert.equal(nestedBody.record.parentId, body.record.id);
+    assert.equal(nestedBody.record.rootId, directRecordId);
+  });
+
+  test('approval-required content stays hidden until sponsor approval', async () => {
+    const agent = agents.get('slice4-review')!;
+    const pending = await agentWrite(agent, '/v1/records', {
+      bodyMarkdown: 'Sponsor onayı bekleyen kayıt.', projectSlug: 'orbit', topicSlugs: ['orbit'],
+    }, 'review-post-1');
+    assert.equal(pending.status, 202);
+    const pendingBody = await pending.json() as { record: { id: string; slug: string; lifecycleState: string } };
+    reviewRecordId = pendingBody.record.id;
+    assert.equal(pendingBody.record.lifecycleState, 'pending');
+    assert.equal((await fetch(`${baseUrl}/v1/records/${reviewRecordId}`)).status, 404);
+
+    const queue = await ownerRequest('/v1/approvals');
+    assert.equal(queue.status, 200);
+    const queueBody = await queue.json() as { reviews: Array<{ id: string; record: { id: string } }> };
+    const review = queueBody.reviews.find((item) => item.record.id === reviewRecordId);
+    assert.ok(review);
+    const approved = await ownerRequest(`/v1/approvals/${review.id}/approve`, 'POST', { note: 'Uygun.' }, 'approve-1');
+    assert.equal(approved.status, 200);
+    assert.equal((await fetch(`${baseUrl}/v1/records/${reviewRecordId}`)).status, 200);
+
+    const replay = await ownerRequest(`/v1/approvals/${review.id}/approve`, 'POST', { note: 'Uygun.' }, 'approve-1');
+    assert.equal(replay.status, 200);
+    assert.equal(replay.headers.get('idempotency-replayed'), 'true');
+  });
+
+  test('sponsor rejection keeps a pending record private', async () => {
+    const agent = agents.get('slice4-review')!;
+    const pending = await agentWrite(agent, '/v1/records', {
+      bodyMarkdown: 'Sponsor tarafından reddedilecek kayıt.',
+    }, 'review-reject-create').then((response) => response.json()) as { record: { id: string } };
+    const queue = await ownerRequest('/v1/approvals').then((response) => response.json()) as {
+      reviews: Array<{ id: string; record: { id: string } }>;
+    };
+    const review = queue.reviews.find((item) => item.record.id === pending.record.id);
+    assert.ok(review);
+    const detail = await ownerRequest(`/v1/approvals/${review.id}`);
+    assert.equal(detail.status, 200);
+    assert.equal((await ownerRequest(`/v1/approvals/${review.id}/reject`, 'POST', {
+      note: 'Bu sürüm yayınlanmayacak.',
+    }, 'reject-1')).status, 200);
+    assert.equal((await fetch(`${baseUrl}/v1/records/${pending.record.id}`)).status, 404);
+  });
+
+  test('pending edit preserves current public revision until approval', async () => {
+    const agent = agents.get('slice4-review')!;
+    const before = await fetch(`${baseUrl}/v1/records/${reviewRecordId}`).then((response) => response.json()) as {
+      record: { bodyMarkdown: string };
+    };
+    const edit = await agentWrite(agent, `/v1/records/${reviewRecordId}`, {
+      bodyMarkdown: 'Sponsor onayıyla görünür olacak yeni revision.',
+    }, 'review-edit-1', 'PATCH');
+    assert.equal(edit.status, 202);
+    const during = await fetch(`${baseUrl}/v1/records/${reviewRecordId}`).then((response) => response.json()) as {
+      record: { bodyMarkdown: string };
+    };
+    assert.equal(during.record.bodyMarkdown, before.record.bodyMarkdown);
+
+    const queue = await ownerRequest('/v1/approvals').then((response) => response.json()) as {
+      reviews: Array<{ id: string; record: { id: string }; revision: { number: number } }>;
+    };
+    const review = queue.reviews.find((item) => item.record.id === reviewRecordId);
+    assert.ok(review);
+    assert.equal(review.revision.number, 2);
+    assert.equal((await ownerRequest(`/v1/approvals/${review.id}/approve`, 'POST', {}, 'approve-edit-1')).status, 200);
+    const after = await fetch(`${baseUrl}/v1/records/${reviewRecordId}`).then((response) => response.json()) as {
+      record: { bodyMarkdown: string };
+    };
+    assert.equal(after.record.bodyMarkdown, 'Sponsor onayıyla görünür olacak yeni revision.');
+  });
+
+  test('withdrawing a pending edit leaves the current published revision intact', async () => {
+    const agent = agents.get('slice4-review')!;
+    const edit = await agentWrite(agent, `/v1/records/${reviewRecordId}`, {
+      bodyMarkdown: 'Geri çekilecek yeni revision.',
+    }, 'review-edit-withdraw', 'PATCH');
+    assert.equal(edit.status, 202);
+    assert.equal((await agentWrite(agent, `/v1/records/${reviewRecordId}/withdraw`, {}, 'withdraw-edit')).status, 200);
+    const publicRecord = await fetch(`${baseUrl}/v1/records/${reviewRecordId}`).then((response) => response.json()) as {
+      record: { bodyMarkdown: string };
+    };
+    assert.equal(publicRecord.record.bodyMarkdown, 'Sponsor onayıyla görünür olacak yeni revision.');
+  });
+
+  test('pending author withdrawal never becomes public', async () => {
+    const agent = agents.get('slice4-review')!;
+    const pending = await agentWrite(agent, '/v1/records', {
+      bodyMarkdown: 'Geri çekilecek pending kayıt.',
+    }, 'withdraw-create-1').then((response) => response.json()) as { record: { id: string } };
+    const withdrawal = await agentWrite(agent, `/v1/records/${pending.record.id}/withdraw`, {}, 'withdraw-1');
+    assert.equal(withdrawal.status, 200);
+    assert.equal((await fetch(`${baseUrl}/v1/records/${pending.record.id}`)).status, 404);
+  });
+
+  test('read-only, suspended, raw HTML, dictionaries and privileged fields are rejected', async () => {
+    assert.equal((await agentWrite(agents.get('slice4-readonly')!, '/v1/records', { bodyMarkdown: 'Yazamaz.' }, 'ro-1')).status, 403);
+    assert.equal((await agentWrite(agents.get('slice4-suspended')!, '/v1/records', { bodyMarkdown: 'Yazamaz.' }, 'suspended-1')).status, 403);
+    assert.equal((await agentWrite(agents.get('slice4-direct')!, '/v1/records', { bodyMarkdown: '<script>alert(1)</script>' }, 'html-1')).status, 400);
+    assert.equal((await agentWrite(agents.get('slice4-direct')!, '/v1/records', { bodyMarkdown: 'Sözlük.', topicSlugs: ['olmayan-konu'] }, 'dictionary-1')).status, 400);
+    const privileged = await agentWrite(agents.get('slice4-direct')!, '/v1/records', {
+      bodyMarkdown: 'Alan ihlali.', author: 'nyx', lifecycleState: 'published',
+    }, 'privileged-1');
+    assert.equal(privileged.status, 400);
+  });
+
+  test('daily post and reply quotas roll the entire write back', async () => {
+    const agent = agents.get('slice4-quota')!;
+    const dayUtc = new Date(NOW).toISOString().slice(0, 10);
+    await testPost('/__test/set-usage', { agentId: agent.id, dayUtc, postsCreated: 5, repliesCreated: 0 });
+    const post = await agentWrite(agent, '/v1/records', { bodyMarkdown: 'Altıncı post.' }, 'quota-post');
+    assert.equal(post.status, 429);
+
+    await testPost('/__test/set-usage', { agentId: agent.id, dayUtc, postsCreated: 0, repliesCreated: 30 });
+    const reply = await agentWrite(agent, `/v1/records/${directRecordId}/replies`, { bodyMarkdown: 'Otuz birinci yanıt.' }, 'quota-reply');
+    assert.equal(reply.status, 429);
+    const usage = await testPost('/__test/usage', { agentId: agent.id }).then((response) => response.json()) as {
+      rows: Array<{ posts_created: number; replies_created: number }>;
+    };
+    assert.deepEqual(usage.rows.at(-1), { day_utc: dayUtc, posts_created: 0, replies_created: 30, write_attempts: 0 });
+  });
+
+  test('author soft delete removes content from every public surface', async () => {
+    const agent = agents.get('slice4-direct')!;
+    const deleted = await agentWrite(agent, `/v1/records/${directRecordId}/delete`, { reason: 'Yazar geri çekti.' }, 'delete-1');
+    assert.equal(deleted.status, 200);
+    assert.equal((await fetch(`${baseUrl}/v1/records/${directRecordId}`)).status, 404);
+    const feed = await fetch(`${baseUrl}/v1/feed?limit=50`).then((response) => response.json()) as { records: Array<{ id: string }> };
+    assert.ok(!feed.records.some((record) => record.id === directRecordId));
+  });
+
+  test('sponsor soft delete creates moderation and audit evidence', async () => {
+    const agent = agents.get('slice4-direct')!;
+    const created = await agentWrite(agent, '/v1/records', {
+      bodyMarkdown: 'Sponsor tarafından kaldırılacak kayıt.',
+    }, 'managed-delete-create').then((response) => response.json()) as { record: { id: string } };
+    const deleted = await ownerRequest(`/v1/manage/records/${created.record.id}/delete`, 'POST', {
+      reason: 'Sponsor kaldırma provası.',
+    }, 'managed-delete-1');
+    assert.equal(deleted.status, 200);
+    assert.equal((await fetch(`${baseUrl}/v1/records/${created.record.id}`)).status, 404);
+    const evidence = await testPost('/__test/publication-evidence', { recordId: created.record.id })
+      .then((response) => response.json()) as { audits: Array<{ event_type: string }>; moderation: Array<{ action: string }> };
+    assert.ok(evidence.audits.some((item) => item.event_type === 'record.soft_deleted'));
+    assert.deepEqual(evidence.moderation.map((item) => item.action), ['record.soft_deleted']);
+  });
+
+  test('versioned application backup rejects corruption atomically and restores in two phases', async () => {
+    const exported = await testPost('/__test/backup-export', { includeSessions: true }).then((response) => response.json()) as {
+      schema: string; checksum: { value: string }; counts: Record<string, number>;
+      security: { containsPlaintextSecrets: boolean };
+      tables: Record<string, Array<Record<string, unknown>>>;
+    };
+    assert.equal(exported.schema, 'equinox.orbit.dynamic-backup.v1');
+    assert.equal(exported.security.containsPlaintextSecrets, false);
+    assert.ok(exported.counts.records > 13);
+    assert.ok(exported.tables.agentCredentials.every((row) => 'secret_digest' in row && !('token' in row)));
+    const encryptionKey = await crypto.subtle.generateKey(
+      { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'],
+    );
+    const encrypted = await encryptDynamicBackup(exported as DynamicBackup, encryptionKey, 'test-key-v1');
+    assert.equal(encrypted.algorithm, 'AES-GCM-256');
+    assert.ok(!encrypted.ciphertext.includes('slice4-direct'));
+
+    const restorePersist = await mkdtemp(path.join(tmpdir(), 'orbit-v6-slice4-restore-'));
+    let restoreWorker: ChildProcessWithoutNullStreams | undefined;
+    try {
+      migrate(restorePersist);
+      const started = await startWorker(restorePersist);
+      restoreWorker = started.process;
+      const corrupted = structuredClone(exported);
+      corrupted.checksum.value = `${corrupted.checksum.value.slice(0, -1)}x`;
+      const rejected = await testPost('/__test/backup-restore', { backup: corrupted, revokeSecurity: true }, started.url);
+      assert.equal(rejected.status, 400);
+      const empty = await testPost('/__test/backup-counts', {}, started.url).then((response) => response.json()) as {
+        counts: { agents: number; records: number; validations: number };
+      };
+      assert.deepEqual(empty.counts, { agents: 0, records: 0, projects: 0, topics: 0, validations: 0 });
+
+      const restored = await testPost('/__test/backup-restore', { backup: exported, revokeSecurity: true }, started.url);
+      assert.equal(restored.status, 200);
+      const proof = await restored.json() as { proof: { foreignKeyViolations: number; counts: Record<string, number> } };
+      assert.equal(proof.proof.foreignKeyViolations, 0);
+      assert.equal(proof.proof.counts.records, exported.counts.records);
+      const restoredExport = await testPost('/__test/backup-export', { includeSessions: true }, started.url)
+        .then((response) => response.json()) as { tables: Record<string, Array<Record<string, unknown>>> };
+      assert.ok(restoredExport.tables.agentCredentials.every((row) => row.revoked_at !== null));
+      assert.ok(restoredExport.tables.sessions.every((row) => row.revoked_at !== null));
+    } finally {
+      if (restoreWorker) await stopWorker(restoreWorker);
+      await rm(restorePersist, { recursive: true, force: true });
+    }
+  });
+
+  test('agent credentials never enter Worker output', () => {
+    const output = (globalThis as typeof globalThis & { __orbitWorkerOutput?: () => string }).__orbitWorkerOutput?.() ?? workerOutput;
+    for (const agent of agents.values()) assert.equal(output.includes(agent.token), false);
+  });
+});

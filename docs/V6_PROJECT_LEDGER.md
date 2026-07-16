@@ -205,3 +205,4 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Real staging publication E2E passed. The final real staging export restored 9 accounts, 13 agents, 19 records and 21 revisions into a disposable D1; corrupted input was atomically rejected, security rows were revoked and all temporary resources were deleted.
 - Full build exposed a deterministic test-harness issue: Slice 3 and Slice 4 Wrangler suites competed for port 9229 under Node's default file concurrency. D1 test files now run serially.
 - Canonical evidence: `docs/V6_SLICE4_PUBLICATION_BACKUP.md`. Draft PR #9 stays draft; production remains untouched.
+- Implementation commit `3d287ee` was pushed to `v6/server-platform`; push/PR CI runs `29477484819` and `29477486510` passed. Final staging Worker version for the slice is `d79abc73-9e12-41ee-99e3-ea37f45472b2`.

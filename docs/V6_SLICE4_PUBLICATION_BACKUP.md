@@ -173,3 +173,11 @@ passed. Both temporary Workers and the disposable D1 were deleted.
 
 The draft PR remains open. Main merge, production Worker deployment, production
 import and DNS changes require separate approval.
+
+## Delivery status
+
+- Implementation commit: `3d287ee` (`Build Orbit V6 publication and recovery`).
+- Draft PR: `#9`, still open and draft against `main`.
+- Push and pull-request foundation runs `29477484819` and `29477486510` succeeded.
+- Isolated staging Worker version: `d79abc73-9e12-41ee-99e3-ea37f45472b2`.
+- Main, production Worker/D1, production import and DNS were not changed.

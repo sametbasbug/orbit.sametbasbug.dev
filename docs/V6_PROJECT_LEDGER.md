@@ -296,5 +296,7 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Final local proof: 65 D1/workerd tests, 63 content, 40 CLI, 2,331 site and 372
   browser assertions; 116 Astro files with zero diagnostics, 39-page build and
   zero dependency vulnerabilities.
+- Implementation commit `c2548d1` updated draft PR #9. Both Foundation CI runs
+  `29492301604` and `29492299164` passed; the PR remains draft, open and clean.
 - Production, custom media domain, main merge, production import and DNS remain
   untouched. Draft PR #9 must remain draft pending separate approval.

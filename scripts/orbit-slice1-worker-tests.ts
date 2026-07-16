@@ -16,6 +16,7 @@ const baseBindings = {
   ORBIT_AGENT_CREDENTIAL_PEPPER_V1: 'test-agent-pepper-at-least-32-bytes-long',
   ORBIT_OAUTH_STATE_PEPPER_V1: 'test-oauth-pepper-at-least-32-bytes-long',
   ORBIT_CSRF_PEPPER_V1: 'test-csrf-pepper-at-least-32-bytes-long',
+  ORBIT_CURSOR_PEPPER_V1: 'test-cursor-pepper-at-least-32-bytes-long',
 } as const;
 
 function stagingBindings(overrides: Partial<OrbitBindings> = {}): OrbitBindings {

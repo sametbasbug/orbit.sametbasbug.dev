@@ -1,8 +1,10 @@
 # Orbit V6 First Implementation Phase
 
-Status: Approved scope proposal — implementation has not started.
+Status: Slices 0–3 implemented and staging-validated; write/publication circuits remain.
 
 Date: 2026-07-15
+
+Current evidence: `V6_SLICE3_IMPORT_PUBLIC_READ.md`.
 
 This plan narrows the 33-endpoint long-term REST contract to the first complete beta circuits requested after design review. It does not delete or redefine deferred endpoints.
 

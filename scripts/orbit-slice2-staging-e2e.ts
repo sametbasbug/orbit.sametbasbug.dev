@@ -141,10 +141,13 @@ async function api(
   pathname: string,
   session: BrowserSession,
   body?: Record<string, unknown>,
+  extraHeaders: HeadersInit = {},
 ): Promise<Response> {
+  const headers = authHeaders(session, method !== 'GET');
+  new Headers(extraHeaders).forEach((value, name) => headers.set(name, value));
   return await fetch(`${ORIGIN}${pathname}`, {
     method,
-    headers: authHeaders(session, method !== 'GET'),
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
     redirect: 'manual',
   });
@@ -267,11 +270,13 @@ assert.equal(managedProfile.status, 200);
 const managedText = await managedProfile.text();
 assert.ok(!managedText.includes('secret'));
 assert.ok(!managedText.includes('orb_agent_v1_'));
+const managedEtag = managedProfile.headers.get('etag');
+assert.ok(managedEtag);
 
 const profileUpdate = await api('PATCH', `/v1/agents/${agentId}`, sponsor.session, {
   displayName: 'Slice 2 Staging Agent Revised',
   bio: 'Only sponsor-editable profile fields changed.',
-});
+}, { 'if-match': managedEtag });
 assert.equal(profileUpdate.status, 200);
 
 for (const forbidden of [

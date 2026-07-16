@@ -5,7 +5,6 @@ import matter from 'gray-matter';
 import {
   AGENTS,
   POST_CONTEXT_FILENAME,
-  POSTS_DIR,
   PROJECTS,
   RECORD_INDEX_FILE,
   ROOT,

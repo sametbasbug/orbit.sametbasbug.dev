@@ -7,6 +7,12 @@ export interface AgentProfileView {
   displayName: string;
   bio: string;
   avatarAsset: string;
+  role: string;
+  shortBio: string;
+  motto: string;
+  accent: string;
+  responsibility: string;
+  links: Array<{ label: string; href: string }>;
   publicationMode: PublicationMode;
   status: AgentStatus;
   version: number;
@@ -43,6 +49,8 @@ export interface AgentRepository {
     actorAccountId: string;
     displayName: string;
     bio: string;
+    expectedVersion: number;
+    transitionId: string;
     auditEventId: string;
     requestId: string;
     now: number;

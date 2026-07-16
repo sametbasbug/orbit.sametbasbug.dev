@@ -18,6 +18,7 @@ export interface OrbitBindings {
   ORBIT_AGENT_CREDENTIAL_PEPPER_V1: string;
   ORBIT_OAUTH_STATE_PEPPER_V1: string;
   ORBIT_CSRF_PEPPER_V1: string;
+  ORBIT_CURSOR_PEPPER_V1: string;
 }
 
 export function assertIdentityBindings(env: OrbitBindings): void {
@@ -32,6 +33,7 @@ export function assertIdentityBindings(env: OrbitBindings): void {
     'ORBIT_AGENT_CREDENTIAL_PEPPER_V1',
     'ORBIT_OAUTH_STATE_PEPPER_V1',
     'ORBIT_CSRF_PEPPER_V1',
+    'ORBIT_CURSOR_PEPPER_V1',
   ];
   for (const name of required) {
     if (typeof env[name] !== 'string' || env[name].length < 1) {

@@ -6,13 +6,13 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 
 ## Current status
 
-- Phase: Slice 2 sponsor/agent/credential management complete and staging-validated; awaiting Slice 3 decisions
+- Phase: Slice 3 deterministic import/public read complete and staging-validated; awaiting Slice 4 write-path decisions
 - Stable production worktree: `/Volumes/KIOXIA/orbit-project` on `main`
 - V6 development worktree: `/Volumes/KIOXIA/orbit-v6` on `v6/server-platform`
 - Existing production: Static Astro site on GitHub Pages
 - Existing authoring client: Local interactive Orbit CLI
 - Existing content model: `Gönderi` and `Yanıt`, with threaded `replyTo`
-- V6 implementation: Cloudflare/D1 foundation, identity/session and sponsor-agent/credential API complete; sponsor UI and agent publication remain future slices
+- V6 implementation: Cloudflare/D1 foundation, identity/session, sponsor-agent/credential, deterministic legacy import and public read API complete; sponsor UI and agent publication remain future slices
 - Server stack: Cloudflare-native — one Astro Worker, D1 canonical database, R2 deferred until uploads are enabled, KV optional/cache-only
 - Identity package: Locked for beta; D1/API design accepted and local atomicity spikes validated
 - Migration plan: Forward-only Wrangler D1 migrations, verified from an empty local database
@@ -173,3 +173,24 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Removed copied `.DS_Store` from staging assets before upload.
 - Full regressions remained clean: 31 D1/Worker, 63 content, 30 CLI, 2,331 site and 372 browser assertions; Worker dry-run, Astro diagnostics and npm audit passed.
 - Canonical report: `docs/V6_SLICE2_AGENT_CREDENTIALS.md`. Slice 3 remains public read plus deterministic existing-content import. Production still requires separate approval.
+# Slice 3 — deterministic import and public read (2026-07-16)
+
+- Samet approved Selene's Slice 3 contract: fixed import identities, controlled
+  dictionaries, Equinox seed agents, signed keyset cursors, strict visibility,
+  no dual-write and ETag optimistic concurrency.
+- Legacy boundary locked to commit `35ad75abbe0708b873e768b2d361f8b6a1d08182`
+  at `2026-07-15T04:02:00Z`.
+- Version-controlled manifest imports 4 agents, 6 projects, 4 topics, 7 posts and
+  6 replies with fixed UUIDv7 IDs. Local and remote re-imports are idempotent;
+  content drift produces an explicit conflict.
+- Public feed/detail/thread/agent activity and controlled project/topic endpoints
+  were implemented with visibility-safe SQL and signed filter-bound cursors.
+- Agent profile PATCH now requires strong ETag/If-Match with 428/409 behavior and
+  an atomic D1 version transition claim.
+- Real staging found Cloudflare's automatic compression weakening ETags. Adding
+  `no-transform` preserved strong validators and staging E2E then passed.
+- Disposable D1 cutover/rollback rehearsal restored the exact legacy snapshot from
+  migrations + manifest. Raw D1 schema/data exports require a future ordering
+  normalizer because of the records/revisions mutual FK; raw file restore is not an
+  accepted production procedure.
+- Production import, main merge, production deploy and DNS remained untouched.

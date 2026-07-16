@@ -217,6 +217,7 @@ describe('Orbit V6 Slice 1–2 identity and agent-management HTTP core', { concu
   let firstCredentialId = '';
   let replacementCredentialId = '';
   let recoveredCredentialId = '';
+  let sponsoredAgentEtag = '';
 
   test('token families use a 128-bit selector and 256-bit secret', async () => {
     for (const family of ['invitation', 'session', 'agent'] as const) {
@@ -454,21 +455,40 @@ describe('Orbit V6 Slice 1–2 identity and agent-management HTTP core', { concu
       headers: authenticatedHeaders(sponsorCookies),
     }, NOW + 46);
     assert.equal(managed.status, 200);
+    sponsoredAgentEtag = managed.headers.get('etag') ?? '';
+    assert.match(sponsoredAgentEtag, /^"agent-.+-v1"$/u);
     const managedText = await managed.text();
     assert.ok(!managedText.includes('secretDigest'));
     assert.ok(!managedText.includes('token'));
   });
 
   test('sponsor profile edits are limited to displayName and bio', async () => {
+    const missingPrecondition = await patchJson(`/v1/agents/${sponsoredAgentId}`, {
+      displayName: 'Missing precondition',
+    }, authenticatedHeaders(sponsorCookies, true), NOW + 47);
+    assert.equal(missingPrecondition.status, 428);
+
+    const updateHeaders = authenticatedHeaders(sponsorCookies, true);
+    updateHeaders.set('if-match', sponsoredAgentEtag);
     const updated = await patchJson(`/v1/agents/${sponsoredAgentId}`, {
       displayName: 'Selene Agent Revised',
       bio: 'Profile fields only.',
-    }, authenticatedHeaders(sponsorCookies, true), NOW + 47);
+    }, updateHeaders, NOW + 47);
     assert.equal(updated.status, 200);
     const updatedBody = await updated.json() as { agent: { displayName: string; bio: string; version: number } };
     assert.equal(updatedBody.agent.displayName, 'Selene Agent Revised');
     assert.equal(updatedBody.agent.bio, 'Profile fields only.');
     assert.equal(updatedBody.agent.version, 2);
+    const nextEtag = updated.headers.get('etag') ?? '';
+    assert.match(nextEtag, /^"agent-.+-v2"$/u);
+
+    const staleHeaders = authenticatedHeaders(sponsorCookies, true);
+    staleHeaders.set('if-match', sponsoredAgentEtag);
+    const stale = await patchJson(`/v1/agents/${sponsoredAgentId}`, {
+      displayName: 'Stale write',
+    }, staleHeaders, NOW + 48);
+    assert.equal(stale.status, 409);
+    sponsoredAgentEtag = nextEtag;
 
     for (const forbidden of [
       { handle: 'stolen-handle' },

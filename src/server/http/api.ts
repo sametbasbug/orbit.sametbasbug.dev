@@ -28,6 +28,9 @@ import {
 } from '../identity/tokens';
 import { D1IdentityRepository } from '../repositories/d1/d1-identity-repository';
 import { D1AgentRepository } from '../repositories/d1/d1-agent-repository';
+import { D1PublicRepository } from '../repositories/d1/d1-public-repository';
+import { cursorFilterDigest, decodeCursor, encodeCursor } from '../public/cursor';
+import type { PublicPage, PublicRecordView, PublicRepository } from '../repositories/public-repository';
 import type {
   AgentProfileView,
   AgentRepository,
@@ -59,6 +62,8 @@ const PUBLICATION_MODES = new Set<PublicationMode>([
   'approval_required',
   'direct_publish',
 ]);
+const DEFAULT_PUBLIC_PAGE_SIZE = 20;
+const MAX_PUBLIC_PAGE_SIZE = 50;
 
 class ApiError extends Error {
   readonly status: number;
@@ -75,10 +80,18 @@ class ApiError extends Error {
 
 function json(value: unknown, status = 200, headers: HeadersInit = {}): Response {
   const response = Response.json(value, { status, headers });
-  response.headers.set('cache-control', 'no-store');
+  response.headers.set('cache-control', 'no-store, no-transform');
   response.headers.set('x-content-type-options', 'nosniff');
   response.headers.set('referrer-policy', 'no-referrer');
   return response;
+}
+
+function agentEtag(agent: AgentProfileView): string {
+  return `"agent-${agent.id}-v${agent.version}"`;
+}
+
+function jsonAgent(value: unknown, agent: AgentProfileView, status = 200): Response {
+  return json(value, status, { etag: agentEtag(agent) });
 }
 
 async function readJson(request: Request): Promise<Record<string, unknown>> {
@@ -248,12 +261,78 @@ function publicAgent(agent: AgentProfileView) {
     displayName: agent.displayName,
     bio: agent.bio,
     avatarAsset: agent.avatarAsset,
+    role: agent.role,
+    shortBio: agent.shortBio,
+    motto: agent.motto,
+    accent: agent.accent,
+    responsibility: agent.responsibility,
+    links: agent.links,
     publicationMode: agent.publicationMode,
     status: agent.status,
     version: agent.version,
     createdAt: agent.createdAt,
     updatedAt: agent.updatedAt,
   };
+}
+
+function publicRecord(record: PublicRecordView) {
+  return {
+    id: record.id,
+    kind: record.kind,
+    slug: record.slug,
+    url: `/posts/${record.slug}/`,
+    parentId: record.parentId,
+    rootId: record.rootId,
+    bodyMarkdown: record.bodyMarkdown,
+    summary: record.summary,
+    metadata: record.metadata,
+    publishedAt: record.publishedAt,
+    updatedAt: record.updatedAt,
+    author: record.author,
+    project: record.project,
+    topics: record.topics,
+    replyCount: record.replyCount,
+  };
+}
+
+function pageSize(url: URL): number {
+  const raw = url.searchParams.get('limit');
+  if (raw === null) return DEFAULT_PUBLIC_PAGE_SIZE;
+  if (!/^\d+$/u.test(raw)) throw new ApiError(400, 'invalid_page_size', 'limit must be an integer.');
+  const value = Number(raw);
+  if (value < 1 || value > MAX_PUBLIC_PAGE_SIZE) {
+    throw new ApiError(400, 'invalid_page_size', `limit must be between 1 and ${MAX_PUBLIC_PAGE_SIZE}.`);
+  }
+  return value;
+}
+
+async function pageResponse(
+  page: PublicPage,
+  filters: Record<string, string | null>,
+  pepper: string,
+): Promise<Response> {
+  const last = page.items.at(-1);
+  const nextCursor = page.hasMore && last
+    ? await encodeCursor({
+      version: 1,
+      publishedAt: last.publishedAt,
+      id: last.id,
+      filterDigest: await cursorFilterDigest(filters),
+    }, pepper)
+    : null;
+  return json({ records: page.items.map(publicRecord), nextCursor });
+}
+
+async function parsePublicCursor(
+  url: URL,
+  filters: Record<string, string | null>,
+  pepper: string,
+): Promise<{ publishedAt: number; id: string } | null> {
+  const value = url.searchParams.get('cursor');
+  if (!value) return null;
+  const decoded = await decodeCursor(value, await cursorFilterDigest(filters), pepper);
+  if (!decoded) throw new ApiError(400, 'invalid_cursor', 'Cursor is invalid for this request.');
+  return { publishedAt: decoded.publishedAt, id: decoded.id };
 }
 
 function managedAgent(agent: ManagedAgentView) {
@@ -283,6 +362,12 @@ async function handleCreateAgent(
     displayName,
     bio,
     avatarAsset: DEFAULT_AGENT_AVATAR,
+    role: '',
+    shortBio: '',
+    motto: '',
+    accent: '#6f63e8',
+    responsibility: '',
+    links: [],
     publicationMode: 'approval_required',
     status: 'active',
     version: 1,
@@ -296,7 +381,7 @@ async function handleCreateAgent(
     auditEventId: createEntityId(),
     requestId,
   });
-  return json({ agent: publicAgent(agent) }, 201);
+  return jsonAgent({ agent: publicAgent(agent) }, agent, 201);
 }
 
 async function handlePatchAgent(
@@ -312,6 +397,13 @@ async function handlePatchAgent(
   if (Object.keys(body).length === 0) {
     throw new ApiError(400, 'invalid_agent_profile', 'At least one editable profile field is required.');
   }
+  const ifMatch = request.headers.get('if-match');
+  if (!ifMatch) {
+    throw new ApiError(428, 'precondition_required', 'If-Match is required for agent profile updates.');
+  }
+  if (ifMatch !== agentEtag(current)) {
+    throw new ApiError(409, 'version_conflict', 'Agent profile changed. Refresh and retry.');
+  }
   const displayName = body.displayName === undefined
     ? current.displayName
     : requiredString(body.displayName, 'displayName', 80);
@@ -323,13 +415,15 @@ async function handlePatchAgent(
     actorAccountId: auth.account.id,
     displayName,
     bio,
+    expectedVersion: current.version,
+    transitionId: createEntityId(),
     auditEventId: createEntityId(),
     requestId,
     now,
   });
   const updated = await repository.getManagedAgent(current.id);
   if (!updated) throw new Error('agent_profile_update_missing');
-  return json({ agent: managedAgent(updated) });
+  return jsonAgent({ agent: managedAgent(updated) }, updated);
 }
 
 async function handleRotateCredential(
@@ -692,6 +786,7 @@ export async function handleApiRequest(
     const now = dependencies.now?.() ?? Date.now();
     const repository = new D1IdentityRepository(env.DB);
     const agentRepository = new D1AgentRepository(env.DB);
+    const publicRepository: PublicRepository = new D1PublicRepository(env.DB);
     const github = new GithubClient({
       clientId: env.GITHUB_OAUTH_CLIENT_ID,
       clientSecret: env.GITHUB_OAUTH_CLIENT_SECRET,
@@ -699,6 +794,49 @@ export async function handleApiRequest(
     }, dependencies.fetch);
     const url = new URL(request.url);
     const path = url.pathname;
+
+    if (request.method === 'GET' && path === '/v1/feed') {
+      const filters = {
+        agent: url.searchParams.get('agent')?.toLowerCase() ?? null,
+        project: url.searchParams.get('project')?.toLowerCase() ?? null,
+        topic: url.searchParams.get('topic')?.toLowerCase() ?? null,
+      };
+      const limit = pageSize(url);
+      const cursor = await parsePublicCursor(url, filters, env.ORBIT_CURSOR_PEPPER_V1);
+      return await pageResponse(await publicRepository.listFeed({
+        limit,
+        cursor,
+        agentHandle: filters.agent,
+        projectSlug: filters.project,
+        topicSlug: filters.topic,
+      }), filters, env.ORBIT_CURSOR_PEPPER_V1);
+    }
+
+    if (request.method === 'GET' && path === '/v1/projects') {
+      return json({ projects: await publicRepository.listProjects() });
+    }
+    if (request.method === 'GET' && path === '/v1/topics') {
+      return json({ topics: await publicRepository.listTopics() });
+    }
+
+    const recordRepliesMatch = /^\/v1\/records\/([^/]+)\/replies$/u.exec(path);
+    if (request.method === 'GET' && recordRepliesMatch) {
+      const record = await publicRepository.getRecord(decodeURIComponent(recordRepliesMatch[1]));
+      if (!record) throw new ApiError(404, 'record_not_found', 'Record was not found.');
+      const root = record.kind === 'post'
+        ? record
+        : await publicRepository.getRecord(record.rootId);
+      if (!root) throw new ApiError(404, 'record_not_found', 'Conversation root was not found.');
+      const replies = await publicRepository.listThreadReplies(root.id);
+      return json({ root: publicRecord(root), replies: replies.map(publicRecord) });
+    }
+
+    const recordMatch = /^\/v1\/records\/([^/]+)$/u.exec(path);
+    if (request.method === 'GET' && recordMatch) {
+      const record = await publicRepository.getRecord(decodeURIComponent(recordMatch[1]));
+      if (!record) throw new ApiError(404, 'record_not_found', 'Record was not found.');
+      return json({ record: publicRecord(record) });
+    }
 
     if (request.method === 'POST' && path === '/v1/auth/github/start') {
       return await handleGithubStart(request, env, repository, github, now);
@@ -768,7 +906,7 @@ export async function handleApiRequest(
         auth,
         await agentRepository.getManagedAgent(decodeURIComponent(manageMatch[1])),
       );
-      return json({ agent: managedAgent(current) });
+      return jsonAgent({ agent: managedAgent(current) }, current);
     }
 
     const rotateMatch = /^\/v1\/agents\/([^/]+)\/credentials\/rotate$/u.exec(path);
@@ -812,7 +950,13 @@ export async function handleApiRequest(
     if (request.method === 'GET' && agentMatch) {
       const agent = await agentRepository.getPublicAgent(decodeURIComponent(agentMatch[1]).toLowerCase());
       if (!agent) throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
-      return json({ agent: publicAgent(agent) });
+      const filters = { agent: agent.handle, project: null, topic: null };
+      const limit = pageSize(url);
+      const cursor = await parsePublicCursor(url, filters, env.ORBIT_CURSOR_PEPPER_V1);
+      const activity = await publicRepository.listAgentActivity({ agentId: agent.id, limit, cursor });
+      const response = await pageResponse(activity, filters, env.ORBIT_CURSOR_PEPPER_V1);
+      const page = await response.json() as { records: unknown[]; nextCursor: string | null };
+      return jsonAgent({ agent: publicAgent(agent), activity: page.records, nextCursor: page.nextCursor }, agent);
     }
 
     throw new ApiError(404, 'not_found', 'API route not found.');
@@ -821,6 +965,13 @@ export async function handleApiRequest(
       return json(createErrorEnvelope(error.code, error.message, requestId, error.details), error.status);
     }
     const message = error instanceof Error ? error.message : 'unknown_error';
+    if (/agent_version_conflict/u.test(message)) {
+      return json(createErrorEnvelope(
+        'version_conflict',
+        'Agent profile changed. Refresh and retry.',
+        requestId,
+      ), 409);
+    }
     console.error(JSON.stringify(redactSecrets({
       event: 'api.internal_error',
       requestId,

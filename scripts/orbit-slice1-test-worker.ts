@@ -151,6 +151,27 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     return Response.json({ agent, credentials: credentials.results, audits: audits.results });
   }
 
+  if (url.pathname === '/__test/set-record-visibility') {
+    await env.DB.prepare(`
+      UPDATE records
+      SET lifecycle_state = ?, deleted_at = ?, moderation_state = ?, moderated_at = ?
+      WHERE slug = ?
+    `).bind(
+      String(body.lifecycleState ?? 'published'),
+      body.deletedAt ?? null,
+      String(body.moderationState ?? 'visible'),
+      body.moderatedAt ?? null,
+      String(body.slug),
+    ).run();
+    return Response.json({ ok: true });
+  }
+
+  if (url.pathname === '/__test/set-agent-status') {
+    await env.DB.prepare(`UPDATE agents SET status = ? WHERE handle_normalized = ?`)
+      .bind(String(body.status), String(body.handle).toLowerCase()).run();
+    return Response.json({ ok: true });
+  }
+
   if (url.pathname === '/__test/cleanup') {
     return Response.json(await runIdentityCleanup(env, now));
   }

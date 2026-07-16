@@ -25,6 +25,7 @@ These bindings are installed through Cloudflare Worker secrets and never committ
 - `ORBIT_AGENT_CREDENTIAL_PEPPER_V1`
 - `ORBIT_OAUTH_STATE_PEPPER_V1`
 - `ORBIT_CSRF_PEPPER_V1`
+- `ORBIT_CURSOR_PEPPER_V1`
 
 Staging values use the macOS Keychain service `staging.orbit.sametbasbug` as the local recovery source. Each token-family pepper is independently generated from at least 32 random bytes.
 

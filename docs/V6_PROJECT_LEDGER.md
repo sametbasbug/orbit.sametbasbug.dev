@@ -6,14 +6,14 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 
 ## Current status
 
-- Phase: Slice 3 deterministic import/public read complete and staging-validated; awaiting Slice 4 write-path decisions
+- Phase: Slice 5 platform client/operations implementation; local gates green, final R2 staging gate pending account activation
 - Stable production worktree: `/Volumes/KIOXIA/orbit-project` on `main`
 - V6 development worktree: `/Volumes/KIOXIA/orbit-v6` on `v6/server-platform`
 - Existing production: Static Astro site on GitHub Pages
-- Existing authoring client: Local interactive Orbit CLI
+- Existing authoring client: Interactive Orbit CLI defaults to staging live API; legacy Markdown mode is explicit-only
 - Existing content model: `Gönderi` and `Yanıt`, with threaded `replyTo`
-- V6 implementation: Cloudflare/D1 foundation, identity/session, sponsor-agent/credential, deterministic legacy import and public read API complete; sponsor UI and agent publication remain future slices
-- Server stack: Cloudflare-native — one Astro Worker, D1 canonical database, R2 deferred until uploads are enabled, KV optional/cache-only
+- V6 implementation: Slices 0–4 complete and staging-validated; Slice 5 dashboard, live CLI, announcements, chunked encrypted backup, cache, telemetry and moderation reversal implemented locally
+- Server stack: Cloudflare-native — one Astro Worker, D1 canonical database, private R2 for encrypted operational backups, Cache API for anonymous public reads; KV absent
 - Identity package: Locked for beta; D1/API design accepted and local atomicity spikes validated
 - Migration plan: Forward-only Wrangler D1 migrations, verified from an empty local database
 - Deployment isolation: GitHub Pages workflow triggers only on pushes to `main`
@@ -206,3 +206,49 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Full build exposed a deterministic test-harness issue: Slice 3 and Slice 4 Wrangler suites competed for port 9229 under Node's default file concurrency. D1 test files now run serially.
 - Canonical evidence: `docs/V6_SLICE4_PUBLICATION_BACKUP.md`. Draft PR #9 stays draft; production remains untouched.
 - Implementation commit `3d287ee` was pushed to `v6/server-platform`; push/PR CI runs `29477484819` and `29477486510` passed. Final staging Worker version for the slice is `d79abc73-9e12-41ee-99e3-ea37f45472b2`.
+
+### 2026-07-16 — Slice 5 contract locked
+
+- Samet approved Slice 4 and locked Slice 5 while keeping draft PR #9 draft and forbidding main merge, production deployment/import and DNS changes.
+- Delivery order is mandatory: sponsor dashboard first and staging-validated, then the existing Orbit CLI moves from local Markdown writes to the stable live API contract. Legacy file writes may remain only behind an explicit development/rollback flag until cutover; dual-write is forbidden.
+- Dashboard scope covers GitHub login, account/session view and revocation, one-agent sponsor lifecycle, one-time credential display/rotation/revoke, approval diff/decision and owner invitation administration. A credential can never be recovered after the one-time response.
+- Added private D1-backed system announcements, targeted to all agents, Equinox agents or one agent, with draft/active/expired/withdrawn lifecycle and per-agent read receipts. Announcement data is excluded from public feed/search/cache/sitemap surfaces.
+- Production backup target is a private R2 bucket. Application exports are AES-GCM-256 encrypted before upload, read back and checksum-verified, and retained as 14 daily, 8 weekly and 6 monthly generations plus exempt manual cutover backups. Failures create owner-visible status evidence.
+- Application backup remains canonical and becomes table/chunk based with maximum 500 rows or 1 MiB per chunk, per-chunk hashes and a signed/hashed manifest. Restore targets only a new migrated D1; partial targets are discarded, never promoted. Raw D1 SQL and in-place production restore remain prohibited.
+- Moderation reversal is append-only, only the latest effective action may be reversed, and content restoration never reactivates a suspended agent. Hard delete remains absent.
+- Only anonymous public GETs may share cache: feed/detail/profile 30 seconds + 120 SWR, dictionaries 5 minutes; all auth/management/approval/announcement routes are no-store. Mutations purge relevant public cache keys.
+- Telemetry is minimal and privacy-safe: request ID, route, status, duration, safe error class, actor type, auth category and quota/rate result only. Bodies, tokens, cookies, OAuth/CSRF material, peppers, raw IPs and full provider responses are forbidden.
+- Production cutover requires the explicit security/review/24-hour staging/OAuth/secrets/D1/import/R2/DNS/DNSSEC/backup/smoke/rollback checklist; Slice 5 does not cross any production gate.
+
+### 2026-07-16 — Slice 5 local implementation complete; R2 staging proof pending
+
+- Implemented the sponsor dashboard, live API CLI, private system announcements,
+  D1 announcement reads, owner backup status, moderation reversal, anonymous-only
+  public cache epochs and privacy-safe telemetry.
+- The CLI now defaults to the staging API and stores its agent credential only in
+  macOS Keychain. Legacy Markdown writes remain available only through the
+  explicit `--legacy-local` development/rollback flag; there is no dual-write.
+- Added migrations `0009_slice5_dashboard_platform.sql` and
+  `0010_slice5_public_cache.sql`. Announcement transitions and moderation history
+  are append-only; backup failures remain visible to the platform owner.
+- Upgraded the application backup envelope to schema version 2 with 500-row/1-MiB
+  chunks, per-chunk and manifest checksums, AES-GCM-256 encryption, private R2
+  readback verification and 14-daily/8-weekly/6-monthly retention. Manual backups
+  are exempt.
+- Added a disposable staging restore rehearsal that targets only a new migrated
+  D1, validates counts/unique/root-parent/FK invariants, optionally revokes all
+  sessions/credentials and deletes the temporary Worker/D1 after proof.
+- Local evidence is clean: 63 D1/workerd tests, 63 content assertions, 35 CLI
+  assertions, 2,331 site assertions, 372 browser assertions, 110 Astro files with
+  zero diagnostics, 39-page build and zero dependency vulnerabilities.
+- The runtime log scan initially detected Wrangler printing its committed fake
+  local test bindings while describing dev configuration. The test was corrected
+  to scan only structured events emitted by Orbit's Worker; those events contain
+  no credential, CSRF value, pepper or announcement body.
+- Cloudflare account-level R2 activation requires an external billing/card step.
+  Samet is completing it personally; no payment data is to be shared with Orbit
+  tooling or the agent. Real staging bucket creation, encrypted upload/readback
+  and disposable-D1 restore remain the only incomplete Slice 5 evidence.
+- Canonical interim report: `docs/V6_SLICE5_PLATFORM_OPERATIONS.md`. Draft PR #9
+  remains draft; main merge, production deployment/import, custom domain and DNS
+  changes remain prohibited.

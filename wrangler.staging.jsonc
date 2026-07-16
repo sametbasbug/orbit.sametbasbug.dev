@@ -24,6 +24,12 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "BACKUPS",
+      "bucket_name": "orbit-v6-staging-backups"
+    }
+  ],
   "observability": {
     "enabled": true,
     "logs": {

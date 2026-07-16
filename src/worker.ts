@@ -1,5 +1,13 @@
 import type { OrbitBindings } from './server/identity/bindings';
-import { handleApiRequest, runIdentityCleanup } from './server/http/api';
+import { handleApiRequest, runIdentityCleanup, type ApiDependencies } from './server/http/api';
+import { dashboardResponse } from './server/dashboard/html';
+import { runScheduledBackups } from './server/backup/r2-backup';
+import {
+  bumpPublicCacheEpoch,
+  mutationInvalidatesPublicCache,
+  servePublicRead,
+} from './server/cache/public-cache';
+import { observeRequest } from './server/observability/telemetry';
 
 interface ExecutionContextLike {
   waitUntil(promise: Promise<unknown>): void;
@@ -35,8 +43,12 @@ async function startStagingOAuth(request: Request, env: OrbitBindings): Promise<
   return new Response(null, { status: 302, headers });
 }
 
-export default {
-  async fetch(request: Request, env: OrbitBindings): Promise<Response> {
+export async function handleWorkerRequest(
+  request: Request,
+  env: OrbitBindings,
+  dependencies: Omit<ApiDependencies, 'requestId'> = {},
+): Promise<Response> {
+    return await observeRequest(request, async (requestId) => {
     const url = new URL(request.url);
     if (url.pathname === '/healthz') {
       return protectStagingFromIndexing(
@@ -45,7 +57,23 @@ export default {
       );
     }
     if (url.pathname.startsWith('/v1/')) {
-      return protectStagingFromIndexing(await handleApiRequest(request, env), env);
+      const response = await servePublicRead(request, env, async () => {
+        const testNow = env.ORBIT_ENVIRONMENT === 'test'
+          ? request.headers.get('x-test-now')
+          : null;
+        return await handleApiRequest(request, env, {
+          ...dependencies,
+          requestId,
+          now: dependencies.now ?? (testNow ? () => Number(testNow) : undefined),
+        });
+      });
+      if (mutationInvalidatesPublicCache(request, response)) {
+        await bumpPublicCacheEpoch(env);
+      }
+      return protectStagingFromIndexing(response, env);
+    }
+    if ((url.pathname === '/dashboard' || url.pathname === '/dashboard/') && request.method === 'GET') {
+      return protectStagingFromIndexing(dashboardResponse(), env);
     }
     if (env.ORBIT_ENVIRONMENT === 'staging' && url.pathname === '/__staging/oauth') {
       return protectStagingFromIndexing(await startStagingOAuth(request, env), env);
@@ -54,9 +82,18 @@ export default {
       return protectStagingFromIndexing(new Response('Not found', { status: 404 }), env);
     }
     return protectStagingFromIndexing(await env.ASSETS.fetch(request), env);
+    }, env.ORBIT_ENVIRONMENT);
+}
+
+export default {
+  async fetch(request: Request, env: OrbitBindings): Promise<Response> {
+    return await handleWorkerRequest(request, env);
   },
 
   scheduled(_controller: unknown, env: OrbitBindings, ctx: ExecutionContextLike): void {
-    ctx.waitUntil(runIdentityCleanup(env));
+    ctx.waitUntil(Promise.all([
+      runIdentityCleanup(env),
+      runScheduledBackups(env),
+    ]));
   },
 };

@@ -1,6 +1,13 @@
-import { handleApiRequest, runIdentityCleanup } from '../src/server/http/api';
+import { runIdentityCleanup } from '../src/server/http/api';
 import type { OrbitBindings } from '../src/server/identity/bindings';
 import { createDynamicBackup, restoreDynamicBackup } from '../src/server/backup/dynamic-backup';
+import {
+  createChunkedBackup,
+  restoreChunkedBackup,
+} from '../src/server/backup/chunked-backup';
+import { enforceBackupRetention, runR2Backup } from '../src/server/backup/r2-backup';
+import type { R2BucketLike, R2ObjectBodyLike, R2ObjectLike } from '../src/server/identity/bindings';
+import { handleWorkerRequest } from '../src/worker';
 
 interface TestStatement {
   bind(...values: unknown[]): TestStatement;
@@ -35,6 +42,30 @@ const PROFILES = {
     avatar_url: null,
   },
 } as const;
+
+class MemoryR2 implements R2BucketLike {
+  readonly objects = new Map<string, { value: string; customMetadata?: Record<string, string> }>();
+  async put(key: string, value: string | ArrayBuffer | Uint8Array, options?: { customMetadata?: Record<string, string> }): Promise<R2ObjectLike> {
+    const text = typeof value === 'string' ? value : new TextDecoder().decode(value instanceof Uint8Array ? value : new Uint8Array(value));
+    this.objects.set(key, { value: text, customMetadata: options?.customMetadata });
+    return { key, customMetadata: options?.customMetadata };
+  }
+  async get(key: string): Promise<R2ObjectBodyLike | null> {
+    const item = this.objects.get(key);
+    return item ? { key, customMetadata: item.customMetadata, text: async () => item.value } : null;
+  }
+  async list(options: { prefix?: string } = {}): Promise<{ objects: R2ObjectLike[]; truncated: boolean }> {
+    return {
+      objects: [...this.objects.entries()]
+        .filter(([key]) => key.startsWith(options.prefix ?? ''))
+        .map(([key, item]) => ({ key, customMetadata: item.customMetadata })),
+      truncated: false,
+    };
+  }
+  async delete(keys: string | string[]): Promise<void> {
+    for (const key of Array.isArray(keys) ? keys : [keys]) this.objects.delete(key);
+  }
+}
 
 function profileForToken(token: string | null) {
   if (!token?.startsWith('Bearer test-token-')) return null;
@@ -153,23 +184,37 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
   }
 
   if (url.pathname === '/__test/set-record-visibility') {
-    await env.DB.prepare(`
+    await env.DB.batch([
+      env.DB.prepare(`
       UPDATE records
       SET lifecycle_state = ?, deleted_at = ?, moderation_state = ?, moderated_at = ?
       WHERE slug = ?
-    `).bind(
+      `).bind(
       String(body.lifecycleState ?? 'published'),
       body.deletedAt ?? null,
       String(body.moderationState ?? 'visible'),
       body.moderatedAt ?? null,
       String(body.slug),
-    ).run();
+      ),
+      env.DB.prepare(`
+        UPDATE public_cache_epochs
+        SET version = version + 1, updated_at = ?
+        WHERE namespace = 'public_read'
+      `).bind(now),
+    ]);
     return Response.json({ ok: true });
   }
 
   if (url.pathname === '/__test/set-agent-status') {
-    await env.DB.prepare(`UPDATE agents SET status = ? WHERE handle_normalized = ?`)
-      .bind(String(body.status), String(body.handle).toLowerCase()).run();
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE agents SET status = ? WHERE handle_normalized = ?`)
+        .bind(String(body.status), String(body.handle).toLowerCase()),
+      env.DB.prepare(`
+        UPDATE public_cache_epochs
+        SET version = version + 1, updated_at = ?
+        WHERE namespace = 'public_read'
+      `).bind(now),
+    ]);
     return Response.json({ ok: true });
   }
 
@@ -185,8 +230,8 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
           publication_mode, status, created_at, updated_at, version,
           role, short_bio, motto, accent, responsibility, links_json
         ) VALUES (?, ?, ?, ?, '', 'agents/default.webp', ?, ?, ?, ?, 1,
-          '', '', '', '#6f63e8', '', '[]')
-      `).bind(agentId, handle, handle.toLowerCase(), handle, String(body.publicationMode), String(body.status ?? 'active'), now, now),
+          ?, '', '', '#6f63e8', '', '[]')
+      `).bind(agentId, handle, handle.toLowerCase(), handle, String(body.publicationMode), String(body.status ?? 'active'), now, now, String(body.role ?? '')),
       env.DB.prepare(`
         INSERT OR IGNORE INTO agent_memberships (
           id, agent_id, account_id, role, created_by_account_id, created_at
@@ -240,7 +285,7 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
       FROM audit_events WHERE subject_type = 'record' AND subject_id = ? ORDER BY sequence
     `).bind(recordId).all();
     const moderation = await env.DB.prepare(`
-      SELECT action, actor_account_id, reason
+      SELECT id, action, actor_account_id, reason, reversed_by_action_id, reverses_action_id
       FROM moderation_actions WHERE target_type = 'record' AND target_id = ? ORDER BY created_at, id
     `).bind(recordId).all();
     return Response.json({ audits: audits.results, moderation: moderation.results });
@@ -273,6 +318,50 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
 
   if (url.pathname === '/__test/backup-export') {
     return Response.json(await createDynamicBackup(env.DB, now, Boolean(body.includeSessions)));
+  }
+
+  if (url.pathname === '/__test/chunked-backup-export') {
+    return Response.json(await createChunkedBackup(env.DB, now, Boolean(body.includeSessions)));
+  }
+
+  if (url.pathname === '/__test/chunked-backup-restore') {
+    try {
+      const proof = await restoreChunkedBackup(env.DB, body.backup, {
+        revokeSecurity: Boolean(body.revokeSecurity), now,
+      });
+      return Response.json({ ok: true, proof });
+    } catch (error) {
+      return Response.json({
+        ok: false,
+        code: error instanceof Error ? error.message : 'restore_failed',
+      }, { status: 400 });
+    }
+  }
+
+  if (url.pathname === '/__test/r2-backup') {
+    const bucket = new MemoryR2();
+    const testKey = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)))
+      .replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '');
+    const result = await runR2Backup({
+      ...env,
+      BACKUPS: bucket,
+      ORBIT_BACKUP_ENCRYPTION_KEY_V1: testKey,
+    }, 'daily', now);
+    for (let index = 0; index < 16; index += 1) {
+      await bucket.put(`orbit-v6/daily/2026-06-${String(index + 1).padStart(2, '0')}-test.json.enc`, '{}');
+    }
+    const retention = await enforceBackupRetention(bucket);
+    const runs = await env.DB.prepare(`
+      SELECT status, object_key, manifest_checksum, error_code
+      FROM backup_runs WHERE id = ?
+    `).bind(result.runId).first();
+    return Response.json({
+      objectCount: bucket.objects.size,
+      retention,
+      run: runs,
+      objectKeyIsSafe: !result.objectKey.includes('nyx') && !result.objectKey.includes('samet'),
+      checksumLength: result.objectChecksum.length,
+    });
   }
 
   if (url.pathname === '/__test/backup-restore') {
@@ -332,7 +421,7 @@ export default {
     const testResponse = await testRoute(request, env);
     if (testResponse) return testResponse;
     const nowHeader = request.headers.get('x-test-now');
-    return await handleApiRequest(request, env, {
+    return await handleWorkerRequest(request, env, {
       fetch: mockGithubFetch,
       now: nowHeader ? () => Number(nowHeader) : undefined,
     });

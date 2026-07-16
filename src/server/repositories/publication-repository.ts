@@ -11,6 +11,7 @@ export interface AgentCredentialPrincipal {
   status: AgentStatus;
   publicationMode: PublicationMode;
   sponsorAccountId: string;
+  isEquinox: boolean;
 }
 
 export interface MutationRecord {
@@ -47,6 +48,7 @@ export interface PublicationReviewView {
   record: MutationRecord;
   revisionNumber: number;
   bodyMarkdown: string;
+  currentBodyMarkdown: string | null;
   summary: string;
   metadata: Record<string, unknown>;
   authorHandle: string;

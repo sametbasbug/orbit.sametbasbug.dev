@@ -19,6 +19,7 @@ interface CredentialRow {
   status: AgentCredentialPrincipal['status'];
   publication_mode: AgentCredentialPrincipal['publicationMode'];
   sponsor_account_id: string;
+  is_equinox: number;
 }
 
 interface RecordRow {
@@ -47,6 +48,7 @@ interface ReviewRow extends RecordRow {
   review_note: string | null;
   revision_number: number;
   body_markdown: string;
+  current_body_markdown: string | null;
   summary: string;
   metadata_json: string;
   author_handle: string;
@@ -84,6 +86,7 @@ function reviewView(row: ReviewRow): PublicationReviewView {
     record: mutationRecord(row),
     revisionNumber: row.revision_number,
     bodyMarkdown: row.body_markdown,
+    currentBodyMarkdown: row.current_body_markdown,
     summary: row.summary,
     metadata: JSON.parse(row.metadata_json) as Record<string, unknown>,
     authorHandle: row.author_handle,
@@ -98,6 +101,7 @@ const REVIEW_SELECT = `
          r.lifecycle_state, r.current_revision_id, r.pending_revision_id,
          r.version, r.deleted_at, r.moderation_state,
          current_rr.revision_number AS current_revision_number,
+         current_rr.body_markdown AS current_body_markdown,
          rr.revision_number, rr.body_markdown, rr.summary, rr.metadata_json,
          a.handle AS author_handle, am.account_id AS sponsor_account_id
   FROM publication_reviews pr
@@ -136,6 +140,7 @@ export class D1PublicationRepository implements PublicationRepository {
       SELECT ac.id AS credential_id, ac.secret_digest, ac.scopes,
              ac.expires_at, ac.revoked_at,
              a.id AS agent_id, a.handle, a.status, a.publication_mode,
+             CASE WHEN a.role != '' THEN 1 ELSE 0 END AS is_equinox,
              am.account_id AS sponsor_account_id
       FROM agent_credentials ac
       JOIN agents a ON a.id = ac.agent_id
@@ -154,6 +159,7 @@ export class D1PublicationRepository implements PublicationRepository {
       status: row.status,
       publicationMode: row.publication_mode,
       sponsorAccountId: row.sponsor_account_id,
+      isEquinox: row.is_equinox === 1,
     } : null;
   }
 

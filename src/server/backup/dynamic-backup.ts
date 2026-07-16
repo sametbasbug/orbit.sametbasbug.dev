@@ -4,7 +4,7 @@ import { randomBase64Url, sha256Base64Url } from '../identity/tokens';
 import type { D1DatabaseLike, D1PreparedStatementLike } from '../repositories/d1/d1-foundation-repository';
 
 export const BACKUP_SCHEMA = 'equinox.orbit.dynamic-backup.v1';
-export const BACKUP_SCHEMA_VERSION = 1;
+export const BACKUP_SCHEMA_VERSION = 2;
 
 type BackupRow = Record<string, string | number | null>;
 
@@ -47,7 +47,10 @@ const SPECS: TableSpec[] = [
   { exportName: 'recordTopics', table: 'record_topics', columns: ['record_id','topic_id','created_at'], orderBy: 'record_id, topic_id' },
   { exportName: 'publicationReviews', table: 'publication_reviews', columns: ['id','record_id','revision_id','status','requested_at','reviewer_account_id','reviewed_at','review_note'], orderBy: 'requested_at, id' },
   { exportName: 'agentUsageDaily', table: 'agent_usage_daily', columns: ['agent_id','day_utc','posts_created','replies_created','write_attempts','updated_at'], orderBy: 'agent_id, day_utc' },
-  { exportName: 'moderationActions', table: 'moderation_actions', columns: ['id','actor_account_id','action','target_type','target_id','reason','created_at','reversed_by_action_id'], orderBy: 'created_at, id' },
+  { exportName: 'moderationActions', table: 'moderation_actions', columns: ['id','actor_account_id','action','target_type','target_id','reason','created_at','reversed_by_action_id','reverses_action_id'], orderBy: 'created_at, id' },
+  { exportName: 'announcements', table: 'announcements', columns: ['id','title','body_markdown','severity','audience_type','target_agent_id','status','starts_at','expires_at','created_by_account_id','created_at','updated_at','published_at','withdrawn_at'], orderBy: 'created_at, id' },
+  { exportName: 'announcementTransitions', table: 'announcement_transitions', columns: ['id','announcement_id','action','actor_account_id','created_at'], orderBy: 'created_at, id' },
+  { exportName: 'announcementReads', table: 'announcement_reads', columns: ['announcement_id','agent_id','read_at'], orderBy: 'announcement_id, agent_id' },
   { exportName: 'auditEvents', table: 'audit_events', columns: ['sequence','id','event_type','actor_type','actor_id','subject_type','subject_id','request_id','metadata_json','created_at'], orderBy: 'sequence' },
   { exportName: 'slugReservations', table: 'record_slug_reservations', columns: ['slug','record_id','created_at'], orderBy: 'slug' },
 ];
@@ -182,7 +185,12 @@ export async function restoreDynamicBackup(
   db: D1DatabaseLike,
   input: unknown,
   options: { revokeSecurity?: boolean; now?: number } = {},
-): Promise<{ counts: Record<string, number>; foreignKeyViolations: number }> {
+): Promise<{
+  counts: Record<string, number>;
+  foreignKeyViolations: number;
+  uniqueViolations: number;
+  relationshipViolations: number;
+}> {
   const backup = await verifyDynamicBackup(input);
   const occupied = await db.prepare(`
     SELECT
@@ -226,10 +234,46 @@ export async function restoreDynamicBackup(
       `).bind(row.replaced_by_credential_id, row.id));
     }
   }
-  for (const name of ['recordTopics','publicationReviews','agentUsageDaily','moderationActions','slugReservations']) {
+  for (const name of ['recordTopics','publicationReviews','agentUsageDaily']) {
     const item = spec(name);
     for (const row of backup.tables[name]) statements.push(insert(db, item, row));
   }
+  const moderationSpec = spec('moderationActions');
+  for (const row of backup.tables.moderationActions) {
+    statements.push(insert(db, moderationSpec, {
+      ...row, reversed_by_action_id: null, reverses_action_id: null,
+    }));
+  }
+  for (const row of backup.tables.moderationActions) {
+    if (row.reversed_by_action_id || row.reverses_action_id) {
+      statements.push(db.prepare(`
+        UPDATE moderation_actions
+        SET reversed_by_action_id = ?, reverses_action_id = ?
+        WHERE id = ?
+      `).bind(row.reversed_by_action_id, row.reverses_action_id, row.id));
+    }
+  }
+  const announcementSpec = spec('announcements');
+  for (const row of backup.tables.announcements) {
+    statements.push(insert(db, announcementSpec, {
+      ...row, status: 'draft', updated_at: row.created_at,
+      published_at: null, withdrawn_at: null,
+    }));
+  }
+  for (const row of backup.tables.announcementTransitions) {
+    statements.push(insert(db, spec('announcementTransitions'), row));
+  }
+  for (const row of backup.tables.announcements) {
+    statements.push(db.prepare(`
+      UPDATE announcements
+      SET status = ?, updated_at = ?, published_at = ?, withdrawn_at = ?
+      WHERE id = ?
+    `).bind(row.status, row.updated_at, row.published_at, row.withdrawn_at, row.id));
+  }
+  for (const row of backup.tables.announcementReads) {
+    statements.push(insert(db, spec('announcementReads'), row));
+  }
+  for (const row of backup.tables.slugReservations) statements.push(insert(db, spec('slugReservations'), row));
   for (const row of backup.tables.auditEvents) statements.push(insert(db, spec('auditEvents'), row, true));
 
   const now = options.now ?? Date.now();
@@ -250,6 +294,8 @@ export async function restoreDynamicBackup(
     recordRevisions: backup.counts.recordRevisions,
     publicationReviews: backup.counts.publicationReviews,
     moderationActions: backup.counts.moderationActions,
+    announcements: backup.counts.announcements,
+    announcementReads: backup.counts.announcementReads,
     auditEvents: backup.counts.auditEvents,
   };
   statements.push(db.prepare(`
@@ -261,7 +307,35 @@ export async function restoreDynamicBackup(
 
   const fk = await db.prepare(`PRAGMA foreign_key_check`).all();
   if (fk.results.length > 0) throw new Error('backup_restore_foreign_key_failure');
-  return { counts: expectedCounts, foreignKeyViolations: 0 };
+  const unique = await db.prepare(`
+    SELECT COUNT(*) AS violations FROM (
+      SELECT handle_normalized AS value FROM accounts GROUP BY handle_normalized HAVING COUNT(*) > 1
+      UNION ALL
+      SELECT handle_normalized AS value FROM agents GROUP BY handle_normalized HAVING COUNT(*) > 1
+      UNION ALL
+      SELECT slug AS value FROM records GROUP BY slug HAVING COUNT(*) > 1
+      UNION ALL
+      SELECT provider || ':' || provider_user_id AS value
+      FROM auth_identities GROUP BY provider, provider_user_id HAVING COUNT(*) > 1
+    )
+  `).first<{ violations: number }>();
+  const relationships = await db.prepare(`
+    SELECT COUNT(*) AS violations
+    FROM records record
+    LEFT JOIN records root ON root.id = record.root_id
+    LEFT JOIN records parent ON parent.id = record.parent_id
+    WHERE root.id IS NULL
+       OR (record.kind = 'reply' AND parent.id IS NULL)
+       OR (record.kind = 'post' AND (record.parent_id IS NOT NULL OR record.root_id != record.id))
+  `).first<{ violations: number }>();
+  if ((unique?.violations ?? 0) > 0) throw new Error('backup_restore_unique_failure');
+  if ((relationships?.violations ?? 0) > 0) throw new Error('backup_restore_relationship_failure');
+  return {
+    counts: expectedCounts,
+    foreignKeyViolations: 0,
+    uniqueViolations: 0,
+    relationshipViolations: 0,
+  };
 }
 
 export interface EncryptedBackupEnvelope {

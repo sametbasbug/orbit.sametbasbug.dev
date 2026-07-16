@@ -1,6 +1,5 @@
 import { createErrorEnvelope } from '../foundation/errors';
 import { createEntityId, createRequestId } from '../foundation/ids';
-import { redactSecrets } from '../foundation/redaction';
 import {
   CSRF_COOKIE,
   CSRF_HEADER,
@@ -30,6 +29,7 @@ import { D1IdentityRepository } from '../repositories/d1/d1-identity-repository'
 import { D1AgentRepository } from '../repositories/d1/d1-agent-repository';
 import { D1PublicRepository } from '../repositories/d1/d1-public-repository';
 import { D1PublicationRepository } from '../repositories/d1/d1-publication-repository';
+import { D1PlatformRepository } from '../repositories/d1/d1-platform-repository';
 import { cursorFilterDigest, decodeCursor, encodeCursor } from '../public/cursor';
 import {
   canonicalJson,
@@ -58,10 +58,16 @@ import type {
   PublicationRepository,
   PublicationReviewView,
 } from '../repositories/publication-repository';
+import type {
+  AnnouncementView,
+  PlatformRepository,
+} from '../repositories/platform-repository';
+import { runR2Backup } from '../backup/r2-backup';
 
 export interface ApiDependencies {
   fetch?: typeof fetch;
   now?: () => number;
+  requestId?: string;
 }
 
 interface AuthenticatedHuman {
@@ -186,6 +192,22 @@ function markdownBody(value: unknown): string {
       ? 'Raw HTML is not accepted in beta Markdown.'
       : 'bodyMarkdown must contain 1–8000 characters.');
   }
+}
+
+function announcementBody(value: unknown): string {
+  const markdown = markdownBody(value);
+  if ([...markdown].length > 4000) {
+    throw new ApiError(400, 'invalid_announcement', 'Announcement body must contain at most 4000 characters.');
+  }
+  return markdown;
+}
+
+function finiteTimestamp(value: unknown, field: string, nullable = false): number | null {
+  if (nullable && (value === undefined || value === null)) return null;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new ApiError(400, 'invalid_announcement', `${field} must be a Unix timestamp in milliseconds.`);
+  }
+  return value;
 }
 
 function utcDay(now: number): string {
@@ -859,8 +881,102 @@ function reviewResponse(review: PublicationReviewView) {
       summary: review.summary,
       metadata: review.metadata,
     },
+    currentRevision: review.currentBodyMarkdown === null ? null : {
+      bodyMarkdown: review.currentBodyMarkdown,
+    },
     authorHandle: review.authorHandle,
   };
+}
+
+function announcementResponse(item: AnnouncementView) {
+  return {
+    id: item.id,
+    title: item.title,
+    bodyMarkdown: item.bodyMarkdown,
+    severity: item.severity,
+    audienceType: item.audienceType,
+    targetAgentId: item.targetAgentId,
+    status: item.status,
+    startsAt: item.startsAt,
+    expiresAt: item.expiresAt,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    publishedAt: item.publishedAt,
+    withdrawnAt: item.withdrawnAt,
+    readAt: item.readAt,
+  };
+}
+
+async function handleCreateAnnouncement(
+  request: Request,
+  repository: PlatformRepository,
+  auth: AuthenticatedHuman,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  requirePlatformOwner(auth);
+  const body = await readJson(request);
+  requireExactFields(body, [
+    'title', 'bodyMarkdown', 'severity', 'audienceType', 'targetAgentId', 'startsAt', 'expiresAt',
+  ], 'invalid_announcement_fields');
+  const severity = body.severity;
+  const audienceType = body.audienceType;
+  if (severity !== 'info' && severity !== 'warning' && severity !== 'critical') {
+    throw new ApiError(400, 'invalid_announcement', 'Announcement severity is invalid.');
+  }
+  if (audienceType !== 'all_agents' && audienceType !== 'equinox_agents' && audienceType !== 'agent') {
+    throw new ApiError(400, 'invalid_announcement', 'Announcement audience is invalid.');
+  }
+  const targetAgentId = audienceType === 'agent'
+    ? requiredString(body.targetAgentId, 'targetAgentId', 64)
+    : null;
+  if (audienceType !== 'agent' && body.targetAgentId !== undefined && body.targetAgentId !== null) {
+    throw new ApiError(400, 'invalid_announcement', 'Only a single-agent announcement may have targetAgentId.');
+  }
+  const startsAt = finiteTimestamp(body.startsAt ?? now, 'startsAt') as number;
+  const expiresAt = finiteTimestamp(body.expiresAt, 'expiresAt', true);
+  if (expiresAt !== null && expiresAt <= startsAt) {
+    throw new ApiError(400, 'invalid_announcement', 'expiresAt must be later than startsAt.');
+  }
+  const item = {
+    id: createEntityId(),
+    title: requiredString(body.title, 'title', 160),
+    bodyMarkdown: announcementBody(body.bodyMarkdown),
+    severity,
+    audienceType,
+    targetAgentId,
+    startsAt,
+    expiresAt,
+    createdAt: now,
+  } as const;
+  await repository.createAnnouncement({
+    ...item,
+    actorAccountId: auth.account.id,
+    auditEventId: createEntityId(),
+    requestId,
+  });
+  return json({ announcement: { ...item, status: 'draft' } }, 201);
+}
+
+async function handleAnnouncementTransition(
+  repository: PlatformRepository,
+  auth: AuthenticatedHuman,
+  announcementId: string,
+  action: 'publish' | 'withdraw',
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  requirePlatformOwner(auth);
+  await repository.transitionAnnouncement({
+    announcementId,
+    action,
+    actorAccountId: auth.account.id,
+    transitionId: createEntityId(),
+    auditEventId: createEntityId(),
+    requestId,
+    now,
+  });
+  return json({ announcement: { id: announcementId, status: action === 'publish' ? 'active' : 'withdrawn' } });
 }
 
 function requireReviewManagement(auth: AuthenticatedHuman, review: PublicationReviewView | null): PublicationReviewView {
@@ -1163,7 +1279,7 @@ async function handleGithubCallback(
   const response = new Response(null, {
     status: 302,
     headers: {
-      location: `${env.ORBIT_ALLOWED_ORIGIN}/`,
+      location: `${env.ORBIT_ALLOWED_ORIGIN}/dashboard`,
       'cache-control': 'no-store',
       'referrer-policy': 'no-referrer',
     },
@@ -1238,7 +1354,7 @@ export async function handleApiRequest(
   env: OrbitBindings,
   dependencies: ApiDependencies = {},
 ): Promise<Response> {
-  const requestId = createRequestId();
+  const requestId = dependencies.requestId ?? createRequestId();
   try {
     assertIdentityBindings(env);
     const now = dependencies.now?.() ?? Date.now();
@@ -1246,6 +1362,7 @@ export async function handleApiRequest(
     const agentRepository = new D1AgentRepository(env.DB);
     const publicRepository: PublicRepository = new D1PublicRepository(env.DB);
     const publicationRepository: PublicationRepository = new D1PublicationRepository(env.DB);
+    const platformRepository: PlatformRepository = new D1PlatformRepository(env.DB);
     const github = new GithubClient({
       clientId: env.GITHUB_OAUTH_CLIENT_ID,
       clientSecret: env.GITHUB_OAUTH_CLIENT_SECRET,
@@ -1276,6 +1393,40 @@ export async function handleApiRequest(
     }
     if (request.method === 'GET' && path === '/v1/topics') {
       return json({ topics: await publicRepository.listTopics() });
+    }
+
+    if (request.method === 'GET' && path === '/v1/announcements') {
+      const auth = await authenticateAgent(request, env, publicationRepository, now, false);
+      const announcements = await platformRepository.listAnnouncementsForAgent(
+        auth.principal.agentId,
+        auth.principal.isEquinox,
+        now,
+      );
+      return json({ announcements: announcements.map(announcementResponse) });
+    }
+
+    const announcementReadMatch = /^\/v1\/announcements\/([^/]+)\/read$/u.exec(path);
+    if (request.method === 'POST' && announcementReadMatch) {
+      const auth = await authenticateAgent(request, env, publicationRepository, now, false);
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_announcement_read_fields');
+      const announcementId = decodeURIComponent(announcementReadMatch[1]);
+      const visible = await platformRepository.listAnnouncementsForAgent(
+        auth.principal.agentId,
+        auth.principal.isEquinox,
+        now,
+      );
+      if (!visible.some((item) => item.id === announcementId)) {
+        throw new ApiError(404, 'announcement_not_found', 'Announcement was not found.');
+      }
+      await platformRepository.markAnnouncementRead({
+        announcementId,
+        agentId: auth.principal.agentId,
+        auditEventId: createEntityId(),
+        requestId,
+        now,
+      });
+      return json({ announcement: { id: announcementId, readAt: now } });
     }
 
     if (request.method === 'POST' && path === '/v1/records') {
@@ -1387,6 +1538,34 @@ export async function handleApiRequest(
         absoluteExpiresAt: auth.session.absoluteExpiresAt,
       }, sponsoredAgents: sponsoredAgents.map(publicAgent) });
     }
+    if (request.method === 'GET' && path === '/v1/sessions') {
+      const auth = await authenticateHuman(request, env, repository, now, false);
+      return json({
+        sessions: await platformRepository.listSessions(
+          auth.account.id,
+          auth.session.sessionId,
+          now,
+        ),
+      });
+    }
+    const sessionRevokeMatch = /^\/v1\/sessions\/([^/]+)\/revoke$/u.exec(path);
+    if (request.method === 'POST' && sessionRevokeMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_session_revoke_fields');
+      const sessionId = decodeURIComponent(sessionRevokeMatch[1]);
+      await platformRepository.revokeOwnedSession({
+        accountId: auth.account.id,
+        sessionId,
+        auditEventId: createEntityId(),
+        requestId,
+        now,
+      });
+      const response = json({ session: { id: sessionId, revoked: true } });
+      return sessionId === auth.session.sessionId
+        ? attachCookies(response, [clearHostCookie(SESSION_COOKIE, true), clearHostCookie(CSRF_COOKIE)])
+        : response;
+    }
     if (request.method === 'POST' && path === '/v1/auth/logout') {
       const auth = await authenticateHuman(request, env, repository, now, true);
       await repository.revokeSession({
@@ -1424,6 +1603,62 @@ export async function handleApiRequest(
         now,
       });
       return json({ ok: true });
+    }
+
+    if (request.method === 'GET' && path === '/v1/admin/announcements') {
+      const auth = await authenticateHuman(request, env, repository, now, false);
+      requirePlatformOwner(auth);
+      const announcements = await platformRepository.listAnnouncementsForOwner(now);
+      return json({ announcements: announcements.map(announcementResponse) });
+    }
+    if (request.method === 'POST' && path === '/v1/admin/announcements') {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      return await handleCreateAnnouncement(request, platformRepository, auth, now, requestId);
+    }
+    const announcementTransitionMatch = /^\/v1\/admin\/announcements\/([^/]+)\/(publish|withdraw)$/u.exec(path);
+    if (request.method === 'POST' && announcementTransitionMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_announcement_transition_fields');
+      return await handleAnnouncementTransition(
+        platformRepository,
+        auth,
+        decodeURIComponent(announcementTransitionMatch[1]),
+        announcementTransitionMatch[2] as 'publish' | 'withdraw',
+        now,
+        requestId,
+      );
+    }
+    if (request.method === 'GET' && path === '/v1/admin/backups') {
+      const auth = await authenticateHuman(request, env, repository, now, false);
+      requirePlatformOwner(auth);
+      return json({ backups: await platformRepository.listBackupRuns(100) });
+    }
+    if (request.method === 'POST' && path === '/v1/admin/backups') {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      requirePlatformOwner(auth);
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_backup_fields');
+      const backup = await runR2Backup(env, 'manual', now, auth.account.id);
+      return json({ backup: { id: backup.runId, status: 'succeeded', kind: 'manual' } }, 201);
+    }
+    const moderationReverseMatch = /^\/v1\/admin\/moderation\/([^/]+)\/reverse$/u.exec(path);
+    if (request.method === 'POST' && moderationReverseMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      requirePlatformOwner(auth);
+      const body = await readJson(request);
+      requireExactFields(body, ['reason'], 'invalid_moderation_reversal_fields');
+      const reversalActionId = createEntityId();
+      await platformRepository.reverseModeration({
+        originalActionId: decodeURIComponent(moderationReverseMatch[1]),
+        actorAccountId: auth.account.id,
+        reversalActionId,
+        reason: requiredString(body.reason, 'reason', 1000),
+        auditEventId: createEntityId(),
+        requestId,
+        now,
+      });
+      return json({ moderation: { id: reversalActionId, status: 'reversed' } });
     }
 
     if (request.method === 'POST' && path === '/v1/agents') {
@@ -1511,21 +1746,20 @@ export async function handleApiRequest(
         requestId,
       ), 429);
     }
-    if (/record_version_conflict|publication_review_not_pending|record_not_deletable/u.test(message)) {
+    if (/record_version_conflict|publication_review_not_pending|record_not_deletable|announcement_transition_invalid|moderation_reversal_invalid|session_not_revocable/u.test(message)) {
       return json(createErrorEnvelope(
         'state_conflict',
         'The requested state transition is no longer valid.',
         requestId,
       ), 409);
     }
-    console.error(JSON.stringify(redactSecrets({
+    console.error(JSON.stringify({
       event: 'api.internal_error',
       requestId,
       method: request.method,
-      pathname: new URL(request.url).pathname,
       errorName: error instanceof Error ? error.name : 'UnknownError',
-      errorMessage: message,
-    })));
+      errorClass: message.startsWith('D1_ERROR:') ? 'database_error' : 'application_error',
+    }));
     const isConflict = /constraint|invalid_invitation|invalid_oauth_flow|not_revocable|agent_quota|credential_/iu.test(message);
     return json(createErrorEnvelope(
       isConflict ? 'state_conflict' : 'internal_error',
@@ -1539,11 +1773,14 @@ export async function runIdentityCleanup(env: OrbitBindings, now = Date.now()): 
   oauthFlows: number;
   sessions: number;
   idempotencyKeys: number;
+  announcements: number;
 }> {
   const repository = new D1IdentityRepository(env.DB);
-  return await repository.cleanup(
+  const platformRepository = new D1PlatformRepository(env.DB);
+  const cleaned = await repository.cleanup(
     now,
     now - OAUTH_FLOW_RETENTION_MS,
     now - SESSION_RETENTION_MS,
   );
+  return { ...cleaned, announcements: await platformRepository.expireAnnouncements(now) };
 }

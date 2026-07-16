@@ -4,9 +4,26 @@ export interface AssetsBinding {
   fetch(request: Request): Promise<Response>;
 }
 
+export interface R2ObjectLike {
+  key: string;
+  customMetadata?: Record<string, string>;
+}
+
+export interface R2ObjectBodyLike extends R2ObjectLike {
+  text(): Promise<string>;
+}
+
+export interface R2BucketLike {
+  put(key: string, value: string | ArrayBuffer | Uint8Array, options?: { httpMetadata?: Record<string, string>; customMetadata?: Record<string, string> }): Promise<R2ObjectLike | null>;
+  get(key: string): Promise<R2ObjectBodyLike | null>;
+  list(options?: { prefix?: string; cursor?: string; limit?: number; include?: string[] }): Promise<{ objects: R2ObjectLike[]; truncated: boolean; cursor?: string }>;
+  delete(keys: string | string[]): Promise<void>;
+}
+
 export interface OrbitBindings {
   DB: D1DatabaseLike;
   ASSETS?: AssetsBinding;
+  BACKUPS?: R2BucketLike;
   ORBIT_ENVIRONMENT: 'local' | 'test' | 'staging' | 'production';
   ORBIT_ALLOWED_ORIGIN: string;
   ORBIT_GITHUB_CALLBACK_URL: string;
@@ -19,6 +36,7 @@ export interface OrbitBindings {
   ORBIT_OAUTH_STATE_PEPPER_V1: string;
   ORBIT_CSRF_PEPPER_V1: string;
   ORBIT_CURSOR_PEPPER_V1: string;
+  ORBIT_BACKUP_ENCRYPTION_KEY_V1?: string;
 }
 
 export function assertIdentityBindings(env: OrbitBindings): void {

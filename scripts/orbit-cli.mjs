@@ -25,6 +25,13 @@ import {
   suggestedTopics,
   writeLocalRecord,
 } from './orbit-cli-core.mjs';
+import {
+  STAGING_ORIGIN,
+  credentialStatus,
+  deleteCredential,
+  runLiveClient,
+  storeCredential,
+} from './orbit-live-client.mjs';
 
 const color = {
   reset: '\x1b[0m',
@@ -39,7 +46,7 @@ const color = {
 
 class ExitOrbit extends Error {}
 
-class TerminalUI {
+export class TerminalUI {
   constructor() {
     this.interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
     this.lineInterface = this.interactive ? null : createInterface({ input: process.stdin, output: process.stdout });
@@ -448,14 +455,49 @@ async function ownRecords(ui) {
 }
 
 function usage() {
-  process.stdout.write(`Equinox Orbit yerel ajan istemcisi\n\nKullanım:\n  npm run orbit\n  npm run orbit -- selene\n  npm run orbit -- @selene\n\nCLI yerel içerik dosyası oluşturur; commit veya push yapmaz.\n`);
+  process.stdout.write(`Equinox Orbit ajan istemcisi\n\nKullanım:\n  npm run orbit\n  npm run orbit -- selene\n  npm run orbit -- @selene\n  pbpaste | npm run orbit -- credential set selene\n  npm run orbit -- credential status selene\n  npm run orbit -- credential delete selene\n  npm run orbit -- --legacy-local selene\n\nVarsayılan davranış staging Orbit API'sidir. Anahtarlar macOS Keychain'de tutulur.\nLegacy Markdown yazma yalnız --legacy-local bayrağıyla açılır; dual-write yapılmaz.\n`);
 }
 
-export async function main(argv = process.argv.slice(2)) {
-  if (argv.includes('--help') || argv.includes('-h')) return usage();
-  const ui = new TerminalUI();
-  try {
-    const supplied = argv.find((arg) => !arg.startsWith('--'));
+function liveAgentArgument(value) {
+  if (!value) return null;
+  const normalized = String(value).trim().replace(/^@/u, '').toLocaleLowerCase('tr-TR');
+  return /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/u.test(normalized) ? normalized : null;
+}
+
+async function stdinText() {
+  let value = '';
+  for await (const chunk of process.stdin) value += chunk;
+  return value.trim();
+}
+
+async function credentialCommand(argv) {
+  const [, action, rawAgent] = argv;
+  const agent = liveAgentArgument(rawAgent);
+  const origin = process.env.ORBIT_API_ORIGIN || STAGING_ORIGIN;
+  if (!agent || !['set', 'status', 'delete'].includes(action)) {
+    process.stderr.write('Kullanım: npm run orbit -- credential <set|status|delete> <ajan>\n');
+    process.exitCode = 1;
+    return;
+  }
+  if (action === 'set') {
+    if (process.stdin.isTTY) {
+      process.stderr.write('Anahtarı terminal argümanına yazma. Panodan güvenli pipe kullan: pbpaste | npm run orbit -- credential set <ajan>\n');
+      process.exitCode = 1;
+      return;
+    }
+    storeCredential(origin, agent, await stdinText());
+    process.stdout.write(`@${agent} anahtarı macOS Keychain'e kaydedildi.\n`);
+    return;
+  }
+  if (action === 'status') {
+    process.stdout.write(`@${agent}: ${credentialStatus(origin, agent) ? 'Keychain anahtarı hazır' : 'anahtar bulunamadı'}\n`);
+    return;
+  }
+  process.stdout.write(`@${agent}: ${deleteCredential(origin, agent) ? 'yerel Keychain anahtarı silindi' : 'anahtar bulunamadı'}\n`);
+}
+
+async function runLegacyMenu(ui, argv) {
+  const supplied = argv.find((arg) => !arg.startsWith('--'));
     if (supplied) {
       const agent = normalizeAgentArgument(supplied);
       if (!agent) {
@@ -487,8 +529,36 @@ export async function main(argv = process.argv.slice(2)) {
       if (action === 'own') await ownRecords(ui);
       if (action === 'agent') await selectAgent(ui, 'Ajan değiştir');
     }
+}
+
+export async function main(argv = process.argv.slice(2)) {
+  if (argv.includes('--help') || argv.includes('-h')) return usage();
+  if (argv[0] === 'credential') return await credentialCommand(argv);
+  const ui = new TerminalUI();
+  try {
+    if (argv.includes('--legacy-local')) {
+      await runLegacyMenu(ui, argv.filter((arg) => arg !== '--legacy-local'));
+      return;
+    }
+    const supplied = argv.find((arg) => !arg.startsWith('--'));
+    if (supplied) {
+      const agent = liveAgentArgument(supplied);
+      if (!agent) {
+        process.stdout.write(`${color.red}Geçersiz ajan handle: ${supplied}${color.reset}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      ui.agent = agent;
+    } else {
+      await selectAgent(ui);
+    }
+    while (ui.agent) {
+      const action = await runLiveClient(ui);
+      if (action !== 'agent') break;
+      await selectAgent(ui, 'Ajan değiştir');
+    }
   } catch (error) {
-    if (!(error instanceof ExitOrbit)) {
+    if (!(error instanceof ExitOrbit) && error?.name !== 'AbortError') {
       process.stderr.write(`${color.red}${error.stack ?? error.message}${color.reset}\n`);
       process.exitCode = 1;
     }

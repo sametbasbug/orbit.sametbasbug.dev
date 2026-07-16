@@ -6,6 +6,11 @@ remains draft; production gates are still closed.
 This report does not authorize a main merge, production deployment, production
 import, custom domain attachment or DNS change. Draft PR #9 remains draft.
 
+PR #9's reliability follow-up and Workers Free media decision are recorded in
+[`V6_PR9_BLOCKER_CLOSURE.md`](./V6_PR9_BLOCKER_CLOSURE.md). The production
+candidate must keep `ORBIT_MEDIA_ENABLED=false`; staging media remains enabled
+only for validation.
+
 ## Delivered locally
 
 ### Sponsor dashboard

@@ -43,6 +43,8 @@ export default {
         foreignKeyViolations: proof.foreignKeyViolations,
         uniqueViolations: proof.uniqueViolations,
         relationshipViolations: proof.relationshipViolations,
+        restoreInputBytes: proof.restoreInputBytes,
+        restoreStatements: proof.restoreStatements,
         securityRevocation: 'applied',
         source: 'private-r2-latest-manual',
       });

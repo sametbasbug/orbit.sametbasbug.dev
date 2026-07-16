@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -148,11 +148,16 @@ async function uploadAvatar(
   current: { token: string; csrf: string },
   pathname: string,
   fixture: Fixture,
+  idempotencyKey: string = randomUUID(),
 ) {
-  const form = new FormData();
-  form.set('file', new File([await readFile(fixture.path)], fixture.name, { type: fixture.type }));
+  const bytes = await readFile(fixture.path);
+  const headers = humanHeaders(current, true);
+  headers.set('content-type', fixture.type);
+  headers.set('content-length', String(bytes.byteLength));
+  headers.set('x-orbit-content-sha256', createHash('sha256').update(bytes).digest('base64url'));
+  headers.set('idempotency-key', idempotencyKey);
   return await fetch(`${ORIGIN}${pathname}`, {
-    method: 'POST', headers: humanHeaders(current, true), body: form,
+    method: 'POST', headers, body: bytes,
   });
 }
 
@@ -162,14 +167,19 @@ async function uploadPostImage(
   fixture: Fixture,
   declaredType: string = fixture.type,
 ) {
-  const form = new FormData();
-  form.set('file', new File([await readFile(fixture.path)], fixture.name, { type: declaredType }));
-  form.set('altText', 'Orbit staging medya doğrulama görseli');
-  form.set('caption', 'Yalnız staging E2E kanıtı.');
+  const bytes = await readFile(fixture.path);
   return await fetch(`${ORIGIN}/v1/media/post-images`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${token}`, 'idempotency-key': key },
-    body: form,
+    headers: {
+      authorization: `Bearer ${token}`,
+      'idempotency-key': key,
+      'content-type': declaredType,
+      'content-length': String(bytes.byteLength),
+      'x-orbit-content-sha256': createHash('sha256').update(bytes).digest('base64url'),
+      'x-orbit-alt-text-b64': Buffer.from('Orbit staging medya doğrulama görseli').toString('base64url'),
+      'x-orbit-caption-b64': Buffer.from('Yalnız staging E2E kanıtı.').toString('base64url'),
+    },
+    body: bytes,
   });
 }
 
@@ -347,12 +357,28 @@ try {
   const direct = await seedAgent(ownerId, `media-direct-${suffix}`, 'direct_publish', agentPepper, now + 3);
   const approval = await seedAgent(ownerId, `media-review-${suffix}`, 'approval_required', agentPepper, now + 4);
   const unauthorized = await seedAgent(ownerId, `media-denied-${suffix}`, 'direct_publish', agentPepper, now + 5);
+  assert.equal(await statusOf(await humanJson(
+    ownerSession,
+    `/v1/admin/media/avatar-policies/account/${testAccountId}`,
+    'PATCH',
+    { dailyLimit: 2 },
+  )), 200);
 
   stage('large-png-account-avatar');
-  const accountAvatarResponse = await uploadAvatar(accountSession, '/v1/me/avatar', fixtures.avatarPng);
+  const accountAvatarPair = await Promise.all([
+    uploadAvatar(accountSession, '/v1/me/avatar', fixtures.avatarPng, `media-${suffix}-account-avatar`),
+    uploadAvatar(accountSession, '/v1/me/avatar', fixtures.avatarPng, `media-${suffix}-account-avatar`),
+  ]);
+  assert.equal(accountAvatarPair.filter((response) => response.headers.get('idempotency-replayed') === 'true').length, 1);
+  const accountAvatarResponse = accountAvatarPair[0];
   assert.equal(accountAvatarResponse.status, 201);
   const accountAvatar = await accountAvatarResponse.json() as { media: { id: string; url: string; width: number; height: number } };
   assert.deepEqual([accountAvatar.media.width, accountAvatar.media.height], [512, 512]);
+  const accountAvatarConflict = await uploadAvatar(
+    accountSession, '/v1/me/avatar', fixtures.avatarJpeg, `media-${suffix}-account-avatar`,
+  );
+  assert.equal(accountAvatarConflict.status, 409);
+  await accountAvatarConflict.arrayBuffer();
   assert.equal(await statusOf(await fetch(`${ORIGIN}${accountAvatar.media.url}`)), 404);
   const accountAvatarOutput = await assertWebp(
     await fetch(`${ORIGIN}${accountAvatar.media.url}`, { headers: humanHeaders(accountSession) }),
@@ -368,12 +394,26 @@ try {
     await fetch(`${ORIGIN}${nearLimitAvatar.media.url}`, { headers: humanHeaders(accountSession) }),
     { width: 512, height: 512 },
   );
+  const avatarClaimsAtLimit = Number(execute(`SELECT COUNT(*) AS count FROM media_transform_claims`)[0]?.count ?? 0);
+  const avatarQuota = await uploadAvatar(accountSession, '/v1/me/avatar', fixtures.avatarPng, `media-${suffix}-avatar-quota`);
+  assert.equal(avatarQuota.status, 429);
+  assert.equal(Number(execute(`SELECT COUNT(*) AS count FROM media_transform_claims`)[0]?.count ?? 0), avatarClaimsAtLimit);
 
   stage('large-jpeg-agent-avatar');
-  const agentAvatarResponse = await uploadAvatar(ownerSession, `/v1/agents/${direct.id}/avatar`, fixtures.avatarJpeg);
+  const agentAvatarPair = await Promise.all([
+    uploadAvatar(ownerSession, `/v1/agents/${direct.id}/avatar`, fixtures.avatarJpeg, `media-${suffix}-agent-avatar`),
+    uploadAvatar(ownerSession, `/v1/agents/${direct.id}/avatar`, fixtures.avatarJpeg, `media-${suffix}-agent-avatar`),
+  ]);
+  assert.equal(agentAvatarPair.filter((response) => response.headers.get('idempotency-replayed') === 'true').length, 1);
+  const agentAvatarResponse = agentAvatarPair[0];
   assert.equal(agentAvatarResponse.status, 201);
   const agentAvatar = await agentAvatarResponse.json() as { media: { id: string; url: string; width: number; height: number } };
   assert.deepEqual([agentAvatar.media.width, agentAvatar.media.height], [512, 512]);
+  const agentAvatarConflict = await uploadAvatar(
+    ownerSession, `/v1/agents/${direct.id}/avatar`, fixtures.avatarPng, `media-${suffix}-agent-avatar`,
+  );
+  assert.equal(agentAvatarConflict.status, 409);
+  await agentAvatarConflict.arrayBuffer();
   const publicAvatar = await fetch(`${ORIGIN}${agentAvatar.media.url}`);
   const agentAvatarOutput = await assertWebp(publicAvatar, { width: 512, height: 512 });
 
@@ -426,10 +466,20 @@ try {
   assert.equal(await mediaObjectCount(), objectsBeforeFailure);
 
   stage('large-png-direct-upload');
-  const directUpload = await uploadPostImage(direct.token, `media-${suffix}-direct`, fixtures.postPng);
+  const claimsBeforeConcurrent = Number(execute(`SELECT COUNT(*) AS count FROM media_transform_claims`)[0]?.count ?? 0);
+  const directPair = await Promise.all([
+    uploadPostImage(direct.token, `media-${suffix}-direct`, fixtures.postPng),
+    uploadPostImage(direct.token, `media-${suffix}-direct`, fixtures.postPng),
+  ]);
+  assert.equal(directPair.filter((response) => response.headers.get('idempotency-replayed') === 'true').length, 1);
+  assert.equal(Number(execute(`SELECT COUNT(*) AS count FROM media_transform_claims`)[0]?.count ?? 0), claimsBeforeConcurrent + 1);
+  const directUpload = directPair[0];
   assert.equal(directUpload.status, 201);
   const directMedia = await directUpload.json() as { media: { id: string; width: number; height: number } };
   assert.equal(Math.max(directMedia.media.width, directMedia.media.height), 2400);
+  const directConflict = await uploadPostImage(direct.token, `media-${suffix}-direct`, fixtures.postJpeg);
+  assert.equal(directConflict.status, 409);
+  await directConflict.arrayBuffer();
   assert.equal(await statusOf(await fetch(`${ORIGIN}/v1/media/${directMedia.media.id}`)), 404);
   const attemptsBeforeReplay = Number(execute(`
     SELECT attempted_count FROM media_transform_usage_monthly WHERE month_utc = strftime('%Y-%m', 'now')

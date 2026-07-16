@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
@@ -127,6 +127,7 @@ let deployed = false;
 let agentId = '';
 let credentialId = '';
 const mediaIds: string[] = [];
+const phaseSamples: Record<string, number[]> = {};
 try {
   const secretNames = [
     'GITHUB_OAUTH_CLIENT_ID',
@@ -222,19 +223,24 @@ try {
   for (let batch = 0; batch < 5; batch += 1) {
     const results = await Promise.all(Array.from({ length: 4 }, async (_, offset) => {
       const index = batch * 4 + offset;
-      const form = new FormData();
-      form.set('file', new File([fixture], `cpu-${index}.jpg`, { type: 'image/jpeg' }));
-      form.set('altText', `Images binding CPU proof ${index}`);
       const response = await fetch(`${origin}/v1/media/post-images`, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${credential.token}`,
           'idempotency-key': `images-cpu-${suffix}-${index}`,
+          'content-type': 'image/jpeg',
+          'content-length': String(fixture.byteLength),
+          'x-orbit-content-sha256': createHash('sha256').update(fixture).digest('base64url'),
+          'x-orbit-alt-text-b64': Buffer.from(`Images binding CPU proof ${index}`).toString('base64url'),
         },
-        body: form,
+        body: fixture,
         signal: AbortSignal.timeout(120_000),
       });
       assert.equal(response.status, 201, await response.clone().text());
+      for (const item of (response.headers.get('server-timing') ?? '').split(',')) {
+        const match = /^\s*([A-Za-z0-9_-]+);dur=([0-9.]+)\s*$/u.exec(item);
+        if (match) (phaseSamples[match[1]] ??= []).push(Number(match[2]));
+      }
       return (await response.json() as { media: { id: string } }).media.id;
     }));
     mediaIds.push(...results);
@@ -266,6 +272,11 @@ try {
   assert.equal(metrics.requests, 20);
   assert.equal(metrics.errors, 0);
   assert.ok(!metrics.statuses.includes('exceededCpu'));
+  const phaseWallMs = Object.fromEntries(Object.entries(phaseSamples).map(([name, values]) => {
+    const ordered = [...values].sort((a, b) => a - b);
+    const percentile = (value: number) => ordered[Math.min(ordered.length - 1, Math.ceil(ordered.length * value) - 1)];
+    return [name, { p50: percentile(0.5), p90: percentile(0.9), p95: percentile(0.95), p99: percentile(0.99) }];
+  }));
   process.stdout.write(JSON.stringify({
     ok: true,
     scriptVersion: proofVersion,
@@ -274,6 +285,7 @@ try {
     http1102: false,
     exceededCpu: false,
     metrics,
+    phaseWallMs,
   }));
 } finally {
   if (deployed) {

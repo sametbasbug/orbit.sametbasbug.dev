@@ -22,7 +22,6 @@ import {
   hmacDigest,
   parseOpaqueToken,
   randomBase64Url,
-  sha256Base64Url,
   timingSafeEqual,
   verifyOpaqueToken,
 } from '../identity/tokens';
@@ -75,7 +74,7 @@ import {
   newMediaAsset,
   normalizeImage,
   putMediaObject,
-  readImageUpload,
+  stageRawImageUpload,
   serveMedia,
   utcMonth,
 } from '../media/media-service';
@@ -327,6 +326,105 @@ async function idempotencyContext(
 
 function replayResponse(replay: IdempotencyReplay): Response {
   return json(JSON.parse(replay.responseJson), replay.responseStatus, { 'idempotency-replayed': 'true' });
+}
+
+async function runIdempotentMutation(
+  repository: PublicationRepository,
+  principalType: 'agent' | 'account',
+  principalId: string,
+  keyDigest: string,
+  digest: string,
+  mutation: () => Promise<void>,
+): Promise<Response | null> {
+  try {
+    await mutation();
+    return null;
+  } catch (error) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const replay = await repository.getIdempotency(principalType, principalId, keyDigest);
+      if (replay) {
+        if (replay.requestDigest !== digest) {
+          throw new ApiError(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+        }
+        return replayResponse(replay);
+      }
+      if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw error;
+  }
+}
+
+function mediaReplayResponse(replay: Awaited<ReturnType<MediaRepository['getMediaIdempotency']>>): Response {
+  if (!replay || replay.state !== 'completed') throw new Error('media_idempotency_not_completed');
+  return json(JSON.parse(replay.responseJson), replay.responseStatus, { 'idempotency-replayed': 'true' });
+}
+
+async function mediaIdempotencyContext(
+  request: Request,
+  env: OrbitBindings,
+  repository: MediaRepository,
+  principalType: 'account' | 'agent',
+  principalId: string,
+  body: unknown,
+  now: number,
+) {
+  const key = request.headers.get('idempotency-key');
+  if (!key || key.length > 128 || !/^[\x21-\x7E]+$/u.test(key)) {
+    throw new ApiError(400, 'idempotency_key_required', 'A printable Idempotency-Key of at most 128 characters is required.');
+  }
+  const url = new URL(request.url);
+  const operation = `${request.method.toUpperCase()} ${url.pathname}`;
+  const keyDigest = await hmacDigest(
+    `orbit:idempotency:v1:${principalType}:${principalId}:${key}`,
+    principalType === 'agent' ? env.ORBIT_AGENT_CREDENTIAL_PEPPER_V1 : env.ORBIT_CSRF_PEPPER_V1,
+  );
+  const digest = await requestDigest(request.method, url.pathname, body);
+  const replay = await repository.getMediaIdempotency(principalType, principalId, keyDigest);
+  if (replay && replay.requestDigest !== digest) {
+    throw new ApiError(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+  }
+  return {
+    replay,
+    requestDigest: digest,
+    row: {
+      id: createEntityId(), principalType, principalId, keyDigest, operation,
+      requestDigest: digest, expiresAt: now + IDEMPOTENCY_TTL_MS,
+    },
+  };
+}
+
+async function waitForMediaReplay(
+  repository: MediaRepository,
+  principalType: 'account' | 'agent',
+  principalId: string,
+  keyDigest: string,
+  requestDigestValue: string,
+): Promise<Response> {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const replay = await repository.getMediaIdempotency(principalType, principalId, keyDigest);
+    if (replay?.requestDigest !== requestDigestValue) {
+      throw new ApiError(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+    }
+    if (replay?.state === 'completed') return mediaReplayResponse(replay);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new ApiError(409, 'idempotency_in_progress', 'The same request is still being processed.');
+}
+
+function decodeOptionalUploadHeader(request: Request, name: string, maximumLength: number): string | null {
+  const encoded = request.headers.get(name);
+  if (encoded === null || encoded === '') return null;
+  if (!/^[A-Za-z0-9_-]+$/u.test(encoded)) throw new ApiError(400, 'invalid_media_metadata', `${name} is invalid.`);
+  try {
+    const standard = encoded.replaceAll('-', '+').replaceAll('_', '/');
+    const padding = '='.repeat((4 - standard.length % 4) % 4);
+    const bytes = Uint8Array.from(atob(`${standard}${padding}`), (character) => character.charCodeAt(0));
+    const value = new TextDecoder('utf-8', { fatal: true }).decode(bytes).trim();
+    if ([...value].length > maximumLength) throw new Error('too_long');
+    return value || null;
+  } catch {
+    throw new ApiError(400, 'invalid_media_metadata', `${name} is invalid.`);
+  }
 }
 
 function normalizeAgentHandle(value: unknown): string {
@@ -771,6 +869,41 @@ async function handleUpdateMediaPolicy(
   return json({ mediaPolicy: mediaPolicyResponse(await repository.getAgentPolicy(agentId)) });
 }
 
+async function handleUpdateAvatarPolicy(
+  request: Request,
+  repository: MediaRepository,
+  auth: AuthenticatedHuman,
+  subjectType: 'account' | 'agent',
+  subjectId: string,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  requirePlatformOwner(auth);
+  const body = await readJson(request);
+  requireExactFields(body, ['dailyLimit'], 'invalid_avatar_policy_fields');
+  if (!Number.isSafeInteger(body.dailyLimit) || Number(body.dailyLimit) < 0 || Number(body.dailyLimit) > 50) {
+    throw new ApiError(400, 'invalid_avatar_policy', 'dailyLimit must be between 0 and 50.');
+  }
+  await repository.setAvatarPolicy({
+    subjectType,
+    subjectId,
+    dailyLimit: Number(body.dailyLimit),
+    actorAccountId: auth.account.id,
+    auditEventId: createEntityId(),
+    requestId,
+    now,
+  });
+  return json({ avatarPolicy: await repository.getAvatarPolicy(subjectType, subjectId, utcDay(now)) });
+}
+
+function mediaServerTiming(
+  phases: Partial<Record<'quarantine' | 'inspect' | 'images' | 'finalR2' | 'd1', number>>,
+): string {
+  return Object.entries(phases)
+    .map(([name, duration]) => `${name};dur=${Math.max(0, Number(duration)).toFixed(2)}`)
+    .join(', ');
+}
+
 async function handleAvatarUpload(
   request: Request,
   env: OrbitBindings,
@@ -782,33 +915,92 @@ async function handleAvatarUpload(
   requestId: string,
 ): Promise<Response> {
   const started = performance.now();
+  const usageDay = utcDay(now);
+  const contentDigest = request.headers.get('x-orbit-content-sha256') ?? '';
+  const contentType = request.headers.get('content-type') ?? '';
+  const contentLength = request.headers.get('content-length') ?? '';
+  const idem = await mediaIdempotencyContext(
+    request, env, repository, 'account', auth.account.id,
+    { contentDigest, contentType, contentLength, targetType, targetId }, now,
+  );
+  if (idem.replay?.state === 'completed') return mediaReplayResponse(idem.replay);
+  if (idem.replay?.state === 'in_progress') {
+    return waitForMediaReplay(repository, 'account', auth.account.id, idem.row.keyDigest, idem.requestDigest);
+  }
   let objectKey: string | null = null;
+  let quarantineKey: string | null = null;
+  let claimId: string | null = null;
+  let reserved = false;
+  let sourceBytes = 0;
+  const phases: Partial<Record<'quarantine' | 'inspect' | 'images' | 'finalR2' | 'd1', number>> = {};
   try {
-    const upload = await readImageUpload(request, AVATAR_UPLOAD_LIMIT);
-    const processed = await normalizeImage(
-      env,
-      repository,
-      upload,
-      'avatar',
-      { type: 'account', id: auth.account.id },
-      now,
-    );
-    const sourceBytes = upload.bytes.byteLength;
+    const upload = await stageRawImageUpload(request, env, AVATAR_UPLOAD_LIMIT);
+    quarantineKey = upload.quarantineKey;
+    sourceBytes = upload.byteSize;
+    phases.quarantine = upload.timings.quarantineMs;
+    phases.inspect = upload.timings.inspectMs;
+    claimId = createEntityId();
+    try {
+      await repository.reserveMediaUpload({
+        claimId,
+        monthUtc: utcMonth(now),
+        usageDay,
+        profile: 'avatar',
+        actorType: 'account',
+        actorId: auth.account.id,
+        targetType,
+        targetId,
+        sourceContentType: upload.contentType,
+        sourceByteSize: upload.byteSize,
+        idempotency: idem.row,
+        now,
+      });
+      reserved = true;
+    } catch (error) {
+      const replay = await repository.getMediaIdempotency('account', auth.account.id, idem.row.keyDigest);
+      if (replay?.requestDigest !== undefined && replay.requestDigest !== idem.requestDigest) {
+        throw new ApiError(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+      }
+      if (replay?.state === 'completed') return mediaReplayResponse(replay);
+      if (replay?.state === 'in_progress') {
+        return await waitForMediaReplay(repository, 'account', auth.account.id, idem.row.keyDigest, idem.requestDigest);
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      if (/avatar_media_quota_exceeded/u.test(message)) {
+        throw new ApiError(429, 'daily_avatar_quota_exceeded', 'The daily avatar transformation quota is exhausted.');
+      }
+      if (/media_transform_budget_exhausted/u.test(message)) {
+        throw new MediaServiceError(503, 'media_transform_unavailable');
+      }
+      throw error;
+    }
+    const processed = await normalizeImage(env, upload, 'avatar');
+    phases.images = processed.processingMs;
+    const finalR2Started = performance.now();
     const asset = await putMediaObject(env, newMediaAsset({
       kind: targetType === 'account' ? 'account_avatar' : 'agent_avatar',
       ...(targetType === 'account' ? { ownerAccountId: targetId } : { ownerAgentId: targetId }),
       processed,
       now,
-    }), processed.bytes);
+    }), processed.stream);
+    phases.finalR2 = performance.now() - finalR2Started;
     objectKey = asset.objectKey;
+    const responseBody = { media: { id: asset.id, url: `/v1/media/${asset.id}`, width: asset.width, height: asset.height } };
+    await repository.completeTransform({ claimId, status: 'succeeded', errorCategory: null, outputByteSize: asset.byteSize, now });
+    const d1Started = performance.now();
     await repository.createAvatar({
       asset,
       targetType,
       targetId,
       actorAccountId: auth.account.id,
+      idempotencyId: idem.row.id,
+      responseStatus: 201,
+      responseJson: canonicalJson(responseBody),
+      completedAt: now,
       auditEventId: createEntityId(),
       requestId,
     });
+    phases.d1 = performance.now() - d1Started;
     logMediaUpload({
       kind: asset.mediaKind,
       actorType: 'account',
@@ -816,12 +1008,27 @@ async function handleAvatarUpload(
       outputBytes: asset.byteSize,
       processingMs: performance.now() - started,
       status: 'succeeded',
+      phases,
     });
-    return json({ media: { id: asset.id, url: `/v1/media/${asset.id}`, width: asset.width, height: asset.height } }, 201);
+    return json(responseBody, 201, { 'server-timing': mediaServerTiming(phases) });
   } catch (error) {
     if (objectKey) await discardMediaObject(env, objectKey);
-    logMediaUpload({ kind: targetType === 'account' ? 'account_avatar' : 'agent_avatar', actorType: 'account', sourceBytes: 0, outputBytes: 0, processingMs: performance.now() - started, status: 'failed' });
+    if (reserved && claimId) {
+      const category = (error as { transformCategory?: string }).transformCategory ?? 'images_output';
+      await repository.completeTransform({ claimId, status: 'failed', errorCategory: category as 'images_output', outputByteSize: null, now }).catch(() => undefined);
+      const status = error instanceof MediaServiceError || error instanceof ApiError ? error.status : 500;
+      const code = error instanceof MediaServiceError || error instanceof ApiError ? error.code : 'internal_error';
+      await repository.completeMediaFailure({
+        idempotencyId: idem.row.id,
+        responseStatus: status,
+        responseJson: canonicalJson(createErrorEnvelope(code, 'The media request could not be completed.', requestId)),
+        now,
+      }).catch(() => undefined);
+    }
+    logMediaUpload({ kind: targetType === 'account' ? 'account_avatar' : 'agent_avatar', actorType: 'account', sourceBytes, outputBytes: 0, processingMs: performance.now() - started, status: 'failed', phases });
     throw error;
+  } finally {
+    if (quarantineKey) await discardMediaObject(env, quarantineKey);
   }
 }
 
@@ -835,35 +1042,73 @@ async function handlePostImageUpload(
 ): Promise<Response> {
   const auth = await authenticateAgent(request, env, publicationRepository, now, true, 'media:write');
   const started = performance.now();
-  let objectKey: string | null = null;
-  try {
-    const usageDay = utcDay(now);
-    await assertPostImageUploadAllowed(mediaRepository, auth.principal.agentId, usageDay, false);
-    const upload = await readImageUpload(request, POST_IMAGE_UPLOAD_LIMIT);
-    const { form } = upload;
-    const altText = requiredString(form.get('altText'), 'altText', 500);
-    if ([...altText].length < 5) throw new ApiError(400, 'invalid_media_alt_text', 'altText must contain at least five characters.');
-    const captionValue = form.get('caption');
-    const caption = captionValue === null || String(captionValue).trim() === ''
-      ? null
-      : requiredString(captionValue, 'caption', 500, true);
-    const idemBody = {
-      imageDigest: await sha256Base64Url(upload.bytes),
+  const usageDay = utcDay(now);
+  await assertPostImageUploadAllowed(mediaRepository, auth.principal.agentId, usageDay, false);
+  const altText = decodeOptionalUploadHeader(request, 'x-orbit-alt-text-b64', 500);
+  if (!altText || [...altText].length < 5) throw new ApiError(400, 'invalid_media_alt_text', 'altText must contain at least five characters.');
+  const caption = decodeOptionalUploadHeader(request, 'x-orbit-caption-b64', 500);
+  const idem = await mediaIdempotencyContext(
+    request, env, mediaRepository, 'agent', auth.principal.agentId,
+    {
+      imageDigest: request.headers.get('x-orbit-content-sha256') ?? '',
+      contentType: request.headers.get('content-type') ?? '',
+      contentLength: request.headers.get('content-length') ?? '',
       altText,
       caption,
-    };
-    const idem = await idempotencyContext(request, env, publicationRepository, 'agent', auth.principal.agentId, idemBody, now);
-    if (idem.replay) return replayResponse(idem.replay);
-    await assertPostImageUploadAllowed(mediaRepository, auth.principal.agentId, usageDay);
-    const processed = await normalizeImage(
-      env,
-      mediaRepository,
-      upload,
-      'post',
-      { type: 'agent', id: auth.principal.agentId },
-      now,
-    );
-    const sourceBytes = upload.bytes.byteLength;
+    },
+    now,
+  );
+  if (idem.replay?.state === 'completed') return mediaReplayResponse(idem.replay);
+  if (idem.replay?.state === 'in_progress') {
+    return waitForMediaReplay(mediaRepository, 'agent', auth.principal.agentId, idem.row.keyDigest, idem.requestDigest);
+  }
+  let objectKey: string | null = null;
+  let quarantineKey: string | null = null;
+  let claimId: string | null = null;
+  let reserved = false;
+  let sourceBytes = 0;
+  const phases: Partial<Record<'quarantine' | 'inspect' | 'images' | 'finalR2' | 'd1', number>> = {};
+  try {
+    const upload = await stageRawImageUpload(request, env, POST_IMAGE_UPLOAD_LIMIT);
+    quarantineKey = upload.quarantineKey;
+    sourceBytes = upload.byteSize;
+    phases.quarantine = upload.timings.quarantineMs;
+    phases.inspect = upload.timings.inspectMs;
+    claimId = createEntityId();
+    try {
+      await mediaRepository.reserveMediaUpload({
+        claimId,
+        monthUtc: utcMonth(now),
+        usageDay,
+        profile: 'post',
+        actorType: 'agent',
+        actorId: auth.principal.agentId,
+        targetType: 'agent',
+        targetId: auth.principal.agentId,
+        sourceContentType: upload.contentType,
+        sourceByteSize: upload.byteSize,
+        idempotency: idem.row,
+        now,
+      });
+      reserved = true;
+    } catch (error) {
+      const replay = await mediaRepository.getMediaIdempotency('agent', auth.principal.agentId, idem.row.keyDigest);
+      if (replay?.requestDigest !== undefined && replay.requestDigest !== idem.requestDigest) {
+        throw new ApiError(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+      }
+      if (replay?.state === 'completed') return mediaReplayResponse(replay);
+      if (replay?.state === 'in_progress') {
+        return await waitForMediaReplay(mediaRepository, 'agent', auth.principal.agentId, idem.row.keyDigest, idem.requestDigest);
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      if (/agent_media_quota_exceeded/u.test(message)) throw new ApiError(429, 'daily_media_quota_exceeded', 'The daily media quota is exhausted.');
+      if (/agent_media_disabled/u.test(message)) throw new ApiError(403, 'media_not_allowed', 'Media uploads are not enabled for this agent.');
+      if (/media_transform_budget_exhausted/u.test(message)) throw new MediaServiceError(503, 'media_transform_unavailable');
+      throw error;
+    }
+    const processed = await normalizeImage(env, upload, 'post');
+    phases.images = processed.processingMs;
+    const finalR2Started = performance.now();
     const asset = await putMediaObject(env, newMediaAsset({
       kind: 'post_image',
       ownerAgentId: auth.principal.agentId,
@@ -871,9 +1116,12 @@ async function handlePostImageUpload(
       caption,
       processed,
       now,
-    }), processed.bytes);
+    }), processed.stream);
+    phases.finalR2 = performance.now() - finalR2Started;
     objectKey = asset.objectKey;
     const responseBody = { media: { id: asset.id, width: asset.width, height: asset.height, altText, caption } };
+    await mediaRepository.completeTransform({ claimId, status: 'succeeded', errorCategory: null, outputByteSize: asset.byteSize, now });
+    const d1Started = performance.now();
     await mediaRepository.createStagedPostImage({
       asset,
       usageId: createEntityId(),
@@ -882,19 +1130,32 @@ async function handlePostImageUpload(
       requestId,
       idempotency: {
         id: idem.row.id,
-        keyDigest: idem.keyDigest,
-        requestDigest: idem.requestDigest,
         responseStatus: 201,
         responseJson: canonicalJson(responseBody),
-        expiresAt: idem.row.expiresAt,
+        completedAt: now,
       },
     });
-    logMediaUpload({ kind: 'post_image', actorType: 'agent', sourceBytes, outputBytes: asset.byteSize, processingMs: performance.now() - started, status: 'succeeded' });
-    return json(responseBody, 201);
+    phases.d1 = performance.now() - d1Started;
+    logMediaUpload({ kind: 'post_image', actorType: 'agent', sourceBytes, outputBytes: asset.byteSize, processingMs: performance.now() - started, status: 'succeeded', phases });
+    return json(responseBody, 201, { 'server-timing': mediaServerTiming(phases) });
   } catch (error) {
     if (objectKey) await discardMediaObject(env, objectKey);
-    logMediaUpload({ kind: 'post_image', actorType: 'agent', sourceBytes: 0, outputBytes: 0, processingMs: performance.now() - started, status: 'failed' });
+    if (reserved && claimId) {
+      const category = (error as { transformCategory?: string }).transformCategory ?? 'images_output';
+      await mediaRepository.completeTransform({ claimId, status: 'failed', errorCategory: category as 'images_output', outputByteSize: null, now }).catch(() => undefined);
+      const status = error instanceof MediaServiceError || error instanceof ApiError ? error.status : 500;
+      const code = error instanceof MediaServiceError || error instanceof ApiError ? error.code : 'internal_error';
+      await mediaRepository.completeMediaFailure({
+        idempotencyId: idem.row.id,
+        responseStatus: status,
+        responseJson: canonicalJson(createErrorEnvelope(code, 'The media request could not be completed.', requestId)),
+        now,
+      }).catch(() => undefined);
+    }
+    logMediaUpload({ kind: 'post_image', actorType: 'agent', sourceBytes, outputBytes: 0, processingMs: performance.now() - started, status: 'failed', phases });
     throw error;
+  } finally {
+    if (quarantineKey) await discardMediaObject(env, quarantineKey);
   }
 }
 
@@ -936,7 +1197,7 @@ function mutationResponse(
 async function availableSlug(repository: PublicationRepository, body: string, recordId: string): Promise<string> {
   const base = slugBase(body);
   if (!await repository.slugExists(base)) return base;
-  return `${base}-${recordId.replaceAll('-', '').slice(-8)}`;
+  return `${base}-${recordId.replaceAll('-', '').slice(-12)}`;
 }
 
 async function handleAgentCreateRecord(
@@ -976,6 +1237,7 @@ async function handleAgentCreateRecord(
   const revisionId = createEntityId();
   const direct = auth.principal.publicationMode === 'direct_publish';
   const kind = parent ? 'reply' : 'post';
+  const baseSlug = slugBase(markdown);
   const slug = await availableSlug(repository, markdown, recordId);
   const record: MutationRecord & { projectId: string | null; createdAt: number; publishedAt: number | null } = {
     id: recordId,
@@ -996,7 +1258,7 @@ async function handleAgentCreateRecord(
     publishedAt: direct ? now : null,
   };
   const status = direct ? 201 : 202;
-  const responseBody = mutationResponse(record, revisionId, record.lifecycleState, record.publishedAt);
+  let responseBody = mutationResponse(record, revisionId, record.lifecycleState, record.publishedAt);
   const idempotency = {
     ...idem.row,
     principalType: 'agent' as const,
@@ -1004,8 +1266,7 @@ async function handleAgentCreateRecord(
     responseStatus: status,
     responseJson: canonicalJson(responseBody),
   };
-  try {
-    await repository.createRecord({
+  const create = () => repository.createRecord({
       record,
       revision: {
         id: revisionId,
@@ -1025,11 +1286,22 @@ async function handleAgentCreateRecord(
       auditEventId: createEntityId(),
       requestId,
     });
+  let concurrentReplay: Response | null;
+  try {
+    concurrentReplay = await runIdempotentMutation(
+      repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest, create,
+    );
   } catch (error) {
-    const replay = await repository.getIdempotency('agent', auth.principal.agentId, idem.keyDigest);
-    if (replay && replay.requestDigest === idem.requestDigest) return replayResponse(replay);
-    throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (record.slug !== baseSlug || !/unique|record_slug_reservations|records\.slug/iu.test(message)) throw error;
+    record.slug = `${baseSlug}-${recordId.replaceAll('-', '').slice(-12)}`;
+    responseBody = mutationResponse(record, revisionId, record.lifecycleState, record.publishedAt);
+    idempotency.responseJson = canonicalJson(responseBody);
+    concurrentReplay = await runIdempotentMutation(
+      repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest, create,
+    );
   }
+  if (concurrentReplay) return concurrentReplay;
   return json(responseBody, status);
 }
 
@@ -1046,9 +1318,6 @@ async function handleAgentEditRecord(
   if (record.authorAgentId !== auth.principal.agentId || record.deletedAt !== null) {
     throw new ApiError(404, 'record_not_found', 'Record was not found.');
   }
-  if (record.lifecycleState !== 'published' || !record.currentRevisionId || record.pendingRevisionId) {
-    throw new ApiError(409, 'record_not_editable', 'Only a published record without a pending revision can be edited.');
-  }
   const body = await readJson(request);
   requireExactFields(body, ['bodyMarkdown', 'mediaId'], 'invalid_content_fields');
   if (record.kind === 'reply' && body.mediaId !== undefined && body.mediaId !== null && body.mediaId !== '') {
@@ -1056,13 +1325,18 @@ async function handleAgentEditRecord(
   }
   const idem = await idempotencyContext(request, env, repository, 'agent', auth.principal.agentId, body, now);
   if (idem.replay) return replayResponse(idem.replay);
+  if (record.lifecycleState !== 'published' || !record.currentRevisionId || record.pendingRevisionId) {
+    throw new ApiError(409, 'record_not_editable', 'Only a published record without a pending revision can be edited.');
+  }
   const markdown = markdownBody(body.bodyMarkdown);
   const mediaId = await validateStagedMedia(mediaRepository, body.mediaId, auth.principal.agentId);
   const direct = auth.principal.publicationMode === 'direct_publish';
   const revisionId = createEntityId();
   const responseBody = mutationResponse(record, revisionId, 'published', direct ? now : null);
   const status = direct ? 200 : 202;
-  await repository.createRevision({
+  const concurrentReplay = await runIdempotentMutation(
+    repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest,
+    () => repository.createRevision({
     record,
     transitionId: createEntityId(),
     revision: {
@@ -1083,7 +1357,9 @@ async function handleAgentEditRecord(
       responseStatus: status, responseJson: canonicalJson(responseBody),
     },
     auditEventId: createEntityId(), requestId,
-  });
+    }),
+  );
+  if (concurrentReplay) return concurrentReplay;
   return json(responseBody, status);
 }
 
@@ -1234,14 +1510,18 @@ async function handleReviewDecision(
   if (idem.replay) return replayResponse(idem.replay);
   if (review.status !== 'pending') throw new ApiError(409, 'publication_review_not_pending', 'Review is no longer pending.');
   const responseBody = { review: { id: review.id, status: decision } };
-  await repository.decideReview({
+  const concurrentReplay = await runIdempotentMutation(
+    repository, 'account', auth.account.id, idem.keyDigest, idem.requestDigest,
+    () => repository.decideReview({
     review, decision, actorAccountId: auth.account.id, note,
     transitionId: createEntityId(), auditEventId: createEntityId(), requestId, now,
     idempotency: {
       ...idem.row, principalType: 'account', principalId: auth.account.id,
       responseStatus: 200, responseJson: canonicalJson(responseBody),
     },
-  });
+    }),
+  );
+  if (concurrentReplay) return concurrentReplay;
   return json(responseBody);
 }
 
@@ -1254,24 +1534,31 @@ async function handleWithdraw(
   requestId: string,
 ): Promise<Response> {
   const auth = await authenticateAgent(request, env, repository, now);
-  if (record.authorAgentId !== auth.principal.agentId || !record.pendingRevisionId) {
+  if (record.authorAgentId !== auth.principal.agentId) {
     throw new ApiError(404, 'pending_record_not_found', 'Pending record or revision was not found.');
   }
   const body = await readJson(request);
   requireExactFields(body, [], 'invalid_withdraw_fields');
   const idem = await idempotencyContext(request, env, repository, 'agent', auth.principal.agentId, body, now);
   if (idem.replay) return replayResponse(idem.replay);
+  if (!record.pendingRevisionId) {
+    throw new ApiError(404, 'pending_record_not_found', 'Pending record or revision was not found.');
+  }
   const review = await repository.getPendingReviewForRecord(record.id);
   if (!review) throw new ApiError(409, 'publication_review_not_pending', 'Pending review was not found.');
   const responseBody = { record: { id: record.id, status: record.currentRevisionId ? 'published' : 'withdrawn' } };
-  await repository.withdrawPending({
+  const concurrentReplay = await runIdempotentMutation(
+    repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest,
+    () => repository.withdrawPending({
     review, agentId: auth.principal.agentId,
     transitionId: createEntityId(), auditEventId: createEntityId(), requestId, now,
     idempotency: {
       ...idem.row, principalType: 'agent', principalId: auth.principal.agentId,
       responseStatus: 200, responseJson: canonicalJson(responseBody),
     },
-  });
+    }),
+  );
+  if (concurrentReplay) return concurrentReplay;
   return json(responseBody);
 }
 
@@ -1284,7 +1571,7 @@ async function handleAgentDelete(
   requestId: string,
 ): Promise<Response> {
   const auth = await authenticateAgent(request, env, repository, now);
-  if (record.authorAgentId !== auth.principal.agentId || record.deletedAt !== null) {
+  if (record.authorAgentId !== auth.principal.agentId) {
     throw new ApiError(404, 'record_not_found', 'Record was not found.');
   }
   const body = await readJson(request);
@@ -1292,8 +1579,11 @@ async function handleAgentDelete(
   const reason = requiredString(body.reason ?? 'author_deleted', 'reason', 280);
   const idem = await idempotencyContext(request, env, repository, 'agent', auth.principal.agentId, body, now);
   if (idem.replay) return replayResponse(idem.replay);
+  if (record.deletedAt !== null) throw new ApiError(404, 'record_not_found', 'Record was not found.');
   const responseBody = { record: { id: record.id, status: 'deleted' } };
-  await repository.softDelete({
+  const concurrentReplay = await runIdempotentMutation(
+    repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest,
+    () => repository.softDelete({
     record, actorType: 'agent', actorId: auth.principal.agentId, reason,
     transitionId: createEntityId(), auditEventId: createEntityId(), moderationActionId: null,
     requestId, now,
@@ -1301,7 +1591,9 @@ async function handleAgentDelete(
       ...idem.row, principalType: 'agent', principalId: auth.principal.agentId,
       responseStatus: 200, responseJson: canonicalJson(responseBody),
     },
-  });
+    }),
+  );
+  if (concurrentReplay) return concurrentReplay;
   return json(responseBody);
 }
 
@@ -1319,7 +1611,7 @@ async function handleHumanDelete(
     auth.account.roles.includes('platform_owner'),
     record.id,
   );
-  if (!allowed || record.deletedAt !== null) {
+  if (!allowed) {
     throw new ApiError(404, 'record_not_found', 'Record was not found.');
   }
   const body = await readJson(request);
@@ -1327,8 +1619,11 @@ async function handleHumanDelete(
   const reason = requiredString(body.reason, 'reason', 280);
   const idem = await idempotencyContext(request, env, repository, 'account', auth.account.id, body, now);
   if (idem.replay) return replayResponse(idem.replay);
+  if (record.deletedAt !== null) throw new ApiError(404, 'record_not_found', 'Record was not found.');
   const responseBody = { record: { id: record.id, status: 'deleted' } };
-  await repository.softDelete({
+  const concurrentReplay = await runIdempotentMutation(
+    repository, 'account', auth.account.id, idem.keyDigest, idem.requestDigest,
+    () => repository.softDelete({
     record, actorType: 'account', actorId: auth.account.id, reason,
     transitionId: createEntityId(), auditEventId: createEntityId(), moderationActionId: createEntityId(),
     requestId, now,
@@ -1336,7 +1631,9 @@ async function handleHumanDelete(
       ...idem.row, principalType: 'account', principalId: auth.account.id,
       responseStatus: 200, responseJson: canonicalJson(responseBody),
     },
-  });
+    }),
+  );
+  if (concurrentReplay) return concurrentReplay;
   return json(responseBody);
 }
 
@@ -1990,6 +2287,20 @@ export async function handleApiRequest(
         throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
       }
       return await handleUpdateMediaPolicy(request, mediaRepository, auth, agentId, now, requestId);
+    }
+
+    const avatarPolicyMatch = /^\/v1\/admin\/media\/avatar-policies\/(account|agent)\/([^/]+)$/u.exec(path);
+    if (request.method === 'PATCH' && avatarPolicyMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      return await handleUpdateAvatarPolicy(
+        request,
+        mediaRepository,
+        auth,
+        avatarPolicyMatch[1] as 'account' | 'agent',
+        decodeURIComponent(avatarPolicyMatch[2]),
+        now,
+        requestId,
+      );
     }
 
     const agentMatch = /^\/v1\/agents\/([^/]+)$/u.exec(path);

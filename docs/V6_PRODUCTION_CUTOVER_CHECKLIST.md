@@ -12,6 +12,10 @@ production import, custom domain or DNS change.
 - [ ] Final staging candidate runs for at least 24 hours without an unresolved
       availability, auth, data-integrity, backup or secret-leak incident.
 - [ ] Dependency and secret scans are clean.
+- [ ] GitHub Pages `main`-push auto-deploy is replaced by the separately
+      approved manual `workflow_dispatch` cutover gate before PR #9 is merged.
+- [ ] `ORBIT_MEDIA_ENABLED=false` is set for the Workers Free production
+      candidate unless a later media design passes the 10 ms CPU gate.
 
 ## B. Production identity and secrets
 

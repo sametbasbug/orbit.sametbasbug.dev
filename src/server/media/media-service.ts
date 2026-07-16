@@ -1,5 +1,4 @@
 import { createEntityId } from '../foundation/ids';
-import { sha256Base64Url } from '../identity/tokens';
 import type { OrbitBindings, R2BucketLike } from '../identity/bindings';
 import type { MediaAssetView, MediaRepository } from '../repositories/media-repository';
 import {
@@ -13,7 +12,7 @@ import {
 
 export const AVATAR_UPLOAD_LIMIT = 5 * 1024 * 1024;
 export const POST_IMAGE_UPLOAD_LIMIT = 10 * 1024 * 1024;
-const MULTIPART_OVERHEAD_ALLOWANCE = 1024 * 1024;
+const IMAGE_HEADER_LIMIT = 64 * 1024;
 const STAGED_RETENTION_MS = 24 * 60 * 60 * 1000;
 const ORPHAN_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -49,19 +48,34 @@ export function utcMonth(now: number): string {
 }
 
 export interface ValidatedImageUpload {
-  bytes: Uint8Array;
+  quarantineKey: string;
+  byteSize: number;
+  contentDigest: string;
   contentType: 'image/png' | 'image/jpeg' | 'image/webp';
   source: ReturnType<typeof inspectImage>;
-  form: FormData;
+  timings: {
+    quarantineMs: number;
+    inspectMs: number;
+  };
 }
 
-export async function readImageUpload(
+function decodeDigest(value: string): Uint8Array {
+  if (!/^[A-Za-z0-9_-]{43}$/u.test(value)) {
+    throw new MediaServiceError(400, 'image_digest_invalid');
+  }
+  const standard = value.replaceAll('-', '+').replaceAll('_', '/');
+  return Uint8Array.from(atob(`${standard}=`), (character) => character.charCodeAt(0));
+}
+
+export async function stageRawImageUpload(
   request: Request,
+  env: OrbitBindings,
   maxBytes: number,
 ): Promise<ValidatedImageUpload> {
-  const contentType = request.headers.get('content-type') ?? '';
-  if (!contentType.toLowerCase().startsWith('multipart/form-data;')) {
-    throw new MediaServiceError(415, 'multipart_required');
+  const bucket = requireMediaBucket(env);
+  const contentType = (request.headers.get('content-type') ?? '').toLowerCase();
+  if (contentType !== 'image/png' && contentType !== 'image/jpeg' && contentType !== 'image/webp') {
+    throw new MediaServiceError(415, 'image_type_unsupported');
   }
   const rawContentLength = request.headers.get('content-length');
   if (rawContentLength === null) throw new MediaServiceError(411, 'upload_length_required');
@@ -69,23 +83,47 @@ export async function readImageUpload(
   if (!Number.isSafeInteger(contentLength) || contentLength < 1) {
     throw new MediaServiceError(400, 'upload_length_invalid');
   }
-  if (contentLength > maxBytes + MULTIPART_OVERHEAD_ALLOWANCE) {
+  if (contentLength > maxBytes) {
     throw new MediaServiceError(413, 'image_too_large');
   }
-  let form: FormData;
+  const contentDigest = request.headers.get('x-orbit-content-sha256') ?? '';
+  const checksum = decodeDigest(contentDigest);
+  if (!request.body) throw new MediaServiceError(400, 'image_body_required');
+  const quarantineKey = `quarantine/${createEntityId()}`;
+  const quarantineStarted = performance.now();
   try {
-    form = await request.formData();
-  } catch {
-    throw new MediaServiceError(400, 'multipart_invalid');
-  }
-  const file = form.get('file');
-  if (!(file instanceof File)) throw new MediaServiceError(400, 'image_file_required');
-  if (file.size < 1 || file.size > maxBytes) throw new MediaServiceError(413, 'image_too_large');
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  try {
-    const source = inspectImage(bytes, file.type);
-    return { bytes, contentType: source.contentType, source, form };
+    const stored = await bucket.put(quarantineKey, request.body, {
+      sha256: checksum,
+      httpMetadata: { contentType, cacheControl: 'private, no-store' },
+      customMetadata: { state: 'quarantine' },
+    });
+    if (!stored || stored.size !== contentLength) {
+      await bucket.delete(quarantineKey);
+      throw new MediaServiceError(400, 'image_length_mismatch');
+    }
   } catch (error) {
+    await bucket.delete(quarantineKey).catch(() => undefined);
+    if (error instanceof MediaServiceError) throw error;
+    throw new MediaServiceError(400, 'image_checksum_mismatch');
+  }
+  const quarantineMs = performance.now() - quarantineStarted;
+  const inspectStarted = performance.now();
+  try {
+    const header = await bucket.get(quarantineKey, {
+      range: { offset: 0, length: Math.min(contentLength, IMAGE_HEADER_LIMIT) },
+    });
+    if (!header) throw new MediaServiceError(502, 'media_r2_quarantine_missing');
+    const source = inspectImage(new Uint8Array(await header.arrayBuffer()), contentType);
+    return {
+      quarantineKey,
+      byteSize: contentLength,
+      contentDigest,
+      contentType: source.contentType,
+      source,
+      timings: { quarantineMs, inspectMs: performance.now() - inspectStarted },
+    };
+  } catch (error) {
+    await bucket.delete(quarantineKey).catch(() => undefined);
     if (error instanceof ImageValidationError) throw new MediaServiceError(415, error.code);
     throw error;
   }
@@ -106,73 +144,30 @@ export async function assertPostImageUploadAllowed(
 
 export async function normalizeImage(
   env: OrbitBindings,
-  repository: MediaRepository,
   upload: ValidatedImageUpload,
   transform: MediaTransform,
-  actor: { type: 'account' | 'agent'; id: string },
-  now: number,
 ): Promise<ProcessedImage> {
   const images = requireImagesBinding(env);
-  const claimId = createEntityId();
   try {
-    await repository.reserveTransform({
-      id: claimId,
-      monthUtc: utcMonth(now),
-      profile: transform,
-      actorType: actor.type,
-      actorId: actor.id,
-      sourceContentType: upload.contentType,
-      sourceByteSize: upload.bytes.byteLength,
-      now,
-    });
-  } catch (error) {
-    if (error instanceof Error && /media_transform_budget_exhausted/u.test(error.message)) {
-      console.warn(JSON.stringify({
-        event: 'media.transform_rejected',
-        provider: 'cloudflare_images',
-        profile: transform,
-        actorType: actor.type,
-        category: 'safety_limit',
-      }));
-      throw new MediaServiceError(503, 'media_transform_unavailable');
-    }
-    throw error;
-  }
-
-  try {
-    const processed = await transformImage(images, upload.bytes, upload.contentType, transform);
-    await repository.completeTransform({
-      claimId,
-      status: 'succeeded',
-      errorCategory: null,
-      outputByteSize: processed.bytes.byteLength,
-      now,
-    });
-    return processed;
+    const source = await requireMediaBucket(env).get(upload.quarantineKey);
+    if (!source) throw new MediaServiceError(502, 'media_r2_quarantine_missing');
+    return await transformImage(images, source.body, upload.source, transform);
   } catch (error) {
     const transformError = error instanceof ImageTransformError
       ? error
       : new ImageTransformError('images_unknown');
-    try {
-      await repository.completeTransform({
-        claimId,
-        status: 'failed',
-        errorCategory: transformError.category,
-        outputByteSize: null,
-        now,
-      });
-    } catch {
-      // The reservation remains counted. This is deliberately conservative.
-    }
     console.warn(JSON.stringify({
       event: 'media.transform_failed',
       provider: 'cloudflare_images',
       profile: transform,
-      actorType: actor.type,
       category: transformError.category,
       providerCode: transformError.providerCode,
     }));
-    throw new MediaServiceError(503, 'media_transform_unavailable');
+    const serviceError = new MediaServiceError(503, 'media_transform_unavailable') as MediaServiceError & {
+      transformCategory?: string;
+    };
+    serviceError.transformCategory = transformError.category;
+    throw serviceError;
   }
 }
 
@@ -200,7 +195,7 @@ export function newMediaAsset(input: {
     attachedRevisionId: null,
     objectKey: `${prefix}/${id}.webp`,
     contentType: 'image/webp',
-    byteSize: input.processed.bytes.byteLength,
+    byteSize: 0,
     width: input.processed.width,
     height: input.processed.height,
     sha256Digest: '',
@@ -218,12 +213,10 @@ export function newMediaAsset(input: {
 export async function putMediaObject(
   env: OrbitBindings,
   asset: MediaAssetView,
-  bytes: Uint8Array,
+  stream: ReadableStream<Uint8Array>,
 ): Promise<MediaAssetView> {
   const bucket = requireMediaBucket(env);
-  const digest = await sha256Base64Url(bytes);
-  const storedAsset = { ...asset, sha256Digest: digest };
-  await bucket.put(asset.objectKey, bytes, {
+  const stored = await bucket.put(asset.objectKey, stream, {
     httpMetadata: {
       contentType: 'image/webp',
       cacheControl: 'private, no-store',
@@ -231,19 +224,23 @@ export async function putMediaObject(
     customMetadata: {
       mediaId: asset.id,
       mediaKind: asset.mediaKind,
-      sha256Digest: digest,
       width: String(asset.width),
       height: String(asset.height),
     },
   });
-  const readback = await bucket.get(asset.objectKey);
-  if (!readback) throw new MediaServiceError(502, 'media_r2_readback_missing');
-  const readbackBytes = new Uint8Array(await readback.arrayBuffer());
-  if (readbackBytes.byteLength !== bytes.byteLength || await sha256Base64Url(readbackBytes) !== digest) {
+  if (!stored || stored.size < 1 || stored.size > POST_IMAGE_UPLOAD_LIMIT) {
     await bucket.delete(asset.objectKey);
-    throw new MediaServiceError(502, 'media_r2_readback_checksum_failed');
+    const error = new MediaServiceError(503, 'media_transform_unavailable') as MediaServiceError & {
+      transformCategory?: string;
+    };
+    error.transformCategory = 'images_output';
+    throw error;
   }
-  return storedAsset;
+  return {
+    ...asset,
+    byteSize: stored.size,
+    sha256Digest: `r2-etag:${stored.etag}`,
+  };
 }
 
 export async function discardMediaObject(env: OrbitBindings, objectKey: string): Promise<void> {
@@ -270,12 +267,12 @@ export async function serveMedia(
     'content-type': 'image/webp',
     'content-length': String(readable.asset.byteSize),
     'x-content-type-options': 'nosniff',
-    etag: `"${readable.asset.sha256Digest}"`,
+    etag: object.httpEtag ?? `"${object.etag}"`,
     'cache-control': readable.visibility === 'public'
       ? 'public, max-age=300, stale-while-revalidate=120'
       : 'private, no-store',
   });
-  return new Response(request.method === 'HEAD' ? null : await object.arrayBuffer(), { status: 200, headers });
+  return new Response(request.method === 'HEAD' ? null : object.body, { status: 200, headers });
 }
 
 export async function cleanupMedia(
@@ -316,6 +313,7 @@ export function logMediaUpload(input: {
   outputBytes: number;
   processingMs: number;
   status: 'succeeded' | 'failed';
+  phases?: Partial<Record<'quarantine' | 'inspect' | 'images' | 'finalR2' | 'd1', number>>;
 }): void {
   console.log(JSON.stringify({
     event: 'media.upload',
@@ -325,6 +323,9 @@ export function logMediaUpload(input: {
     sourceBytes: input.sourceBytes,
     outputBytes: input.outputBytes,
     processingMs: Math.round(input.processingMs),
+    phases: input.phases ? Object.fromEntries(
+      Object.entries(input.phases).map(([name, duration]) => [name, Math.round(Number(duration) * 100) / 100]),
+    ) : undefined,
     status: input.status,
   }));
 }

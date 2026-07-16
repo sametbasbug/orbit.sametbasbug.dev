@@ -6,18 +6,32 @@ export interface AssetsBinding {
 
 export interface R2ObjectLike {
   key: string;
+  size: number;
+  etag: string;
+  httpEtag?: string;
+  checksums?: { sha256?: ArrayBuffer };
   customMetadata?: Record<string, string>;
 }
 
 export interface R2ObjectBodyLike extends R2ObjectLike {
+  body: ReadableStream<Uint8Array>;
   text(): Promise<string>;
   arrayBuffer(): Promise<ArrayBuffer>;
   httpMetadata?: Record<string, string>;
 }
 
 export interface R2BucketLike {
-  put(key: string, value: string | ArrayBuffer | Uint8Array, options?: { httpMetadata?: Record<string, string>; customMetadata?: Record<string, string> }): Promise<R2ObjectLike | null>;
-  get(key: string): Promise<R2ObjectBodyLike | null>;
+  put(
+    key: string,
+    value: string | ArrayBuffer | Uint8Array | ReadableStream<Uint8Array>,
+    options?: {
+      httpMetadata?: Record<string, string>;
+      customMetadata?: Record<string, string>;
+      sha256?: ArrayBuffer | Uint8Array | string;
+    },
+  ): Promise<R2ObjectLike | null>;
+  get(key: string, options?: { range?: { offset: number; length: number } }): Promise<R2ObjectBodyLike | null>;
+  head?(key: string): Promise<R2ObjectLike | null>;
   list(options?: { prefix?: string; cursor?: string; limit?: number; include?: string[] }): Promise<{ objects: R2ObjectLike[]; truncated: boolean; cursor?: string }>;
   delete(keys: string | string[]): Promise<void>;
 }

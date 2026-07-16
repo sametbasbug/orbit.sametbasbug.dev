@@ -578,11 +578,11 @@ export class D1PublicationRepository implements PublicationRepository {
       INSERT INTO idempotency_keys (
         id, principal_type, principal_id, key_digest, operation,
         request_digest, response_status, resource_type, resource_id,
-        created_at, expires_at, response_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        created_at, expires_at, response_json, state, completed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?)
     `).bind(
       item.id, item.principalType, item.principalId, item.keyDigest, item.operation, item.requestDigest,
-      item.responseStatus, resourceType, resourceId, now, item.expiresAt, item.responseJson,
+      item.responseStatus, resourceType, resourceId, now, item.expiresAt, item.responseJson, now,
     );
   }
 }

@@ -84,6 +84,8 @@ try {
     foreignKeyViolations?: number;
     uniqueViolations?: number;
     relationshipViolations?: number;
+    restoreInputBytes?: number;
+    restoreStatements?: number;
     securityRevocation?: string;
   };
   assert.equal(response.status, 200, proof.code ?? 'R2 restore failed.');
@@ -102,6 +104,8 @@ try {
     counts: proof.counts,
     foreignKeys: 'verified',
     securityRevocation: 'pass',
+    restoreInputBytes: proof.restoreInputBytes,
+    restoreStatements: proof.restoreStatements,
   }));
 } finally {
   try { run(['delete', '--config', configPath, '--force']); } catch { /* already absent */ }

@@ -1,7 +1,9 @@
 import type { D1DatabaseLike } from './d1-foundation-repository';
 import type {
   AgentMediaPolicyView,
+  AvatarUploadPolicyView,
   MediaAssetView,
+  MediaIdempotencyView,
   MediaRepository,
   ReadableMedia,
 } from '../media-repository';
@@ -136,8 +138,9 @@ export class D1MediaRepository implements MediaRepository {
       SELECT
         COALESCE(policy.media_enabled, 0) AS media_enabled,
         COALESCE(policy.daily_image_limit, 0) AS daily_image_limit,
-        (SELECT COUNT(*) FROM agent_media_uploads upload
-          WHERE upload.agent_id = ? AND upload.day_utc = ?) AS used_today
+        (SELECT COUNT(*) FROM media_transform_claims claim
+          WHERE claim.profile = 'post' AND claim.actor_type = 'agent'
+            AND claim.actor_id = ? AND claim.usage_day = ?) AS used_today
       FROM agents agent
       LEFT JOIN agent_media_policies policy ON policy.agent_id = agent.id
       WHERE agent.id = ?
@@ -153,8 +156,95 @@ export class D1MediaRepository implements MediaRepository {
     };
   }
 
-  async reserveTransform(input: Parameters<MediaRepository['reserveTransform']>[0]): Promise<void> {
+  async getAvatarPolicy(
+    subjectType: 'account' | 'agent',
+    subjectId: string,
+    dayUtc: string,
+  ): Promise<AvatarUploadPolicyView | null> {
+    const row = await this.#db.prepare(`
+      SELECT policy.subject_type, policy.subject_id, policy.daily_limit, policy.updated_at,
+             COALESCE(usage.attempted_count, 0) AS used_today
+      FROM avatar_upload_policies policy
+      LEFT JOIN avatar_upload_usage_daily usage
+        ON usage.subject_type = policy.subject_type
+       AND usage.subject_id = policy.subject_id
+       AND usage.day_utc = ?
+      WHERE policy.subject_type = ? AND policy.subject_id = ?
+    `).bind(dayUtc, subjectType, subjectId).first<{
+      subject_type: 'account' | 'agent'; subject_id: string;
+      daily_limit: number; updated_at: number; used_today: number;
+    }>();
+    return row ? {
+      subjectType: row.subject_type,
+      subjectId: row.subject_id,
+      dailyLimit: Number(row.daily_limit),
+      usedToday: Number(row.used_today),
+      updatedAt: Number(row.updated_at),
+    } : null;
+  }
+
+  async setAvatarPolicy(input: Parameters<MediaRepository['setAvatarPolicy']>[0]): Promise<void> {
     await this.#db.batch([
+      this.#db.prepare(`
+        UPDATE avatar_upload_policies
+        SET daily_limit = ?, updated_by_account_id = ?, updated_at = ?
+        WHERE subject_type = ? AND subject_id = ?
+      `).bind(
+        input.dailyLimit, input.actorAccountId, input.now,
+        input.subjectType, input.subjectId,
+      ),
+      this.#db.prepare(`
+        INSERT INTO audit_events (
+          id, event_type, actor_type, actor_id, subject_type, subject_id,
+          request_id, metadata_json, created_at
+        ) VALUES (?, 'media.avatar_policy_changed', 'account', ?, ?, ?, ?, ?, ?)
+      `).bind(
+        input.auditEventId, input.actorAccountId, input.subjectType, input.subjectId,
+        input.requestId, JSON.stringify({ dailyLimit: input.dailyLimit }), input.now,
+      ),
+    ]);
+  }
+
+  async getMediaIdempotency(
+    principalType: 'account' | 'agent',
+    principalId: string,
+    keyDigest: string,
+  ): Promise<MediaIdempotencyView | null> {
+    const row = await this.#db.prepare(`
+      SELECT id, request_digest, state, response_status, response_json
+      FROM idempotency_keys
+      WHERE principal_type = ? AND principal_id = ? AND key_digest = ?
+    `).bind(principalType, principalId, keyDigest).first<{
+      id: string; request_digest: string; state: 'in_progress' | 'completed';
+      response_status: number; response_json: string;
+    }>();
+    return row ? {
+      id: row.id,
+      requestDigest: row.request_digest,
+      state: row.state,
+      responseStatus: Number(row.response_status),
+      responseJson: row.response_json,
+    } : null;
+  }
+
+  async reserveMediaUpload(input: Parameters<MediaRepository['reserveMediaUpload']>[0]): Promise<void> {
+    await this.#db.batch([
+      this.#db.prepare(`
+        INSERT INTO idempotency_keys (
+          id, principal_type, principal_id, key_digest, operation,
+          request_digest, response_status, resource_type, resource_id,
+          created_at, expires_at, response_json, state, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 0, 'media_upload', NULL, ?, ?, '{}', 'in_progress', NULL)
+      `).bind(
+        input.idempotency.id,
+        input.idempotency.principalType,
+        input.idempotency.principalId,
+        input.idempotency.keyDigest,
+        input.idempotency.operation,
+        input.idempotency.requestDigest,
+        input.now,
+        input.idempotency.expiresAt,
+      ),
       this.#db.prepare(`
         INSERT INTO media_transform_usage_monthly (
           month_utc, attempted_count, succeeded_count, failed_count, updated_at
@@ -164,10 +254,11 @@ export class D1MediaRepository implements MediaRepository {
       this.#db.prepare(`
         INSERT INTO media_transform_claims (
           id, month_utc, profile, actor_type, actor_id,
-          source_content_type, source_byte_size, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'reserved', ?)
+          source_content_type, source_byte_size, status, created_at,
+          usage_day, target_type, target_id, idempotency_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'reserved', ?, ?, ?, ?, ?)
       `).bind(
-        input.id,
+        input.claimId,
         input.monthUtc,
         input.profile,
         input.actorType,
@@ -175,6 +266,10 @@ export class D1MediaRepository implements MediaRepository {
         input.sourceContentType,
         input.sourceByteSize,
         input.now,
+        input.usageDay,
+        input.targetType,
+        input.targetId,
+        input.idempotency.id,
       ),
     ]);
   }
@@ -190,6 +285,16 @@ export class D1MediaRepository implements MediaRepository {
       input.errorCategory,
       input.outputByteSize,
       input.now,
+    ).run();
+  }
+
+  async completeMediaFailure(input: Parameters<MediaRepository['completeMediaFailure']>[0]): Promise<void> {
+    await this.#db.prepare(`
+      UPDATE idempotency_keys
+      SET state = 'completed', response_status = ?, response_json = ?, completed_at = ?
+      WHERE id = ? AND state = 'in_progress'
+    `).bind(
+      input.responseStatus, input.responseJson, input.now, input.idempotencyId,
     ).run();
   }
 
@@ -260,6 +365,15 @@ export class D1MediaRepository implements MediaRepository {
       JSON.stringify({ mediaId: input.asset.id, width: input.asset.width, height: input.asset.height }),
       input.asset.createdAt,
     ));
+    statements.push(this.#db.prepare(`
+      UPDATE idempotency_keys
+      SET state = 'completed', response_status = ?, response_json = ?, completed_at = ?,
+          resource_type = 'media', resource_id = ?
+      WHERE id = ? AND state = 'in_progress'
+    `).bind(
+      input.responseStatus, input.responseJson, input.completedAt,
+      input.asset.id, input.idempotencyId,
+    ));
     await this.#db.batch(statements);
   }
 
@@ -282,21 +396,16 @@ export class D1MediaRepository implements MediaRepository {
         input.asset.createdAt,
       ),
       this.#db.prepare(`
-        INSERT INTO idempotency_keys (
-          id, principal_type, principal_id, key_digest, operation,
-          request_digest, response_status, resource_type, resource_id,
-          created_at, expires_at, response_json
-        ) VALUES (?, 'agent', ?, ?, 'POST /v1/media/post-images', ?, ?, 'media', ?, ?, ?, ?)
+        UPDATE idempotency_keys
+        SET state = 'completed', response_status = ?, response_json = ?, completed_at = ?,
+            resource_type = 'media', resource_id = ?
+        WHERE id = ? AND state = 'in_progress'
       `).bind(
-        input.idempotency.id,
-        input.asset.ownerAgentId,
-        input.idempotency.keyDigest,
-        input.idempotency.requestDigest,
         input.idempotency.responseStatus,
-        input.asset.id,
-        input.asset.createdAt,
-        input.idempotency.expiresAt,
         input.idempotency.responseJson,
+        input.idempotency.completedAt,
+        input.asset.id,
+        input.idempotency.id,
       ),
     ]);
   }

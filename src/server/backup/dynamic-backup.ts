@@ -4,7 +4,9 @@ import { randomBase64Url, sha256Base64Url } from '../identity/tokens';
 import type { D1DatabaseLike, D1PreparedStatementLike } from '../repositories/d1/d1-foundation-repository';
 
 export const BACKUP_SCHEMA = 'equinox.orbit.dynamic-backup.v1';
-export const BACKUP_SCHEMA_VERSION = 4;
+export const BACKUP_SCHEMA_VERSION = 5;
+export const MAX_RESTORE_INPUT_BYTES = 4 * 1024 * 1024;
+export const MAX_RESTORE_STATEMENTS = 2_000;
 
 type BackupRow = Record<string, string | number | null>;
 
@@ -48,11 +50,13 @@ const SPECS: TableSpec[] = [
   { exportName: 'publicationReviews', table: 'publication_reviews', columns: ['id','record_id','revision_id','status','requested_at','reviewer_account_id','reviewed_at','review_note'], orderBy: 'requested_at, id' },
   { exportName: 'agentUsageDaily', table: 'agent_usage_daily', columns: ['agent_id','day_utc','posts_created','replies_created','write_attempts','updated_at'], orderBy: 'agent_id, day_utc' },
   { exportName: 'agentMediaPolicies', table: 'agent_media_policies', columns: ['agent_id','media_enabled','daily_image_limit','updated_by_account_id','updated_at'], orderBy: 'agent_id' },
+  { exportName: 'avatarUploadPolicies', table: 'avatar_upload_policies', columns: ['subject_type','subject_id','daily_limit','updated_by_account_id','updated_at'], orderBy: 'subject_type, subject_id' },
+  { exportName: 'avatarUploadUsageDaily', table: 'avatar_upload_usage_daily', columns: ['subject_type','subject_id','day_utc','attempted_count','updated_at'], orderBy: 'day_utc, subject_type, subject_id' },
   { exportName: 'mediaAssets', table: 'media_assets', columns: ['id','media_kind','owner_account_id','owner_agent_id','attached_record_id','attached_revision_id','object_key','content_type','byte_size','width','height','sha256_digest','alt_text','caption','state','orphan_reason','created_at','activated_at','orphaned_at','deleted_at'], orderBy: 'created_at, id' },
   { exportName: 'mediaAttachmentTransitions', table: 'media_attachment_transitions', columns: ['id','media_id','record_id','revision_id','agent_id','target_state','created_at'], orderBy: 'created_at, id' },
   { exportName: 'agentMediaUploads', table: 'agent_media_uploads', columns: ['id','agent_id','media_id','day_utc','created_at'], orderBy: 'created_at, id' },
   { exportName: 'mediaTransformUsageMonthly', table: 'media_transform_usage_monthly', columns: ['month_utc','attempted_count','succeeded_count','failed_count','updated_at'], orderBy: 'month_utc' },
-  { exportName: 'mediaTransformClaims', table: 'media_transform_claims', columns: ['id','month_utc','profile','actor_type','actor_id','source_content_type','source_byte_size','status','error_category','output_byte_size','created_at','completed_at'], orderBy: 'created_at, id' },
+  { exportName: 'mediaTransformClaims', table: 'media_transform_claims', columns: ['id','month_utc','profile','actor_type','actor_id','source_content_type','source_byte_size','status','error_category','output_byte_size','created_at','completed_at','usage_day','target_type','target_id','idempotency_id'], orderBy: 'created_at, id' },
   { exportName: 'mediaTransformResults', table: 'media_transform_results', columns: ['claim_id','status','error_category','output_byte_size','completed_at'], orderBy: 'completed_at, claim_id' },
   { exportName: 'platformAlerts', table: 'platform_alerts', columns: ['alert_key','alert_type','severity','status','message_code','metadata_json','created_at','resolved_at'], orderBy: 'created_at, alert_key' },
   { exportName: 'moderationActions', table: 'moderation_actions', columns: ['id','actor_account_id','action','target_type','target_id','reason','created_at','reversed_by_action_id','reverses_action_id'], orderBy: 'created_at, id' },
@@ -213,8 +217,12 @@ export async function restoreDynamicBackup(
   foreignKeyViolations: number;
   uniqueViolations: number;
   relationshipViolations: number;
+  restoreInputBytes: number;
+  restoreStatements: number;
 }> {
   const backup = await verifyDynamicBackup(input);
+  const restoreInputBytes = new TextEncoder().encode(canonicalJson(backup)).byteLength;
+  if (restoreInputBytes > MAX_RESTORE_INPUT_BYTES) throw new Error('backup_restore_size_limit');
   const occupied = await db.prepare(`
     SELECT
       (SELECT COUNT(*) FROM agents) AS agents,
@@ -272,6 +280,16 @@ export async function restoreDynamicBackup(
   for (const row of backup.tables.agentMediaPolicies) {
     statements.push(insert(db, spec('agentMediaPolicies'), row));
   }
+  for (const row of backup.tables.avatarUploadPolicies) {
+    statements.push(db.prepare(`
+      UPDATE avatar_upload_policies
+      SET daily_limit = ?, updated_by_account_id = ?, updated_at = ?
+      WHERE subject_type = ? AND subject_id = ?
+    `).bind(row.daily_limit, row.updated_by_account_id, row.updated_at, row.subject_type, row.subject_id));
+  }
+  for (const row of backup.tables.avatarUploadUsageDaily) {
+    statements.push(insert(db, spec('avatarUploadUsageDaily'), row));
+  }
   for (const row of backup.tables.mediaAssets) {
     statements.push(insert(db, spec('mediaAssets'), {
       ...row,
@@ -328,6 +346,7 @@ export async function restoreDynamicBackup(
       error_category: null,
       output_byte_size: null,
       completed_at: null,
+      idempotency_id: null,
     }));
   }
   for (const row of backup.tables.mediaTransformResults) {
@@ -416,6 +435,8 @@ export async function restoreDynamicBackup(
     auditEvents: backup.counts.auditEvents,
     mediaAssets: backup.counts.mediaAssets,
     agentMediaPolicies: backup.counts.agentMediaPolicies,
+    avatarUploadPolicies: backup.counts.avatarUploadPolicies,
+    avatarUploadUsageDaily: backup.counts.avatarUploadUsageDaily,
     agentMediaUploads: backup.counts.agentMediaUploads,
     mediaTransformUsageMonthly: backup.counts.mediaTransformUsageMonthly,
     mediaTransformClaims: backup.counts.mediaTransformClaims,
@@ -427,6 +448,7 @@ export async function restoreDynamicBackup(
       id, schema_version, expected_counts_json, created_at
     ) VALUES (?, ?, ?, ?)
   `).bind(createEntityId(), BACKUP_SCHEMA_VERSION, canonicalJson(expectedCounts), now));
+  if (statements.length > MAX_RESTORE_STATEMENTS) throw new Error('backup_restore_size_limit');
   await db.batch(statements);
 
   const fk = await db.prepare(`PRAGMA foreign_key_check`).all();
@@ -459,6 +481,8 @@ export async function restoreDynamicBackup(
     foreignKeyViolations: 0,
     uniqueViolations: 0,
     relationshipViolations: 0,
+    restoreInputBytes,
+    restoreStatements: statements.length,
   };
 }
 

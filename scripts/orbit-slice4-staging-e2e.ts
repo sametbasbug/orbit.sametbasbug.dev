@@ -140,8 +140,11 @@ const ownerId = String(owner);
 const direct = await seedAgent(ownerId, `slice4-direct-${suffix}`, 'direct_publish', agentPepper, now);
 const approval = await seedAgent(ownerId, `slice4-review-${suffix}`, 'approval_required', agentPepper, now + 1);
 const readonly = await seedAgent(ownerId, `slice4-readonly-${suffix}`, 'read_only', agentPepper, now + 2);
+const concurrentDirect = await seedAgent(ownerId, `slice4-concurrent-${suffix}`, 'direct_publish', agentPepper, now + 3);
+const concurrentReview = await seedAgent(ownerId, `slice4-concurrent-review-${suffix}`, 'approval_required', agentPepper, now + 4);
 const session = await ownerSession(ownerId, sessionPepper, csrfPepper, now + 3);
 const createdRecordIds: string[] = [];
+const cleanupRecordIds: string[] = [];
 
 const directResponse = await agentWrite(direct.token, '/v1/records', {
   bodyMarkdown: 'Staging Slice 4 doğrudan yayın provası.',
@@ -150,6 +153,7 @@ const directResponse = await agentWrite(direct.token, '/v1/records', {
 assert.equal(directResponse.status, 201);
 const directBody = await directResponse.json() as { record: { id: string; slug: string } };
 createdRecordIds.push(directBody.record.id);
+cleanupRecordIds.push(directBody.record.id);
 assert.equal((await fetch(`${ORIGIN}/v1/records/${directBody.record.id}`)).status, 200);
 
 const replay = await agentWrite(direct.token, '/v1/records', {
@@ -165,6 +169,7 @@ const reply = await agentWrite(direct.token, `/v1/records/${directBody.record.id
 assert.equal(reply.status, 201);
 const replyBody = await reply.json() as { record: { id: string; parentId: string; rootId: string } };
 createdRecordIds.push(replyBody.record.id);
+cleanupRecordIds.push(replyBody.record.id);
 assert.equal(replyBody.record.parentId, directBody.record.id);
 assert.equal(replyBody.record.rootId, directBody.record.id);
 
@@ -174,6 +179,7 @@ const pending = await agentWrite(approval.token, '/v1/records', {
 assert.equal(pending.status, 202);
 const pendingBody = await pending.json() as { record: { id: string } };
 createdRecordIds.push(pendingBody.record.id);
+cleanupRecordIds.push(pendingBody.record.id);
 assert.equal((await fetch(`${ORIGIN}/v1/records/${pendingBody.record.id}`)).status, 404);
 const queue = await ownerRequest(session, '/v1/approvals').then((response) => response.json()) as {
   reviews: Array<{ id: string; record: { id: string } }>;
@@ -203,17 +209,123 @@ assert.equal((await agentWrite(readonly.token, '/v1/records', {
   bodyMarkdown: 'Bu yazma reddedilmeli.',
 }, `slice4-${suffix}-readonly`)).status, 403);
 
+const pair = async (operation: () => Promise<Response>, expectedStatus: number) => {
+  const responses = await Promise.all([operation(), operation()]);
+  assert.deepEqual(responses.map((response) => response.status), [expectedStatus, expectedStatus]);
+  assert.equal(responses.filter((response) => response.headers.get('idempotency-replayed') === 'true').length, 1);
+  const bodies = await Promise.all(responses.map((response) => response.json()));
+  assert.deepEqual(bodies[0], bodies[1]);
+  return bodies[0] as { record?: { id: string }; review?: { id: string } };
+};
+
+const concurrentPost = await pair(() => agentWrite(concurrentDirect.token, '/v1/records', {
+  bodyMarkdown: `Staging paralel idempotency gönderisi ${suffix}.`, topicSlugs: ['orbit'],
+}, `slice4-${suffix}-concurrent-post`), 201);
+const concurrentPostId = concurrentPost.record!.id;
+createdRecordIds.push(concurrentPostId);
+cleanupRecordIds.push(concurrentPostId);
+const concurrentReply = await pair(() => agentWrite(
+  concurrentDirect.token,
+  `/v1/records/${concurrentPostId}/replies`,
+  { bodyMarkdown: `Staging paralel idempotency yanıtı ${suffix}.` },
+  `slice4-${suffix}-concurrent-reply`,
+), 201);
+createdRecordIds.push(concurrentReply.record!.id);
+cleanupRecordIds.push(concurrentReply.record!.id);
+await pair(() => agentWrite(concurrentDirect.token, `/v1/records/${concurrentPostId}`, {
+  bodyMarkdown: `Staging paralel idempotency revision ${suffix}.`,
+}, `slice4-${suffix}-concurrent-revision`, 'PATCH'), 200);
+
+const slugRace = await Promise.all([
+  agentWrite(concurrentDirect.token, '/v1/records', {
+    bodyMarkdown: `Staging aynı anda üretilen slug ${suffix}.`,
+  }, `slice4-${suffix}-slug-a`),
+  agentWrite(concurrentDirect.token, '/v1/records', {
+    bodyMarkdown: `Staging aynı anda üretilen slug ${suffix}.`,
+  }, `slice4-${suffix}-slug-b`),
+]);
+assert.deepEqual(slugRace.map((response) => response.status), [201, 201]);
+const slugBodies = await Promise.all(slugRace.map((response) => response.json())) as Array<{
+  record: { id: string; slug: string };
+}>;
+assert.notEqual(slugBodies[0].record.slug, slugBodies[1].record.slug);
+assert.ok(slugBodies.some((item) => item.record.slug.endsWith(item.record.id.replaceAll('-', '').slice(-12))));
+createdRecordIds.push(...slugBodies.map((item) => item.record.id));
+cleanupRecordIds.push(...slugBodies.map((item) => item.record.id));
+
+const createPending = async (bodyMarkdown: string, key: string) => {
+  const response = await agentWrite(concurrentReview.token, '/v1/records', { bodyMarkdown }, key);
+  assert.equal(response.status, 202);
+  const body = await response.json() as { record: { id: string } };
+  createdRecordIds.push(body.record.id);
+  return body.record.id;
+};
+const reviewFor = async (recordId: string) => {
+  const reviews = await ownerRequest(session, '/v1/approvals').then((response) => response.json()) as {
+    reviews: Array<{ id: string; record: { id: string } }>;
+  };
+  const match = reviews.reviews.find((item) => item.record.id === recordId);
+  assert.ok(match);
+  return match.id;
+};
+const approveId = await createPending(`Staging paralel onay ${suffix}.`, `slice4-${suffix}-approve-create`);
+const approveReview = await reviewFor(approveId);
+await pair(() => ownerRequest(session, `/v1/approvals/${approveReview}/approve`, 'POST', {
+  note: 'parallel staging approval',
+}, `slice4-${suffix}-concurrent-approve`), 200);
+cleanupRecordIds.push(approveId);
+
+const rejectId = await createPending(`Staging paralel ret ${suffix}.`, `slice4-${suffix}-reject-create`);
+const rejectReview = await reviewFor(rejectId);
+await pair(() => ownerRequest(session, `/v1/approvals/${rejectReview}/reject`, 'POST', {
+  note: 'parallel staging rejection',
+}, `slice4-${suffix}-concurrent-reject`), 200);
+
+const withdrawId = await createPending(`Staging paralel geri çekme ${suffix}.`, `slice4-${suffix}-withdraw-create`);
+await pair(() => agentWrite(
+  concurrentReview.token,
+  `/v1/records/${withdrawId}/withdraw`,
+  {},
+  `slice4-${suffix}-concurrent-withdraw`,
+), 200);
+
+const agentDeleteRecord = await agentWrite(concurrentDirect.token, '/v1/records', {
+  bodyMarkdown: `Staging paralel ajan silme ${suffix}.`,
+}, `slice4-${suffix}-agent-delete-create`).then((response) => response.json()) as { record: { id: string } };
+createdRecordIds.push(agentDeleteRecord.record.id);
+await pair(() => agentWrite(
+  concurrentDirect.token,
+  `/v1/records/${agentDeleteRecord.record.id}/delete`,
+  { reason: 'parallel staging agent delete' },
+  `slice4-${suffix}-concurrent-agent-delete`,
+), 200);
+
+const sponsorDeleteRecord = await agentWrite(concurrentDirect.token, '/v1/records', {
+  bodyMarkdown: `Staging paralel sponsor silme ${suffix}.`,
+}, `slice4-${suffix}-sponsor-delete-create`).then((response) => response.json()) as { record: { id: string } };
+createdRecordIds.push(sponsorDeleteRecord.record.id);
+await pair(() => ownerRequest(
+  session,
+  `/v1/manage/records/${sponsorDeleteRecord.record.id}/delete`,
+  'POST',
+  { reason: 'parallel staging sponsor delete' },
+  `slice4-${suffix}-concurrent-sponsor-delete`,
+), 200);
+
 const evidence = execute(`
   SELECT
     (SELECT COUNT(*) FROM records WHERE id IN (${createdRecordIds.map(quote).join(',')})) AS records,
     (SELECT COUNT(*) FROM audit_events WHERE subject_type = 'record' AND subject_id IN (${createdRecordIds.map(quote).join(',')})) AS audits,
-    (SELECT COUNT(*) FROM idempotency_keys WHERE principal_type = 'agent' AND principal_id IN (${quote(direct.id)}, ${quote(approval.id)})) AS idempotency_rows
+    (SELECT COUNT(*) FROM idempotency_keys WHERE
+      (principal_type = 'agent' AND principal_id IN (${quote(direct.id)}, ${quote(approval.id)}, ${quote(concurrentDirect.id)}, ${quote(concurrentReview.id)}))
+      OR (principal_type = 'account' AND principal_id = ${quote(ownerId)})
+    ) AS idempotency_rows
 `)[0] as { records: number; audits: number; idempotency_rows: number };
-assert.equal(Number(evidence.records), 3);
-assert.ok(Number(evidence.audits) >= 5);
-assert.ok(Number(evidence.idempotency_rows) >= 4);
+assert.equal(Number(evidence.records), createdRecordIds.length);
+assert.ok(Number(evidence.audits) >= 15);
+assert.ok(Number(evidence.idempotency_rows) >= 15);
 
-for (const recordId of createdRecordIds) {
+for (const recordId of cleanupRecordIds) {
   const ownerDelete = await ownerRequest(session, `/v1/manage/records/${recordId}/delete`, 'POST', {
     reason: 'Slice 4 staging cleanup.',
   }, `slice4-${suffix}-delete-${recordId}`);
@@ -221,9 +333,11 @@ for (const recordId of createdRecordIds) {
 }
 execute(`
   UPDATE agent_credentials SET revoked_at = ${Date.now()}, revoked_reason = 'staging_test_cleanup'
-  WHERE id IN (${quote(direct.credentialId)}, ${quote(approval.credentialId)}, ${quote(readonly.credentialId)});
+  WHERE id IN (${quote(direct.credentialId)}, ${quote(approval.credentialId)}, ${quote(readonly.credentialId)},
+    ${quote(concurrentDirect.credentialId)}, ${quote(concurrentReview.credentialId)});
   UPDATE agents SET status = 'retired', updated_at = ${Date.now()}
-  WHERE id IN (${quote(direct.id)}, ${quote(approval.id)}, ${quote(readonly.id)});
+  WHERE id IN (${quote(direct.id)}, ${quote(approval.id)}, ${quote(readonly.id)},
+    ${quote(concurrentDirect.id)}, ${quote(concurrentReview.id)});
   UPDATE sessions SET revoked_at = ${Date.now()}, revoked_reason = 'staging_test_cleanup'
   WHERE id = ${quote(session.id)}
 `);
@@ -232,5 +346,5 @@ process.stdout.write(JSON.stringify({
   ok: true,
   runId: createEntityId(),
   publication: 'pass', replyRoot: 'pass', approval: 'pass', revision: 'pass',
-  idempotency: 'pass', readOnly: 'pass', cleanup: 'soft-delete',
+  idempotency: 'concurrent-pass', slugRace: 'suffix-pass', readOnly: 'pass', cleanup: 'soft-delete',
 }));

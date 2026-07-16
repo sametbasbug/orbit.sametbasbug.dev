@@ -162,9 +162,10 @@ const mediaResult = await mediaApi.uploadPostImage(
 );
 check(mediaResult.status === 201, 'CLI medya yükleme sonucunu korumadı.');
 check(capturedUpload.url.endsWith('/v1/media/post-images'), 'CLI medya endpointine gitmedi.');
-check(capturedUpload.init.body instanceof FormData, 'CLI görseli multipart FormData olarak göndermedi.');
+check(Buffer.isBuffer(capturedUpload.init.body), 'CLI görseli bounded raw body olarak göndermedi.');
 check(capturedUpload.init.headers['idempotency-key'] === 'stable-media-retry-key', 'CLI medya Idempotency-Key göndermedi.');
-check(!('content-type' in capturedUpload.init.headers), 'CLI multipart boundary değerini elle ezdi.');
+check(capturedUpload.init.headers['content-type'] === 'image/webp', 'CLI gerçek medya MIME türünü göndermedi.');
+check(typeof capturedUpload.init.headers['x-orbit-content-sha256'] === 'string', 'CLI medya checksum göndermedi.');
 
 const revoked = new OrbitApiClient({
   origin: STAGING_ORIGIN,

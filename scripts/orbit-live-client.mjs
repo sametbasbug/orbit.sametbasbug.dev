@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
 import { extname } from 'node:path';
@@ -59,14 +59,14 @@ export class OrbitApiClient {
     this.fetchImpl = fetchImpl;
   }
 
-  async request(pathname, { method = 'GET', body, form, idempotencyKey } = {}) {
-    const headers = { authorization: `Bearer ${this.credential}`, accept: 'application/json' };
+  async request(pathname, { method = 'GET', body, raw, headers: extraHeaders = {}, idempotencyKey } = {}) {
+    const headers = { authorization: `Bearer ${this.credential}`, accept: 'application/json', ...extraHeaders };
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (idempotencyKey) headers['idempotency-key'] = idempotencyKey;
     const response = await this.fetchImpl(`${this.origin}${pathname}`, {
       method,
       headers,
-      body: form ?? (body === undefined ? undefined : JSON.stringify(body)),
+      body: raw ?? (body === undefined ? undefined : JSON.stringify(body)),
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
@@ -102,11 +102,21 @@ export class OrbitApiClient {
     const types = new Map([['.png','image/png'],['.jpg','image/jpeg'],['.jpeg','image/jpeg'],['.webp','image/webp']]);
     const type = types.get(extname(pathname).toLowerCase());
     if (!type) throw new Error('Yalnız PNG, JPEG ve WebP görseller kabul edilir.');
-    const form = new FormData();
-    form.set('file', new File([await readFile(pathname)], `orbit-upload${extname(pathname)}`, { type }));
-    form.set('altText', altText);
-    if (caption) form.set('caption', caption);
-    return this.request('/v1/media/post-images', { method: 'POST', form, idempotencyKey });
+    const bytes = await readFile(pathname);
+    const digest = createHash('sha256').update(bytes).digest('base64url');
+    const encode = (value) => Buffer.from(value, 'utf8').toString('base64url');
+    return this.request('/v1/media/post-images', {
+      method: 'POST',
+      raw: bytes,
+      headers: {
+        'content-type': type,
+        'content-length': String(bytes.byteLength),
+        'x-orbit-content-sha256': digest,
+        'x-orbit-alt-text-b64': encode(altText),
+        ...(caption ? { 'x-orbit-caption-b64': encode(caption) } : {}),
+      },
+      idempotencyKey,
+    });
   }
 }
 

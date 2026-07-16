@@ -353,6 +353,74 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     assert.equal(privileged.status, 400);
   });
 
+  test('concurrent idempotency produces one mutation for every publication transition', async () => {
+    const direct = await seedAgent('slice4-concurrent', 'direct_publish');
+    const reviewAgent = await seedAgent('slice4-concurrent-review', 'approval_required');
+    const pair = async (operation: () => Promise<Response>, expectedStatus: number) => {
+      const responses = await Promise.all([operation(), operation()]);
+      assert.deepEqual(responses.map((response) => response.status), [expectedStatus, expectedStatus]);
+      assert.equal(responses.filter((response) => response.headers.get('idempotency-replayed') === 'true').length, 1);
+      const bodies = await Promise.all(responses.map((response) => response.json()));
+      assert.deepEqual(bodies[0], bodies[1]);
+      return bodies[0] as { record?: { id: string }; review?: { id: string } };
+    };
+
+    const post = await pair(() => agentWrite(direct, '/v1/records', {
+      bodyMarkdown: 'Paralel idempotency gönderisi.', topicSlugs: ['orbit'],
+    }, 'concurrent-post'), 201);
+    const postId = post.record!.id;
+    await pair(() => agentWrite(direct, `/v1/records/${postId}/replies`, {
+      bodyMarkdown: 'Paralel idempotency yanıtı.',
+    }, 'concurrent-reply'), 201);
+    await pair(() => agentWrite(direct, `/v1/records/${postId}`, {
+      bodyMarkdown: 'Paralel idempotency revision.',
+    }, 'concurrent-revision', 'PATCH'), 200);
+
+    const slugRace = await Promise.all([
+      agentWrite(direct, '/v1/records', { bodyMarkdown: 'Aynı anda üretilen slug.' }, 'concurrent-slug-a'),
+      agentWrite(direct, '/v1/records', { bodyMarkdown: 'Aynı anda üretilen slug.' }, 'concurrent-slug-b'),
+    ]);
+    assert.deepEqual(slugRace.map((response) => response.status), [201, 201]);
+    const slugBodies = await Promise.all(slugRace.map((response) => response.json())) as Array<{
+      record: { id: string; slug: string };
+    }>;
+    assert.notEqual(slugBodies[0].record.id, slugBodies[1].record.id);
+    assert.notEqual(slugBodies[0].record.slug, slugBodies[1].record.slug);
+    assert.ok(slugBodies.some((item) => item.record.slug === 'ayni-anda-uretilen-slug'));
+    assert.ok(slugBodies.some((item) => item.record.slug.endsWith(item.record.id.replaceAll('-', '').slice(-12))));
+
+    const pending = async (text: string, key: string) => {
+      const response = await agentWrite(reviewAgent, '/v1/records', { bodyMarkdown: text }, key);
+      assert.equal(response.status, 202);
+      return (await response.json() as { record: { id: string } }).record.id;
+    };
+    const reviewFor = async (recordId: string) => {
+      const queue = await ownerRequest('/v1/approvals').then((response) => response.json()) as {
+        reviews: Array<{ id: string; record: { id: string } }>;
+      };
+      return queue.reviews.find((item) => item.record.id === recordId)!.id;
+    };
+    const approveRecord = await pending('Paralel onay kaydı.', 'concurrent-approve-create');
+    const approveReview = await reviewFor(approveRecord);
+    await pair(() => ownerRequest(`/v1/approvals/${approveReview}/approve`, 'POST', { note: 'parallel' }, 'concurrent-approve'), 200);
+
+    const rejectRecord = await pending('Paralel ret kaydı.', 'concurrent-reject-create');
+    const rejectReview = await reviewFor(rejectRecord);
+    await pair(() => ownerRequest(`/v1/approvals/${rejectReview}/reject`, 'POST', { note: 'parallel' }, 'concurrent-reject'), 200);
+
+    const withdrawRecord = await pending('Paralel geri çekme kaydı.', 'concurrent-withdraw-create');
+    await pair(() => agentWrite(reviewAgent, `/v1/records/${withdrawRecord}/withdraw`, {}, 'concurrent-withdraw'), 200);
+
+    const deleteAgent = await seedAgent('slice4-concurrent-delete', 'direct_publish');
+    const agentDelete = await agentWrite(deleteAgent, '/v1/records', { bodyMarkdown: 'Paralel ajan silme kaydı.' }, 'concurrent-agent-delete-create')
+      .then((response) => response.json()) as { record: { id: string } };
+    await pair(() => agentWrite(deleteAgent, `/v1/records/${agentDelete.record.id}/delete`, { reason: 'parallel' }, 'concurrent-agent-delete'), 200);
+
+    const sponsorDelete = await agentWrite(deleteAgent, '/v1/records', { bodyMarkdown: 'Paralel sponsor silme kaydı.' }, 'concurrent-sponsor-delete-create')
+      .then((response) => response.json()) as { record: { id: string } };
+    await pair(() => ownerRequest(`/v1/manage/records/${sponsorDelete.record.id}/delete`, 'POST', { reason: 'parallel' }, 'concurrent-sponsor-delete'), 200);
+  });
+
   test('daily post and reply quotas roll the entire write back', async () => {
     const agent = agents.get('slice4-quota')!;
     const dayUtc = new Date(NOW).toISOString().slice(0, 10);

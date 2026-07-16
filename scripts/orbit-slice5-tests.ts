@@ -6,13 +6,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { after, before, describe, test } from 'node:test';
 import { createEntityId } from '../src/server/foundation/ids';
-import { createOpaqueToken, hmacDigest, randomBase64Url } from '../src/server/identity/tokens';
+import { createOpaqueToken, hmacDigest, randomBase64Url, sha256Base64Url } from '../src/server/identity/tokens';
+import { canonicalJson } from '../src/server/publication/content';
 import { dashboardResponse } from '../src/server/dashboard/html';
 import {
   decryptChunkedBackup,
   encryptChunkedBackup,
 } from '../src/server/backup/chunked-backup';
-import { ImageTransformError, transformImage } from '../src/server/media/image-processor';
+import { ImageTransformError, inspectImage, transformImage } from '../src/server/media/image-processor';
 import sharp from 'sharp';
 
 const ROOT = process.cwd();
@@ -121,7 +122,12 @@ async function ownerRequest(
   });
 }
 
-async function ownerMultipart(pathname: string, form: FormData, now = NOW): Promise<Response> {
+async function imageDigest(bytes: Uint8Array): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', Uint8Array.from(bytes)));
+  return Buffer.from(digest).toString('base64url');
+}
+
+async function ownerImage(pathname: string, bytes: Uint8Array, type = 'image/png', now = NOW, key = randomBase64Url(18)): Promise<Response> {
   return await fetch(`${baseUrl}${pathname}`, {
     method: 'POST',
     headers: {
@@ -129,8 +135,12 @@ async function ownerMultipart(pathname: string, form: FormData, now = NOW): Prom
       origin: 'http://localhost:4321',
       'x-orbit-csrf': ownerCsrf,
       'x-test-now': String(now),
+      'idempotency-key': key,
+      'content-type': type,
+      'content-length': String(bytes.byteLength),
+      'x-orbit-content-sha256': await imageDigest(bytes),
     },
-    body: form,
+    body: Uint8Array.from(bytes),
   });
 }
 
@@ -168,18 +178,19 @@ async function agentImageRequest(
   altText = 'Orbit test görseli',
   key = randomBase64Url(18),
 ): Promise<Response> {
-  const form = new FormData();
-  form.set('file', new File([Uint8Array.from(bytes)], 'test-image.png', { type }));
-  form.set('altText', altText);
-  form.set('caption', 'Slice 5 kontrollü medya testi');
   return await fetch(`${baseUrl}/v1/media/post-images`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${agent.token}`,
       'idempotency-key': key,
       'x-test-now': String(NOW),
+      'content-type': type,
+      'content-length': String(bytes.byteLength),
+      'x-orbit-content-sha256': await imageDigest(bytes),
+      'x-orbit-alt-text-b64': Buffer.from(altText).toString('base64url'),
+      'x-orbit-caption-b64': Buffer.from('Slice 5 kontrollü medya testi').toString('base64url'),
     },
-    body: form,
+    body: Uint8Array.from(bytes),
   });
 }
 
@@ -202,6 +213,7 @@ before(async () => {
   await seedAgent('slice5-equinox', 'Sistem ajanı');
   await seedAgent('slice5-external');
   await seedAgent('slice5-pending', '', 'approval_required');
+  await seedAgent('slice5-media-concurrent');
 });
 
 after(async () => {
@@ -227,9 +239,7 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     const png = new Uint8Array(await sharp({
       create: { width: 1600, height: 900, channels: 4, background: '#745cff' },
     }).png().toBuffer());
-    const avatarForm = new FormData();
-    avatarForm.set('file', new File([png], 'avatar.png', { type: 'image/png' }));
-    const avatar = await ownerMultipart('/v1/me/avatar', avatarForm);
+    const avatar = await ownerImage('/v1/me/avatar', png);
     assert.equal(avatar.status, 201, await avatar.clone().text());
     const avatarBody = await avatar.json() as { media: { id: string; width: number; height: number } };
     assert.deepEqual([avatarBody.media.width, avatarBody.media.height], [512, 512]);
@@ -239,9 +249,7 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal((await fetch(`${baseUrl}/v1/media/${avatarBody.media.id}`)).status, 404);
 
     const direct = agents.get('slice5-equinox')!;
-    const agentAvatarForm = new FormData();
-    agentAvatarForm.set('file', new File([png], 'agent-avatar.png', { type: 'image/png' }));
-    const agentAvatar = await ownerMultipart(`/v1/agents/${direct.id}/avatar`, agentAvatarForm);
+    const agentAvatar = await ownerImage(`/v1/agents/${direct.id}/avatar`, png);
     assert.equal(agentAvatar.status, 201, await agentAvatar.clone().text());
     const agentAvatarId = (await agentAvatar.json() as { media: { id: string } }).media.id;
     assert.equal((await fetch(`${baseUrl}/v1/media/${agentAvatarId}`)).status, 200);
@@ -310,6 +318,57 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal(cleanupBody.failed, 0);
   });
 
+  test('parallel avatar and post uploads reserve exactly one Images transform', async () => {
+    const png = new Uint8Array(await sharp({
+      create: { width: 1200, height: 800, channels: 4, background: '#312e81' },
+    }).png().toBuffer());
+    const before = await testPost('/__test/media-transform-state', { month: '2026-07' }).then((response) => response.json()) as {
+      counts: { media_assets: number; claims: number; attempted: number };
+    };
+    const avatarResponses = await Promise.all([
+      ownerImage('/v1/me/avatar', png, 'image/png', NOW, 'parallel-avatar-key'),
+      ownerImage('/v1/me/avatar', png, 'image/png', NOW, 'parallel-avatar-key'),
+    ]);
+    assert.deepEqual(avatarResponses.map((response) => response.status), [201, 201]);
+    assert.equal(avatarResponses.filter((response) => response.headers.get('idempotency-replayed') === 'true').length, 1);
+    const avatarBodies = await Promise.all(avatarResponses.map((response) => response.json()));
+    assert.deepEqual(avatarBodies[0], avatarBodies[1]);
+
+    const agent = agents.get('slice5-media-concurrent')!;
+    assert.equal((await ownerRequest(`/v1/admin/media/avatar-policies/agent/${agent.id}`, 'PATCH', {
+      dailyLimit: 1,
+    })).status, 200);
+    const agentAvatarResponses = await Promise.all([
+      ownerImage(`/v1/agents/${agent.id}/avatar`, png, 'image/png', NOW, 'parallel-agent-avatar-key'),
+      ownerImage(`/v1/agents/${agent.id}/avatar`, png, 'image/png', NOW, 'parallel-agent-avatar-key'),
+    ]);
+    assert.deepEqual(agentAvatarResponses.map((response) => response.status), [201, 201]);
+    assert.equal(agentAvatarResponses.filter((response) => response.headers.get('idempotency-replayed') === 'true').length, 1);
+    const avatarQuota = await ownerImage(`/v1/agents/${agent.id}/avatar`, png, 'image/png', NOW, 'parallel-agent-avatar-new-key');
+    assert.equal(avatarQuota.status, 429);
+    assert.equal((await avatarQuota.json() as { error: { code: string } }).error.code, 'daily_avatar_quota_exceeded');
+
+    assert.equal((await ownerRequest(`/v1/admin/agents/${agent.id}/media-policy`, 'PATCH', {
+      mediaEnabled: true, dailyImageLimit: 10,
+    })).status, 200);
+    const postResponses = await Promise.all([
+      agentImageRequest(agent, png, 'image/png', 'Paralel Orbit medya görseli', 'parallel-post-media-key'),
+      agentImageRequest(agent, png, 'image/png', 'Paralel Orbit medya görseli', 'parallel-post-media-key'),
+    ]);
+    assert.deepEqual(postResponses.map((response) => response.status), [201, 201]);
+    assert.equal(postResponses.filter((response) => response.headers.get('idempotency-replayed') === 'true').length, 1);
+    const postBodies = await Promise.all(postResponses.map((response) => response.json()));
+    assert.deepEqual(postBodies[0], postBodies[1]);
+
+    const after = await testPost('/__test/media-transform-state', { month: '2026-07' }).then((response) => response.json()) as typeof before;
+    assert.equal(Number(after.counts.claims), Number(before.counts.claims) + 3);
+    assert.equal(Number(after.counts.attempted), Number(before.counts.attempted) + 3);
+    assert.equal(Number(after.counts.media_assets), Number(before.counts.media_assets) + 3);
+    const conflict = await agentImageRequest(agent, png, 'image/png', 'Farklı alt metin', 'parallel-post-media-key');
+    assert.equal(conflict.status, 409);
+    assert.equal((await conflict.json() as { error: { code: string } }).error.code, 'idempotency_conflict');
+  });
+
   test('decode failure is fail-closed and Images quota errors stay safely categorized', async () => {
     const before = await testPost('/__test/media-transform-state', { month: '2026-07' }).then((response) => response.json()) as {
       counts: { media_assets: number; claims: number; results: number; failed_results: number };
@@ -320,9 +379,7 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     corrupt.set([0,0,0,13,73,72,68,82], 8);
     new DataView(corrupt.buffer).setUint32(16, 800);
     new DataView(corrupt.buffer).setUint32(20, 600);
-    const form = new FormData();
-    form.set('file', new File([corrupt], 'corrupt.png', { type: 'image/png' }));
-    const rejected = await ownerMultipart('/v1/me/avatar', form);
+    const rejected = await ownerImage('/v1/me/avatar', corrupt);
     assert.equal(rejected.status, 503);
     await rejected.arrayBuffer();
     const after = await testPost('/__test/media-transform-state', { month: '2026-07' }).then((response) => response.json()) as typeof before;
@@ -341,7 +398,7 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     };
     const quotaBinding = { input: () => quotaTransformer };
     await assert.rejects(
-      transformImage(quotaBinding, png, 'image/png', 'avatar'),
+      transformImage(quotaBinding, new Blob([png]).stream(), inspectImage(png, 'image/png'), 'avatar'),
       (error: unknown) => error instanceof ImageTransformError
         && error.category === 'images_quota'
         && error.providerCode === 9422,
@@ -483,6 +540,12 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
       csrfDigest: randomBase64Url(32),
     });
     assert.equal(closedSession.status, 200);
+    const dynamicExport = await testPost('/__test/backup-export', { includeSessions: true })
+      .then((response) => response.json()) as {
+        checksum: { value: string };
+        counts: Record<string, number>;
+        tables: Record<string, Array<Record<string, unknown>>>;
+      };
     const exported = await testPost('/__test/chunked-backup-export', { includeSessions: true })
       .then((response) => response.json()) as {
         manifest: { schema: string; checksum: { value: string }; counts: Record<string, number> };
@@ -505,6 +568,32 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
       migrate(restorePersist);
       const started = await startWorker(restorePersist);
       restoreWorker = started.process;
+      const oversized = structuredClone(dynamicExport);
+      oversized.tables.auditEvents[0].metadata_json = 'x'.repeat(4 * 1024 * 1024 + 1);
+      const { checksum: _checksum, ...unsignedOversized } = oversized;
+      oversized.checksum.value = await sha256Base64Url(canonicalJson(unsignedOversized));
+      const oversizedRejected = await fetch(`${started.url}/__test/backup-restore`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-test-now': String(NOW) },
+        body: JSON.stringify({ backup: oversized, revokeSecurity: true }),
+      });
+      assert.equal(oversizedRejected.status, 400);
+      assert.equal((await oversizedRejected.json() as { code: string }).code, 'backup_restore_size_limit');
+      const tooManyStatements = structuredClone(dynamicExport);
+      const auditTemplate = tooManyStatements.tables.auditEvents[0];
+      tooManyStatements.tables.auditEvents = Array.from({ length: 2_001 }, (_, index) => ({
+        ...auditTemplate,
+        sequence: index + 1,
+        id: `restore-limit-audit-${String(index + 1).padStart(4, '0')}`,
+      }));
+      tooManyStatements.counts.auditEvents = tooManyStatements.tables.auditEvents.length;
+      const { checksum: _statementChecksum, ...unsignedTooManyStatements } = tooManyStatements;
+      tooManyStatements.checksum.value = await sha256Base64Url(canonicalJson(unsignedTooManyStatements));
+      const statementLimitRejected = await fetch(`${started.url}/__test/backup-restore`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-test-now': String(NOW) },
+        body: JSON.stringify({ backup: tooManyStatements, revokeSecurity: true }),
+      });
+      assert.equal(statementLimitRejected.status, 400);
+      assert.equal((await statementLimitRejected.json() as { code: string }).code, 'backup_restore_size_limit');
       const corrupted = structuredClone(exported);
       corrupted.chunks[0].checksum.value = `${corrupted.chunks[0].checksum.value.slice(0, -1)}x`;
       const rejected = await fetch(`${started.url}/__test/chunked-backup-restore`, {
@@ -585,21 +674,20 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
 
   test('the 4500 monthly safety threshold stops before Images and leaves no partial media', async () => {
     const limitNow = NOW + 60_000;
+    assert.equal((await ownerRequest(`/v1/admin/media/avatar-policies/account/${OWNER_ID}`, 'PATCH', {
+      dailyLimit: 50,
+    })).status, 200);
     await testPost('/__test/media-transform-limit', { month: '2026-07', attempted: 4499 });
     const png = new Uint8Array(await sharp({
       create: { width: 900, height: 1400, channels: 4, background: '#1d4ed8' },
     }).png().toBuffer());
-    const first = new FormData();
-    first.set('file', new File([png], 'threshold.png', { type: 'image/png' }));
-    assert.equal((await ownerMultipart('/v1/me/avatar', first, limitNow)).status, 201);
+    assert.equal((await ownerImage('/v1/me/avatar', png, 'image/png', limitNow)).status, 201);
     const atLimit = await testPost('/__test/media-transform-state', { month: '2026-07' }).then((response) => response.json()) as {
       counts: { media_assets: number; claims: number; attempted: number };
       objectCount: number;
     };
     assert.equal(Number(atLimit.counts.attempted), 4500);
-    const second = new FormData();
-    second.set('file', new File([png], 'blocked.png', { type: 'image/png' }));
-    const blocked = await ownerMultipart('/v1/me/avatar', second, limitNow + 1);
+    const blocked = await ownerImage('/v1/me/avatar', png, 'image/png', limitNow + 1);
     assert.equal(blocked.status, 503);
     assert.equal((await blocked.json() as { error: { code: string } }).error.code, 'media_transform_unavailable');
     const after = await testPost('/__test/media-transform-state', { month: '2026-07' }).then((response) => response.json()) as typeof atLimit;

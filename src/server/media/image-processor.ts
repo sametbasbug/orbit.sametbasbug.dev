@@ -11,7 +11,7 @@ export interface InspectedImage {
 }
 
 export interface ProcessedImage {
-  bytes: Uint8Array;
+  stream: ReadableStream<Uint8Array>;
   contentType: 'image/webp';
   width: number;
   height: number;
@@ -194,44 +194,25 @@ function providerErrorCategory(code: number | null): ImageTransformErrorCategory
   return 'images_unknown';
 }
 
-function imageStream(bytes: Uint8Array): ReadableStream<Uint8Array> {
-  return new Blob([bytes.slice().buffer]).stream();
-}
-
-function validateOutput(source: InspectedImage, output: InspectedImage, transform: MediaTransform): void {
-  const rejectOutput = (): never => {
-    console.warn(JSON.stringify({
-      event: 'media.transform_output_rejected',
-      profile: transform,
-      source: { width: source.width, height: source.height, orientation: source.orientation },
-      output: { width: output.width, height: output.height, contentType: output.contentType },
-    }));
-    throw new ImageTransformError('images_output');
+function expectedDimensions(source: InspectedImage, transform: MediaTransform): { width: number; height: number } {
+  if (transform === 'avatar') return { width: AVATAR_EDGE, height: AVATAR_EDGE };
+  const width = source.orientation >= 5 && source.orientation <= 8 ? source.height : source.width;
+  const height = source.orientation >= 5 && source.orientation <= 8 ? source.width : source.height;
+  const longEdge = Math.max(width, height);
+  if (longEdge <= POST_LONG_EDGE) return { width, height };
+  const scale = POST_LONG_EDGE / longEdge;
+  return {
+    width: Math.max(1, Math.floor(width * scale)),
+    height: Math.max(1, Math.floor(height * scale)),
   };
-  if (output.contentType !== 'image/webp') rejectOutput();
-  if (transform === 'avatar') {
-    if (output.width !== AVATAR_EDGE || output.height !== AVATAR_EDGE) {
-      rejectOutput();
-    }
-    return;
-  }
-  if (Math.max(output.width, output.height) > POST_LONG_EDGE) {
-    rejectOutput();
-  }
-  const sourceWidth = source.orientation >= 5 && source.orientation <= 8 ? source.height : source.width;
-  const sourceHeight = source.orientation >= 5 && source.orientation <= 8 ? source.width : source.height;
-  const sourceRatio = sourceWidth / sourceHeight;
-  const outputRatio = output.width / output.height;
-  if (Math.abs(sourceRatio - outputRatio) > 0.02) rejectOutput();
 }
 
 export async function transformImage(
   images: ImagesBindingLike,
-  bytes: Uint8Array,
-  declaredType: string,
+  input: ReadableStream<Uint8Array>,
+  source: InspectedImage,
   transform: MediaTransform,
 ): Promise<ProcessedImage> {
-  const source = inspectImage(bytes, declaredType);
   const sourceWidth = source.orientation >= 5 && source.orientation <= 8 ? source.height : source.width;
   const sourceHeight = source.orientation >= 5 && source.orientation <= 8 ? source.width : source.height;
   const postTransform = sourceWidth >= sourceHeight
@@ -239,24 +220,19 @@ export async function transformImage(
     : { height: Math.min(sourceHeight, POST_LONG_EDGE), fit: 'scale-down' as const };
   const started = performance.now();
   try {
-    const transformer = images.input(imageStream(bytes)).transform(transform === 'avatar'
+    const transformer = images.input(input).transform(transform === 'avatar'
       ? { width: AVATAR_EDGE, height: AVATAR_EDGE, fit: 'cover', gravity: 'center' }
       : postTransform);
     const result = await transformer.output({ format: 'image/webp', quality: 85 });
     if (result.contentType().toLowerCase() !== 'image/webp') {
       throw new ImageTransformError('images_output');
     }
-    const output = new Uint8Array(await new Response(result.image()).arrayBuffer());
-    if (output.byteLength < 1 || output.byteLength > 10 * 1024 * 1024) {
-      throw new ImageTransformError('images_output');
-    }
-    const inspectedOutput = inspectImage(output, 'image/webp');
-    validateOutput(source, inspectedOutput, transform);
+    const dimensions = expectedDimensions(source, transform);
     return {
-      bytes: output,
+      stream: result.image(),
       contentType: 'image/webp',
-      width: inspectedOutput.width,
-      height: inspectedOutput.height,
+      width: dimensions.width,
+      height: dimensions.height,
       source,
       processingMs: Math.max(0, performance.now() - started),
     };

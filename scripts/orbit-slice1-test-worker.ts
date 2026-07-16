@@ -47,28 +47,50 @@ const PROFILES = {
 
 class MemoryR2 implements R2BucketLike {
   readonly objects = new Map<string, { value: Uint8Array; customMetadata?: Record<string, string>; httpMetadata?: Record<string, string> }>();
-  async put(key: string, value: string | ArrayBuffer | Uint8Array, options?: { httpMetadata?: Record<string, string>; customMetadata?: Record<string, string> }): Promise<R2ObjectLike> {
+  async put(key: string, value: string | ArrayBuffer | Uint8Array | ReadableStream<Uint8Array>, options?: { httpMetadata?: Record<string, string>; customMetadata?: Record<string, string>; sha256?: ArrayBuffer | Uint8Array | string }): Promise<R2ObjectLike> {
     const bytes = typeof value === 'string'
       ? new TextEncoder().encode(value)
-      : value instanceof Uint8Array ? new Uint8Array(value) : new Uint8Array(value.slice(0));
+      : value instanceof ReadableStream
+        ? new Uint8Array(await new Response(value).arrayBuffer())
+        : value instanceof Uint8Array ? new Uint8Array(value) : new Uint8Array(value.slice(0));
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+    if (options?.sha256 && typeof options.sha256 !== 'string') {
+      const expected = options.sha256 instanceof Uint8Array ? options.sha256 : new Uint8Array(options.sha256);
+      if (expected.byteLength !== digest.byteLength || !expected.every((item, index) => item === digest[index])) {
+        throw new Error('r2_checksum_mismatch');
+      }
+    }
+    const etag = [...digest.slice(0, 16)].map((item) => item.toString(16).padStart(2, '0')).join('');
     this.objects.set(key, { value: bytes, customMetadata: options?.customMetadata, httpMetadata: options?.httpMetadata });
-    return { key, customMetadata: options?.customMetadata };
+    return { key, size: bytes.byteLength, etag, httpEtag: `"${etag}"`, customMetadata: options?.customMetadata };
   }
-  async get(key: string): Promise<R2ObjectBodyLike | null> {
+  async get(key: string, options?: { range?: { offset: number; length: number } }): Promise<R2ObjectBodyLike | null> {
     const item = this.objects.get(key);
+    const value = item && options?.range
+      ? item.value.slice(options.range.offset, options.range.offset + options.range.length)
+      : item?.value;
+    if (!item || !value) return null;
+    const valueCopy = Uint8Array.from(value);
+    const itemCopy = Uint8Array.from(item.value);
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', itemCopy));
+    const etag = [...digest.slice(0, 16)].map((entry) => entry.toString(16).padStart(2, '0')).join('');
     return item ? {
       key,
+      size: item.value.byteLength,
+      etag,
+      httpEtag: `"${etag}"`,
+      body: new Blob([valueCopy]).stream(),
       customMetadata: item.customMetadata,
       httpMetadata: item.httpMetadata,
-      text: async () => new TextDecoder().decode(item.value),
-      arrayBuffer: async () => item.value.slice().buffer,
+      text: async () => new TextDecoder().decode(value),
+      arrayBuffer: async () => value.slice().buffer,
     } : null;
   }
   async list(options: { prefix?: string } = {}): Promise<{ objects: R2ObjectLike[]; truncated: boolean }> {
     return {
       objects: [...this.objects.entries()]
         .filter(([key]) => key.startsWith(options.prefix ?? ''))
-        .map(([key, item]) => ({ key, customMetadata: item.customMetadata })),
+        .map(([key, item]) => ({ key, size: item.value.byteLength, etag: key, customMetadata: item.customMetadata })),
       truncated: false,
     };
   }

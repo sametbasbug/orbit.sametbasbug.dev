@@ -32,6 +32,22 @@ export interface AgentMediaPolicyView {
   updatedAt: number;
 }
 
+export interface AvatarUploadPolicyView {
+  subjectType: 'account' | 'agent';
+  subjectId: string;
+  dailyLimit: number;
+  usedToday: number;
+  updatedAt: number;
+}
+
+export interface MediaIdempotencyView {
+  id: string;
+  requestDigest: string;
+  state: 'in_progress' | 'completed';
+  responseStatus: number;
+  responseJson: string;
+}
+
 export interface ReadableMedia {
   asset: MediaAssetView;
   visibility: 'public' | 'private_account';
@@ -75,14 +91,37 @@ export interface MediaRepository {
     dailyImageLimit: number;
     usedToday: number;
   }>;
-  reserveTransform(input: {
-    id: string;
+  getAvatarPolicy(subjectType: 'account' | 'agent', subjectId: string, dayUtc: string): Promise<AvatarUploadPolicyView | null>;
+  setAvatarPolicy(input: {
+    subjectType: 'account' | 'agent';
+    subjectId: string;
+    dailyLimit: number;
+    actorAccountId: string;
+    auditEventId: string;
+    requestId: string;
+    now: number;
+  }): Promise<void>;
+  getMediaIdempotency(principalType: 'account' | 'agent', principalId: string, keyDigest: string): Promise<MediaIdempotencyView | null>;
+  reserveMediaUpload(input: {
+    claimId: string;
     monthUtc: string;
+    usageDay: string;
     profile: MediaTransformProfile;
     actorType: 'account' | 'agent';
     actorId: string;
+    targetType: 'account' | 'agent';
+    targetId: string;
     sourceContentType: 'image/png' | 'image/jpeg' | 'image/webp';
     sourceByteSize: number;
+    idempotency: {
+      id: string;
+      principalType: 'account' | 'agent';
+      principalId: string;
+      keyDigest: string;
+      operation: string;
+      requestDigest: string;
+      expiresAt: number;
+    };
     now: number;
   }): Promise<void>;
   completeTransform(input: {
@@ -92,12 +131,22 @@ export interface MediaRepository {
     outputByteSize: number | null;
     now: number;
   }): Promise<void>;
+  completeMediaFailure(input: {
+    idempotencyId: string;
+    responseStatus: number;
+    responseJson: string;
+    now: number;
+  }): Promise<void>;
   getTransformUsage(monthUtc: string): Promise<MediaTransformUsageView>;
   createAvatar(input: {
     asset: MediaAssetView;
     targetType: 'account' | 'agent';
     targetId: string;
     actorAccountId: string;
+    idempotencyId: string;
+    responseStatus: number;
+    responseJson: string;
+    completedAt: number;
     auditEventId: string;
     requestId: string;
   }): Promise<void>;
@@ -109,11 +158,9 @@ export interface MediaRepository {
     requestId: string;
     idempotency: {
       id: string;
-      keyDigest: string;
-      requestDigest: string;
       responseStatus: number;
       responseJson: string;
-      expiresAt: number;
+      completedAt: number;
     };
   }): Promise<void>;
   getAsset(id: string): Promise<MediaAssetView | null>;

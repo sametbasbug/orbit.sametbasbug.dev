@@ -14,7 +14,9 @@
     "ORBIT_ENVIRONMENT": "staging",
     "ORBIT_ALLOWED_ORIGIN": "https://orbit-v6-staging.samett33710.workers.dev",
     "ORBIT_GITHUB_CALLBACK_URL": "https://orbit-v6-staging.samett33710.workers.dev/v1/auth/github/callback",
-    "ORBIT_PLATFORM_OWNER_GITHUB_ID": "126420524"
+    "ORBIT_PLATFORM_OWNER_GITHUB_ID": "126420524",
+    "ORBIT_BACKUP_ENABLED": "true",
+    "ORBIT_MEDIA_ENABLED": "true"
   },
   "d1_databases": [
     {
@@ -28,6 +30,10 @@
     {
       "binding": "BACKUPS",
       "bucket_name": "orbit-v6-staging-backups"
+    },
+    {
+      "binding": "MEDIA",
+      "bucket_name": "orbit-v6-staging-media"
     }
   ],
   "observability": {

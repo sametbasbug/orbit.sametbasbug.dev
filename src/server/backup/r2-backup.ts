@@ -20,6 +20,9 @@ const RETENTION: Record<Exclude<BackupKind, 'manual'>, number> = {
 };
 
 function requireBackupBindings(env: OrbitBindings): { bucket: R2BucketLike; encryptionKey: string } {
+  if (env.ORBIT_BACKUP_ENABLED !== 'true') {
+    throw new Error('backup_disabled');
+  }
   if (!env.BACKUPS || !env.ORBIT_BACKUP_ENCRYPTION_KEY_V1) {
     throw new Error('backup_bindings_missing');
   }
@@ -66,6 +69,7 @@ export async function runR2Backup(
 ): Promise<{ runId: string; objectKey: string; manifestChecksum: string; objectChecksum: string }> {
   const repository = new D1PlatformRepository(env.DB);
   const runId = createEntityId();
+  const startedAt = Date.now();
   await repository.startBackupRun({ id: runId, kind, actorAccountId, now });
   try {
     const { bucket, encryptionKey } = requireBackupBindings(env);
@@ -100,6 +104,14 @@ export async function runR2Backup(
       counts: bundle.manifest.counts,
       now: Date.now(),
     });
+    console.log(JSON.stringify({
+      event: 'backup.operation',
+      kind,
+      status: 'succeeded',
+      durationMs: Date.now() - startedAt,
+      chunkCount: bundle.manifest.chunks.length,
+      recordCount: Object.values(bundle.manifest.counts).reduce((sum, count) => sum + count, 0),
+    }));
     return {
       runId,
       objectKey: keyName,
@@ -107,12 +119,21 @@ export async function runR2Backup(
       objectChecksum: storedChecksum,
     };
   } catch (error) {
-    await repository.failBackupRun({ id: runId, errorCode: safeErrorCode(error), now: Date.now() });
+    const errorCode = safeErrorCode(error);
+    await repository.failBackupRun({ id: runId, errorCode, now: Date.now() });
+    console.log(JSON.stringify({
+      event: 'backup.operation',
+      kind,
+      status: 'failed',
+      durationMs: Date.now() - startedAt,
+      errorCode,
+    }));
     throw error;
   }
 }
 
 export async function runScheduledBackups(env: OrbitBindings, now = Date.now()): Promise<void> {
+  if (env.ORBIT_BACKUP_ENABLED !== 'true') return;
   const date = new Date(now);
   const kinds: BackupKind[] = ['daily'];
   if (date.getUTCDay() === 1) kinds.push('weekly');

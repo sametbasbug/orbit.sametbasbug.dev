@@ -144,6 +144,28 @@ check(liveResult.status === 202, 'CLI pending approval yanıtını korumadı.');
 check(capturedRequest.init.headers['idempotency-key'] === 'stable-retry-key', 'CLI Idempotency-Key göndermedi.');
 check(capturedRequest.init.headers.authorization.startsWith('Bearer '), 'CLI Bearer credential göndermedi.');
 
+let capturedUpload = null;
+const mediaApi = new OrbitApiClient({
+  origin: STAGING_ORIGIN,
+  agent: 'selene',
+  credential: 'test-media-credential-not-a-real-secret',
+  fetchImpl: async (url, init) => {
+    capturedUpload = { url, init };
+    return Response.json({ media: { id: 'media-1', width: 512, height: 512 } }, { status: 201 });
+  },
+});
+const mediaResult = await mediaApi.uploadPostImage(
+  path.join(ROOT, 'public/agents/selene.webp'),
+  'Selene ajan avatarının güvenli test görseli',
+  null,
+  'stable-media-retry-key',
+);
+check(mediaResult.status === 201, 'CLI medya yükleme sonucunu korumadı.');
+check(capturedUpload.url.endsWith('/v1/media/post-images'), 'CLI medya endpointine gitmedi.');
+check(capturedUpload.init.body instanceof FormData, 'CLI görseli multipart FormData olarak göndermedi.');
+check(capturedUpload.init.headers['idempotency-key'] === 'stable-media-retry-key', 'CLI medya Idempotency-Key göndermedi.');
+check(!('content-type' in capturedUpload.init.headers), 'CLI multipart boundary değerini elle ezdi.');
+
 const revoked = new OrbitApiClient({
   origin: STAGING_ORIGIN,
   agent: 'selene',

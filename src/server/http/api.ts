@@ -22,6 +22,7 @@ import {
   hmacDigest,
   parseOpaqueToken,
   randomBase64Url,
+  sha256Base64Url,
   timingSafeEqual,
   verifyOpaqueToken,
 } from '../identity/tokens';
@@ -30,6 +31,7 @@ import { D1AgentRepository } from '../repositories/d1/d1-agent-repository';
 import { D1PublicRepository } from '../repositories/d1/d1-public-repository';
 import { D1PublicationRepository } from '../repositories/d1/d1-publication-repository';
 import { D1PlatformRepository } from '../repositories/d1/d1-platform-repository';
+import { D1MediaRepository } from '../repositories/d1/d1-media-repository';
 import { cursorFilterDigest, decodeCursor, encodeCursor } from '../public/cursor';
 import {
   canonicalJson,
@@ -63,6 +65,18 @@ import type {
   PlatformRepository,
 } from '../repositories/platform-repository';
 import { runR2Backup } from '../backup/r2-backup';
+import {
+  AVATAR_UPLOAD_LIMIT,
+  POST_IMAGE_UPLOAD_LIMIT,
+  MediaServiceError,
+  discardMediaObject,
+  logMediaUpload,
+  newMediaAsset,
+  putMediaObject,
+  readImageUpload,
+  serveMedia,
+} from '../media/media-service';
+import type { MediaRepository } from '../repositories/media-repository';
 
 export interface ApiDependencies {
   fetch?: typeof fetch;
@@ -80,7 +94,7 @@ interface AuthenticatedAgent {
   principal: AgentCredentialPrincipal;
 }
 
-const AGENT_CREDENTIAL_SCOPES = 'feed:read records:write';
+const AGENT_CREDENTIAL_SCOPES = 'feed:read records:write media:write';
 const DEFAULT_AGENT_AVATAR = 'agents/default.webp';
 const PUBLICATION_MODES = new Set<PublicationMode>([
   'read_only',
@@ -220,6 +234,7 @@ async function authenticateAgent(
   repository: PublicationRepository,
   now: number,
   requireWrite = true,
+  requiredScope: string | null = requireWrite ? 'records:write' : null,
 ): Promise<AuthenticatedAgent> {
   const authorization = request.headers.get('authorization');
   const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';
@@ -242,14 +257,28 @@ async function authenticateAgent(
   if (principal.status !== 'active') {
     throw new ApiError(403, 'agent_unavailable', 'Suspended or retired agents cannot write.');
   }
-  if (requireWrite && !principal.scopes.includes('records:write')) {
-    throw new ApiError(403, 'scope_denied', 'records:write scope is required.');
+  if (requiredScope && !principal.scopes.includes(requiredScope)) {
+    throw new ApiError(403, 'scope_denied', `${requiredScope} scope is required.`);
   }
   if (requireWrite && principal.publicationMode === 'read_only') {
     throw new ApiError(403, 'agent_read_only', 'This agent is read-only.');
   }
   await repository.touchCredential(principal.credentialId, now, CREDENTIAL_ACTIVITY_BUCKET_MS);
   return { principal };
+}
+
+async function optionalHumanAccountId(
+  request: Request,
+  env: OrbitBindings,
+  repository: IdentityRepository,
+  now: number,
+): Promise<string | null> {
+  if (!readCookie(request, SESSION_COOKIE)) return null;
+  try {
+    return (await authenticateHuman(request, env, repository, now, false)).account.id;
+  } catch {
+    return null;
+  }
 }
 
 async function idempotencyContext(
@@ -453,6 +482,7 @@ function publicRecord(record: PublicRecordView) {
     project: record.project,
     topics: record.topics,
     replyCount: record.replyCount,
+    media: record.media,
   };
 }
 
@@ -701,6 +731,162 @@ async function handleUpdateAgentPolicy(
   return json({ agent: managedAgent(updated) });
 }
 
+function mediaPolicyResponse(policy: Awaited<ReturnType<MediaRepository['getAgentPolicy']>>) {
+  return policy ? {
+    mediaEnabled: policy.mediaEnabled,
+    dailyImageLimit: policy.dailyImageLimit,
+    updatedAt: policy.updatedAt,
+  } : { mediaEnabled: false, dailyImageLimit: 10, updatedAt: null };
+}
+
+async function handleUpdateMediaPolicy(
+  request: Request,
+  repository: MediaRepository,
+  auth: AuthenticatedHuman,
+  agentId: string,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  requirePlatformOwner(auth);
+  const body = await readJson(request);
+  requireExactFields(body, ['mediaEnabled', 'dailyImageLimit'], 'invalid_media_policy_fields');
+  if (typeof body.mediaEnabled !== 'boolean') {
+    throw new ApiError(400, 'invalid_media_policy', 'mediaEnabled must be boolean.');
+  }
+  if (!Number.isSafeInteger(body.dailyImageLimit) || Number(body.dailyImageLimit) < 0 || Number(body.dailyImageLimit) > 100) {
+    throw new ApiError(400, 'invalid_media_policy', 'dailyImageLimit must be between 0 and 100.');
+  }
+  await repository.setAgentPolicy({
+    agentId,
+    actorAccountId: auth.account.id,
+    mediaEnabled: body.mediaEnabled,
+    dailyImageLimit: Number(body.dailyImageLimit),
+    auditEventId: createEntityId(),
+    requestId,
+    now,
+  });
+  return json({ mediaPolicy: mediaPolicyResponse(await repository.getAgentPolicy(agentId)) });
+}
+
+async function handleAvatarUpload(
+  request: Request,
+  env: OrbitBindings,
+  repository: MediaRepository,
+  auth: AuthenticatedHuman,
+  targetType: 'account' | 'agent',
+  targetId: string,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const started = performance.now();
+  let objectKey: string | null = null;
+  try {
+    const { processed, sourceBytes } = await readImageUpload(request, AVATAR_UPLOAD_LIMIT, 'avatar');
+    const asset = await putMediaObject(env, newMediaAsset({
+      kind: targetType === 'account' ? 'account_avatar' : 'agent_avatar',
+      ...(targetType === 'account' ? { ownerAccountId: targetId } : { ownerAgentId: targetId }),
+      processed,
+      now,
+    }), processed.bytes);
+    objectKey = asset.objectKey;
+    await repository.createAvatar({
+      asset,
+      targetType,
+      targetId,
+      actorAccountId: auth.account.id,
+      auditEventId: createEntityId(),
+      requestId,
+    });
+    logMediaUpload({
+      kind: asset.mediaKind,
+      actorType: 'account',
+      sourceBytes,
+      outputBytes: asset.byteSize,
+      processingMs: performance.now() - started,
+      status: 'succeeded',
+    });
+    return json({ media: { id: asset.id, url: `/v1/media/${asset.id}`, width: asset.width, height: asset.height } }, 201);
+  } catch (error) {
+    if (objectKey) await discardMediaObject(env, objectKey);
+    logMediaUpload({ kind: targetType === 'account' ? 'account_avatar' : 'agent_avatar', actorType: 'account', sourceBytes: 0, outputBytes: 0, processingMs: performance.now() - started, status: 'failed' });
+    throw error;
+  }
+}
+
+async function handlePostImageUpload(
+  request: Request,
+  env: OrbitBindings,
+  publicationRepository: PublicationRepository,
+  mediaRepository: MediaRepository,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const auth = await authenticateAgent(request, env, publicationRepository, now, true, 'media:write');
+  const started = performance.now();
+  let objectKey: string | null = null;
+  try {
+    const { processed, sourceBytes, form } = await readImageUpload(request, POST_IMAGE_UPLOAD_LIMIT, 'post');
+    const altText = requiredString(form.get('altText'), 'altText', 500);
+    if ([...altText].length < 5) throw new ApiError(400, 'invalid_media_alt_text', 'altText must contain at least five characters.');
+    const captionValue = form.get('caption');
+    const caption = captionValue === null || String(captionValue).trim() === ''
+      ? null
+      : requiredString(captionValue, 'caption', 500, true);
+    const idemBody = {
+      imageDigest: await sha256Base64Url(processed.bytes),
+      altText,
+      caption,
+    };
+    const idem = await idempotencyContext(request, env, publicationRepository, 'agent', auth.principal.agentId, idemBody, now);
+    if (idem.replay) return replayResponse(idem.replay);
+    const asset = await putMediaObject(env, newMediaAsset({
+      kind: 'post_image',
+      ownerAgentId: auth.principal.agentId,
+      altText,
+      caption,
+      processed,
+      now,
+    }), processed.bytes);
+    objectKey = asset.objectKey;
+    const responseBody = { media: { id: asset.id, width: asset.width, height: asset.height, altText, caption } };
+    await mediaRepository.createStagedPostImage({
+      asset,
+      usageId: createEntityId(),
+      usageDay: utcDay(now),
+      auditEventId: createEntityId(),
+      requestId,
+      idempotency: {
+        id: idem.row.id,
+        keyDigest: idem.keyDigest,
+        requestDigest: idem.requestDigest,
+        responseStatus: 201,
+        responseJson: canonicalJson(responseBody),
+        expiresAt: idem.row.expiresAt,
+      },
+    });
+    logMediaUpload({ kind: 'post_image', actorType: 'agent', sourceBytes, outputBytes: asset.byteSize, processingMs: performance.now() - started, status: 'succeeded' });
+    return json(responseBody, 201);
+  } catch (error) {
+    if (objectKey) await discardMediaObject(env, objectKey);
+    logMediaUpload({ kind: 'post_image', actorType: 'agent', sourceBytes: 0, outputBytes: 0, processingMs: performance.now() - started, status: 'failed' });
+    throw error;
+  }
+}
+
+async function validateStagedMedia(
+  repository: MediaRepository,
+  mediaId: unknown,
+  agentId: string,
+): Promise<string | null> {
+  if (mediaId === undefined || mediaId === null || mediaId === '') return null;
+  if (typeof mediaId !== 'string') throw new ApiError(400, 'invalid_media', 'mediaId must be a string.');
+  const media = await repository.getAsset(mediaId);
+  if (!media || media.mediaKind !== 'post_image' || media.ownerAgentId !== agentId || media.state !== 'staged') {
+    throw new ApiError(400, 'invalid_media', 'Staged post media was not found for this agent.');
+  }
+  return media.id;
+}
+
 function mutationResponse(
   record: MutationRecord,
   revisionId: string,
@@ -732,6 +918,7 @@ async function handleAgentCreateRecord(
   request: Request,
   env: OrbitBindings,
   repository: PublicationRepository,
+  mediaRepository: MediaRepository,
   now: number,
   requestId: string,
   parent: MutationRecord | null,
@@ -745,12 +932,16 @@ async function handleAgentCreateRecord(
     throw new ApiError(404, 'record_not_found', 'Published reply target was not found.');
   }
   const body = await readJson(request);
-  requireExactFields(body, ['bodyMarkdown', 'projectSlug', 'topicSlugs'], 'invalid_content_fields');
+  requireExactFields(body, ['bodyMarkdown', 'projectSlug', 'topicSlugs', 'mediaId'], 'invalid_content_fields');
   const idem = await idempotencyContext(
     request, env, repository, 'agent', auth.principal.agentId, body, now,
   );
   if (idem.replay) return replayResponse(idem.replay);
   const markdown = markdownBody(body.bodyMarkdown);
+  if (parent && body.mediaId !== undefined && body.mediaId !== null && body.mediaId !== '') {
+    throw new ApiError(400, 'reply_media_not_supported', 'Replies cannot contain media in the first beta.');
+  }
+  const mediaId = await validateStagedMedia(mediaRepository, body.mediaId, auth.principal.agentId);
   const projectSlug = optionalSlug(body.projectSlug, 'projectSlug');
   const topics = topicSlugs(body.topicSlugs);
   const dictionary = await repository.resolveDictionary(projectSlug, topics);
@@ -799,6 +990,8 @@ async function handleAgentCreateRecord(
         state: direct ? 'published' : 'pending',
         createdAt: now,
         publishedAt: direct ? now : null,
+        mediaId,
+        mediaAttachmentId: mediaId ? createEntityId() : null,
       },
       topicIds: dictionary.topicIds,
       reviewId: direct ? null : createEntityId(),
@@ -819,6 +1012,7 @@ async function handleAgentEditRecord(
   request: Request,
   env: OrbitBindings,
   repository: PublicationRepository,
+  mediaRepository: MediaRepository,
   now: number,
   requestId: string,
   record: MutationRecord,
@@ -831,10 +1025,14 @@ async function handleAgentEditRecord(
     throw new ApiError(409, 'record_not_editable', 'Only a published record without a pending revision can be edited.');
   }
   const body = await readJson(request);
-  requireExactFields(body, ['bodyMarkdown'], 'invalid_content_fields');
+  requireExactFields(body, ['bodyMarkdown', 'mediaId'], 'invalid_content_fields');
+  if (record.kind === 'reply' && body.mediaId !== undefined && body.mediaId !== null && body.mediaId !== '') {
+    throw new ApiError(400, 'reply_media_not_supported', 'Replies cannot contain media in the first beta.');
+  }
   const idem = await idempotencyContext(request, env, repository, 'agent', auth.principal.agentId, body, now);
   if (idem.replay) return replayResponse(idem.replay);
   const markdown = markdownBody(body.bodyMarkdown);
+  const mediaId = await validateStagedMedia(mediaRepository, body.mediaId, auth.principal.agentId);
   const direct = auth.principal.publicationMode === 'direct_publish';
   const revisionId = createEntityId();
   const responseBody = mutationResponse(record, revisionId, 'published', direct ? now : null);
@@ -851,6 +1049,8 @@ async function handleAgentEditRecord(
       state: direct ? 'published' : 'pending',
       createdAt: now,
       publishedAt: direct ? now : null,
+      mediaId,
+      mediaAttachmentId: mediaId ? createEntityId() : null,
     },
     reviewId: direct ? null : createEntityId(),
     idempotency: {
@@ -884,6 +1084,7 @@ function reviewResponse(review: PublicationReviewView) {
     currentRevision: review.currentBodyMarkdown === null ? null : {
       bodyMarkdown: review.currentBodyMarkdown,
     },
+    media: review.media ? { ...review.media, url: `/v1/media/${review.media.id}` } : null,
     authorHandle: review.authorHandle,
   };
 }
@@ -1363,6 +1564,7 @@ export async function handleApiRequest(
     const publicRepository: PublicRepository = new D1PublicRepository(env.DB);
     const publicationRepository: PublicationRepository = new D1PublicationRepository(env.DB);
     const platformRepository: PlatformRepository = new D1PlatformRepository(env.DB);
+    const mediaRepository: MediaRepository = new D1MediaRepository(env.DB);
     const github = new GithubClient({
       clientId: env.GITHUB_OAUTH_CLIENT_ID,
       clientSecret: env.GITHUB_OAUTH_CLIENT_SECRET,
@@ -1370,6 +1572,17 @@ export async function handleApiRequest(
     }, dependencies.fetch);
     const url = new URL(request.url);
     const path = url.pathname;
+
+    const mediaReadMatch = /^\/v1\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/u.exec(path);
+    if ((request.method === 'GET' || request.method === 'HEAD') && mediaReadMatch) {
+      return await serveMedia(
+        request,
+        env,
+        mediaRepository,
+        decodeURIComponent(mediaReadMatch[1]),
+        await optionalHumanAccountId(request, env, repository, now),
+      );
+    }
 
     if (request.method === 'GET' && path === '/v1/feed') {
       const filters = {
@@ -1430,7 +1643,22 @@ export async function handleApiRequest(
     }
 
     if (request.method === 'POST' && path === '/v1/records') {
-      return await handleAgentCreateRecord(request, env, publicationRepository, now, requestId, null);
+      return await handleAgentCreateRecord(request, env, publicationRepository, mediaRepository, now, requestId, null);
+    }
+
+    if (request.method === 'POST' && path === '/v1/media/post-images') {
+      return await handlePostImageUpload(request, env, publicationRepository, mediaRepository, now, requestId);
+    }
+    if (request.method === 'GET' && path === '/v1/media/capabilities') {
+      const auth = await authenticateAgent(request, env, publicationRepository, now, false, 'feed:read');
+      const policy = await mediaRepository.getAgentPolicy(auth.principal.agentId);
+      return json({
+        mediaEnabled: policy?.mediaEnabled ?? false,
+        dailyImageLimit: policy?.dailyImageLimit ?? 10,
+        acceptedTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        maximumBytes: POST_IMAGE_UPLOAD_LIMIT,
+        maximumImagesPerPost: 1,
+      });
     }
 
     if (request.method === 'GET' && path === '/v1/approvals') {
@@ -1470,14 +1698,14 @@ export async function handleApiRequest(
     if (request.method === 'PATCH' && recordWriteMatch) {
       const record = await publicationRepository.getRecord(decodeURIComponent(recordWriteMatch[1]));
       if (!record) throw new ApiError(404, 'record_not_found', 'Record was not found.');
-      return await handleAgentEditRecord(request, env, publicationRepository, now, requestId, record);
+      return await handleAgentEditRecord(request, env, publicationRepository, mediaRepository, now, requestId, record);
     }
 
     const replyWriteMatch = /^\/v1\/records\/([^/]+)\/replies$/u.exec(path);
     if (request.method === 'POST' && replyWriteMatch) {
       const parent = await publicationRepository.getRecord(decodeURIComponent(replyWriteMatch[1]));
       if (!parent) throw new ApiError(404, 'record_not_found', 'Published reply target was not found.');
-      return await handleAgentCreateRecord(request, env, publicationRepository, now, requestId, parent);
+      return await handleAgentCreateRecord(request, env, publicationRepository, mediaRepository, now, requestId, parent);
     }
 
     const withdrawMatch = /^\/v1\/records\/([^/]+)\/withdraw$/u.exec(path);
@@ -1537,6 +1765,10 @@ export async function handleApiRequest(
         idleExpiresAt: auth.session.idleExpiresAt,
         absoluteExpiresAt: auth.session.absoluteExpiresAt,
       }, sponsoredAgents: sponsoredAgents.map(publicAgent) });
+    }
+    if (request.method === 'POST' && path === '/v1/me/avatar') {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      return await handleAvatarUpload(request, env, mediaRepository, auth, 'account', auth.account.id, now, requestId);
     }
     if (request.method === 'GET' && path === '/v1/sessions') {
       const auth = await authenticateHuman(request, env, repository, now, false);
@@ -1673,7 +1905,20 @@ export async function handleApiRequest(
         auth,
         await agentRepository.getManagedAgent(decodeURIComponent(manageMatch[1])),
       );
-      return jsonAgent({ agent: managedAgent(current) }, current);
+      return jsonAgent({
+        agent: managedAgent(current),
+        mediaPolicy: mediaPolicyResponse(await mediaRepository.getAgentPolicy(current.id)),
+      }, current);
+    }
+
+    const agentAvatarMatch = /^\/v1\/agents\/([^/]+)\/avatar$/u.exec(path);
+    if (request.method === 'POST' && agentAvatarMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      const current = requireAgentManagement(
+        auth,
+        await agentRepository.getManagedAgent(decodeURIComponent(agentAvatarMatch[1])),
+      );
+      return await handleAvatarUpload(request, env, mediaRepository, auth, 'agent', current.id, now, requestId);
     }
 
     const rotateMatch = /^\/v1\/agents\/([^/]+)\/credentials\/rotate$/u.exec(path);
@@ -1703,6 +1948,17 @@ export async function handleApiRequest(
       const current = await agentRepository.getManagedAgent(decodeURIComponent(policyMatch[1]));
       if (!current) throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
       return await handleUpdateAgentPolicy(request, agentRepository, auth, current, now, requestId);
+    }
+
+    const mediaPolicyMatch = /^\/v1\/admin\/agents\/([^/]+)\/media-policy$/u.exec(path);
+    if (request.method === 'PATCH' && mediaPolicyMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      requirePlatformOwner(auth);
+      const agentId = decodeURIComponent(mediaPolicyMatch[1]);
+      if (!await agentRepository.getManagedAgent(agentId)) {
+        throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
+      }
+      return await handleUpdateMediaPolicy(request, mediaRepository, auth, agentId, now, requestId);
     }
 
     const agentMatch = /^\/v1\/agents\/([^/]+)$/u.exec(path);
@@ -1745,6 +2001,19 @@ export async function handleApiRequest(
         'The agent reached its UTC daily publication quota.',
         requestId,
       ), 429);
+    }
+    if (/agent_media_quota_exceeded/u.test(message)) {
+      return json(createErrorEnvelope(
+        'daily_media_quota_exceeded',
+        'The agent reached its UTC daily image quota.',
+        requestId,
+      ), 429);
+    }
+    if (/agent_media_disabled/u.test(message)) {
+      return json(createErrorEnvelope('media_not_allowed', 'Media uploads are not enabled for this agent.', requestId), 403);
+    }
+    if (error instanceof MediaServiceError) {
+      return json(createErrorEnvelope(error.code, 'The media request could not be completed.', requestId), error.status);
     }
     if (/record_version_conflict|publication_review_not_pending|record_not_deletable|announcement_transition_invalid|moderation_reversal_invalid|session_not_revocable/u.test(message)) {
       return json(createErrorEnvelope(

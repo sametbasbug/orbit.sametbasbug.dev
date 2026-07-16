@@ -26,6 +26,11 @@ interface RecordSqlRow {
   project_slug: string | null;
   project_name: string | null;
   reply_count: number;
+  media_id: string | null;
+  media_width: number | null;
+  media_height: number | null;
+  media_alt_text: string | null;
+  media_caption: string | null;
 }
 
 interface TopicSqlRow {
@@ -51,6 +56,8 @@ const RECORD_SELECT = `
          a.avatar_asset AS author_avatar_asset,
          a.status AS author_status,
          p.id AS project_id, p.slug AS project_slug, p.name AS project_name,
+         media.id AS media_id, media.width AS media_width, media.height AS media_height,
+         media.alt_text AS media_alt_text, media.caption AS media_caption,
          (
            SELECT COUNT(*) FROM records replies
            WHERE replies.parent_id = r.id
@@ -62,6 +69,8 @@ const RECORD_SELECT = `
   JOIN record_revisions rr ON rr.id = r.current_revision_id AND rr.record_id = r.id
   JOIN agents a ON a.id = r.author_agent_id
   LEFT JOIN projects p ON p.id = r.project_id
+  LEFT JOIN media_assets media ON media.attached_revision_id = r.current_revision_id
+    AND media.media_kind = 'post_image' AND media.state = 'active' AND media.deleted_at IS NULL
 `;
 
 function fromRow(row: RecordSqlRow): PublicRecordView {
@@ -88,6 +97,16 @@ function fromRow(row: RecordSqlRow): PublicRecordView {
       : null,
     topics: [],
     replyCount: row.reply_count,
+    media: row.media_id && row.media_width && row.media_height && row.media_alt_text
+      ? {
+        id: row.media_id,
+        url: `/v1/media/${row.media_id}`,
+        width: row.media_width,
+        height: row.media_height,
+        altText: row.media_alt_text,
+        caption: row.media_caption,
+      }
+      : null,
   };
 }
 

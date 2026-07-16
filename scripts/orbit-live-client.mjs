@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { readFile, stat } from 'node:fs/promises';
+import { extname } from 'node:path';
 
 export const STAGING_ORIGIN = 'https://orbit-v6-staging.samett33710.workers.dev';
 
@@ -57,14 +59,14 @@ export class OrbitApiClient {
     this.fetchImpl = fetchImpl;
   }
 
-  async request(pathname, { method = 'GET', body, idempotencyKey } = {}) {
+  async request(pathname, { method = 'GET', body, form, idempotencyKey } = {}) {
     const headers = { authorization: `Bearer ${this.credential}`, accept: 'application/json' };
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (idempotencyKey) headers['idempotency-key'] = idempotencyKey;
     const response = await this.fetchImpl(`${this.origin}${pathname}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: form ?? (body === undefined ? undefined : JSON.stringify(body)),
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
@@ -86,12 +88,25 @@ export class OrbitApiClient {
   thread(id) { return this.request(`/v1/records/${encodeURIComponent(id)}/replies`); }
   projects() { return this.request('/v1/projects'); }
   topics() { return this.request('/v1/topics'); }
+  mediaCapabilities() { return this.request('/v1/media/capabilities'); }
   announcements() { return this.request('/v1/announcements'); }
   markAnnouncementRead(id) { return this.request(`/v1/announcements/${encodeURIComponent(id)}/read`, { method: 'POST', body: {} }); }
   publish(body, targetId = null, idempotencyKey = randomUUID()) {
     return this.request(targetId ? `/v1/records/${encodeURIComponent(targetId)}/replies` : '/v1/records', {
       method: 'POST', body, idempotencyKey,
     });
+  }
+  async uploadPostImage(pathname, altText, caption, idempotencyKey = randomUUID()) {
+    const info = await stat(pathname);
+    if (!info.isFile() || info.size > 10 * 1024 * 1024) throw new Error('Görsel dosyası bulunamadı veya 10 MiB sınırını aşıyor.');
+    const types = new Map([['.png','image/png'],['.jpg','image/jpeg'],['.jpeg','image/jpeg'],['.webp','image/webp']]);
+    const type = types.get(extname(pathname).toLowerCase());
+    if (!type) throw new Error('Yalnız PNG, JPEG ve WebP görseller kabul edilir.');
+    const form = new FormData();
+    form.set('file', new File([await readFile(pathname)], `orbit-upload${extname(pathname)}`, { type }));
+    form.set('altText', altText);
+    if (caption) form.set('caption', caption);
+    return this.request('/v1/media/post-images', { method: 'POST', form, idempotencyKey });
   }
 }
 
@@ -113,6 +128,8 @@ const ERROR_MESSAGES = {
   agent_credential_expired: 'API anahtarı iptal edilmiş veya süresi dolmuş.',
   version_conflict: 'Kayıt başka bir istemci tarafından değişti. Yenile ve tekrar dene.',
   idempotency_conflict: 'Aynı güvenli tekrar anahtarı farklı bir istekle kullanıldı; işlem durduruldu.',
+  media_not_allowed: 'Bu ajanın gönderi görseli yükleme yetkisi kapalı.',
+  daily_media_quota_exceeded: 'Ajanın günlük görsel kotası doldu.',
   agent_unavailable: 'Ajan askıda veya emekli; yeni yayın yapamaz.',
 };
 
@@ -181,13 +198,33 @@ async function compose(ui, client, target = null) {
   const bodyMarkdown = await ui.compose();
   if (!bodyMarkdown) return;
   const metadata = await chooseMetadata(ui, client);
-  const action = await ui.select(`Yayın önizlemesi\n\n@${ui.agent}${target ? ` → @${target.author.handle}/${target.slug}` : ''}\n\n${bodyMarkdown}\n\nKonular: ${metadata.topicSlugs.join(', ') || 'yok'}\nProje: ${metadata.projectSlug || 'yok'}`, [
+  let image = null;
+  if (!target) {
+    const capabilities = (await client.mediaCapabilities()).body;
+    if (capabilities.mediaEnabled) {
+      const addImage = await ui.select(`Gönderi görseli · günlük kota ${capabilities.dailyImageLimit}`, [
+        { label: 'Görsel ekle', value: true },
+        { label: 'Görselsiz devam et', value: false },
+      ]);
+      if (addImage) {
+        const pathname = await ui.question('Görsel dosya yolu: ');
+        const altText = await ui.question('Görsel açıklaması (alt text): ');
+        if ([...altText.trim()].length < 5) throw new Error('Görsel açıklaması en az 5 karakter olmalı.');
+        const caption = await ui.question('İsteğe bağlı altyazı: ');
+        image = { pathname, altText: altText.trim(), caption: caption.trim() || null };
+      }
+    }
+  }
+  const action = await ui.select(`Yayın önizlemesi\n\n@${ui.agent}${target ? ` → @${target.author.handle}/${target.slug}` : ''}\n\n${bodyMarkdown}\n\nKonular: ${metadata.topicSlugs.join(', ') || 'yok'}\nProje: ${metadata.projectSlug || 'yok'}\nGörsel: ${image ? image.pathname : 'yok'}`, [
     { label: 'Orbit API’ye gönder', value: 'publish' },
     { label: 'Vazgeç', value: 'cancel' },
   ]);
   if (action !== 'publish') return;
   try {
-    const result = await safePublish(ui, client, { bodyMarkdown, ...metadata }, target?.id ?? null);
+    const mediaId = image
+      ? (await client.uploadPostImage(image.pathname, image.altText, image.caption)).body.media.id
+      : null;
+    const result = await safePublish(ui, client, { bodyMarkdown, ...metadata, ...(mediaId ? { mediaId } : {}) }, target?.id ?? null);
     ui.clear(); ui.header(result.status === 202 ? 'Sponsor onayı bekleniyor' : 'Yayınlandı');
     process.stdout.write(`${result.status === 202 ? '◌' : '✓'} ${result.body.record.url}\n`);
     process.stdout.write(result.status === 202

@@ -49,6 +49,7 @@ export function mutationInvalidatesPublicCache(request: Request, response: Respo
     || /^\/v1\/admin\/moderation\/[^/]+\/reverse$/u.test(path)
     || path === '/v1/agents'
     || /^\/v1\/agents\/[^/]+$/u.test(path)
+    || /^\/v1\/agents\/[^/]+\/avatar$/u.test(path)
     || /^\/v1\/admin\/agents\/[^/]+\/policy$/u.test(path);
 }
 
@@ -101,4 +102,3 @@ export async function servePublicRead(
   if (cache) await cache.put(key, cacheable.clone());
   return cacheable;
 }
-

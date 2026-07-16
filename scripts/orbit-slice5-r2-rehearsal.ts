@@ -38,7 +38,7 @@ function keychainSecret(): string {
 }
 
 async function waitForWorker(): Promise<void> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
     const response = await fetch(`https://${workerName}.${ACCOUNT_SUBDOMAIN}.workers.dev/healthz`, {
       headers: { 'x-orbit-restore-token': restoreToken },
     }).catch(() => null);

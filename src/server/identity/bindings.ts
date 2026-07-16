@@ -11,6 +11,8 @@ export interface R2ObjectLike {
 
 export interface R2ObjectBodyLike extends R2ObjectLike {
   text(): Promise<string>;
+  arrayBuffer(): Promise<ArrayBuffer>;
+  httpMetadata?: Record<string, string>;
 }
 
 export interface R2BucketLike {
@@ -24,6 +26,7 @@ export interface OrbitBindings {
   DB: D1DatabaseLike;
   ASSETS?: AssetsBinding;
   BACKUPS?: R2BucketLike;
+  MEDIA?: R2BucketLike;
   ORBIT_ENVIRONMENT: 'local' | 'test' | 'staging' | 'production';
   ORBIT_ALLOWED_ORIGIN: string;
   ORBIT_GITHUB_CALLBACK_URL: string;
@@ -37,6 +40,8 @@ export interface OrbitBindings {
   ORBIT_CSRF_PEPPER_V1: string;
   ORBIT_CURSOR_PEPPER_V1: string;
   ORBIT_BACKUP_ENCRYPTION_KEY_V1?: string;
+  ORBIT_BACKUP_ENABLED?: string;
+  ORBIT_MEDIA_ENABLED?: string;
 }
 
 export function assertIdentityBindings(env: OrbitBindings): void {

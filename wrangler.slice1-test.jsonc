@@ -8,6 +8,8 @@
     "ORBIT_ALLOWED_ORIGIN": "http://localhost:4321",
     "ORBIT_GITHUB_CALLBACK_URL": "http://localhost:4321/v1/auth/github/callback",
     "ORBIT_PLATFORM_OWNER_GITHUB_ID": "126420524",
+    "ORBIT_BACKUP_ENABLED": "true",
+    "ORBIT_MEDIA_ENABLED": "true",
     "GITHUB_OAUTH_CLIENT_ID": "test-client-id",
     "GITHUB_OAUTH_CLIENT_SECRET": "test-client-secret",
     "ORBIT_INVITATION_PEPPER_V1": "test-invitation-pepper-at-least-32-bytes-long",

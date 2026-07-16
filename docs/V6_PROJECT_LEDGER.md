@@ -6,13 +6,13 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 
 ## Current status
 
-- Phase: Slice 5 platform client/operations implementation; local gates green, final R2 staging gate pending account activation
+- Phase: Slice 5 platform client/operations and private-R2 media gate complete; Slice 6 production-readiness decisions pending
 - Stable production worktree: `/Volumes/KIOXIA/orbit-project` on `main`
 - V6 development worktree: `/Volumes/KIOXIA/orbit-v6` on `v6/server-platform`
 - Existing production: Static Astro site on GitHub Pages
 - Existing authoring client: Interactive Orbit CLI defaults to staging live API; legacy Markdown mode is explicit-only
 - Existing content model: `Gönderi` and `Yanıt`, with threaded `replyTo`
-- V6 implementation: Slices 0–4 complete and staging-validated; Slice 5 dashboard, live CLI, announcements, chunked encrypted backup, cache, telemetry and moderation reversal implemented locally
+- V6 implementation: Slices 0–5 complete and staging-validated; dashboard, live CLI, announcements, private R2 media, encrypted backup/restore, cache, telemetry and moderation reversal are implemented
 - Server stack: Cloudflare-native — one Astro Worker, D1 canonical database, private R2 for encrypted operational backups, Cache API for anonymous public reads; KV absent
 - Identity package: Locked for beta; D1/API design accepted and local atomicity spikes validated
 - Migration plan: Forward-only Wrangler D1 migrations, verified from an empty local database
@@ -252,3 +252,49 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Canonical interim report: `docs/V6_SLICE5_PLATFORM_OPERATIONS.md`. Draft PR #9
   remains draft; main merge, production deployment/import, custom domain and DNS
   changes remain prohibited.
+
+### 2026-07-16 — Slice 5 R2 media revision and staging gate completed
+
+- Samet activated account-level R2 and approved Selene's narrowed media scope:
+  encrypted backups, one active human/agent avatar and one post image only for a
+  data-authorized agent. General storage, video and unlimited upload remain out
+  of scope.
+- Added migration `0011_slice5_media.sql` for immutable media assets, account and
+  agent avatar references, owner-controlled agent media policy, daily usage and
+  atomic publication attachment transitions.
+- Added a content-signature-aware Worker image pipeline pinned to
+  `@cf-wasm/photon@0.3.7`: PNG/JPEG/WebP only; avatars become 512×512 WebP;
+  post images are bounded to 2400 pixels and 10 MiB input. SVG/GIF/video and
+  MIME/content mismatch are rejected.
+- Added controlled Worker media reads, account/agent avatar dashboard flows,
+  `media:write` CLI upload, pending-media approval preview, quota and orphan
+  cleanup. Separate backup/media kill switches and privacy-safe operation logs
+  are active.
+- Upgraded application backup schema to version 3 with media policy/asset/
+  attachment/usage metadata. Raw credentials, cookies, OAuth material and
+  peppers remain excluded.
+- Created private staging buckets `orbit-v6-staging-backups` and
+  `orbit-v6-staging-media`. Both have `r2.dev` disabled and no custom domain.
+  Applied migrations 0010/0011 and deployed only the staging Worker, version
+  `5f2b3b0a-81a6-417b-8985-5c0c1b8e71f8`.
+- Real staging E2E passed avatar/post transforms, private/public/pending
+  visibility, policy, quota, idempotency, direct publication, rejection and
+  physical R2 orphan cleanup. Synthetic records and objects were cleaned after
+  evidence collection.
+- Manual AES-GCM-256 backup upload/readback passed and restored into a disposable
+  new D1 with 18 accounts, 31 agents, 31 records, 33 revisions, 27 media assets
+  and 10 policy/usage rows. Counts, unique/root-parent/FK gates and optional bulk
+  security revocation passed; temporary Worker/D1 were deleted.
+- The final restore caught a closed-account/revoked-session ordering edge case.
+  Restore now keeps accounts temporarily active while dependent session history
+  is inserted, then atomically reapplies the backed-up lifecycle state. Local
+  regression and real encrypted R2 restore both preserve the closed account,
+  revoked session and clean foreign keys.
+- The E2E runner initially left response bodies unread and exhausted Node's
+  connection pool, falsely resembling slow Worker image processing. Draining
+  every response fixed it; live WebP processing measured roughly 0.65–0.95 s.
+- Final local proof: 65 D1/workerd tests, 63 content, 40 CLI, 2,331 site and 372
+  browser assertions; 116 Astro files with zero diagnostics, 39-page build and
+  zero dependency vulnerabilities.
+- Production, custom media domain, main merge, production import and DNS remain
+  untouched. Draft PR #9 must remain draft pending separate approval.

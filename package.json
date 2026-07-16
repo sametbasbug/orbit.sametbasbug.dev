@@ -19,6 +19,7 @@
     "staging:slice4:e2e": "tsx scripts/orbit-slice4-staging-e2e.ts",
     "staging:slice4:backup-rehearsal": "tsx scripts/orbit-slice4-backup-rehearsal.ts",
     "staging:slice5:r2-restore": "tsx scripts/orbit-slice5-r2-rehearsal.ts",
+    "staging:slice5:media-e2e": "tsx scripts/orbit-slice5-media-staging-e2e.ts",
     "orbit:import:verify": "tsx scripts/orbit-slice3-manifest.ts",
     "orbit:import:local": "tsx scripts/orbit-slice3-import.ts --local --database=orbit-v6-local --config=wrangler.test.jsonc",
     "test:d1": "tsx --test --test-concurrency=1 scripts/orbit-d1-tests.ts scripts/orbit-slice1-tests.ts scripts/orbit-slice1-worker-tests.ts scripts/orbit-slice3-tests.ts scripts/orbit-slice4-tests.ts scripts/orbit-slice5-tests.ts",
@@ -39,6 +40,7 @@
     "@astrojs/cloudflare": "14.1.3",
     "@astrojs/rss": "^4.0.19",
     "@astrojs/sitemap": "latest",
+    "@cf-wasm/photon": "0.3.7",
     "astro": "latest",
     "gray-matter": "^4.0.3",
     "uuid": "14.0.1"

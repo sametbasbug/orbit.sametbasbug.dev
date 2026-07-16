@@ -8,6 +8,8 @@ import {
 import { enforceBackupRetention, runR2Backup } from '../src/server/backup/r2-backup';
 import type { R2BucketLike, R2ObjectBodyLike, R2ObjectLike } from '../src/server/identity/bindings';
 import { handleWorkerRequest } from '../src/worker';
+import { cleanupMedia } from '../src/server/media/media-service';
+import { D1MediaRepository } from '../src/server/repositories/d1/d1-media-repository';
 
 interface TestStatement {
   bind(...values: unknown[]): TestStatement;
@@ -44,15 +46,23 @@ const PROFILES = {
 } as const;
 
 class MemoryR2 implements R2BucketLike {
-  readonly objects = new Map<string, { value: string; customMetadata?: Record<string, string> }>();
-  async put(key: string, value: string | ArrayBuffer | Uint8Array, options?: { customMetadata?: Record<string, string> }): Promise<R2ObjectLike> {
-    const text = typeof value === 'string' ? value : new TextDecoder().decode(value instanceof Uint8Array ? value : new Uint8Array(value));
-    this.objects.set(key, { value: text, customMetadata: options?.customMetadata });
+  readonly objects = new Map<string, { value: Uint8Array; customMetadata?: Record<string, string>; httpMetadata?: Record<string, string> }>();
+  async put(key: string, value: string | ArrayBuffer | Uint8Array, options?: { httpMetadata?: Record<string, string>; customMetadata?: Record<string, string> }): Promise<R2ObjectLike> {
+    const bytes = typeof value === 'string'
+      ? new TextEncoder().encode(value)
+      : value instanceof Uint8Array ? new Uint8Array(value) : new Uint8Array(value.slice(0));
+    this.objects.set(key, { value: bytes, customMetadata: options?.customMetadata, httpMetadata: options?.httpMetadata });
     return { key, customMetadata: options?.customMetadata };
   }
   async get(key: string): Promise<R2ObjectBodyLike | null> {
     const item = this.objects.get(key);
-    return item ? { key, customMetadata: item.customMetadata, text: async () => item.value } : null;
+    return item ? {
+      key,
+      customMetadata: item.customMetadata,
+      httpMetadata: item.httpMetadata,
+      text: async () => new TextDecoder().decode(item.value),
+      arrayBuffer: async () => item.value.slice().buffer,
+    } : null;
   }
   async list(options: { prefix?: string } = {}): Promise<{ objects: R2ObjectLike[]; truncated: boolean }> {
     return {
@@ -66,6 +76,8 @@ class MemoryR2 implements R2BucketLike {
     for (const key of Array.isArray(keys) ? keys : [keys]) this.objects.delete(key);
   }
 }
+
+const mediaBucket = new MemoryR2();
 
 function profileForToken(token: string | null) {
   if (!token?.startsWith('Bearer test-token-')) return null;
@@ -241,7 +253,7 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
         INSERT OR IGNORE INTO agent_credentials (
           id, agent_id, secret_digest, hash_version, scopes,
           created_by_account_id, created_at
-        ) VALUES (?, ?, ?, 1, 'feed:read records:write', ?, ?)
+        ) VALUES (?, ?, ?, 1, 'feed:read records:write media:write', ?, ?)
       `).bind(String(body.credentialId), agentId, String(body.secretDigest), accountId, now),
     ]);
     return Response.json({ ok: true });
@@ -259,6 +271,32 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
       String(body.secretDigest), String(body.csrfDigest), now, now,
       now + 7 * 86400000, now + 30 * 86400000,
     ).run();
+    return Response.json({ ok: true });
+  }
+
+  if (url.pathname === '/__test/seed-closed-account-session') {
+    const accountId = String(body.accountId);
+    await env.DB.batch([
+      env.DB.prepare(`
+        INSERT INTO accounts (
+          id, handle, handle_normalized, display_name, avatar_url,
+          status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, NULL, 'active', ?, ?)
+      `).bind(accountId, String(body.handle), String(body.handle), String(body.handle), now, now),
+      env.DB.prepare(`
+        INSERT INTO sessions (
+          id, account_id, secret_digest, hash_version, csrf_digest,
+          created_at, last_seen_at, idle_expires_at, absolute_expires_at,
+          revoked_at, revoked_reason
+        ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, 'test_revoked_before_account_close')
+      `).bind(
+        String(body.sessionId), accountId, String(body.secretDigest), String(body.csrfDigest),
+        now, now, now + 7 * 86400000, now + 30 * 86400000, now + 1000,
+      ),
+      env.DB.prepare(`
+        UPDATE accounts SET status = 'closed', updated_at = ? WHERE id = ?
+      `).bind(now + 2000, accountId),
+    ]);
     return Response.json({ ok: true });
   }
 
@@ -345,6 +383,7 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     const result = await runR2Backup({
       ...env,
       BACKUPS: bucket,
+      ORBIT_BACKUP_ENABLED: 'true',
       ORBIT_BACKUP_ENCRYPTION_KEY_V1: testKey,
     }, 'daily', now);
     for (let index = 0; index < 16; index += 1) {
@@ -381,6 +420,9 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
   if (url.pathname === '/__test/backup-counts') {
     const counts = await env.DB.prepare(`
       SELECT
+        (SELECT COUNT(*) FROM accounts) AS accounts,
+        (SELECT COUNT(*) FROM accounts WHERE status = 'closed') AS closedAccounts,
+        (SELECT COUNT(*) FROM sessions) AS sessions,
         (SELECT COUNT(*) FROM agents) AS agents,
         (SELECT COUNT(*) FROM records) AS records,
         (SELECT COUNT(*) FROM projects) AS projects,
@@ -389,6 +431,18 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     `).first();
     const fk = await env.DB.prepare(`PRAGMA foreign_key_check`).all();
     return Response.json({ counts, foreignKeyViolations: fk.results.length });
+  }
+
+  if (url.pathname === '/__test/media-objects') {
+    return Response.json({ count: mediaBucket.objects.size });
+  }
+
+  if (url.pathname === '/__test/media-cleanup') {
+    return Response.json(await cleanupMedia(
+      env,
+      new D1MediaRepository(env.DB),
+      Number(body.now ?? now),
+    ));
   }
 
   if (url.pathname === '/__test/cleanup') {
@@ -418,10 +472,11 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
 
 export default {
   async fetch(request: Request, env: TestEnv): Promise<Response> {
-    const testResponse = await testRoute(request, env);
+    const extended = { ...env, MEDIA: mediaBucket };
+    const testResponse = await testRoute(request, extended);
     if (testResponse) return testResponse;
     const nowHeader = request.headers.get('x-test-now');
-    return await handleWorkerRequest(request, env, {
+    return await handleWorkerRequest(request, extended, {
       fetch: mockGithubFetch,
       now: nowHeader ? () => Number(nowHeader) : undefined,
     });

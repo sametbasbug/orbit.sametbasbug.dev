@@ -116,8 +116,9 @@ export function randomBase64Url(bytes: number): string {
   return base64Url(randomBytes(bytes));
 }
 
-export async function sha256Base64Url(value: string): Promise<string> {
-  return base64Url(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value))));
+export async function sha256Base64Url(value: string | Uint8Array): Promise<string> {
+  const bytes = typeof value === 'string' ? encoder.encode(value) : Uint8Array.from(value);
+  return base64Url(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)));
 }
 
 export async function hmacDigest(value: string, pepper: string): Promise<string> {

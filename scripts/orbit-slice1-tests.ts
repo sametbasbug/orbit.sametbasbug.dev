@@ -548,7 +548,7 @@ describe('Orbit V6 Slice 1–2 identity and agent-management HTTP core', { concu
     const issuedBody = await issued.json() as { credential: { id: string; token: string; scopes: string[] } };
     firstCredentialId = issuedBody.credential.id;
     assert.ok(issuedBody.credential.token.startsWith('orb_agent_v1_'));
-    assert.deepEqual(issuedBody.credential.scopes, ['feed:read', 'records:write']);
+    assert.deepEqual(issuedBody.credential.scopes, ['feed:read', 'records:write', 'media:write']);
 
     const stale = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/rotate`, {
       expectedCredentialId: 'stale-credential',

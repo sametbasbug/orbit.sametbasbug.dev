@@ -53,6 +53,11 @@ interface ReviewRow extends RecordRow {
   metadata_json: string;
   author_handle: string;
   sponsor_account_id: string;
+  media_id: string | null;
+  media_width: number | null;
+  media_height: number | null;
+  media_alt_text: string | null;
+  media_caption: string | null;
 }
 
 function mutationRecord(row: RecordRow): MutationRecord {
@@ -91,6 +96,15 @@ function reviewView(row: ReviewRow): PublicationReviewView {
     metadata: JSON.parse(row.metadata_json) as Record<string, unknown>,
     authorHandle: row.author_handle,
     sponsorAccountId: row.sponsor_account_id,
+    media: row.media_id && row.media_width && row.media_height && row.media_alt_text
+      ? {
+        id: row.media_id,
+        width: row.media_width,
+        height: row.media_height,
+        altText: row.media_alt_text,
+        caption: row.media_caption,
+      }
+      : null,
   };
 }
 
@@ -103,7 +117,9 @@ const REVIEW_SELECT = `
          current_rr.revision_number AS current_revision_number,
          current_rr.body_markdown AS current_body_markdown,
          rr.revision_number, rr.body_markdown, rr.summary, rr.metadata_json,
-         a.handle AS author_handle, am.account_id AS sponsor_account_id
+         a.handle AS author_handle, am.account_id AS sponsor_account_id,
+         media.id AS media_id, media.width AS media_width, media.height AS media_height,
+         media.alt_text AS media_alt_text, media.caption AS media_caption
   FROM publication_reviews pr
   JOIN records r ON r.id = pr.record_id
   JOIN record_revisions rr ON rr.id = pr.revision_id AND rr.record_id = r.id
@@ -111,6 +127,8 @@ const REVIEW_SELECT = `
   JOIN agents a ON a.id = r.author_agent_id
   JOIN agent_memberships am ON am.agent_id = a.id
     AND am.role = 'primary_sponsor' AND am.revoked_at IS NULL
+  LEFT JOIN media_assets media ON media.attached_revision_id = rr.id
+    AND media.media_kind = 'post_image' AND media.state IN ('pending', 'active')
 `;
 
 function audit(
@@ -270,6 +288,17 @@ export class D1PublicationRepository implements PublicationRepository {
         VALUES (?, ?, ?)
       `).bind(input.record.slug, input.record.id, input.record.createdAt),
     ];
+    if (input.revision.mediaId && input.revision.mediaAttachmentId) {
+      statements.push(this.#db.prepare(`
+        INSERT INTO media_attachment_transitions (
+          id, media_id, record_id, revision_id, agent_id, target_state, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        input.revision.mediaAttachmentId, input.revision.mediaId, input.record.id,
+        input.revision.id, input.record.authorAgentId,
+        published ? 'active' : 'pending', input.revision.createdAt,
+      ));
+    }
     for (const topicId of input.topicIds) {
       statements.push(this.#db.prepare(`
         INSERT INTO record_topics (record_id, topic_id, created_at) VALUES (?, ?, ?)
@@ -332,6 +361,12 @@ export class D1PublicationRepository implements PublicationRepository {
           UPDATE record_revisions SET state = 'superseded'
           WHERE id = ? AND record_id = ? AND state = 'published'
         `).bind(input.record.currentRevisionId, input.record.id));
+        statements.push(this.#db.prepare(`
+          UPDATE media_assets
+          SET state = 'orphaned', orphan_reason = 'revision_superseded',
+              orphaned_at = ?, activated_at = NULL
+          WHERE attached_revision_id = ? AND state = 'active'
+        `).bind(input.revision.createdAt, input.record.currentRevisionId));
       }
     } else {
       statements.push(
@@ -341,6 +376,17 @@ export class D1PublicationRepository implements PublicationRepository {
           ) VALUES (?, ?, ?, 'pending', ?)
         `).bind(input.reviewId, input.record.id, input.revision.id, input.revision.createdAt),
       );
+    }
+    if (input.revision.mediaId && input.revision.mediaAttachmentId) {
+      statements.push(this.#db.prepare(`
+        INSERT INTO media_attachment_transitions (
+          id, media_id, record_id, revision_id, agent_id, target_state, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        input.revision.mediaAttachmentId, input.revision.mediaId, input.record.id,
+        input.revision.id, input.record.authorAgentId,
+        published ? 'active' : 'pending', input.revision.createdAt,
+      ));
     }
     statements.push(
       this.#db.prepare(`
@@ -413,6 +459,17 @@ export class D1PublicationRepository implements PublicationRepository {
               published_at = COALESCE(published_at, ?), updated_at = ?, version = version + 1
           WHERE id = ? AND pending_revision_id = ?
         `).bind(input.review.revisionId, input.now, input.now, input.review.record.id, input.review.revisionId),
+        this.#db.prepare(`
+          UPDATE media_assets
+          SET state = 'orphaned', orphan_reason = 'revision_superseded',
+              orphaned_at = ?, activated_at = NULL
+          WHERE attached_revision_id = ? AND state = 'active'
+        `).bind(input.now, input.review.record.currentRevisionId),
+        this.#db.prepare(`
+          UPDATE media_assets
+          SET state = 'active', activated_at = ?, orphan_reason = NULL, orphaned_at = NULL
+          WHERE attached_revision_id = ? AND state = 'pending'
+        `).bind(input.now, input.review.revisionId),
       );
     } else {
       statements.push(
@@ -426,6 +483,12 @@ export class D1PublicationRepository implements PublicationRepository {
               pending_revision_id = NULL, updated_at = ?, version = version + 1
           WHERE id = ? AND pending_revision_id = ?
         `).bind(input.now, input.review.record.id, input.review.revisionId),
+        this.#db.prepare(`
+          UPDATE media_assets
+          SET state = 'orphaned', orphan_reason = 'publication_rejected',
+              orphaned_at = ?, activated_at = NULL
+          WHERE attached_revision_id = ? AND state = 'pending'
+        `).bind(input.now, input.review.revisionId),
       );
     }
     statements.push(
@@ -462,6 +525,12 @@ export class D1PublicationRepository implements PublicationRepository {
         hasPublished ? 'published' : 'deleted', hasPublished ? null : input.now,
         input.now, input.review.record.id, input.review.revisionId,
       ),
+      this.#db.prepare(`
+        UPDATE media_assets
+        SET state = 'orphaned', orphan_reason = 'publication_withdrawn',
+            orphaned_at = ?, activated_at = NULL
+        WHERE attached_revision_id = ? AND state = 'pending'
+      `).bind(input.now, input.review.revisionId),
       audit(this.#db, {
         id: input.auditEventId, event: 'publication.withdrawn',
         actorType: 'agent', actorId: input.agentId,

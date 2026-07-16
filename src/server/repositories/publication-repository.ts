@@ -53,6 +53,13 @@ export interface PublicationReviewView {
   metadata: Record<string, unknown>;
   authorHandle: string;
   sponsorAccountId: string;
+  media: {
+    id: string;
+    width: number;
+    height: number;
+    altText: string;
+    caption: string | null;
+  } | null;
 }
 
 export interface ControlledDictionary {
@@ -70,7 +77,7 @@ export interface PublicationRepository {
   getIdempotency(principalType: 'agent' | 'account', principalId: string, keyDigest: string): Promise<IdempotencyReplay | null>;
   createRecord(input: {
     record: MutationRecord & { projectId: string | null; createdAt: number; publishedAt: number | null };
-    revision: { id: string; bodyMarkdown: string; summary: string; metadataJson: string; state: 'pending' | 'published'; createdAt: number; publishedAt: number | null };
+    revision: { id: string; bodyMarkdown: string; summary: string; metadataJson: string; state: 'pending' | 'published'; createdAt: number; publishedAt: number | null; mediaId: string | null; mediaAttachmentId: string | null };
     topicIds: string[];
     reviewId: string | null;
     usageDay: string;
@@ -81,7 +88,7 @@ export interface PublicationRepository {
   createRevision(input: {
     record: MutationRecord;
     transitionId: string;
-    revision: { id: string; revisionNumber: number; bodyMarkdown: string; summary: string; metadataJson: string; state: 'pending' | 'published'; createdAt: number; publishedAt: number | null };
+    revision: { id: string; revisionNumber: number; bodyMarkdown: string; summary: string; metadataJson: string; state: 'pending' | 'published'; createdAt: number; publishedAt: number | null; mediaId: string | null; mediaAttachmentId: string | null };
     reviewId: string | null;
     idempotency: { id: string; principalType: 'agent'; principalId: string; keyDigest: string; operation: string; requestDigest: string; responseStatus: number; responseJson: string; expiresAt: number };
     auditEventId: string;

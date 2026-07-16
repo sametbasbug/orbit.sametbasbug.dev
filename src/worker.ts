@@ -8,6 +8,8 @@ import {
   servePublicRead,
 } from './server/cache/public-cache';
 import { observeRequest } from './server/observability/telemetry';
+import { cleanupMedia } from './server/media/media-service';
+import { D1MediaRepository } from './server/repositories/d1/d1-media-repository';
 
 interface ExecutionContextLike {
   waitUntil(promise: Promise<unknown>): void;
@@ -94,6 +96,7 @@ export default {
     ctx.waitUntil(Promise.all([
       runIdentityCleanup(env),
       runScheduledBackups(env),
+      cleanupMedia(env, new D1MediaRepository(env.DB)),
     ]));
   },
 };

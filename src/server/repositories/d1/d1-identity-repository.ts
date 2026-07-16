@@ -303,7 +303,9 @@ export class D1IdentityRepository implements IdentityRepository {
       `).bind(input.profile.login, input.now, input.identity.identityId, input.identity.accountId),
       this.#db.prepare(`
         UPDATE accounts
-        SET display_name = ?, avatar_url = ?, updated_at = ?, last_login_at = ?
+        SET display_name = ?,
+            avatar_url = CASE WHEN avatar_media_id IS NULL THEN ? ELSE avatar_url END,
+            updated_at = ?, last_login_at = ?
         WHERE id = ? AND status = 'active'
       `).bind(
         input.profile.displayName,

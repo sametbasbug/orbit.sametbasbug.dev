@@ -422,9 +422,13 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
       const rejected = await testPost('/__test/backup-restore', { backup: corrupted, revokeSecurity: true }, started.url);
       assert.equal(rejected.status, 400);
       const empty = await testPost('/__test/backup-counts', {}, started.url).then((response) => response.json()) as {
-        counts: { agents: number; records: number; validations: number };
+        counts: { agents: number; records: number; projects: number; topics: number; validations: number };
       };
-      assert.deepEqual(empty.counts, { agents: 0, records: 0, projects: 0, topics: 0, validations: 0 });
+      assert.equal(empty.counts.agents, 0);
+      assert.equal(empty.counts.records, 0);
+      assert.equal(empty.counts.projects, 0);
+      assert.equal(empty.counts.topics, 0);
+      assert.equal(empty.counts.validations, 0);
 
       const restored = await testPost('/__test/backup-restore', { backup: exported, revokeSecurity: true }, started.url);
       assert.equal(restored.status, 200);

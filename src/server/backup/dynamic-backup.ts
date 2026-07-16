@@ -4,7 +4,7 @@ import { randomBase64Url, sha256Base64Url } from '../identity/tokens';
 import type { D1DatabaseLike, D1PreparedStatementLike } from '../repositories/d1/d1-foundation-repository';
 
 export const BACKUP_SCHEMA = 'equinox.orbit.dynamic-backup.v1';
-export const BACKUP_SCHEMA_VERSION = 2;
+export const BACKUP_SCHEMA_VERSION = 3;
 
 type BackupRow = Record<string, string | number | null>;
 
@@ -31,12 +31,12 @@ interface TableSpec {
 }
 
 const SPECS: TableSpec[] = [
-  { exportName: 'accounts', table: 'accounts', columns: ['id','handle','handle_normalized','display_name','avatar_url','status','created_at','updated_at','last_login_at'], orderBy: 'id' },
+  { exportName: 'accounts', table: 'accounts', columns: ['id','handle','handle_normalized','display_name','avatar_url','status','created_at','updated_at','last_login_at','avatar_media_id'], orderBy: 'id' },
   { exportName: 'authIdentities', table: 'auth_identities', columns: ['id','account_id','provider','provider_user_id','provider_login_snapshot','created_at','last_seen_at'], orderBy: 'id' },
   { exportName: 'accountRoles', table: 'account_roles', columns: ['id','account_id','role','granted_by_account_id','granted_at','revoked_at'], orderBy: 'id' },
   { exportName: 'accountQuotas', table: 'account_quotas', columns: ['account_id','quota_key','limit_value','updated_by_account_id','updated_at'], orderBy: 'account_id, quota_key' },
   { exportName: 'invitations', table: 'invitations', columns: ['id','secret_digest','hash_version','expected_github_user_id','expected_github_login_snapshot','agent_quota','created_by_account_id','created_at','expires_at','redeemed_at','redeemed_by_account_id','revoked_at','revoked_by_account_id'], orderBy: 'id' },
-  { exportName: 'agents', table: 'agents', columns: ['id','handle','handle_normalized','display_name','bio','avatar_asset','publication_mode','status','created_at','updated_at','version','role','short_bio','motto','accent','responsibility','links_json'], orderBy: 'id' },
+  { exportName: 'agents', table: 'agents', columns: ['id','handle','handle_normalized','display_name','bio','avatar_asset','publication_mode','status','created_at','updated_at','version','role','short_bio','motto','accent','responsibility','links_json','avatar_media_id'], orderBy: 'id' },
   { exportName: 'agentMemberships', table: 'agent_memberships', columns: ['id','agent_id','account_id','role','created_by_account_id','created_at','revoked_at'], orderBy: 'id' },
   { exportName: 'agentCredentials', table: 'agent_credentials', columns: ['id','agent_id','secret_digest','hash_version','scopes','created_by_account_id','created_at','last_used_at','expires_at','revoked_at','revoked_reason','replaced_by_credential_id'], orderBy: 'created_at, id' },
   { exportName: 'sessions', table: 'sessions', columns: ['id','account_id','secret_digest','hash_version','csrf_digest','created_at','last_seen_at','idle_expires_at','absolute_expires_at','revoked_at','revoked_reason'], orderBy: 'created_at, id', optional: true },
@@ -47,6 +47,10 @@ const SPECS: TableSpec[] = [
   { exportName: 'recordTopics', table: 'record_topics', columns: ['record_id','topic_id','created_at'], orderBy: 'record_id, topic_id' },
   { exportName: 'publicationReviews', table: 'publication_reviews', columns: ['id','record_id','revision_id','status','requested_at','reviewer_account_id','reviewed_at','review_note'], orderBy: 'requested_at, id' },
   { exportName: 'agentUsageDaily', table: 'agent_usage_daily', columns: ['agent_id','day_utc','posts_created','replies_created','write_attempts','updated_at'], orderBy: 'agent_id, day_utc' },
+  { exportName: 'agentMediaPolicies', table: 'agent_media_policies', columns: ['agent_id','media_enabled','daily_image_limit','updated_by_account_id','updated_at'], orderBy: 'agent_id' },
+  { exportName: 'mediaAssets', table: 'media_assets', columns: ['id','media_kind','owner_account_id','owner_agent_id','attached_record_id','attached_revision_id','object_key','content_type','byte_size','width','height','sha256_digest','alt_text','caption','state','orphan_reason','created_at','activated_at','orphaned_at','deleted_at'], orderBy: 'created_at, id' },
+  { exportName: 'mediaAttachmentTransitions', table: 'media_attachment_transitions', columns: ['id','media_id','record_id','revision_id','agent_id','target_state','created_at'], orderBy: 'created_at, id' },
+  { exportName: 'agentMediaUploads', table: 'agent_media_uploads', columns: ['id','agent_id','media_id','day_utc','created_at'], orderBy: 'created_at, id' },
   { exportName: 'moderationActions', table: 'moderation_actions', columns: ['id','actor_account_id','action','target_type','target_id','reason','created_at','reversed_by_action_id','reverses_action_id'], orderBy: 'created_at, id' },
   { exportName: 'announcements', table: 'announcements', columns: ['id','title','body_markdown','severity','audience_type','target_agent_id','status','starts_at','expires_at','created_by_account_id','created_at','updated_at','published_at','withdrawn_at'], orderBy: 'created_at, id' },
   { exportName: 'announcementTransitions', table: 'announcement_transitions', columns: ['id','announcement_id','action','actor_account_id','created_at'], orderBy: 'created_at, id' },
@@ -211,6 +215,14 @@ export async function restoreDynamicBackup(
     for (const row of backup.tables[name]) {
       const adjusted = { ...row };
       if (name === 'agentCredentials') adjusted.replaced_by_credential_id = null;
+      if (name === 'accounts') {
+        // Closed accounts may retain revoked session history. Keep the normal
+        // active-account session trigger enabled, restore dependencies while
+        // temporarily active, then put the authoritative status back below.
+        adjusted.status = 'active';
+        adjusted.avatar_media_id = null;
+      }
+      if (name === 'agents') adjusted.avatar_media_id = null;
       statements.push(insert(db, item, adjusted, seedSafe.has(name)));
     }
   }
@@ -237,6 +249,50 @@ export async function restoreDynamicBackup(
   for (const name of ['recordTopics','publicationReviews','agentUsageDaily']) {
     const item = spec(name);
     for (const row of backup.tables[name]) statements.push(insert(db, item, row));
+  }
+  for (const row of backup.tables.agentMediaPolicies) {
+    statements.push(insert(db, spec('agentMediaPolicies'), row));
+  }
+  for (const row of backup.tables.mediaAssets) {
+    statements.push(insert(db, spec('mediaAssets'), {
+      ...row,
+      attached_record_id: null,
+      attached_revision_id: null,
+      state: row.media_kind === 'post_image' ? 'staged' : row.state,
+      activated_at: row.media_kind === 'post_image' ? null : row.activated_at,
+      orphaned_at: row.media_kind === 'post_image' ? null : row.orphaned_at,
+      deleted_at: row.media_kind === 'post_image' ? null : row.deleted_at,
+      orphan_reason: row.media_kind === 'post_image' ? null : row.orphan_reason,
+    }));
+  }
+  for (const row of backup.tables.mediaAttachmentTransitions) {
+    statements.push(insert(db, spec('mediaAttachmentTransitions'), row));
+  }
+  for (const row of backup.tables.mediaAssets) {
+    if (row.media_kind === 'post_image') {
+      statements.push(db.prepare(`
+        UPDATE media_assets
+        SET attached_record_id = ?, attached_revision_id = ?, state = ?, orphan_reason = ?,
+            activated_at = ?, orphaned_at = ?, deleted_at = ?
+        WHERE id = ?
+      `).bind(
+        row.attached_record_id, row.attached_revision_id, row.state, row.orphan_reason,
+        row.activated_at, row.orphaned_at, row.deleted_at, row.id,
+      ));
+    }
+  }
+  for (const row of backup.tables.accounts) {
+    if (row.avatar_media_id) statements.push(db.prepare(
+      `UPDATE accounts SET avatar_media_id = ? WHERE id = ?`,
+    ).bind(row.avatar_media_id, row.id));
+  }
+  for (const row of backup.tables.agents) {
+    if (row.avatar_media_id) statements.push(db.prepare(
+      `UPDATE agents SET avatar_media_id = ? WHERE id = ?`,
+    ).bind(row.avatar_media_id, row.id));
+  }
+  for (const row of backup.tables.agentMediaUploads) {
+    statements.push(insert(db, spec('agentMediaUploads'), row));
   }
   const moderationSpec = spec('moderationActions');
   for (const row of backup.tables.moderationActions) {
@@ -276,6 +332,12 @@ export async function restoreDynamicBackup(
   for (const row of backup.tables.slugReservations) statements.push(insert(db, spec('slugReservations'), row));
   for (const row of backup.tables.auditEvents) statements.push(insert(db, spec('auditEvents'), row, true));
 
+  for (const row of backup.tables.accounts) {
+    statements.push(db.prepare(`
+      UPDATE accounts SET status = ?, updated_at = ? WHERE id = ?
+    `).bind(row.status, row.updated_at, row.id));
+  }
+
   const now = options.now ?? Date.now();
   if (options.revokeSecurity) {
     statements.push(
@@ -297,6 +359,9 @@ export async function restoreDynamicBackup(
     announcements: backup.counts.announcements,
     announcementReads: backup.counts.announcementReads,
     auditEvents: backup.counts.auditEvents,
+    mediaAssets: backup.counts.mediaAssets,
+    agentMediaPolicies: backup.counts.agentMediaPolicies,
+    agentMediaUploads: backup.counts.agentMediaUploads,
   };
   statements.push(db.prepare(`
     INSERT INTO backup_restore_validations (

@@ -12,6 +12,7 @@ import {
   decryptChunkedBackup,
   encryptChunkedBackup,
 } from '../src/server/backup/chunked-backup';
+import sharp from 'sharp';
 
 const ROOT = process.cwd();
 const WRANGLER = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
@@ -113,13 +114,26 @@ async function ownerRequest(pathname: string, method = 'GET', body?: Record<stri
   });
 }
 
-async function seedAgent(handle: string, role = ''): Promise<Agent> {
+async function ownerMultipart(pathname: string, form: FormData): Promise<Response> {
+  return await fetch(`${baseUrl}${pathname}`, {
+    method: 'POST',
+    headers: {
+      cookie: ownerCookie,
+      origin: 'http://localhost:4321',
+      'x-orbit-csrf': ownerCsrf,
+      'x-test-now': String(NOW),
+    },
+    body: form,
+  });
+}
+
+async function seedAgent(handle: string, role = '', publicationMode = 'direct_publish'): Promise<Agent> {
   const token = await createOpaqueToken('agent', AGENT_PEPPER);
   const agent = { id: createEntityId(), token: token.token, handle };
   const response = await testPost('/__test/seed-publication-agent', {
     accountId: OWNER_ID, agentId: agent.id, membershipId: createEntityId(),
     credentialId: token.selector, secretDigest: token.digest,
-    handle, publicationMode: 'direct_publish', status: 'active', role, now: NOW,
+    handle, publicationMode, status: 'active', role, now: NOW,
   });
   assert.equal(response.status, 200);
   agents.set(handle, agent);
@@ -137,6 +151,28 @@ async function agentRequest(agent: Agent, pathname: string, method = 'GET', body
   }
   return await fetch(`${baseUrl}${pathname}`, {
     method, headers, body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+async function agentImageRequest(
+  agent: Agent,
+  bytes: Uint8Array,
+  type = 'image/png',
+  altText = 'Orbit test görseli',
+  key = randomBase64Url(18),
+): Promise<Response> {
+  const form = new FormData();
+  form.set('file', new File([Uint8Array.from(bytes)], 'test-image.png', { type }));
+  form.set('altText', altText);
+  form.set('caption', 'Slice 5 kontrollü medya testi');
+  return await fetch(`${baseUrl}/v1/media/post-images`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${agent.token}`,
+      'idempotency-key': key,
+      'x-test-now': String(NOW),
+    },
+    body: form,
   });
 }
 
@@ -158,6 +194,7 @@ before(async () => {
   ownerCookie = `__Host-orbit_session=${session.token}; __Host-orbit_csrf=${ownerCsrf}`;
   await seedAgent('slice5-equinox', 'Sistem ajanı');
   await seedAgent('slice5-external');
+  await seedAgent('slice5-pending', '', 'approval_required');
 });
 
 after(async () => {
@@ -174,7 +211,96 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal(response.headers.get('cache-control'), 'no-store');
     assert.match(response.headers.get('content-security-policy') ?? '', /script-src 'nonce-/u);
     assert.match(html, /Orbit Sponsor Paneli/u);
+    assert.match(html, /Yeni hesap avatarı/u);
+    assert.match(html, /Görsel yetkisi/u);
     assert.doesNotMatch(html, /orb_agent_v1_/u);
+  });
+
+  test('avatar and post media enforce transforms, policy, privacy and quota', async () => {
+    const png = new Uint8Array(await sharp({
+      create: { width: 1600, height: 900, channels: 4, background: '#745cff' },
+    }).png().toBuffer());
+    const avatarForm = new FormData();
+    avatarForm.set('file', new File([png], 'avatar.png', { type: 'image/png' }));
+    const avatar = await ownerMultipart('/v1/me/avatar', avatarForm);
+    assert.equal(avatar.status, 201, await avatar.clone().text());
+    const avatarBody = await avatar.json() as { media: { id: string; width: number; height: number } };
+    assert.deepEqual([avatarBody.media.width, avatarBody.media.height], [512, 512]);
+    const accountImage = await fetch(`${baseUrl}/v1/media/${avatarBody.media.id}`, { headers: { cookie: ownerCookie } });
+    assert.equal(accountImage.status, 200);
+    assert.equal(accountImage.headers.get('content-type'), 'image/webp');
+    assert.equal((await fetch(`${baseUrl}/v1/media/${avatarBody.media.id}`)).status, 404);
+
+    const direct = agents.get('slice5-equinox')!;
+    const agentAvatarForm = new FormData();
+    agentAvatarForm.set('file', new File([png], 'agent-avatar.png', { type: 'image/png' }));
+    const agentAvatar = await ownerMultipart(`/v1/agents/${direct.id}/avatar`, agentAvatarForm);
+    assert.equal(agentAvatar.status, 201, await agentAvatar.clone().text());
+    const agentAvatarId = (await agentAvatar.json() as { media: { id: string } }).media.id;
+    assert.equal((await fetch(`${baseUrl}/v1/media/${agentAvatarId}`)).status, 200);
+    assert.equal((await agentImageRequest(direct, png)).status, 403);
+    assert.equal((await ownerRequest(`/v1/admin/agents/${direct.id}/media-policy`, 'PATCH', {
+      mediaEnabled: true, dailyImageLimit: 1,
+    })).status, 200);
+    const capability = await agentRequest(direct, '/v1/media/capabilities');
+    assert.deepEqual(await capability.json(), {
+      mediaEnabled: true,
+      dailyImageLimit: 1,
+      acceptedTypes: ['image/png', 'image/jpeg', 'image/webp'],
+      maximumBytes: 10 * 1024 * 1024,
+      maximumImagesPerPost: 1,
+    });
+    const upload = await agentImageRequest(direct, png, 'image/png', 'Mor Orbit test görseli', 'slice5-media-direct');
+    assert.equal(upload.status, 201, await upload.clone().text());
+    const media = (await upload.json() as { media: { id: string } }).media;
+    assert.equal((await fetch(`${baseUrl}/v1/media/${media.id}`)).status, 404);
+    assert.equal((await agentImageRequest(direct, png, 'image/jpeg', 'MIME uyuşmazlığı testi', 'slice5-media-mismatch')).status, 415);
+    assert.equal((await agentImageRequest(direct, png, 'image/png', 'İkinci kota görseli', 'slice5-media-quota')).status, 429);
+    const published = await agentRequest(direct, '/v1/records', 'POST', {
+      bodyMarkdown: 'Kontrollü R2 görseliyle yayımlanan kayıt.', topicSlugs: ['orbit'], mediaId: media.id,
+    }, 'slice5-media-record');
+    assert.equal(published.status, 201, await published.clone().text());
+    const record = (await published.json() as { record: { id: string; slug: string } }).record;
+    const publicRecord = await fetch(`${baseUrl}/v1/records/${record.slug}`).then((response) => response.json()) as {
+      record: { media: { id: string; url: string } | null };
+    };
+    assert.equal(publicRecord.record.media?.id, media.id);
+    assert.equal((await fetch(`${baseUrl}/v1/media/${media.id}`)).status, 200);
+    assert.equal((await agentRequest(direct, `/v1/records/${record.id}/replies`, 'POST', {
+      bodyMarkdown: 'Yanıtlar görsel kabul etmez.', mediaId: media.id,
+    }, 'slice5-media-reply')).status, 400);
+  });
+
+  test('pending media stays sponsor-private and rejected media is cleaned without retry loops', async () => {
+    const png = new Uint8Array(await sharp({
+      create: { width: 900, height: 1200, channels: 3, background: '#18223a' },
+    }).jpeg().toBuffer());
+    const pending = agents.get('slice5-pending')!;
+    assert.equal((await ownerRequest(`/v1/admin/agents/${pending.id}/media-policy`, 'PATCH', {
+      mediaEnabled: true, dailyImageLimit: 10,
+    })).status, 200);
+    const uploaded = await agentImageRequest(pending, png, 'image/jpeg', 'Koyu mavi pending Orbit görseli', 'slice5-media-pending');
+    assert.equal(uploaded.status, 201, await uploaded.clone().text());
+    const mediaId = (await uploaded.json() as { media: { id: string } }).media.id;
+    const submission = await agentRequest(pending, '/v1/records', 'POST', {
+      bodyMarkdown: 'Görseliyle birlikte sponsor onayı bekleyen kayıt.', topicSlugs: ['orbit'], mediaId,
+    }, 'slice5-pending-media-record');
+    assert.equal(submission.status, 202, await submission.clone().text());
+    const record = (await submission.json() as { record: { id: string } }).record;
+    assert.equal((await fetch(`${baseUrl}/v1/media/${mediaId}`)).status, 404);
+    assert.equal((await fetch(`${baseUrl}/v1/media/${mediaId}`, { headers: { cookie: ownerCookie } })).status, 200);
+    const reviews = (await (await ownerRequest('/v1/approvals')).json() as {
+      reviews: Array<{ id: string; record: { id: string }; media: { id: string } | null }>;
+    }).reviews;
+    const review = reviews.find((item) => item.record.id === record.id);
+    assert.equal(review?.media?.id, mediaId);
+    assert.equal((await ownerRequest(`/v1/approvals/${review?.id}/reject`, 'POST', { note: 'media cleanup proof' }, 'slice5-media-reject')).status, 200);
+    assert.equal((await fetch(`${baseUrl}/v1/media/${mediaId}`, { headers: { cookie: ownerCookie } })).status, 404);
+    const cleanup = await testPost('/__test/media-cleanup', { now: NOW + 8 * 86400000 });
+    assert.equal(cleanup.status, 200);
+    const cleanupBody = await cleanup.json() as { deleted: number; failed: number };
+    assert.ok(cleanupBody.deleted >= 1);
+    assert.equal(cleanupBody.failed, 0);
   });
 
   test('sponsor can list and revoke owned sessions with CSRF and exact Origin', async () => {
@@ -294,6 +420,15 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
   });
 
   test('chunked backup encrypts, rejects corruption atomically and restores a new D1', async () => {
+    const closedAccountId = createEntityId();
+    const closedSession = await testPost('/__test/seed-closed-account-session', {
+      accountId: closedAccountId,
+      sessionId: randomBase64Url(16),
+      handle: `closed-${closedAccountId.slice(-8)}`,
+      secretDigest: randomBase64Url(32),
+      csrfDigest: randomBase64Url(32),
+    });
+    assert.equal(closedSession.status, 200);
     const exported = await testPost('/__test/chunked-backup-export', { includeSessions: true })
       .then((response) => response.json()) as {
         manifest: { schema: string; checksum: { value: string }; counts: Record<string, number> };
@@ -303,6 +438,7 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.ok(exported.chunks.every((chunk) => chunk.rowCount <= 500 && chunk.byteLength <= 1024 * 1024));
     assert.ok(exported.manifest.counts.announcements >= 2);
     assert.ok(exported.manifest.counts.moderationActions >= 2);
+    assert.ok(exported.manifest.counts.sessions >= 2);
 
     const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt','decrypt']);
     const encrypted = await encryptChunkedBackup(exported as never, key);
@@ -324,8 +460,14 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
       assert.equal(rejected.status, 400);
       const empty = await fetch(`${started.url}/__test/backup-counts`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
-      }).then((response) => response.json()) as { counts: { agents: number; records: number; validations: number } };
-      assert.deepEqual(empty.counts, { agents: 0, records: 0, projects: 0, topics: 0, validations: 0 });
+      }).then((response) => response.json()) as {
+        counts: { agents: number; records: number; projects: number; topics: number; validations: number };
+      };
+      assert.equal(empty.counts.agents, 0);
+      assert.equal(empty.counts.records, 0);
+      assert.equal(empty.counts.projects, 0);
+      assert.equal(empty.counts.topics, 0);
+      assert.equal(empty.counts.validations, 0);
 
       const restored = await fetch(`${started.url}/__test/chunked-backup-restore`, {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-test-now': String(NOW) },
@@ -339,8 +481,14 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
       assert.equal(restoredBody?.proof?.relationshipViolations, 0);
       const proof = await fetch(`${started.url}/__test/backup-counts`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
-      }).then((response) => response.json()) as { counts: { records: number; validations: number }; foreignKeyViolations: number };
+      }).then((response) => response.json()) as {
+        counts: { accounts: number; closedAccounts: number; sessions: number; records: number; validations: number };
+        foreignKeyViolations: number;
+      };
       assert.equal(proof.counts.records, exported.manifest.counts.records);
+      assert.equal(proof.counts.accounts, exported.manifest.counts.accounts);
+      assert.equal(proof.counts.sessions, exported.manifest.counts.sessions);
+      assert.equal(proof.counts.closedAccounts, 1);
       assert.equal(proof.counts.validations, 1);
       assert.equal(proof.foreignKeyViolations, 0);
     } finally {

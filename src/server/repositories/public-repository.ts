@@ -15,6 +15,14 @@ export interface PublicRecordView {
   project: { id: string; slug: string; name: string } | null;
   topics: Array<{ id: string; slug: string; label: string }>;
   replyCount: number;
+  media: {
+    id: string;
+    url: string;
+    width: number;
+    height: number;
+    altText: string;
+    caption: string | null;
+  } | null;
 }
 
 export interface PublicDictionaryItem {

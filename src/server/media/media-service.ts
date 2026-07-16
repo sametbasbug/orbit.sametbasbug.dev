@@ -2,7 +2,14 @@ import { createEntityId } from '../foundation/ids';
 import { sha256Base64Url } from '../identity/tokens';
 import type { OrbitBindings, R2BucketLike } from '../identity/bindings';
 import type { MediaAssetView, MediaRepository } from '../repositories/media-repository';
-import { ImageValidationError, processImage, type MediaTransform } from './image-processor';
+import {
+  ImageTransformError,
+  ImageValidationError,
+  inspectImage,
+  transformImage,
+  type MediaTransform,
+  type ProcessedImage,
+} from './image-processor';
 
 export const AVATAR_UPLOAD_LIMIT = 5 * 1024 * 1024;
 export const POST_IMAGE_UPLOAD_LIMIT = 10 * 1024 * 1024;
@@ -31,11 +38,27 @@ function requireMediaBucket(env: OrbitBindings): R2BucketLike {
   return env.MEDIA;
 }
 
+function requireImagesBinding(env: OrbitBindings) {
+  if (!mediaEnabled(env)) throw new MediaServiceError(503, 'media_disabled');
+  if (!env.IMAGES) throw new MediaServiceError(503, 'media_transform_unavailable');
+  return env.IMAGES;
+}
+
+export function utcMonth(now: number): string {
+  return new Date(now).toISOString().slice(0, 7);
+}
+
+export interface ValidatedImageUpload {
+  bytes: Uint8Array;
+  contentType: 'image/png' | 'image/jpeg' | 'image/webp';
+  source: ReturnType<typeof inspectImage>;
+  form: FormData;
+}
+
 export async function readImageUpload(
   request: Request,
   maxBytes: number,
-  transform: MediaTransform,
-): Promise<{ processed: Awaited<ReturnType<typeof processImage>>; sourceBytes: number; form: FormData }> {
+): Promise<ValidatedImageUpload> {
   const contentType = request.headers.get('content-type') ?? '';
   if (!contentType.toLowerCase().startsWith('multipart/form-data;')) {
     throw new MediaServiceError(415, 'multipart_required');
@@ -60,10 +83,96 @@ export async function readImageUpload(
   if (file.size < 1 || file.size > maxBytes) throw new MediaServiceError(413, 'image_too_large');
   const bytes = new Uint8Array(await file.arrayBuffer());
   try {
-    return { processed: await processImage(bytes, file.type, transform), sourceBytes: bytes.byteLength, form };
+    const source = inspectImage(bytes, file.type);
+    return { bytes, contentType: source.contentType, source, form };
   } catch (error) {
     if (error instanceof ImageValidationError) throw new MediaServiceError(415, error.code);
     throw error;
+  }
+}
+
+export async function assertPostImageUploadAllowed(
+  repository: MediaRepository,
+  agentId: string,
+  dayUtc: string,
+  checkQuota = true,
+): Promise<void> {
+  const allowance = await repository.getPostImageAllowance(agentId, dayUtc);
+  if (!allowance.mediaEnabled) throw new MediaServiceError(403, 'media_not_allowed');
+  if (checkQuota && allowance.usedToday >= allowance.dailyImageLimit) {
+    throw new MediaServiceError(429, 'daily_media_quota_exceeded');
+  }
+}
+
+export async function normalizeImage(
+  env: OrbitBindings,
+  repository: MediaRepository,
+  upload: ValidatedImageUpload,
+  transform: MediaTransform,
+  actor: { type: 'account' | 'agent'; id: string },
+  now: number,
+): Promise<ProcessedImage> {
+  const images = requireImagesBinding(env);
+  const claimId = createEntityId();
+  try {
+    await repository.reserveTransform({
+      id: claimId,
+      monthUtc: utcMonth(now),
+      profile: transform,
+      actorType: actor.type,
+      actorId: actor.id,
+      sourceContentType: upload.contentType,
+      sourceByteSize: upload.bytes.byteLength,
+      now,
+    });
+  } catch (error) {
+    if (error instanceof Error && /media_transform_budget_exhausted/u.test(error.message)) {
+      console.warn(JSON.stringify({
+        event: 'media.transform_rejected',
+        provider: 'cloudflare_images',
+        profile: transform,
+        actorType: actor.type,
+        category: 'safety_limit',
+      }));
+      throw new MediaServiceError(503, 'media_transform_unavailable');
+    }
+    throw error;
+  }
+
+  try {
+    const processed = await transformImage(images, upload.bytes, upload.contentType, transform);
+    await repository.completeTransform({
+      claimId,
+      status: 'succeeded',
+      errorCategory: null,
+      outputByteSize: processed.bytes.byteLength,
+      now,
+    });
+    return processed;
+  } catch (error) {
+    const transformError = error instanceof ImageTransformError
+      ? error
+      : new ImageTransformError('images_unknown');
+    try {
+      await repository.completeTransform({
+        claimId,
+        status: 'failed',
+        errorCategory: transformError.category,
+        outputByteSize: null,
+        now,
+      });
+    } catch {
+      // The reservation remains counted. This is deliberately conservative.
+    }
+    console.warn(JSON.stringify({
+      event: 'media.transform_failed',
+      provider: 'cloudflare_images',
+      profile: transform,
+      actorType: actor.type,
+      category: transformError.category,
+      providerCode: transformError.providerCode,
+    }));
+    throw new MediaServiceError(503, 'media_transform_unavailable');
   }
 }
 
@@ -73,7 +182,7 @@ export function newMediaAsset(input: {
   ownerAgentId?: string;
   altText?: string;
   caption?: string | null;
-  processed: Awaited<ReturnType<typeof processImage>>;
+  processed: ProcessedImage;
   now: number;
 }): MediaAssetView {
   const id = createEntityId();
@@ -210,6 +319,7 @@ export function logMediaUpload(input: {
 }): void {
   console.log(JSON.stringify({
     event: 'media.upload',
+    provider: 'cloudflare_images',
     kind: input.kind,
     actorType: input.actorType,
     sourceBytes: input.sourceBytes,

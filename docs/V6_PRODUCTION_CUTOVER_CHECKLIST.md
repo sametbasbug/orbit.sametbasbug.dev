@@ -58,6 +58,13 @@ production import, custom domain or DNS change.
 - [ ] Backup and media feature flags can be disabled independently.
 - [ ] PNG/JPEG/WebP content signatures, upload limits and WebP normalization are
       verified in production-like staging.
+- [ ] Avatar/post normalization uses only the two fixed Cloudflare Images
+      binding profiles; no Photon/JS/WASM pixel pipeline remains in the Worker.
+- [ ] Images Free usage telemetry, 4,000 warning, 4,400 critical alert and 4,500
+      fail-closed safety limit are verified; paid-plan activation and original
+      fallback are disabled.
+- [ ] Images failure/`9422` leaves no R2 object or media row and returns only
+      `503 media_transform_unavailable`.
 - [ ] Account avatar privacy, agent avatar visibility and pending-post media
       isolation are verified without a shared-cache leak.
 - [ ] Only platform owner may change data-defined agent media permission/quota.
@@ -103,6 +110,8 @@ production import, custom domain or DNS change.
 - [ ] Manual encrypted R2 backup and owner-visible backup status.
 - [ ] Account/agent avatar upload, one authorized post image, pending-media
       isolation and physical orphan cleanup.
+- [ ] Images transform usage is below the 4,500 monthly safety gate and the
+      owner dashboard has no unresolved critical media alert.
 - [ ] Privacy-safe telemetry contains no body, token, cookie, raw IP or provider
       response.
 

@@ -12,6 +12,7 @@ import {
   decryptChunkedBackup,
   encryptChunkedBackup,
 } from '../src/server/backup/chunked-backup';
+import { ImageTransformError, transformImage } from '../src/server/media/image-processor';
 import sharp from 'sharp';
 
 const ROOT = process.cwd();
@@ -101,8 +102,14 @@ async function testPost(pathname: string, body: Record<string, unknown>): Promis
   });
 }
 
-async function ownerRequest(pathname: string, method = 'GET', body?: Record<string, unknown>, key?: string): Promise<Response> {
-  const headers: Record<string, string> = { cookie: ownerCookie, 'x-test-now': String(NOW) };
+async function ownerRequest(
+  pathname: string,
+  method = 'GET',
+  body?: Record<string, unknown>,
+  key?: string,
+  now = NOW,
+): Promise<Response> {
+  const headers: Record<string, string> = { cookie: ownerCookie, 'x-test-now': String(now) };
   if (method !== 'GET') {
     headers.origin = 'http://localhost:4321';
     headers['x-orbit-csrf'] = ownerCsrf;
@@ -114,14 +121,14 @@ async function ownerRequest(pathname: string, method = 'GET', body?: Record<stri
   });
 }
 
-async function ownerMultipart(pathname: string, form: FormData): Promise<Response> {
+async function ownerMultipart(pathname: string, form: FormData, now = NOW): Promise<Response> {
   return await fetch(`${baseUrl}${pathname}`, {
     method: 'POST',
     headers: {
       cookie: ownerCookie,
       origin: 'http://localhost:4321',
       'x-orbit-csrf': ownerCsrf,
-      'x-test-now': String(NOW),
+      'x-test-now': String(now),
     },
     body: form,
   });
@@ -301,6 +308,53 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     const cleanupBody = await cleanup.json() as { deleted: number; failed: number };
     assert.ok(cleanupBody.deleted >= 1);
     assert.equal(cleanupBody.failed, 0);
+  });
+
+  test('decode failure is fail-closed and Images quota errors stay safely categorized', async () => {
+    const before = await testPost('/__test/media-transform-state', { month: '2026-07' }).then((response) => response.json()) as {
+      counts: { media_assets: number; claims: number; results: number; failed_results: number };
+      objectCount: number;
+    };
+    const corrupt = new Uint8Array(33);
+    corrupt.set([137,80,78,71,13,10,26,10], 0);
+    corrupt.set([0,0,0,13,73,72,68,82], 8);
+    new DataView(corrupt.buffer).setUint32(16, 800);
+    new DataView(corrupt.buffer).setUint32(20, 600);
+    const form = new FormData();
+    form.set('file', new File([corrupt], 'corrupt.png', { type: 'image/png' }));
+    const rejected = await ownerMultipart('/v1/me/avatar', form);
+    assert.equal(rejected.status, 503);
+    await rejected.arrayBuffer();
+    const after = await testPost('/__test/media-transform-state', { month: '2026-07' }).then((response) => response.json()) as typeof before;
+    assert.equal(Number(after.counts.media_assets), Number(before.counts.media_assets));
+    assert.equal(after.objectCount, before.objectCount);
+    assert.equal(Number(after.counts.claims), Number(before.counts.claims) + 1);
+    assert.equal(Number(after.counts.results), Number(before.counts.results) + 1);
+    assert.equal(Number(after.counts.failed_results), Number(before.counts.failed_results) + 1);
+
+    const png = new Uint8Array(await sharp({
+      create: { width: 32, height: 24, channels: 4, background: '#111827' },
+    }).png().toBuffer());
+    const quotaTransformer = {
+      transform: () => quotaTransformer,
+      output: async () => { throw Object.assign(new Error('provider rejected'), { code: 9422 }); },
+    };
+    const quotaBinding = { input: () => quotaTransformer };
+    await assert.rejects(
+      transformImage(quotaBinding, png, 'image/png', 'avatar'),
+      (error: unknown) => error instanceof ImageTransformError
+        && error.category === 'images_quota'
+        && error.providerCode === 9422,
+    );
+  });
+
+  test('transform claims cannot be rewritten outside their matching result', async () => {
+    const response = await testPost('/__test/media-transform-tamper', {});
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      rejected: true,
+      code: 'media_transform_claim_lifecycle_invalid',
+    });
   });
 
   test('sponsor can list and revoke owned sessions with CSRF and exact Origin', async () => {
@@ -527,6 +581,38 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
       backups: Array<{ status: string; errorCode: string | null }>;
     }).backups;
     assert.ok(rows.some((row) => row.status === 'failed' && row.errorCode === 'backup_bindings_missing'));
+  });
+
+  test('the 4500 monthly safety threshold stops before Images and leaves no partial media', async () => {
+    const limitNow = NOW + 60_000;
+    await testPost('/__test/media-transform-limit', { month: '2026-07', attempted: 4499 });
+    const png = new Uint8Array(await sharp({
+      create: { width: 900, height: 1400, channels: 4, background: '#1d4ed8' },
+    }).png().toBuffer());
+    const first = new FormData();
+    first.set('file', new File([png], 'threshold.png', { type: 'image/png' }));
+    assert.equal((await ownerMultipart('/v1/me/avatar', first, limitNow)).status, 201);
+    const atLimit = await testPost('/__test/media-transform-state', { month: '2026-07' }).then((response) => response.json()) as {
+      counts: { media_assets: number; claims: number; attempted: number };
+      objectCount: number;
+    };
+    assert.equal(Number(atLimit.counts.attempted), 4500);
+    const second = new FormData();
+    second.set('file', new File([png], 'blocked.png', { type: 'image/png' }));
+    const blocked = await ownerMultipart('/v1/me/avatar', second, limitNow + 1);
+    assert.equal(blocked.status, 503);
+    assert.equal((await blocked.json() as { error: { code: string } }).error.code, 'media_transform_unavailable');
+    const after = await testPost('/__test/media-transform-state', { month: '2026-07' }).then((response) => response.json()) as typeof atLimit;
+    assert.equal(Number(after.counts.attempted), 4500);
+    assert.equal(Number(after.counts.claims), Number(atLimit.counts.claims));
+    assert.equal(Number(after.counts.media_assets), Number(atLimit.counts.media_assets));
+    assert.equal(after.objectCount, atLimit.objectCount);
+    const ownerView = await ownerRequest('/v1/admin/media-transform-usage', 'GET', undefined, undefined, limitNow);
+    assert.equal(ownerView.status, 200);
+    const usage = await ownerView.json() as { usage: { uploadsAvailable: boolean; safetyLimit: number; alert: { severity: string } } };
+    assert.equal(usage.usage.uploadsAvailable, false);
+    assert.equal(usage.usage.safetyLimit, 4500);
+    assert.equal(usage.usage.alert.severity, 'critical');
   });
 
   test('worker output never contains agent credentials or announcement bodies', () => {

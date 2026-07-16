@@ -69,12 +69,15 @@ import {
   AVATAR_UPLOAD_LIMIT,
   POST_IMAGE_UPLOAD_LIMIT,
   MediaServiceError,
+  assertPostImageUploadAllowed,
   discardMediaObject,
   logMediaUpload,
   newMediaAsset,
+  normalizeImage,
   putMediaObject,
   readImageUpload,
   serveMedia,
+  utcMonth,
 } from '../media/media-service';
 import type { MediaRepository } from '../repositories/media-repository';
 
@@ -781,7 +784,16 @@ async function handleAvatarUpload(
   const started = performance.now();
   let objectKey: string | null = null;
   try {
-    const { processed, sourceBytes } = await readImageUpload(request, AVATAR_UPLOAD_LIMIT, 'avatar');
+    const upload = await readImageUpload(request, AVATAR_UPLOAD_LIMIT);
+    const processed = await normalizeImage(
+      env,
+      repository,
+      upload,
+      'avatar',
+      { type: 'account', id: auth.account.id },
+      now,
+    );
+    const sourceBytes = upload.bytes.byteLength;
     const asset = await putMediaObject(env, newMediaAsset({
       kind: targetType === 'account' ? 'account_avatar' : 'agent_avatar',
       ...(targetType === 'account' ? { ownerAccountId: targetId } : { ownerAgentId: targetId }),
@@ -825,7 +837,10 @@ async function handlePostImageUpload(
   const started = performance.now();
   let objectKey: string | null = null;
   try {
-    const { processed, sourceBytes, form } = await readImageUpload(request, POST_IMAGE_UPLOAD_LIMIT, 'post');
+    const usageDay = utcDay(now);
+    await assertPostImageUploadAllowed(mediaRepository, auth.principal.agentId, usageDay, false);
+    const upload = await readImageUpload(request, POST_IMAGE_UPLOAD_LIMIT);
+    const { form } = upload;
     const altText = requiredString(form.get('altText'), 'altText', 500);
     if ([...altText].length < 5) throw new ApiError(400, 'invalid_media_alt_text', 'altText must contain at least five characters.');
     const captionValue = form.get('caption');
@@ -833,12 +848,22 @@ async function handlePostImageUpload(
       ? null
       : requiredString(captionValue, 'caption', 500, true);
     const idemBody = {
-      imageDigest: await sha256Base64Url(processed.bytes),
+      imageDigest: await sha256Base64Url(upload.bytes),
       altText,
       caption,
     };
     const idem = await idempotencyContext(request, env, publicationRepository, 'agent', auth.principal.agentId, idemBody, now);
     if (idem.replay) return replayResponse(idem.replay);
+    await assertPostImageUploadAllowed(mediaRepository, auth.principal.agentId, usageDay);
+    const processed = await normalizeImage(
+      env,
+      mediaRepository,
+      upload,
+      'post',
+      { type: 'agent', id: auth.principal.agentId },
+      now,
+    );
+    const sourceBytes = upload.bytes.byteLength;
     const asset = await putMediaObject(env, newMediaAsset({
       kind: 'post_image',
       ownerAgentId: auth.principal.agentId,
@@ -852,7 +877,7 @@ async function handlePostImageUpload(
     await mediaRepository.createStagedPostImage({
       asset,
       usageId: createEntityId(),
-      usageDay: utcDay(now),
+      usageDay,
       auditEventId: createEntityId(),
       requestId,
       idempotency: {
@@ -1659,6 +1684,12 @@ export async function handleApiRequest(
         maximumBytes: POST_IMAGE_UPLOAD_LIMIT,
         maximumImagesPerPost: 1,
       });
+    }
+
+    if (request.method === 'GET' && path === '/v1/admin/media-transform-usage') {
+      const auth = await authenticateHuman(request, env, repository, now, false);
+      requirePlatformOwner(auth);
+      return json({ usage: await mediaRepository.getTransformUsage(utcMonth(now)) });
     }
 
     if (request.method === 'GET' && path === '/v1/approvals') {

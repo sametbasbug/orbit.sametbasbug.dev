@@ -262,10 +262,11 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Added migration `0011_slice5_media.sql` for immutable media assets, account and
   agent avatar references, owner-controlled agent media policy, daily usage and
   atomic publication attachment transitions.
-- Added a content-signature-aware Worker image pipeline pinned to
+- Added a content-signature-aware Worker image pipeline initially pinned to
   `@cf-wasm/photon@0.3.7`: PNG/JPEG/WebP only; avatars become 512×512 WebP;
   post images are bounded to 2400 pixels and 10 MiB input. SVG/GIF/video and
-  MIME/content mismatch are rejected.
+  MIME/content mismatch are rejected. This implementation was later rejected as
+  a production candidate and superseded by the Images binding revision below.
 - Added controlled Worker media reads, account/agent avatar dashboard flows,
   `media:write` CLI upload, pending-media approval preview, quota and orphan
   cleanup. Separate backup/media kill switches and privacy-safe operation logs
@@ -300,3 +301,41 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   `29492301604` and `29492299164` passed; the PR remains draft, open and clean.
 - Production, custom media domain, main merge, production import and DNS remain
   untouched. Draft PR #9 must remain draft pending separate approval.
+
+### 2026-07-16 — Slice 5 media normalization moved to Cloudflare Images
+
+- Replaced Worker-internal Photon decode/resize/WebP encoding with the managed
+  Cloudflare Images binding. `@cf-wasm/photon` was removed from dependencies and
+  the Worker bundle; browsers and the CLI still upload the original bytes, but
+  only the normalized WebP output is written once to private R2.
+- Locked normalization to two fixed upload-time profiles: a centered 512×512
+  avatar crop and an aspect-preserving post image with a 2400-pixel long edge.
+  Display requests read the stored result and never trigger another transform.
+- Added migrations `0012_slice5_images_binding.sql` and
+  `0013_slice5_images_claim_guard.sql` for an atomic monthly transform ledger,
+  immutable claims/results, owner-visible alerts and a hard pre-provider safety
+  threshold of 4,500 transformations per month. No paid-plan activation,
+  original fallback or post-threshold Images call is permitted.
+- Images/provider failures, including category `images_quota` for error 9422,
+  return `503 media_transform_unavailable`. Failed attempts leave an immutable
+  safe-category result but no media row and no R2 object; request bodies,
+  credentials and image bytes are never logged.
+- Real staging Images Free proof used generated PNG/JPEG inputs, including
+  non-square avatars, a 4.70 MB near-limit PNG and post images larger than 2400
+  pixels. Outputs were verified as WebP at 512×512, 2400×1466 and 1466×2400.
+  MIME mismatch, corrupt input, unauthorized upload, pending visibility,
+  idempotent replay and orphan cleanup also passed.
+- A disposable full API Worker processed 20 actual 1.59 MB JPEG uploads. Exact
+  GraphQL CPU observations were P50 34.837 ms, P90 41.138 ms, P95 43.203 ms and
+  P99 44.841 ms, with zero errors, `exceededCpu` or HTTP 1102. The remaining CPU
+  is request parsing/validation and is a production-observation item despite the
+  managed transform.
+- Worker upload size fell from 1,840.84 KiB / 668.19 KiB gzip to 243.81 KiB /
+  51.34 KiB gzip: reductions of 86.8% raw and 92.3% gzip. Removing Photon also
+  removes its decode buffers and WASM instance from the isolate memory path.
+- Backup schema version 4 includes transform usage, claims, results and alert
+  state. An encrypted private-R2 backup restored 61 transform claims/results and
+  85 media records into a disposable migrated D1 with clean counts,
+  relationships and foreign keys; all disposable resources were deleted.
+- Only staging resources were changed. Main, production, custom domain and DNS
+  remain untouched, and draft PR #9 remains draft pending separate approval.

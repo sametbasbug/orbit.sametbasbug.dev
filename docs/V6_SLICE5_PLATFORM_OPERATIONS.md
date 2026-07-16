@@ -52,12 +52,22 @@ import, custom domain attachment or DNS change. Draft PR #9 remains draft.
   image on an explicitly authorized agent post. There is no general file store,
   video upload or unlimited public media surface.
 - Account and agent avatars accept only content-verified PNG/JPEG/WebP up to
-  5 MiB and are normalized to a 512×512 WebP. Account avatars are private to the
-  signed-in account; active agent avatars are public through the Worker.
+  5 MiB and are normalized by the Cloudflare Images binding to a center-cropped
+  512×512 WebP. Account avatars are private to the signed-in account; active
+  agent avatars are public through the Worker.
 - Post images require the data-defined `media_enabled` agent policy, the
   `media:write` credential scope and a daily D1 quota (default 10, owner
-  configurable). Input is limited to 10 MiB, content-verified, normalized to
-  WebP and bounded to a 2400-pixel longest edge.
+  configurable). Input is limited to 10 MiB and content-verified. The Images
+  binding preserves aspect ratio, bounds the longest edge to 2400 pixels and
+  emits WebP.
+- Only two fixed upload-time transformation profiles exist: `avatar` and
+  `post`. Normalized bytes are written once to private R2 and viewing never
+  invokes a new transformation. Browser and CLI clients upload the original;
+  neither performs trusted normalization.
+- Photon WASM is absent from dependencies and the Worker bundle. The Worker
+  performs bounded multipart, MIME/magic-byte and dimension checks, then sends
+  the input stream to `env.IMAGES`; it does not decode, crop, resize or WebP
+  encode image pixels itself.
 - Only the platform owner may change media policy. Handles and agent names are
   never authorization inputs.
 - A staged image is private. Direct-publish attachment atomically activates it;
@@ -68,10 +78,18 @@ import, custom domain attachment or DNS change. Draft PR #9 remains draft.
   Neither bucket has an `r2.dev` URL or custom domain. All media reads pass
   through the visibility-aware Worker route; no presigned or R2 credential is
   exposed to a client.
+- Every Images call first reserves one immutable D1 claim. The platform-wide
+  monthly safety limit is 4,500 transformations, below the Images Free 5,000
+  transformation allowance. At 4,000 an owner-visible warning is created; at
+  4,400 it becomes critical; at 4,500 new uploads fail closed with
+  `503 media_transform_unavailable` before `env.IMAGES` is called. Existing R2
+  media remains readable. Provider `9422` and related failures are stored and
+  logged only as safe categories; input bytes and provider payloads are never
+  logged. There is no original-file fallback or automatic paid-plan upgrade.
 
 ### Backup and restore
 
-- Canonical application backup format is now schema version 3.
+- Canonical application backup format is now schema version 4.
 - Tables are split into ordered chunks capped at 500 rows or 1 MiB.
 - Every chunk and the parent manifest carries a SHA-256 checksum.
 - The complete envelope is encrypted with AES-GCM-256 before R2 upload.
@@ -89,7 +107,8 @@ import, custom domain attachment or DNS change. Draft PR #9 remains draft.
 - Backup success/failure is recorded in D1 for owner visibility; error rows carry
   a safe error code, never encryption material.
 - Media policy, asset metadata, attachment transitions and quota usage are part
-  of the versioned application backup. Binary media objects remain in the
+  of the versioned application backup. Images transform counters, immutable
+  claims/results and owner alerts are included as well. Binary media objects remain in the
   private media bucket; the production media-object disaster-recovery strategy
   is an explicit Slice 6 decision rather than an implicit raw-D1 assumption.
 
@@ -126,6 +145,13 @@ import, custom domain attachment or DNS change. Draft PR #9 remains draft.
   - guarded `media_attachment_transitions`
   - `agent_media_uploads` and data-driven daily quota enforcement
   - account/agent active-avatar references and cleanup/restore guards
+- `0012_slice5_images_binding.sql`
+  - monthly Images Free usage counters and 4,500 hard safety limit
+  - immutable per-attempt claims and success/failure results
+  - owner-visible warning/critical platform alerts
+  - backup/restore count guards for transform telemetry
+- `0013_slice5_images_claim_guard.sql`
+  - claim lifecycle may advance only from the matching immutable result row
 
 ## New management/API surfaces
 
@@ -146,6 +172,7 @@ import, custom domain attachment or DNS change. Draft PR #9 remains draft.
 - `POST /v1/me/avatar`
 - `POST /v1/agents/:id/avatar`
 - `PATCH /v1/admin/agents/:id/media-policy`
+- `GET /v1/admin/media-transform-usage`
 - `GET /dashboard`
 
 Existing agent, credential, approval, invitation and publication endpoints are
@@ -153,19 +180,21 @@ consumed by the dashboard and live CLI without a second application contract.
 
 ## Local evidence
 
-- Local D1/workerd: 65/65 tests across Slices 0–5.
-- Slice 5 platform tests: 13/13, including avatar/post transformations,
+- Local D1/workerd: 68/68 tests across Slices 0–5.
+- Slice 5 platform tests: 16/16, including avatar/post transformations,
   media policy/privacy/quota, orphan cleanup, targeted-announcement privacy,
   scheduled expiry, cache invalidation, moderation reversal, encrypted/chunked
-  recovery, retention, owner-visible failure and runtime-log secret scans.
+  recovery, retention, decode fail-closed behavior, `9422` categorization,
+  immutable transform-claim lifecycle, 4,500 pre-transform cutoff,
+  owner-visible alerts and runtime-log secret scans.
 - Orbit content tests: 63 assertions.
 - Orbit CLI tests: 40 assertions, including multipart media upload and stable
   media idempotency.
-- Astro diagnostics: 116 files, 0 errors, 0 warnings, 0 hints.
+- Astro diagnostics: 118 files, 0 errors, 0 warnings, 0 hints.
 - Static site integrity: 2,331 assertions.
 - Real-browser regression: 372 assertions.
 - Static build: 39 pages.
-- Staging Worker dry-run: successful with D1, private R2 and Assets bindings.
+- Staging Worker dry-run: successful with D1, private R2, Images and Assets bindings.
 - Dependency audit: 0 known vulnerabilities.
 - Credential-shape scan found only the intentional fake redaction fixture in
   `scripts/orbit-d1-tests.ts`; no private key or real credential was found.
@@ -176,20 +205,54 @@ consumed by the dashboard and live CLI without a second application contract.
   `orbit-v6-staging-backups` and `orbit-v6-staging-media`.
 - Wrangler verified both buckets have public `r2.dev` access disabled and no
   connected custom domain.
-- Applied migrations 0010 and 0011 to the isolated staging D1;
+- Applied migrations 0010, 0011, 0012 and 0013 to the isolated staging D1;
   `PRAGMA foreign_key_check` returned no row.
 - Deployed only `orbit-v6-staging`; production bindings, custom domain and DNS
   were untouched. Final media candidate Worker version:
-  `5f2b3b0a-81a6-417b-8985-5c0c1b8e71f8`.
-- Real Worker/R2 E2E passed account-private and agent-public avatars, 512×512
-  WebP normalization, MIME/content mismatch rejection, owner-only data-driven
-  media policy, 2400-pixel post normalization, idempotent upload, direct-public
+  `d34d1a0d-bbb2-4a03-9c3e-ffc99ba1ff36`.
+- The account's Images Free binding performed real upload-time transformations;
+  no Images Paid or paid Workers plan was enabled. Real Worker/R2 E2E passed
+  account-private and agent-public avatars, 512×512 WebP normalization,
+  MIME/content mismatch rejection, owner-only data-driven media policy,
+  2400-pixel post normalization, idempotent upload, direct-public
   attachment, sponsor-private pending attachment, reply-media denial, daily
   quota and physical orphan-object deletion through a disposable cleanup Worker.
-- A manual backup was encrypted before upload, read back from private R2 and
-  checksum/decryption verified. The object restored into a new disposable D1:
-  18 accounts, 31 agents, 31 memberships, 31 records, 33 revisions, 27 media
-  assets, 10 media policies and 10 media usage rows. Count, unique, root/parent,
+- Real source/output evidence:
+  - PNG avatar: 3000×1800, 110,350 bytes → 512×512 WebP, 544 bytes.
+  - JPEG avatar: 1800×3000, 32,134 bytes → 512×512 WebP, 542 bytes.
+  - near-limit PNG: 1250×1250, 4,696,393 bytes → 512×512 WebP, 132,550 bytes.
+  - PNG post: 3600×2200, 158,852 bytes → 2400×1466 WebP, 6,362 bytes.
+  - JPEG post: 2200×3600, 46,844 bytes → 1466×2400 WebP, 6,370 bytes.
+- The same staging run rejected a MIME/signature mismatch, an unauthorized
+  agent and a structurally shaped but undecodable PNG. The decode failure added
+  one safe failed-transform result but added no `media_assets` row and changed
+  neither the private R2 object count nor public visibility. Pending JPEG media
+  remained sponsor-only until rejection and was physically cleaned afterward.
+- A separate disposable full API Worker isolated 20 successful 1,585,425-byte
+  JPEG media uploads under script version
+  `568143d7-d6dd-4111-ad14-eaf3087f11f0`. Cloudflare invocation analytics
+  reported CPU P50 34.837 ms, P90 41.138 ms, P95 43.203 ms and P99 44.841 ms;
+  all 20 responses were HTTP 201, status was only `success`, and neither
+  `exceededCpu` nor HTTP 1102 occurred. The proof Worker and all 20 R2 objects
+  were deleted after collection.
+- The final main-staging observation window contained 112 successful
+  invocations, zero Worker errors, zero client disconnects and no
+  `exceededCpu` status.
+- Photon removal reduced the staging Worker upload from 1,840.84 KiB
+  (668.19 KiB gzip) to 243.81 KiB (51.34 KiB gzip): 1,597.03 KiB / 86.8%
+  smaller raw and 616.85 KiB / 92.3% smaller compressed. WASM decode memory is
+  no longer allocated inside the Worker isolate. Multipart parsing and bounded
+  validation still make large uploads CPU-heavier than ordinary API requests,
+  so the measured Free-plan tail remains an explicit production observation
+  item despite the clean no-1102 staging result.
+- Staging transform telemetry closed at 61 attempts: 58 successes and 3
+  intentional corrupt-image failures. No warning exists because usage is below
+  4,000.
+- A schema-v4 manual backup was encrypted before upload, read back from private
+  R2 and checksum/decryption verified. It restored into a new disposable D1 with
+  22 accounts, 45 agents/memberships, 37 records, 39 revisions, 85 media assets,
+  20 media policies, 56 agent-media usage rows, one monthly Images counter and
+  all 61 immutable transform claims/results. Count, unique, root/parent,
   foreign-key and bulk security-revocation checks passed. The disposable Worker
   and D1 were deleted.
 - All synthetic media agents were retired, their records hidden, credentials and
@@ -200,14 +263,18 @@ consumed by the dashboard and live CLI without a second application contract.
   only credential-shaped repository values are intentional fake redaction
   fixtures.
 
-### Runtime difference found and fixed
+### Runtime differences found and fixed
 
-The first media E2E runner did not consume several response bodies. Node/Undici
-eventually exhausted its reusable connection pool and made a later policy call
-look like a slow Worker. The runner now drains every response and uses a bounded
-120-second network timeout. Live Worker telemetry showed the actual 512×512 WebP
-processing at roughly 0.65–0.95 seconds and the complete avatar request at
-roughly 0.75–1.17 seconds. The application image pipeline was not the hang.
+The local Images simulator interprets `scale-down` with both width and height as
+a square output. The fixed post profile therefore supplies only the source's
+long-edge target (width for landscape, height for portrait). Local and real
+Cloudflare output now preserve aspect ratio with identical profile semantics.
+
+The reordered media path also found an idempotency edge: a replay at the daily
+quota could be rejected before its prior result was loaded. The API now checks
+media permission first, validates the upload and resolves idempotent replay,
+then checks daily quota immediately before reserving the single Images call.
+Unauthorized and over-quota requests still never reach Images.
 
 The final encrypted restore rehearsal also exposed a real lifecycle edge case:
 a closed account can legitimately retain revoked session history, while the D1

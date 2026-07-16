@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createEntityId } from '../src/server/foundation/ids';
 import { createOpaqueToken, hmacDigest, randomBase64Url } from '../src/server/identity/tokens';
 import { SESSION_ABSOLUTE_TTL_MS, SESSION_IDLE_TTL_MS } from '../src/server/identity/constants';
+import sharp from 'sharp';
 
 const ROOT = process.cwd();
 const ORIGIN = 'https://orbit-v6-staging.samett33710.workers.dev';
@@ -17,6 +19,7 @@ const DATABASE_ID = '378e09e4-23e9-4112-abb8-90152a302502';
 const ACCOUNT_SUBDOMAIN = 'samett33710';
 const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 const cleanupWorker = `orbit-v6-media-cleanup-${suffix}`;
+let cleanupOrigin = `https://${cleanupWorker}.${ACCOUNT_SUBDOMAIN}.workers.dev`;
 const cleanupToken = randomBase64Url(32);
 const temp = await mkdtemp(path.join(tmpdir(), 'orbit-v6-media-e2e-'));
 const cleanupConfig = path.join(temp, 'wrangler.json');
@@ -27,6 +30,12 @@ const fetch = (input: RequestInfo | URL, init: RequestInit = {}) => nativeFetch(
   signal: init.signal ?? AbortSignal.timeout(120_000),
 });
 const stage = (name: string) => process.stderr.write(`[media-e2e] ${name}\n`);
+
+interface Fixture {
+  path: string;
+  type: 'image/png' | 'image/jpeg';
+  name: string;
+}
 
 async function statusOf(response: Response): Promise<number> {
   const status = response.status;
@@ -51,7 +60,7 @@ function runWrangler(args: string[], input?: string): string {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   if (result.status !== 0) throw new Error('wrangler_command_failed');
-  return result.stdout;
+  return `${result.stdout}\n${result.stderr}`;
 }
 
 function quote(value: string): string { return `'${value.replaceAll("'", "''")}'`; }
@@ -135,17 +144,26 @@ async function humanJson(
   return await fetch(`${ORIGIN}${pathname}`, { method, headers, body: JSON.stringify(body) });
 }
 
-async function uploadAvatar(current: { token: string; csrf: string }, pathname: string, filePath: string) {
+async function uploadAvatar(
+  current: { token: string; csrf: string },
+  pathname: string,
+  fixture: Fixture,
+) {
   const form = new FormData();
-  form.set('file', new File([await readFile(filePath)], 'avatar.webp', { type: 'image/webp' }));
+  form.set('file', new File([await readFile(fixture.path)], fixture.name, { type: fixture.type }));
   return await fetch(`${ORIGIN}${pathname}`, {
     method: 'POST', headers: humanHeaders(current, true), body: form,
   });
 }
 
-async function uploadPostImage(token: string, key: string, type = 'image/webp') {
+async function uploadPostImage(
+  token: string,
+  key: string,
+  fixture: Fixture,
+  declaredType: string = fixture.type,
+) {
   const form = new FormData();
-  form.set('file', new File([await readFile(path.join(ROOT, 'public/media/orbit-bakim-turu.webp'))], 'proof.webp', { type }));
+  form.set('file', new File([await readFile(fixture.path)], fixture.name, { type: declaredType }));
   form.set('altText', 'Orbit staging medya doğrulama görseli');
   form.set('caption', 'Yalnız staging E2E kanıtı.');
   return await fetch(`${ORIGIN}/v1/media/post-images`, {
@@ -153,6 +171,22 @@ async function uploadPostImage(token: string, key: string, type = 'image/webp') 
     headers: { authorization: `Bearer ${token}`, 'idempotency-key': key },
     body: form,
   });
+}
+
+async function assertWebp(
+  response: Response,
+  expected: { width?: number; height?: number; longEdge?: number },
+): Promise<{ width: number; height: number; byteSize: number }> {
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'image/webp');
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const metadata = await sharp(bytes).metadata();
+  assert.equal(metadata.format, 'webp');
+  assert.ok(metadata.width && metadata.height);
+  if (expected.width !== undefined) assert.equal(metadata.width, expected.width);
+  if (expected.height !== undefined) assert.equal(metadata.height, expected.height);
+  if (expected.longEdge !== undefined) assert.equal(Math.max(metadata.width, metadata.height), expected.longEdge);
+  return { width: metadata.width, height: metadata.height, byteSize: bytes.byteLength };
 }
 
 async function agentJson(token: string, pathname: string, body: unknown, key: string) {
@@ -176,7 +210,7 @@ async function waitReady(): Promise<void> {
   assert.fail('Media staging deployment readiness timeout.');
 }
 
-async function runCleanup(): Promise<{ candidates: number; deleted: number; failed: number }> {
+async function deployCleanupWorker(): Promise<void> {
   await writeFile(cleanupConfig, JSON.stringify({
     $schema: path.join(ROOT, 'node_modules', 'wrangler', 'config-schema.json'),
     name: cleanupWorker,
@@ -193,29 +227,103 @@ async function runCleanup(): Promise<{ candidates: number; deleted: number; fail
     observability: { enabled: false },
   }, null, 2), { mode: 0o600 });
   await chmod(cleanupConfig, 0o600);
-  runWrangler(['deploy', '--config', cleanupConfig, '--message', 'Disposable Slice 5 media cleanup proof']);
+  const deployment = runWrangler(['deploy', '--config', cleanupConfig, '--message', 'Disposable Slice 5 media cleanup proof']);
+  const deployedUrls = deployment.match(/https:\/\/[^\s]+\.workers\.dev/gu) ?? [];
+  cleanupOrigin = deployedUrls.at(-1)?.replace(/[),.;]+$/u, '') ?? cleanupOrigin;
   runWrangler(['secret', 'put', 'ORBIT_STAGING_CLEANUP_TOKEN', '--config', cleanupConfig], `${cleanupToken}\n`);
+  cleanupDeployed = true;
+}
+
+async function cleanupRequest(pathname: '/cleanup' | '/count'): Promise<Response> {
   let lastStatus = 0;
   let lastBody = '';
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    const response = await fetch(`https://${cleanupWorker}.${ACCOUNT_SUBDOMAIN}.workers.dev/cleanup`, {
+    const response = await fetch(`${cleanupOrigin}${pathname}`, {
       method: 'POST', headers: { 'x-orbit-cleanup-token': cleanupToken },
     }).catch(() => null);
     lastStatus = response?.status ?? 0;
-    if (response?.status === 200) {
-      const body = await response.json() as { result: { candidates: number; deleted: number; failed: number } };
-      return body.result;
-    }
+    if (response?.status === 200) return response;
     lastBody = response ? (await response.text()).slice(0, 160) : 'network_error';
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
   throw new Error(`temporary_media_cleanup_worker_not_ready:${lastStatus}:${lastBody}`);
 }
 
+async function mediaObjectCount(): Promise<number> {
+  const response = await cleanupRequest('/count');
+  return Number((await response.json() as { count: number }).count);
+}
+
+async function runCleanup(): Promise<{ candidates: number; deleted: number; failed: number }> {
+  const response = await cleanupRequest('/cleanup');
+  return (await response.json() as { result: { candidates: number; deleted: number; failed: number } }).result;
+}
+
+async function buildFixtures(): Promise<{
+  avatarPng: Fixture;
+  avatarJpeg: Fixture;
+  nearLimitPng: Fixture;
+  postPng: Fixture;
+  postJpeg: Fixture;
+  corruptPng: Fixture;
+}> {
+  const fixture = (name: string, type: Fixture['type']): Fixture => ({
+    path: path.join(temp, name), type, name,
+  });
+  const avatarPng = fixture('avatar-wide-3000x1800.png', 'image/png');
+  const avatarJpeg = fixture('avatar-tall-1800x3000.jpg', 'image/jpeg');
+  const nearLimitPng = fixture('avatar-near-5mib.png', 'image/png');
+  const postPng = fixture('post-wide-3600x2200.png', 'image/png');
+  const postJpeg = fixture('post-tall-2200x3600.jpg', 'image/jpeg');
+  const corruptPng = fixture('corrupt-but-shaped.png', 'image/png');
+  await sharp({ create: { width: 3000, height: 1800, channels: 4, background: '#6d5dfc' } }).png().toFile(avatarPng.path);
+  await sharp({ create: { width: 1800, height: 3000, channels: 3, background: '#0f172a' } }).jpeg({ quality: 92 }).toFile(avatarJpeg.path);
+  await sharp({ create: { width: 3600, height: 2200, channels: 4, background: '#14b8a6' } }).png().toFile(postPng.path);
+  await sharp({ create: { width: 2200, height: 3600, channels: 3, background: '#f97316' } }).jpeg({ quality: 94 }).toFile(postJpeg.path);
+  const noise = randomBytes(1250 * 1250 * 3);
+  const nearLimit = await sharp(noise, { raw: { width: 1250, height: 1250, channels: 3 } })
+    .png({ compressionLevel: 0 })
+    .toBuffer();
+  assert.ok(nearLimit.byteLength >= 4 * 1024 * 1024 && nearLimit.byteLength < 5 * 1024 * 1024);
+  await writeFile(nearLimitPng.path, nearLimit);
+  const corrupt = new Uint8Array(33);
+  corrupt.set([137,80,78,71,13,10,26,10], 0);
+  corrupt.set([0,0,0,13,73,72,68,82], 8);
+  new DataView(corrupt.buffer).setUint32(16, 800);
+  new DataView(corrupt.buffer).setUint32(20, 600);
+  await writeFile(corruptPng.path, corrupt);
+  return { avatarPng, avatarJpeg, nearLimitPng, postPng, postJpeg, corruptPng };
+}
+
 let cleanupDeployed = false;
 try {
+  const fixtures = await buildFixtures();
   stage('readiness');
   await waitReady();
+  await deployCleanupWorker();
+  stage('prior-run-cleanup');
+  execute(`
+    UPDATE media_assets
+    SET state = 'orphaned', orphan_reason = 'staging_prior_run_cleanup',
+        orphaned_at = ${now - 8 * 24 * 60 * 60 * 1000}, activated_at = NULL
+    WHERE state != 'deleted' AND (
+      owner_account_id IN (SELECT id FROM accounts WHERE handle LIKE 'media-account-%')
+      OR owner_agent_id IN (SELECT id FROM agents WHERE handle LIKE 'media-%')
+    );
+  `);
+  await runCleanup();
+  execute(`
+    UPDATE agent_credentials SET revoked_at = COALESCE(revoked_at, ${now}),
+      revoked_reason = COALESCE(revoked_reason, 'staging_prior_run_cleanup')
+    WHERE agent_id IN (SELECT id FROM agents WHERE handle LIKE 'media-%');
+    UPDATE agents SET status = 'retired', updated_at = ${now}
+    WHERE handle LIKE 'media-%' AND status != 'retired';
+    UPDATE sessions SET revoked_at = COALESCE(revoked_at, ${now}),
+      revoked_reason = COALESCE(revoked_reason, 'staging_prior_run_cleanup')
+    WHERE account_id IN (SELECT id FROM accounts WHERE handle LIKE 'media-account-%');
+    UPDATE accounts SET status = 'closed', updated_at = ${now}
+    WHERE handle LIKE 'media-account-%' AND status != 'closed';
+  `);
   const sessionPepper = keychain('ORBIT_SESSION_PEPPER_V1');
   const csrfPepper = keychain('ORBIT_CSRF_PEPPER_V1');
   const agentPepper = keychain('ORBIT_AGENT_CREDENTIAL_PEPPER_V1');
@@ -238,24 +346,36 @@ try {
   const accountSession = await session(testAccountId, sessionPepper, csrfPepper, now + 2);
   const direct = await seedAgent(ownerId, `media-direct-${suffix}`, 'direct_publish', agentPepper, now + 3);
   const approval = await seedAgent(ownerId, `media-review-${suffix}`, 'approval_required', agentPepper, now + 4);
+  const unauthorized = await seedAgent(ownerId, `media-denied-${suffix}`, 'direct_publish', agentPepper, now + 5);
 
-  stage('account-avatar');
-  const accountAvatarResponse = await uploadAvatar(accountSession, '/v1/me/avatar', path.join(ROOT, 'public/agents/nyx.webp'));
+  stage('large-png-account-avatar');
+  const accountAvatarResponse = await uploadAvatar(accountSession, '/v1/me/avatar', fixtures.avatarPng);
   assert.equal(accountAvatarResponse.status, 201);
   const accountAvatar = await accountAvatarResponse.json() as { media: { id: string; url: string; width: number; height: number } };
   assert.deepEqual([accountAvatar.media.width, accountAvatar.media.height], [512, 512]);
   assert.equal(await statusOf(await fetch(`${ORIGIN}${accountAvatar.media.url}`)), 404);
-  assert.equal(await statusOf(await fetch(`${ORIGIN}${accountAvatar.media.url}`, { headers: humanHeaders(accountSession) })), 200);
+  const accountAvatarOutput = await assertWebp(
+    await fetch(`${ORIGIN}${accountAvatar.media.url}`, { headers: humanHeaders(accountSession) }),
+    { width: 512, height: 512 },
+  );
 
-  stage('agent-avatar');
-  const agentAvatarResponse = await uploadAvatar(ownerSession, `/v1/agents/${direct.id}/avatar`, path.join(ROOT, 'public/agents/nyx.webp'));
+  stage('near-limit-png-avatar');
+  const nearLimitResponse = await uploadAvatar(accountSession, '/v1/me/avatar', fixtures.nearLimitPng);
+  assert.equal(nearLimitResponse.status, 201);
+  const nearLimitAvatar = await nearLimitResponse.json() as { media: { id: string; url: string; width: number; height: number } };
+  assert.deepEqual([nearLimitAvatar.media.width, nearLimitAvatar.media.height], [512, 512]);
+  const nearLimitOutput = await assertWebp(
+    await fetch(`${ORIGIN}${nearLimitAvatar.media.url}`, { headers: humanHeaders(accountSession) }),
+    { width: 512, height: 512 },
+  );
+
+  stage('large-jpeg-agent-avatar');
+  const agentAvatarResponse = await uploadAvatar(ownerSession, `/v1/agents/${direct.id}/avatar`, fixtures.avatarJpeg);
   assert.equal(agentAvatarResponse.status, 201);
   const agentAvatar = await agentAvatarResponse.json() as { media: { id: string; url: string; width: number; height: number } };
   assert.deepEqual([agentAvatar.media.width, agentAvatar.media.height], [512, 512]);
   const publicAvatar = await fetch(`${ORIGIN}${agentAvatar.media.url}`);
-  assert.equal(publicAvatar.status, 200);
-  assert.equal(publicAvatar.headers.get('content-type'), 'image/webp');
-  await publicAvatar.arrayBuffer();
+  const agentAvatarOutput = await assertWebp(publicAvatar, { width: 512, height: 512 });
 
   stage('media-policy');
   assert.equal(await statusOf(await humanJson(ownerSession, `/v1/admin/agents/${direct.id}/media-policy`, 'PATCH', {
@@ -274,21 +394,54 @@ try {
   });
 
   stage('mime-mismatch');
-  stage('direct-media');
-  const mismatch = await uploadPostImage(direct.token, `media-${suffix}-mismatch`, 'image/png');
+  const mismatch = await uploadPostImage(direct.token, `media-${suffix}-mismatch`, fixtures.postJpeg, 'image/png');
   assert.equal(mismatch.status, 415);
   await mismatch.arrayBuffer();
 
-  stage('direct-upload');
-  const directUpload = await uploadPostImage(direct.token, `media-${suffix}-direct`);
+  stage('unauthorized-agent');
+  const denied = await uploadPostImage(unauthorized.token, `media-${suffix}-denied`, fixtures.postPng);
+  assert.equal(denied.status, 403);
+  await denied.arrayBuffer();
+
+  stage('decode-failure-no-residue');
+  const beforeFailure = execute(`
+    SELECT
+      (SELECT COUNT(*) FROM media_assets) AS media_rows,
+      (SELECT COUNT(*) FROM media_transform_claims) AS transform_claims,
+      (SELECT COUNT(*) FROM media_transform_results WHERE status = 'failed') AS failed_transforms
+  `)[0] as { media_rows: number; transform_claims: number; failed_transforms: number };
+  const objectsBeforeFailure = await mediaObjectCount();
+  const corrupt = await uploadPostImage(direct.token, `media-${suffix}-corrupt`, fixtures.corruptPng);
+  assert.equal(corrupt.status, 503);
+  await corrupt.arrayBuffer();
+  const afterFailure = execute(`
+    SELECT
+      (SELECT COUNT(*) FROM media_assets) AS media_rows,
+      (SELECT COUNT(*) FROM media_transform_claims) AS transform_claims,
+      (SELECT COUNT(*) FROM media_transform_results WHERE status = 'failed') AS failed_transforms
+  `)[0] as typeof beforeFailure;
+  assert.equal(Number(afterFailure.media_rows), Number(beforeFailure.media_rows));
+  assert.equal(Number(afterFailure.transform_claims), Number(beforeFailure.transform_claims) + 1);
+  assert.equal(Number(afterFailure.failed_transforms), Number(beforeFailure.failed_transforms) + 1);
+  assert.equal(await mediaObjectCount(), objectsBeforeFailure);
+
+  stage('large-png-direct-upload');
+  const directUpload = await uploadPostImage(direct.token, `media-${suffix}-direct`, fixtures.postPng);
   assert.equal(directUpload.status, 201);
   const directMedia = await directUpload.json() as { media: { id: string; width: number; height: number } };
-  assert.ok(directMedia.media.width <= 2400 && directMedia.media.height <= 2400);
+  assert.equal(Math.max(directMedia.media.width, directMedia.media.height), 2400);
   assert.equal(await statusOf(await fetch(`${ORIGIN}/v1/media/${directMedia.media.id}`)), 404);
-  const uploadReplay = await uploadPostImage(direct.token, `media-${suffix}-direct`);
+  const attemptsBeforeReplay = Number(execute(`
+    SELECT attempted_count FROM media_transform_usage_monthly WHERE month_utc = strftime('%Y-%m', 'now')
+  `)[0]?.attempted_count ?? 0);
+  const uploadReplay = await uploadPostImage(direct.token, `media-${suffix}-direct`, fixtures.postPng);
   assert.equal(uploadReplay.status, 201);
   assert.equal(uploadReplay.headers.get('idempotency-replayed'), 'true');
   await uploadReplay.arrayBuffer();
+  const attemptsAfterReplay = Number(execute(`
+    SELECT attempted_count FROM media_transform_usage_monthly WHERE month_utc = strftime('%Y-%m', 'now')
+  `)[0]?.attempted_count ?? 0);
+  assert.equal(attemptsAfterReplay, attemptsBeforeReplay);
 
   const directPost = await agentJson(direct.token, '/v1/records', {
     bodyMarkdown: 'Staging R2 medya doğrudan yayın kanıtı.',
@@ -297,10 +450,9 @@ try {
   assert.equal(directPost.status, 201);
   const directRecord = await directPost.json() as { record: { id: string } };
   const activeMedia = await fetch(`${ORIGIN}/v1/media/${directMedia.media.id}`);
-  assert.equal(activeMedia.status, 200);
-  assert.equal(activeMedia.headers.get('content-type'), 'image/webp');
   assert.match(activeMedia.headers.get('cache-control') ?? '', /^public,/u);
-  await activeMedia.arrayBuffer();
+  const directOutput = await assertWebp(activeMedia, { longEdge: 2400 });
+  assert.ok(Math.abs(directOutput.width / directOutput.height - 3600 / 2200) < 0.02);
   const publicRecord = await fetch(`${ORIGIN}/v1/records/${directRecord.record.id}`).then((response) => response.json()) as {
     record: { media: { id: string; url: string } | null };
   };
@@ -312,8 +464,8 @@ try {
   assert.equal(replyWithMedia.status, 400);
   await replyWithMedia.arrayBuffer();
 
-  stage('pending-media');
-  const pendingUpload = await uploadPostImage(approval.token, `media-${suffix}-pending`);
+  stage('large-jpeg-pending-media');
+  const pendingUpload = await uploadPostImage(approval.token, `media-${suffix}-pending`, fixtures.postJpeg);
   assert.equal(pendingUpload.status, 201);
   const pendingMedia = await pendingUpload.json() as { media: { id: string } };
   const pendingPost = await agentJson(approval.token, '/v1/records', {
@@ -322,7 +474,11 @@ try {
   assert.equal(pendingPost.status, 202);
   const pendingRecord = await pendingPost.json() as { record: { id: string } };
   assert.equal(await statusOf(await fetch(`${ORIGIN}/v1/media/${pendingMedia.media.id}`)), 404);
-  assert.equal(await statusOf(await fetch(`${ORIGIN}/v1/media/${pendingMedia.media.id}`, { headers: humanHeaders(ownerSession) })), 200);
+  const pendingOutput = await assertWebp(
+    await fetch(`${ORIGIN}/v1/media/${pendingMedia.media.id}`, { headers: humanHeaders(ownerSession) }),
+    { longEdge: 2400 },
+  );
+  assert.ok(Math.abs(pendingOutput.width / pendingOutput.height - 2200 / 3600) < 0.02);
   const reviews = await fetch(`${ORIGIN}/v1/approvals`, { headers: humanHeaders(ownerSession) }).then((response) => response.json()) as {
     reviews: Array<{ id: string; record: { id: string }; media: { id: string } | null }>;
   };
@@ -333,7 +489,7 @@ try {
   }, `media-${suffix}-reject`)), 200);
   assert.equal(await statusOf(await fetch(`${ORIGIN}/v1/media/${pendingMedia.media.id}`)), 404);
 
-  const overQuota = await uploadPostImage(approval.token, `media-${suffix}-quota`);
+  const overQuota = await uploadPostImage(approval.token, `media-${suffix}-quota`, fixtures.postJpeg);
   assert.equal(overQuota.status, 429);
   await overQuota.arrayBuffer();
 
@@ -348,13 +504,12 @@ try {
         orphaned_at = ${now - 8 * 24 * 60 * 60 * 1000},
         activated_at = NULL
     WHERE id IN (
-      ${quote(accountAvatar.media.id)}, ${quote(agentAvatar.media.id)},
+      ${quote(accountAvatar.media.id)}, ${quote(nearLimitAvatar.media.id)}, ${quote(agentAvatar.media.id)},
       ${quote(directMedia.media.id)}, ${quote(pendingMedia.media.id)}
     );
   `);
-  cleanupDeployed = true;
   const cleanup = await runCleanup();
-  assert.ok(cleanup.deleted >= 4);
+  assert.ok(cleanup.deleted >= 5);
   assert.equal(cleanup.failed, 0);
   assert.equal(await statusOf(await fetch(`${ORIGIN}/v1/media/${directMedia.media.id}`)), 404);
 
@@ -362,11 +517,11 @@ try {
   const evidence = execute(`
     SELECT
       (SELECT COUNT(*) FROM media_assets WHERE id IN (
-        ${quote(accountAvatar.media.id)}, ${quote(agentAvatar.media.id)},
+        ${quote(accountAvatar.media.id)}, ${quote(nearLimitAvatar.media.id)}, ${quote(agentAvatar.media.id)},
         ${quote(directMedia.media.id)}, ${quote(pendingMedia.media.id)}
       )) AS media_rows,
       (SELECT COUNT(*) FROM media_assets WHERE id IN (
-        ${quote(accountAvatar.media.id)}, ${quote(agentAvatar.media.id)},
+        ${quote(accountAvatar.media.id)}, ${quote(nearLimitAvatar.media.id)}, ${quote(agentAvatar.media.id)},
         ${quote(directMedia.media.id)}, ${quote(pendingMedia.media.id)}
       ) AND state = 'deleted') AS cleaned_rows,
       (SELECT COUNT(*) FROM audit_events WHERE event_type IN (
@@ -378,8 +533,8 @@ try {
         ${quote(direct.id)}, ${quote(approval.id)}
       )) AS quota_rows
   `)[0] as { media_rows: number; cleaned_rows: number; media_audits: number; quota_rows: number };
-  assert.equal(Number(evidence.media_rows), 4);
-  assert.equal(Number(evidence.cleaned_rows), 4);
+  assert.equal(Number(evidence.media_rows), 5);
+  assert.equal(Number(evidence.cleaned_rows), 5);
   assert.ok(Number(evidence.media_audits) >= 6);
   assert.equal(Number(evidence.quota_rows), 2);
 
@@ -390,9 +545,9 @@ try {
 
   execute(`
     UPDATE agent_credentials SET revoked_at = ${Date.now()}, revoked_reason = 'staging_test_cleanup'
-    WHERE id IN (${quote(direct.credentialId)}, ${quote(approval.credentialId)});
+    WHERE id IN (${quote(direct.credentialId)}, ${quote(approval.credentialId)}, ${quote(unauthorized.credentialId)});
     UPDATE agents SET status = 'retired', updated_at = ${Date.now()}
-    WHERE id IN (${quote(direct.id)}, ${quote(approval.id)});
+    WHERE id IN (${quote(direct.id)}, ${quote(approval.id)}, ${quote(unauthorized.id)});
     UPDATE sessions SET revoked_at = ${Date.now()}, revoked_reason = 'staging_test_cleanup'
     WHERE id IN (${quote(ownerSession.id)}, ${quote(accountSession.id)});
     UPDATE accounts SET status = 'closed', updated_at = ${Date.now()}
@@ -411,6 +566,20 @@ try {
     cleanup: 'real-r2-pass',
     encryptedBackup: 'r2-readback-pass',
     secrets: 'not-emitted',
+    fixtures: {
+      avatarPng: { bytes: (await readFile(fixtures.avatarPng.path)).byteLength, dimensions: [3000, 1800] },
+      avatarJpeg: { bytes: (await readFile(fixtures.avatarJpeg.path)).byteLength, dimensions: [1800, 3000] },
+      nearLimitPng: { bytes: (await readFile(fixtures.nearLimitPng.path)).byteLength, dimensions: [1250, 1250] },
+      postPng: { bytes: (await readFile(fixtures.postPng.path)).byteLength, dimensions: [3600, 2200] },
+      postJpeg: { bytes: (await readFile(fixtures.postJpeg.path)).byteLength, dimensions: [2200, 3600] },
+    },
+    outputs: {
+      accountAvatar: accountAvatarOutput,
+      nearLimitAvatar: nearLimitOutput,
+      agentAvatar: agentAvatarOutput,
+      postPng: directOutput,
+      postJpeg: pendingOutput,
+    },
   }));
 } finally {
   if (cleanupDeployed) {

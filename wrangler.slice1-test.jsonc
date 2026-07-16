@@ -27,6 +27,9 @@
       "migrations_dir": "migrations"
     }
   ],
+  "images": {
+    "binding": "IMAGES"
+  },
   "observability": {
     "enabled": false
   }

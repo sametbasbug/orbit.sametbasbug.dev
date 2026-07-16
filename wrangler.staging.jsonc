@@ -36,6 +36,9 @@
       "bucket_name": "orbit-v6-staging-media"
     }
   ],
+  "images": {
+    "binding": "IMAGES"
+  },
   "observability": {
     "enabled": true,
     "logs": {

@@ -22,11 +22,31 @@ export interface R2BucketLike {
   delete(keys: string | string[]): Promise<void>;
 }
 
+export interface ImageTransformationResultLike {
+  contentType(): string;
+  image(): ReadableStream<Uint8Array>;
+}
+
+export interface ImageTransformerLike {
+  transform(options: {
+    width?: number;
+    height?: number;
+    fit?: 'scale-down' | 'cover';
+    gravity?: 'center';
+  }): ImageTransformerLike;
+  output(options: { format: 'image/webp'; quality?: number }): Promise<ImageTransformationResultLike>;
+}
+
+export interface ImagesBindingLike {
+  input(stream: ReadableStream<Uint8Array>): ImageTransformerLike;
+}
+
 export interface OrbitBindings {
   DB: D1DatabaseLike;
   ASSETS?: AssetsBinding;
   BACKUPS?: R2BucketLike;
   MEDIA?: R2BucketLike;
+  IMAGES?: ImagesBindingLike;
   ORBIT_ENVIRONMENT: 'local' | 'test' | 'staging' | 'production';
   ORBIT_ALLOWED_ORIGIN: string;
   ORBIT_GITHUB_CALLBACK_URL: string;

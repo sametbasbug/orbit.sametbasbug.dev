@@ -127,6 +127,102 @@ export class D1MediaRepository implements MediaRepository {
     ]);
   }
 
+  async getPostImageAllowance(agentId: string, dayUtc: string): Promise<{
+    mediaEnabled: boolean;
+    dailyImageLimit: number;
+    usedToday: number;
+  }> {
+    const row = await this.#db.prepare(`
+      SELECT
+        COALESCE(policy.media_enabled, 0) AS media_enabled,
+        COALESCE(policy.daily_image_limit, 0) AS daily_image_limit,
+        (SELECT COUNT(*) FROM agent_media_uploads upload
+          WHERE upload.agent_id = ? AND upload.day_utc = ?) AS used_today
+      FROM agents agent
+      LEFT JOIN agent_media_policies policy ON policy.agent_id = agent.id
+      WHERE agent.id = ?
+    `).bind(agentId, dayUtc, agentId).first<{
+      media_enabled: number;
+      daily_image_limit: number;
+      used_today: number;
+    }>();
+    return {
+      mediaEnabled: row?.media_enabled === 1,
+      dailyImageLimit: Number(row?.daily_image_limit ?? 0),
+      usedToday: Number(row?.used_today ?? 0),
+    };
+  }
+
+  async reserveTransform(input: Parameters<MediaRepository['reserveTransform']>[0]): Promise<void> {
+    await this.#db.batch([
+      this.#db.prepare(`
+        INSERT INTO media_transform_usage_monthly (
+          month_utc, attempted_count, succeeded_count, failed_count, updated_at
+        ) VALUES (?, 0, 0, 0, ?)
+        ON CONFLICT(month_utc) DO NOTHING
+      `).bind(input.monthUtc, input.now),
+      this.#db.prepare(`
+        INSERT INTO media_transform_claims (
+          id, month_utc, profile, actor_type, actor_id,
+          source_content_type, source_byte_size, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'reserved', ?)
+      `).bind(
+        input.id,
+        input.monthUtc,
+        input.profile,
+        input.actorType,
+        input.actorId,
+        input.sourceContentType,
+        input.sourceByteSize,
+        input.now,
+      ),
+    ]);
+  }
+
+  async completeTransform(input: Parameters<MediaRepository['completeTransform']>[0]): Promise<void> {
+    await this.#db.prepare(`
+      INSERT INTO media_transform_results (
+        claim_id, status, error_category, output_byte_size, completed_at
+      ) VALUES (?, ?, ?, ?, ?)
+    `).bind(
+      input.claimId,
+      input.status,
+      input.errorCategory,
+      input.outputByteSize,
+      input.now,
+    ).run();
+  }
+
+  async getTransformUsage(monthUtc: string) {
+    const row = await this.#db.prepare(`
+      SELECT month_utc, attempted_count, succeeded_count, failed_count
+      FROM media_transform_usage_monthly WHERE month_utc = ?
+    `).bind(monthUtc).first<{
+      month_utc: string;
+      attempted_count: number;
+      succeeded_count: number;
+      failed_count: number;
+    }>();
+    const alert = await this.#db.prepare(`
+      SELECT severity, message_code FROM platform_alerts
+      WHERE alert_key = ? AND status = 'active'
+    `).bind(`images-transform-budget:${monthUtc}`).first<{
+      severity: 'warning' | 'critical';
+      message_code: string;
+    }>();
+    const attemptedCount = Number(row?.attempted_count ?? 0);
+    return {
+      monthUtc,
+      attemptedCount,
+      succeededCount: Number(row?.succeeded_count ?? 0),
+      failedCount: Number(row?.failed_count ?? 0),
+      warningThreshold: 4000 as const,
+      safetyLimit: 4500 as const,
+      uploadsAvailable: attemptedCount < 4500,
+      alert: alert ? { severity: alert.severity, messageCode: alert.message_code } : null,
+    };
+  }
+
   async createAvatar(input: Parameters<MediaRepository['createAvatar']>[0]): Promise<void> {
     const ownerColumn = input.targetType === 'account' ? 'owner_account_id' : 'owner_agent_id';
     const kind = input.targetType === 'account' ? 'account_avatar' : 'agent_avatar';

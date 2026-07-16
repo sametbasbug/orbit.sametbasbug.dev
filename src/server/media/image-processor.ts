@@ -1,11 +1,4 @@
-type PhotonModule = typeof import('@cf-wasm/photon/workerd');
-type PhotonImage = InstanceType<PhotonModule['PhotonImage']>;
-
-let photonModule: Promise<PhotonModule> | null = null;
-function photon(): Promise<PhotonModule> {
-  photonModule ??= import('@cf-wasm/photon/workerd');
-  return photonModule;
-}
+import type { ImagesBindingLike } from '../identity/bindings';
 
 export type AcceptedImageType = 'image/png' | 'image/jpeg' | 'image/webp';
 export type MediaTransform = 'avatar' | 'post';
@@ -26,12 +19,30 @@ export interface ProcessedImage {
   processingMs: number;
 }
 
+export type ImageTransformErrorCategory =
+  | 'images_quota'
+  | 'images_input'
+  | 'images_service'
+  | 'images_output'
+  | 'images_unknown';
+
 export class ImageValidationError extends Error {
   readonly code: string;
   constructor(code: string) {
     super(code);
     this.name = 'ImageValidationError';
     this.code = code;
+  }
+}
+
+export class ImageTransformError extends Error {
+  readonly category: ImageTransformErrorCategory;
+  readonly providerCode: number | null;
+  constructor(category: ImageTransformErrorCategory, providerCode: number | null = null) {
+    super('media_transform_unavailable');
+    this.name = 'ImageTransformError';
+    this.category = category;
+    this.providerCode = providerCode;
   }
 }
 
@@ -170,86 +181,88 @@ export function inspectImage(bytes: Uint8Array, declaredType: string): Inspected
   return inspected;
 }
 
-function orient(
-  image: PhotonImage,
-  orientation: number,
-  allocated: PhotonImage[],
-  operations: Pick<PhotonModule, 'fliph' | 'flipv' | 'rotate'>,
-): PhotonImage {
-  const { fliph, flipv, rotate } = operations;
-  let current = image;
-  const rotated = (angle: number) => {
-    const value = rotate(current, angle);
-    allocated.push(value);
-    current = value;
-  };
-  if (orientation === 2) fliph(current);
-  else if (orientation === 3) rotated(180);
-  else if (orientation === 4) flipv(current);
-  else if (orientation === 5) { rotated(90); fliph(current); }
-  else if (orientation === 6) rotated(90);
-  else if (orientation === 7) { rotated(270); fliph(current); }
-  else if (orientation === 8) rotated(270);
-  return current;
+function providerErrorCode(error: unknown): number | null {
+  if (!error || typeof error !== 'object' || !('code' in error)) return null;
+  const code = Number((error as { code?: unknown }).code);
+  return Number.isSafeInteger(code) ? code : null;
 }
 
-export async function processImage(
+function providerErrorCategory(code: number | null): ImageTransformErrorCategory {
+  if (code === 9422) return 'images_quota';
+  if (code !== null && code >= 9400 && code <= 9419) return 'images_input';
+  if (code !== null && code >= 9420 && code <= 9499) return 'images_service';
+  return 'images_unknown';
+}
+
+function imageStream(bytes: Uint8Array): ReadableStream<Uint8Array> {
+  return new Blob([bytes.slice().buffer]).stream();
+}
+
+function validateOutput(source: InspectedImage, output: InspectedImage, transform: MediaTransform): void {
+  const rejectOutput = (): never => {
+    console.warn(JSON.stringify({
+      event: 'media.transform_output_rejected',
+      profile: transform,
+      source: { width: source.width, height: source.height, orientation: source.orientation },
+      output: { width: output.width, height: output.height, contentType: output.contentType },
+    }));
+    throw new ImageTransformError('images_output');
+  };
+  if (output.contentType !== 'image/webp') rejectOutput();
+  if (transform === 'avatar') {
+    if (output.width !== AVATAR_EDGE || output.height !== AVATAR_EDGE) {
+      rejectOutput();
+    }
+    return;
+  }
+  if (Math.max(output.width, output.height) > POST_LONG_EDGE) {
+    rejectOutput();
+  }
+  const sourceWidth = source.orientation >= 5 && source.orientation <= 8 ? source.height : source.width;
+  const sourceHeight = source.orientation >= 5 && source.orientation <= 8 ? source.width : source.height;
+  const sourceRatio = sourceWidth / sourceHeight;
+  const outputRatio = output.width / output.height;
+  if (Math.abs(sourceRatio - outputRatio) > 0.02) rejectOutput();
+}
+
+export async function transformImage(
+  images: ImagesBindingLike,
   bytes: Uint8Array,
   declaredType: string,
   transform: MediaTransform,
 ): Promise<ProcessedImage> {
   const source = inspectImage(bytes, declaredType);
+  const sourceWidth = source.orientation >= 5 && source.orientation <= 8 ? source.height : source.width;
+  const sourceHeight = source.orientation >= 5 && source.orientation <= 8 ? source.width : source.height;
+  const postTransform = sourceWidth >= sourceHeight
+    ? { width: Math.min(sourceWidth, POST_LONG_EDGE), fit: 'scale-down' as const }
+    : { height: Math.min(sourceHeight, POST_LONG_EDGE), fit: 'scale-down' as const };
   const started = performance.now();
-  const allocated: PhotonImage[] = [];
   try {
-    const { PhotonImage, SamplingFilter, crop, resize, fliph, flipv, rotate } = await photon();
-    const decoded = PhotonImage.new_from_byteslice(bytes);
-    allocated.push(decoded);
-    let current = orient(decoded, source.orientation, allocated, { fliph, flipv, rotate });
-    if (transform === 'avatar') {
-      const edge = Math.min(current.get_width(), current.get_height());
-      const left = Math.floor((current.get_width() - edge) / 2);
-      const top = Math.floor((current.get_height() - edge) / 2);
-      const cropped = crop(current, left, top, left + edge, top + edge);
-      allocated.push(cropped);
-      current = cropped;
-      const resized = resize(current, AVATAR_EDGE, AVATAR_EDGE, SamplingFilter.Lanczos3);
-      allocated.push(resized);
-      current = resized;
-    } else {
-      const width = current.get_width();
-      const height = current.get_height();
-      const longEdge = Math.max(width, height);
-      if (longEdge > POST_LONG_EDGE) {
-        const ratio = POST_LONG_EDGE / longEdge;
-        const resized = resize(
-          current,
-          Math.max(1, Math.round(width * ratio)),
-          Math.max(1, Math.round(height * ratio)),
-          SamplingFilter.Lanczos3,
-        );
-        allocated.push(resized);
-        current = resized;
-      }
+    const transformer = images.input(imageStream(bytes)).transform(transform === 'avatar'
+      ? { width: AVATAR_EDGE, height: AVATAR_EDGE, fit: 'cover', gravity: 'center' }
+      : postTransform);
+    const result = await transformer.output({ format: 'image/webp', quality: 85 });
+    if (result.contentType().toLowerCase() !== 'image/webp') {
+      throw new ImageTransformError('images_output');
     }
-    const output = current.get_bytes_webp();
+    const output = new Uint8Array(await new Response(result.image()).arrayBuffer());
     if (output.byteLength < 1 || output.byteLength > 10 * 1024 * 1024) {
-      throw new ImageValidationError('image_output_too_large');
+      throw new ImageTransformError('images_output');
     }
+    const inspectedOutput = inspectImage(output, 'image/webp');
+    validateOutput(source, inspectedOutput, transform);
     return {
       bytes: output,
       contentType: 'image/webp',
-      width: current.get_width(),
-      height: current.get_height(),
+      width: inspectedOutput.width,
+      height: inspectedOutput.height,
       source,
       processingMs: Math.max(0, performance.now() - started),
     };
   } catch (error) {
-    if (error instanceof ImageValidationError) throw error;
-    throw new ImageValidationError('image_decode_failed');
-  } finally {
-    for (const image of [...allocated].reverse()) {
-      try { image.free(); } catch {}
-    }
+    if (error instanceof ImageValidationError || error instanceof ImageTransformError) throw error;
+    const code = providerErrorCode(error);
+    throw new ImageTransformError(providerErrorCategory(code), code);
   }
 }

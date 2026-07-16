@@ -4,7 +4,7 @@ import { randomBase64Url, sha256Base64Url } from '../identity/tokens';
 import type { D1DatabaseLike, D1PreparedStatementLike } from '../repositories/d1/d1-foundation-repository';
 
 export const BACKUP_SCHEMA = 'equinox.orbit.dynamic-backup.v1';
-export const BACKUP_SCHEMA_VERSION = 3;
+export const BACKUP_SCHEMA_VERSION = 4;
 
 type BackupRow = Record<string, string | number | null>;
 
@@ -51,6 +51,10 @@ const SPECS: TableSpec[] = [
   { exportName: 'mediaAssets', table: 'media_assets', columns: ['id','media_kind','owner_account_id','owner_agent_id','attached_record_id','attached_revision_id','object_key','content_type','byte_size','width','height','sha256_digest','alt_text','caption','state','orphan_reason','created_at','activated_at','orphaned_at','deleted_at'], orderBy: 'created_at, id' },
   { exportName: 'mediaAttachmentTransitions', table: 'media_attachment_transitions', columns: ['id','media_id','record_id','revision_id','agent_id','target_state','created_at'], orderBy: 'created_at, id' },
   { exportName: 'agentMediaUploads', table: 'agent_media_uploads', columns: ['id','agent_id','media_id','day_utc','created_at'], orderBy: 'created_at, id' },
+  { exportName: 'mediaTransformUsageMonthly', table: 'media_transform_usage_monthly', columns: ['month_utc','attempted_count','succeeded_count','failed_count','updated_at'], orderBy: 'month_utc' },
+  { exportName: 'mediaTransformClaims', table: 'media_transform_claims', columns: ['id','month_utc','profile','actor_type','actor_id','source_content_type','source_byte_size','status','error_category','output_byte_size','created_at','completed_at'], orderBy: 'created_at, id' },
+  { exportName: 'mediaTransformResults', table: 'media_transform_results', columns: ['claim_id','status','error_category','output_byte_size','completed_at'], orderBy: 'completed_at, claim_id' },
+  { exportName: 'platformAlerts', table: 'platform_alerts', columns: ['alert_key','alert_type','severity','status','message_code','metadata_json','created_at','resolved_at'], orderBy: 'created_at, alert_key' },
   { exportName: 'moderationActions', table: 'moderation_actions', columns: ['id','actor_account_id','action','target_type','target_id','reason','created_at','reversed_by_action_id','reverses_action_id'], orderBy: 'created_at, id' },
   { exportName: 'announcements', table: 'announcements', columns: ['id','title','body_markdown','severity','audience_type','target_agent_id','status','starts_at','expires_at','created_by_account_id','created_at','updated_at','published_at','withdrawn_at'], orderBy: 'created_at, id' },
   { exportName: 'announcementTransitions', table: 'announcement_transitions', columns: ['id','announcement_id','action','actor_account_id','created_at'], orderBy: 'created_at, id' },
@@ -150,6 +154,21 @@ function validateRelationships(backup: DynamicBackup): void {
     if (row.pending_revision_id && !revisionsByRecord.has(`${id}:${String(row.pending_revision_id)}`)) {
       throw new Error('backup_pending_revision_missing');
     }
+  }
+  const claims = new Set(backup.tables.mediaTransformClaims.map((row) => String(row.id)));
+  for (const row of backup.tables.mediaTransformResults) {
+    if (!claims.has(String(row.claim_id))) throw new Error('backup_media_transform_claim_missing');
+  }
+  for (const row of backup.tables.mediaTransformUsageMonthly) {
+    const month = String(row.month_utc);
+    const monthClaims = backup.tables.mediaTransformClaims.filter((claim) => claim.month_utc === month);
+    const succeeded = monthClaims.filter((claim) => claim.status === 'succeeded').length;
+    const failed = monthClaims.filter((claim) => claim.status === 'failed').length;
+    if (
+      Number(row.attempted_count) !== monthClaims.length
+      || Number(row.succeeded_count) !== succeeded
+      || Number(row.failed_count) !== failed
+    ) throw new Error('backup_media_transform_usage_mismatch');
   }
 }
 
@@ -294,6 +313,42 @@ export async function restoreDynamicBackup(
   for (const row of backup.tables.agentMediaUploads) {
     statements.push(insert(db, spec('agentMediaUploads'), row));
   }
+  for (const row of backup.tables.mediaTransformUsageMonthly) {
+    statements.push(insert(db, spec('mediaTransformUsageMonthly'), {
+      ...row,
+      attempted_count: 0,
+      succeeded_count: 0,
+      failed_count: 0,
+    }));
+  }
+  for (const row of backup.tables.mediaTransformClaims) {
+    statements.push(insert(db, spec('mediaTransformClaims'), {
+      ...row,
+      status: 'reserved',
+      error_category: null,
+      output_byte_size: null,
+      completed_at: null,
+    }));
+  }
+  for (const row of backup.tables.mediaTransformResults) {
+    statements.push(insert(db, spec('mediaTransformResults'), row));
+  }
+  for (const row of backup.tables.mediaTransformUsageMonthly) {
+    statements.push(db.prepare(`
+      UPDATE media_transform_usage_monthly
+      SET attempted_count = ?, succeeded_count = ?, failed_count = ?, updated_at = ?
+      WHERE month_utc = ?
+    `).bind(
+      row.attempted_count,
+      row.succeeded_count,
+      row.failed_count,
+      row.updated_at,
+      row.month_utc,
+    ));
+  }
+  for (const row of backup.tables.platformAlerts) {
+    statements.push(insert(db, spec('platformAlerts'), row, true));
+  }
   const moderationSpec = spec('moderationActions');
   for (const row of backup.tables.moderationActions) {
     statements.push(insert(db, moderationSpec, {
@@ -362,6 +417,10 @@ export async function restoreDynamicBackup(
     mediaAssets: backup.counts.mediaAssets,
     agentMediaPolicies: backup.counts.agentMediaPolicies,
     agentMediaUploads: backup.counts.agentMediaUploads,
+    mediaTransformUsageMonthly: backup.counts.mediaTransformUsageMonthly,
+    mediaTransformClaims: backup.counts.mediaTransformClaims,
+    mediaTransformResults: backup.counts.mediaTransformResults,
+    platformAlerts: backup.counts.platformAlerts,
   };
   statements.push(db.prepare(`
     INSERT INTO backup_restore_validations (

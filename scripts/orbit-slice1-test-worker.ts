@@ -437,6 +437,63 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     return Response.json({ count: mediaBucket.objects.size });
   }
 
+  if (url.pathname === '/__test/media-transform-state') {
+    const month = String(body.month ?? new Date(now).toISOString().slice(0, 7));
+    const counts = await env.DB.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM media_assets) AS media_assets,
+        (SELECT COUNT(*) FROM media_transform_claims WHERE month_utc = ?) AS claims,
+        (SELECT COUNT(*) FROM media_transform_results result
+          JOIN media_transform_claims claim ON claim.id = result.claim_id
+          WHERE claim.month_utc = ?) AS results,
+        (SELECT COUNT(*) FROM media_transform_results result
+          JOIN media_transform_claims claim ON claim.id = result.claim_id
+          WHERE claim.month_utc = ? AND result.status = 'failed') AS failed_results,
+        COALESCE((SELECT attempted_count FROM media_transform_usage_monthly WHERE month_utc = ?), 0) AS attempted,
+        COALESCE((SELECT succeeded_count FROM media_transform_usage_monthly WHERE month_utc = ?), 0) AS succeeded,
+        COALESCE((SELECT failed_count FROM media_transform_usage_monthly WHERE month_utc = ?), 0) AS failed
+    `).bind(month, month, month, month, month, month).first();
+    return Response.json({ counts, objectCount: mediaBucket.objects.size });
+  }
+
+  if (url.pathname === '/__test/media-transform-limit') {
+    const month = String(body.month);
+    const attempted = Number(body.attempted);
+    await env.DB.prepare(`
+      INSERT INTO media_transform_usage_monthly (
+        month_utc, attempted_count, succeeded_count, failed_count, updated_at
+      ) VALUES (?, ?, 0, 0, ?)
+      ON CONFLICT(month_utc) DO UPDATE SET
+        attempted_count = excluded.attempted_count,
+        succeeded_count = 0,
+        failed_count = 0,
+        updated_at = excluded.updated_at
+    `).bind(month, attempted, now).run();
+    return Response.json({ ok: true });
+  }
+
+  if (url.pathname === '/__test/media-transform-tamper') {
+    const claim = await env.DB.prepare(`
+      SELECT id FROM media_transform_claims WHERE status = 'succeeded' LIMIT 1
+    `).first<{ id: string }>();
+    try {
+      await env.DB.prepare(`
+        UPDATE media_transform_claims
+        SET status = 'failed', error_category = 'images_unknown',
+            output_byte_size = NULL, completed_at = ?
+        WHERE id = ?
+      `).bind(now, claim?.id ?? '').run();
+      return Response.json({ rejected: false });
+    } catch (error) {
+      return Response.json({
+        rejected: true,
+        code: error instanceof Error && error.message.includes('media_transform_claim_lifecycle_invalid')
+          ? 'media_transform_claim_lifecycle_invalid'
+          : 'unexpected_error',
+      });
+    }
+  }
+
   if (url.pathname === '/__test/media-cleanup') {
     return Response.json(await cleanupMedia(
       env,

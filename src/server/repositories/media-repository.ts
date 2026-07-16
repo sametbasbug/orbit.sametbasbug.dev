@@ -37,6 +37,28 @@ export interface ReadableMedia {
   visibility: 'public' | 'private_account';
 }
 
+export type MediaTransformProfile = 'avatar' | 'post';
+export type MediaTransformErrorCategory =
+  | 'images_quota'
+  | 'images_input'
+  | 'images_service'
+  | 'images_output'
+  | 'images_unknown';
+
+export interface MediaTransformUsageView {
+  monthUtc: string;
+  attemptedCount: number;
+  succeededCount: number;
+  failedCount: number;
+  warningThreshold: 4000;
+  safetyLimit: 4500;
+  uploadsAvailable: boolean;
+  alert: {
+    severity: 'warning' | 'critical';
+    messageCode: string;
+  } | null;
+}
+
 export interface MediaRepository {
   getAgentPolicy(agentId: string): Promise<AgentMediaPolicyView | null>;
   setAgentPolicy(input: {
@@ -48,6 +70,29 @@ export interface MediaRepository {
     requestId: string;
     now: number;
   }): Promise<void>;
+  getPostImageAllowance(agentId: string, dayUtc: string): Promise<{
+    mediaEnabled: boolean;
+    dailyImageLimit: number;
+    usedToday: number;
+  }>;
+  reserveTransform(input: {
+    id: string;
+    monthUtc: string;
+    profile: MediaTransformProfile;
+    actorType: 'account' | 'agent';
+    actorId: string;
+    sourceContentType: 'image/png' | 'image/jpeg' | 'image/webp';
+    sourceByteSize: number;
+    now: number;
+  }): Promise<void>;
+  completeTransform(input: {
+    claimId: string;
+    status: 'succeeded' | 'failed';
+    errorCategory: MediaTransformErrorCategory | null;
+    outputByteSize: number | null;
+    now: number;
+  }): Promise<void>;
+  getTransformUsage(monthUtc: string): Promise<MediaTransformUsageView>;
   createAvatar(input: {
     asset: MediaAssetView;
     targetType: 'account' | 'agent';

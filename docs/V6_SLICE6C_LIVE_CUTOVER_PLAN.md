@@ -316,18 +316,35 @@ before changing live traffic. Never print either secret.
 
 ### 3.2 Required live bindings
 
-The live Worker version accepts only:
+The production live Wrangler configuration must contain all of the following:
 
 ```text
+workers_dev: false
+preview_urls: false
 ORBIT_DEPLOYMENT_MODE=live
 ORBIT_ALLOWED_ORIGIN=https://orbit.sametbasbug.dev
 ORBIT_GITHUB_CALLBACK_URL=https://orbit.sametbasbug.dev/v1/auth/github/callback
 ORBIT_MEDIA_ENABLED=false
 ```
 
-The live deployment should disable its Workers.dev surface if the reviewed
-Wrangler path supports doing so, preventing an indexable live-mode copy on the
-old hostname. No wildcard, suffix or request-host trust is permitted.
+Both `workers_dev: false` and `preview_urls: false` are mandatory live controls,
+not dashboard preferences. They must enter `main` through a separate reviewed
+configuration PR before Slice 6C execution. That PR prepares source-controlled
+live and rollback configurations but does not deploy either one. Disabling the
+hostname only in the Cloudflare dashboard is insufficient: a later Wrangler
+deploy could otherwise reopen Workers.dev or preview URLs.
+
+The current dark-launch Workers.dev surface must remain available until the
+live custom domain, its Worker-created DNS record, TLS certificate,
+authoritative resolution and expected Worker version have all been verified.
+Only then may the reviewed live configuration be deployed to close Workers.dev
+and preview URLs and activate `live` mode.
+
+The reviewed rollback configuration/deploy must explicitly restore the exact
+dark-launch origin/callback, `ORBIT_DEPLOYMENT_MODE=dark_launch`,
+`workers_dev: true` and `preview_urls: false`. Reopening Workers.dev during
+rollback is a controlled deploy, never an ad-hoc dashboard toggle. No wildcard,
+suffix or request-host trust is permitted in either configuration.
 
 ### 3.3 Exact cutover sequence
 
@@ -343,23 +360,56 @@ old hostname. No wildcard, suffix or request-host trust is permitted.
    routes and the Pages rollback artifact.
 6. Under Approval Gate 5, create and review the separate live OAuth App. Store
    its client ID/secret only in approved production secret custody.
-7. Prepare the exact live Worker configuration and live OAuth secret switch.
-   If Cloudflare tooling supports a complete unserved version with reviewed
+7. Merge the separately reviewed configuration PR that defines the exact live
+   and rollback Wrangler configurations. Do not deploy the live configuration.
+8. Prepare the exact live Worker bindings, live OAuth secret switch and tested
+   rollback material without changing the serving dark-launch Worker. If
+   Cloudflare tooling supports a complete unserved version with reviewed
    bindings/secrets, stage it without routing traffic. Otherwise declare a
    short authentication maintenance interval; do not invent a code patch.
-8. Obtain both Approval Gate 6 and Approval Gate 7 before the next action.
-   Cloudflare Custom Domains may create or replace the hostname's DNS record,
-   so custom-domain attachment and DNS traffic cutover must be treated as one
-   atomic operational window even though their approvals are separate.
-9. Switch the Worker to the separate live OAuth client and exact live bindings.
-   Disable Workers.dev for the live version when supported.
-10. Attach `orbit.sametbasbug.dev` to `orbit-v6-production`. Confirm the
-    certificate and custom-domain state. Do not attach any other hostname.
-11. Replace only the `orbit` GitHub Pages record with the Cloudflare-managed
-    Worker custom-domain record if the Custom Domain operation did not do so
-    automatically. Never leave duplicate/conflicting CNAME or route entries.
+9. Obtain both Approval Gate 6 and Approval Gate 7 before entering the bounded
+   custom-domain window. The approvals remain independent, but both are
+   required because DNS deletion and custom-domain attachment are executed in
+   one bounded window.
+
+#### Bounded CNAME-to-Custom-Domain window
+
+Cloudflare cannot create a Worker Custom Domain while the same hostname still
+has the GitHub Pages CNAME. Do not assume the Custom Domain operation will
+convert or replace that CNAME. Execute exactly:
+
+1. Confirm that the exact live Worker bindings, separate live OAuth secret and
+   reviewed rollback configuration/material are prepared. Keep the serving
+   Worker in dark-launch mode and keep Workers.dev open at this point.
+2. Read the authoritative `orbit.sametbasbug.dev` CNAME value and TTL one final
+   time. Record both, the resolver/authoritative server and timestamp in the
+   secret-free operations ledger.
+3. Delete only the DNS-only
+   `orbit.sametbasbug.dev → sametbasbug.github.io.` CNAME.
+4. Immediately attach `orbit.sametbasbug.dev` as a Custom Domain on
+   `orbit-v6-production`. Do not attach any other hostname.
+5. Verify the exact Worker DNS record created by Cloudflare. Do not create a
+   second manual record and do not assume the deleted CNAME was transformed.
+6. Verify Custom Domain status, active TLS certificate, Cloudflare
+   authoritative answers and that the hostname reaches the expected current
+   dark-launch Worker version. The response may remain noindex/dark-launch
+   until the next step.
+7. If Custom Domain and certificate activation do not complete within the
+   pre-approved short deadline, remove the failed Custom Domain entry, remove
+   any partial Worker DNS record, recreate the DNS-only
+   `orbit → sametbasbug.github.io.` CNAME with its recorded TTL, and verify
+   GitHub Pages TLS and content before ending the window.
+
+After step 6 succeeds:
+
+10. Deploy the reviewed production live configuration and separate live OAuth
+    client secret. This single controlled promotion sets the exact live
+    origin/callback, `ORBIT_DEPLOYMENT_MODE=live`, `workers_dev: false` and
+    `preview_urls: false`.
+11. Verify the Workers.dev hostname and preview URLs are closed, while the live
+    custom domain still reaches the expected serving version.
 12. Poll Cloudflare authoritative nameservers and multiple public resolvers;
-    verify TLS and that the live hostname reaches the expected Worker version.
+    verify TLS and the Worker-created DNS answer again.
 13. Run the complete live-domain smoke suite below. Abort and roll back on any
     auth, visibility, integrity or 5xx failure.
 14. Verify that live mode does not add `X-Robots-Tag: noindex` and that the live
@@ -433,23 +483,26 @@ Pages surface without modifying production data.
 ### T+02 to T+05 — detach the live Worker
 
 1. Detach only `orbit.sametbasbug.dev` from `orbit-v6-production`.
-2. Confirm the Worker no longer has the custom domain or route.
+2. Confirm the Worker no longer has the custom domain or route and identify any
+   Worker-created DNS record that remains.
 3. Preserve Worker logs, D1 and both R2 buckets unchanged.
 
 ### T+05 to T+10 — restore Pages traffic
 
-1. Restore `orbit` as DNS-only CNAME `sametbasbug.github.io.` if detachment did
-   not restore it automatically.
-2. Remove conflicting Worker-created DNS records only after confirming the
-   Pages CNAME is ready.
+1. Remove the Worker-created `orbit` DNS record after detaching the Custom
+   Domain. Do not assume detachment restores the previous record.
+2. Recreate the DNS-only `orbit → sametbasbug.github.io.` CNAME with the value
+   and TTL recorded immediately before cutover.
 3. Poll authoritative and public resolvers, then verify GitHub Pages TLS, root
    HTTP 200 and legacy content.
 
 ### T+10 to T+15 — restore dark-launch authentication
 
-1. Restore the production Worker to exact `dark_launch` origin/callback values
-   and the preserved dark OAuth App client credentials.
-2. Re-enable the Workers.dev endpoint only for dark launch.
+1. Deploy the separately reviewed rollback configuration with exact
+   `dark_launch` origin/callback values and the preserved dark OAuth App client
+   credentials.
+2. Confirm that this reviewed deploy sets `workers_dev: true` and
+   `preview_urls: false`; never reopen the surface only through the dashboard.
 3. Verify noindex/deny-all robots and perform one owner login/logout test.
 4. Do not change the live OAuth App during the incident; preserve it for
    diagnosis.
@@ -502,9 +555,11 @@ the next.
 5. **OAuth live-domain migration** — create the separate live OAuth App and
    switch production client credentials/callback.
 6. **Worker live mode and custom-domain attachment** — deploy exact live
-   bindings and attach only `orbit.sametbasbug.dev`.
+   bindings from the separately reviewed config PR and attach only
+   `orbit.sametbasbug.dev` after the existing CNAME is removed.
 7. **Orbit DNS traffic cutover** — replace the Pages target with the Worker
-   custom-domain record in the same bounded execution window as Gate 6.
+   custom-domain record in the same bounded execution window as Gate 6. Do not
+   assume Cloudflare will convert the existing CNAME.
 8. **GitHub Pages retirement** — only after an independently approved stability
    period and replacement rollback strategy.
 
@@ -522,8 +577,13 @@ respective gates:
   with the exact live homepage/callback;
 - approved secret custody/Cloudflare Worker: install the live OAuth client
   values without exposing them;
-- Cloudflare Worker Domains: attach `orbit.sametbasbug.dev` only after Gates 6
-  and 7 are both approved;
+- GitHub: merge a separate reviewed configuration PR that sets live
+  `workers_dev: false` and `preview_urls: false` and defines the reviewed
+  dark-launch rollback deploy; do not deploy it during the PR merge;
+- Cloudflare DNS: record and delete the existing `orbit` CNAME only after Gates
+  6 and 7 are both approved;
+- Cloudflare Worker Domains: immediately attach `orbit.sametbasbug.dev`, then
+  verify the Worker-created record and certificate before promoting live mode;
 - GitHub Actions: do not run the Pages workflow during cutover; retain the
   existing artifact for rollback.
 

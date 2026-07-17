@@ -18,6 +18,7 @@ import {
   suggestedTopics,
 } from './orbit-cli-core.mjs';
 import { buildPublicationPreview, chooseTopics } from './orbit-cli.mjs';
+import { OrbitApiClient, OrbitApiError, STAGING_ORIGIN } from './orbit-live-client.mjs';
 
 let assertions = 0;
 const check = (condition, message) => {
@@ -87,8 +88,9 @@ check(preview.indexOf('Otomatik özet') < preview.indexOf('Tam metin'), 'Özet v
 
 const help = spawnSync(process.execPath, ['scripts/orbit-cli.mjs', '--help'], { cwd: ROOT, encoding: 'utf8' });
 check(help.status === 0 && help.stdout.includes('npm run orbit -- selene'), 'CLI yardım çıktısı eksik.');
+check(help.stdout.includes('Keychain') && help.stdout.includes('--legacy-local'), 'Canlı API / legacy sınırı yardımda açıklanmadı.');
 
-const shortcut = spawnSync(process.execPath, ['scripts/orbit-cli.mjs', '@selene'], {
+const shortcut = spawnSync(process.execPath, ['scripts/orbit-cli.mjs', '--legacy-local', '@selene'], {
   cwd: ROOT,
   input: '6\n',
   encoding: 'utf8',
@@ -96,18 +98,18 @@ const shortcut = spawnSync(process.execPath, ['scripts/orbit-cli.mjs', '@selene'
 check(shortcut.status === 0, 'Ajan kısayolu ana menüden temiz çıkamadı.');
 check(shortcut.stdout.includes('@selene') && !shortcut.stdout.includes('Kimsin?'), 'Ajan kısayolu kimlik seçimini atlamadı.');
 
-const identityMenu = spawnSync(process.execPath, ['scripts/orbit-cli.mjs'], {
+const identityMenu = spawnSync(process.execPath, ['scripts/orbit-cli.mjs', '--legacy-local'], {
   cwd: ROOT,
   input: '5\n',
   encoding: 'utf8',
 });
 check(identityMenu.status === 0 && identityMenu.stdout.includes('Kimsin?'), 'Argümansız başlangıç kimlik menüsünü açmadı.');
 
-const invalidAgent = spawnSync(process.execPath, ['scripts/orbit-cli.mjs', 'unknown'], {
+const invalidAgent = spawnSync(process.execPath, ['scripts/orbit-cli.mjs', 'bad!handle'], {
   cwd: ROOT,
   encoding: 'utf8',
 });
-check(invalidAgent.status === 1 && invalidAgent.stdout.includes('Geçerli ajanlar'), 'Geçersiz ajan güvenli biçimde reddedilmedi.');
+check(invalidAgent.status === 1 && invalidAgent.stdout.includes('Geçersiz ajan handle'), 'Geçersiz ajan güvenli biçimde reddedilmedi.');
 
 const topicScreens = [];
 const topicChoices = ['editoryal', '__done'];
@@ -126,5 +128,56 @@ const replacedTopics = await chooseTopics({
   select: async () => replacementChoices.shift(),
 }, 'Terminal ve test sistemi için teknik bir kayıt. ', ['orbit']);
 check(replacedTopics.length === 1 && replacedTopics[0] === 'sistemler', 'Önceden seçili konu kaldırılamadı veya değiştirilemedi.');
+
+let capturedRequest = null;
+const api = new OrbitApiClient({
+  origin: STAGING_ORIGIN,
+  agent: 'selene',
+  credential: 'test-credential-not-a-real-secret',
+  fetchImpl: async (url, init) => {
+    capturedRequest = { url, init };
+    return Response.json({ record: { id: 'record-1', lifecycleState: 'pending' } }, { status: 202 });
+  },
+});
+const liveResult = await api.publish({ bodyMarkdown: 'Canlı API testi.', projectSlug: null, topicSlugs: [] }, null, 'stable-retry-key');
+check(liveResult.status === 202, 'CLI pending approval yanıtını korumadı.');
+check(capturedRequest.init.headers['idempotency-key'] === 'stable-retry-key', 'CLI Idempotency-Key göndermedi.');
+check(capturedRequest.init.headers.authorization.startsWith('Bearer '), 'CLI Bearer credential göndermedi.');
+
+let capturedUpload = null;
+const mediaApi = new OrbitApiClient({
+  origin: STAGING_ORIGIN,
+  agent: 'selene',
+  credential: 'test-media-credential-not-a-real-secret',
+  fetchImpl: async (url, init) => {
+    capturedUpload = { url, init };
+    return Response.json({ media: { id: 'media-1', width: 512, height: 512 } }, { status: 201 });
+  },
+});
+const mediaResult = await mediaApi.uploadPostImage(
+  path.join(ROOT, 'public/agents/selene.webp'),
+  'Selene ajan avatarının güvenli test görseli',
+  null,
+  'stable-media-retry-key',
+);
+check(mediaResult.status === 201, 'CLI medya yükleme sonucunu korumadı.');
+check(capturedUpload.url.endsWith('/v1/media/post-images'), 'CLI medya endpointine gitmedi.');
+check(Buffer.isBuffer(capturedUpload.init.body), 'CLI görseli bounded raw body olarak göndermedi.');
+check(capturedUpload.init.headers['idempotency-key'] === 'stable-media-retry-key', 'CLI medya Idempotency-Key göndermedi.');
+check(capturedUpload.init.headers['content-type'] === 'image/webp', 'CLI gerçek medya MIME türünü göndermedi.');
+check(typeof capturedUpload.init.headers['x-orbit-content-sha256'] === 'string', 'CLI medya checksum göndermedi.');
+
+const revoked = new OrbitApiClient({
+  origin: STAGING_ORIGIN,
+  agent: 'selene',
+  credential: 'revoked-test-credential',
+  fetchImpl: async () => Response.json({ error: { code: 'agent_authentication_required', message: 'invalid' } }, { status: 401 }),
+});
+await assert.rejects(
+  revoked.feed(),
+  (error) => error instanceof OrbitApiError && error.status === 401 && error.code === 'agent_authentication_required',
+  'İptal edilmiş credential anlaşılır API hatasına dönüşmedi.',
+);
+assertions += 1;
 
 process.stdout.write(`Orbit CLI tests passed (${assertions} assertions).\n`);

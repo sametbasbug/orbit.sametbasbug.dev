@@ -1,0 +1,516 @@
+import { createEntityId } from '../foundation/ids';
+import { canonicalJson } from '../publication/content';
+import { randomBase64Url, sha256Base64Url } from '../identity/tokens';
+import type { D1DatabaseLike, D1PreparedStatementLike } from '../repositories/d1/d1-foundation-repository';
+
+export const BACKUP_SCHEMA = 'equinox.orbit.dynamic-backup.v1';
+export const BACKUP_SCHEMA_VERSION = 5;
+export const MAX_RESTORE_INPUT_BYTES = 4 * 1024 * 1024;
+export const MAX_RESTORE_STATEMENTS = 2_000;
+
+type BackupRow = Record<string, string | number | null>;
+
+export interface DynamicBackup {
+  schema: typeof BACKUP_SCHEMA;
+  schemaVersion: typeof BACKUP_SCHEMA_VERSION;
+  createdAt: string;
+  counts: Record<string, number>;
+  security: {
+    containsCredentialDigests: boolean;
+    containsSessionDigests: boolean;
+    containsPlaintextSecrets: false;
+  };
+  tables: Record<string, BackupRow[]>;
+  checksum: { algorithm: 'sha256'; value: string };
+}
+
+interface TableSpec {
+  exportName: string;
+  table: string;
+  columns: string[];
+  orderBy: string;
+  optional?: boolean;
+}
+
+const SPECS: TableSpec[] = [
+  { exportName: 'accounts', table: 'accounts', columns: ['id','handle','handle_normalized','display_name','avatar_url','status','created_at','updated_at','last_login_at','avatar_media_id'], orderBy: 'id' },
+  { exportName: 'authIdentities', table: 'auth_identities', columns: ['id','account_id','provider','provider_user_id','provider_login_snapshot','created_at','last_seen_at'], orderBy: 'id' },
+  { exportName: 'accountRoles', table: 'account_roles', columns: ['id','account_id','role','granted_by_account_id','granted_at','revoked_at'], orderBy: 'id' },
+  { exportName: 'accountQuotas', table: 'account_quotas', columns: ['account_id','quota_key','limit_value','updated_by_account_id','updated_at'], orderBy: 'account_id, quota_key' },
+  { exportName: 'invitations', table: 'invitations', columns: ['id','secret_digest','hash_version','expected_github_user_id','expected_github_login_snapshot','agent_quota','created_by_account_id','created_at','expires_at','redeemed_at','redeemed_by_account_id','revoked_at','revoked_by_account_id'], orderBy: 'id' },
+  { exportName: 'agents', table: 'agents', columns: ['id','handle','handle_normalized','display_name','bio','avatar_asset','publication_mode','status','created_at','updated_at','version','role','short_bio','motto','accent','responsibility','links_json','avatar_media_id'], orderBy: 'id' },
+  { exportName: 'agentMemberships', table: 'agent_memberships', columns: ['id','agent_id','account_id','role','created_by_account_id','created_at','revoked_at'], orderBy: 'id' },
+  { exportName: 'agentCredentials', table: 'agent_credentials', columns: ['id','agent_id','secret_digest','hash_version','scopes','created_by_account_id','created_at','last_used_at','expires_at','revoked_at','revoked_reason','replaced_by_credential_id'], orderBy: 'created_at, id' },
+  { exportName: 'sessions', table: 'sessions', columns: ['id','account_id','secret_digest','hash_version','csrf_digest','created_at','last_seen_at','idle_expires_at','absolute_expires_at','revoked_at','revoked_reason'], orderBy: 'created_at, id', optional: true },
+  { exportName: 'projects', table: 'projects', columns: ['id','slug','name','status','created_at','updated_at','label','footer_label','description','href','accent'], orderBy: 'id' },
+  { exportName: 'topics', table: 'topics', columns: ['id','slug','label','status','description','accent'], orderBy: 'id' },
+  { exportName: 'records', table: 'records', columns: ['id','kind','author_agent_id','slug','parent_id','root_id','project_id','lifecycle_state','current_revision_id','pending_revision_id','version','created_at','published_at','updated_at','deleted_at','moderation_state','moderated_at'], orderBy: "CASE kind WHEN 'post' THEN 0 ELSE 1 END, created_at, id" },
+  { exportName: 'recordRevisions', table: 'record_revisions', columns: ['id','record_id','revision_number','body_markdown','summary','state','created_by_agent_id','created_by_account_id','created_at','published_at','metadata_json'], orderBy: 'record_id, revision_number' },
+  { exportName: 'recordTopics', table: 'record_topics', columns: ['record_id','topic_id','created_at'], orderBy: 'record_id, topic_id' },
+  { exportName: 'publicationReviews', table: 'publication_reviews', columns: ['id','record_id','revision_id','status','requested_at','reviewer_account_id','reviewed_at','review_note'], orderBy: 'requested_at, id' },
+  { exportName: 'agentUsageDaily', table: 'agent_usage_daily', columns: ['agent_id','day_utc','posts_created','replies_created','write_attempts','updated_at'], orderBy: 'agent_id, day_utc' },
+  { exportName: 'agentMediaPolicies', table: 'agent_media_policies', columns: ['agent_id','media_enabled','daily_image_limit','updated_by_account_id','updated_at'], orderBy: 'agent_id' },
+  { exportName: 'avatarUploadPolicies', table: 'avatar_upload_policies', columns: ['subject_type','subject_id','daily_limit','updated_by_account_id','updated_at'], orderBy: 'subject_type, subject_id' },
+  { exportName: 'avatarUploadUsageDaily', table: 'avatar_upload_usage_daily', columns: ['subject_type','subject_id','day_utc','attempted_count','updated_at'], orderBy: 'day_utc, subject_type, subject_id' },
+  { exportName: 'mediaAssets', table: 'media_assets', columns: ['id','media_kind','owner_account_id','owner_agent_id','attached_record_id','attached_revision_id','object_key','content_type','byte_size','width','height','sha256_digest','alt_text','caption','state','orphan_reason','created_at','activated_at','orphaned_at','deleted_at'], orderBy: 'created_at, id' },
+  { exportName: 'mediaAttachmentTransitions', table: 'media_attachment_transitions', columns: ['id','media_id','record_id','revision_id','agent_id','target_state','created_at'], orderBy: 'created_at, id' },
+  { exportName: 'agentMediaUploads', table: 'agent_media_uploads', columns: ['id','agent_id','media_id','day_utc','created_at'], orderBy: 'created_at, id' },
+  { exportName: 'mediaTransformUsageMonthly', table: 'media_transform_usage_monthly', columns: ['month_utc','attempted_count','succeeded_count','failed_count','updated_at'], orderBy: 'month_utc' },
+  { exportName: 'mediaTransformClaims', table: 'media_transform_claims', columns: ['id','month_utc','profile','actor_type','actor_id','source_content_type','source_byte_size','status','error_category','output_byte_size','created_at','completed_at','usage_day','target_type','target_id','idempotency_id'], orderBy: 'created_at, id' },
+  { exportName: 'mediaTransformResults', table: 'media_transform_results', columns: ['claim_id','status','error_category','output_byte_size','completed_at'], orderBy: 'completed_at, claim_id' },
+  { exportName: 'platformAlerts', table: 'platform_alerts', columns: ['alert_key','alert_type','severity','status','message_code','metadata_json','created_at','resolved_at'], orderBy: 'created_at, alert_key' },
+  { exportName: 'moderationActions', table: 'moderation_actions', columns: ['id','actor_account_id','action','target_type','target_id','reason','created_at','reversed_by_action_id','reverses_action_id'], orderBy: 'created_at, id' },
+  { exportName: 'announcements', table: 'announcements', columns: ['id','title','body_markdown','severity','audience_type','target_agent_id','status','starts_at','expires_at','created_by_account_id','created_at','updated_at','published_at','withdrawn_at'], orderBy: 'created_at, id' },
+  { exportName: 'announcementTransitions', table: 'announcement_transitions', columns: ['id','announcement_id','action','actor_account_id','created_at'], orderBy: 'created_at, id' },
+  { exportName: 'announcementReads', table: 'announcement_reads', columns: ['announcement_id','agent_id','read_at'], orderBy: 'announcement_id, agent_id' },
+  { exportName: 'auditEvents', table: 'audit_events', columns: ['sequence','id','event_type','actor_type','actor_id','subject_type','subject_id','request_id','metadata_json','created_at'], orderBy: 'sequence' },
+  { exportName: 'slugReservations', table: 'record_slug_reservations', columns: ['slug','record_id','created_at'], orderBy: 'slug' },
+];
+
+function payload(backup: Omit<DynamicBackup, 'checksum'>): string {
+  return canonicalJson(backup);
+}
+
+export async function createDynamicBackup(
+  db: D1DatabaseLike,
+  now = Date.now(),
+  includeSessions = false,
+): Promise<DynamicBackup> {
+  const tables: Record<string, BackupRow[]> = {};
+  for (const spec of SPECS) {
+    if (spec.optional && !includeSessions) {
+      tables[spec.exportName] = [];
+      continue;
+    }
+    try {
+      const result = await db.prepare(
+        `SELECT ${spec.columns.join(', ')} FROM ${spec.table} ORDER BY ${spec.orderBy}`,
+      ).all<BackupRow>();
+      tables[spec.exportName] = result.results;
+    } catch (error) {
+      const code = error instanceof Error ? error.message : 'unknown';
+      throw new Error(`backup_export_table_failed:${spec.exportName}:${code}`);
+    }
+  }
+  const counts = Object.fromEntries(Object.entries(tables).map(([name, rows]) => [name, rows.length]));
+  const unsigned: Omit<DynamicBackup, 'checksum'> = {
+    schema: BACKUP_SCHEMA,
+    schemaVersion: BACKUP_SCHEMA_VERSION,
+    createdAt: new Date(now).toISOString(),
+    counts,
+    security: {
+      containsCredentialDigests: tables.agentCredentials.length > 0,
+      containsSessionDigests: tables.sessions.length > 0,
+      containsPlaintextSecrets: false as const,
+    },
+    tables,
+  };
+  return {
+    ...unsigned,
+    checksum: { algorithm: 'sha256', value: await sha256Base64Url(payload(unsigned)) },
+  };
+}
+
+export async function verifyDynamicBackup(value: unknown): Promise<DynamicBackup> {
+  if (!value || typeof value !== 'object') throw new Error('backup_invalid');
+  const backup = value as DynamicBackup;
+  if (backup.schema !== BACKUP_SCHEMA || backup.schemaVersion !== BACKUP_SCHEMA_VERSION) {
+    throw new Error('backup_schema_unsupported');
+  }
+  if (backup.security?.containsPlaintextSecrets !== false || !backup.tables || !backup.counts) {
+    throw new Error('backup_security_contract_invalid');
+  }
+  for (const spec of SPECS) {
+    const rows = backup.tables[spec.exportName];
+    if (!Array.isArray(rows) || backup.counts[spec.exportName] !== rows.length) {
+      throw new Error('backup_count_mismatch');
+    }
+    for (const row of rows) {
+      if (!row || typeof row !== 'object' || spec.columns.some((column) => !(column in row))) {
+        throw new Error('backup_row_invalid');
+      }
+      const unexpected = Object.keys(row).filter((column) => !spec.columns.includes(column));
+      if (unexpected.length > 0) throw new Error('backup_row_invalid');
+    }
+  }
+  const { checksum, ...unsigned } = backup;
+  if (checksum?.algorithm !== 'sha256') throw new Error('backup_checksum_invalid');
+  const actual = await sha256Base64Url(payload(unsigned));
+  if (actual !== checksum.value) throw new Error('backup_checksum_invalid');
+  validateRelationships(backup);
+  return backup;
+}
+
+function validateRelationships(backup: DynamicBackup): void {
+  const recordIds = new Set(backup.tables.records.map((row) => String(row.id)));
+  const revisionsByRecord = new Set(
+    backup.tables.recordRevisions.map((row) => `${String(row.record_id)}:${String(row.id)}`),
+  );
+  for (const row of backup.tables.records) {
+    const id = String(row.id);
+    if (!recordIds.has(String(row.root_id))) throw new Error('backup_root_missing');
+    if (row.kind === 'reply' && (!row.parent_id || !recordIds.has(String(row.parent_id)))) {
+      throw new Error('backup_parent_missing');
+    }
+    if (row.current_revision_id && !revisionsByRecord.has(`${id}:${String(row.current_revision_id)}`)) {
+      throw new Error('backup_current_revision_missing');
+    }
+    if (row.pending_revision_id && !revisionsByRecord.has(`${id}:${String(row.pending_revision_id)}`)) {
+      throw new Error('backup_pending_revision_missing');
+    }
+  }
+  const claims = new Set(backup.tables.mediaTransformClaims.map((row) => String(row.id)));
+  for (const row of backup.tables.mediaTransformResults) {
+    if (!claims.has(String(row.claim_id))) throw new Error('backup_media_transform_claim_missing');
+  }
+  for (const row of backup.tables.mediaTransformUsageMonthly) {
+    const month = String(row.month_utc);
+    const monthClaims = backup.tables.mediaTransformClaims.filter((claim) => claim.month_utc === month);
+    const succeeded = monthClaims.filter((claim) => claim.status === 'succeeded').length;
+    const failed = monthClaims.filter((claim) => claim.status === 'failed').length;
+    if (
+      Number(row.attempted_count) !== monthClaims.length
+      || Number(row.succeeded_count) !== succeeded
+      || Number(row.failed_count) !== failed
+    ) throw new Error('backup_media_transform_usage_mismatch');
+  }
+}
+
+function insert(db: D1DatabaseLike, spec: TableSpec, row: BackupRow, orIgnore = false): D1PreparedStatementLike {
+  const placeholders = spec.columns.map(() => '?').join(', ');
+  return db.prepare(
+    `INSERT ${orIgnore ? 'OR IGNORE ' : ''}INTO ${spec.table} (${spec.columns.join(', ')}) VALUES (${placeholders})`,
+  ).bind(...spec.columns.map((column) => row[column]));
+}
+
+function spec(name: string): TableSpec {
+  const value = SPECS.find((item) => item.exportName === name);
+  if (!value) throw new Error(`backup_table_unknown:${name}`);
+  return value;
+}
+
+function orderedRecords(rows: BackupRow[]): BackupRow[] {
+  const remaining = new Map(rows.map((row) => [String(row.id), row]));
+  const output: BackupRow[] = [];
+  while (remaining.size > 0) {
+    let progressed = false;
+    for (const [id, row] of remaining) {
+      const parent = row.parent_id ? String(row.parent_id) : null;
+      const root = String(row.root_id);
+      if ((parent === null || !remaining.has(parent)) && (root === id || !remaining.has(root))) {
+        output.push(row);
+        remaining.delete(id);
+        progressed = true;
+      }
+    }
+    if (!progressed) throw new Error('backup_record_cycle');
+  }
+  return output;
+}
+
+export async function restoreDynamicBackup(
+  db: D1DatabaseLike,
+  input: unknown,
+  options: { revokeSecurity?: boolean; now?: number } = {},
+): Promise<{
+  counts: Record<string, number>;
+  foreignKeyViolations: number;
+  uniqueViolations: number;
+  relationshipViolations: number;
+  restoreInputBytes: number;
+  restoreStatements: number;
+}> {
+  const backup = await verifyDynamicBackup(input);
+  const restoreInputBytes = new TextEncoder().encode(canonicalJson(backup)).byteLength;
+  if (restoreInputBytes > MAX_RESTORE_INPUT_BYTES) throw new Error('backup_restore_size_limit');
+  const occupied = await db.prepare(`
+    SELECT
+      (SELECT COUNT(*) FROM agents) AS agents,
+      (SELECT COUNT(*) FROM records) AS records,
+      (SELECT COUNT(*) FROM projects) AS projects,
+      (SELECT COUNT(*) FROM topics) AS topics
+  `).first<{ agents: number; records: number; projects: number; topics: number }>();
+  if (!occupied || occupied.agents || occupied.records || occupied.projects || occupied.topics) {
+    throw new Error('backup_restore_target_not_empty');
+  }
+
+  const statements: D1PreparedStatementLike[] = [];
+  const seedSafe = new Set(['accounts', 'authIdentities', 'accountRoles', 'accountQuotas', 'auditEvents']);
+  const first = ['accounts','authIdentities','accountRoles','accountQuotas','invitations','agents','agentMemberships','agentCredentials','sessions','projects','topics'];
+  for (const name of first) {
+    const item = spec(name);
+    for (const row of backup.tables[name]) {
+      const adjusted = { ...row };
+      if (name === 'agentCredentials') adjusted.replaced_by_credential_id = null;
+      if (name === 'accounts') {
+        // Closed accounts may retain revoked session history. Keep the normal
+        // active-account session trigger enabled, restore dependencies while
+        // temporarily active, then put the authoritative status back below.
+        adjusted.status = 'active';
+        adjusted.avatar_media_id = null;
+      }
+      if (name === 'agents') adjusted.avatar_media_id = null;
+      statements.push(insert(db, item, adjusted, seedSafe.has(name)));
+    }
+  }
+
+  const recordsSpec = spec('records');
+  for (const row of orderedRecords(backup.tables.records)) {
+    statements.push(insert(db, recordsSpec, {
+      ...row, current_revision_id: null, pending_revision_id: null,
+    }));
+  }
+  for (const row of backup.tables.recordRevisions) statements.push(insert(db, spec('recordRevisions'), row));
+  for (const row of backup.tables.records) {
+    statements.push(db.prepare(`
+      UPDATE records SET current_revision_id = ?, pending_revision_id = ? WHERE id = ?
+    `).bind(row.current_revision_id, row.pending_revision_id, row.id));
+  }
+  for (const row of backup.tables.agentCredentials) {
+    if (row.replaced_by_credential_id) {
+      statements.push(db.prepare(`
+        UPDATE agent_credentials SET replaced_by_credential_id = ? WHERE id = ?
+      `).bind(row.replaced_by_credential_id, row.id));
+    }
+  }
+  for (const name of ['recordTopics','publicationReviews','agentUsageDaily']) {
+    const item = spec(name);
+    for (const row of backup.tables[name]) statements.push(insert(db, item, row));
+  }
+  for (const row of backup.tables.agentMediaPolicies) {
+    statements.push(insert(db, spec('agentMediaPolicies'), row));
+  }
+  for (const row of backup.tables.avatarUploadPolicies) {
+    statements.push(db.prepare(`
+      UPDATE avatar_upload_policies
+      SET daily_limit = ?, updated_by_account_id = ?, updated_at = ?
+      WHERE subject_type = ? AND subject_id = ?
+    `).bind(row.daily_limit, row.updated_by_account_id, row.updated_at, row.subject_type, row.subject_id));
+  }
+  for (const row of backup.tables.avatarUploadUsageDaily) {
+    statements.push(insert(db, spec('avatarUploadUsageDaily'), row));
+  }
+  for (const row of backup.tables.mediaAssets) {
+    statements.push(insert(db, spec('mediaAssets'), {
+      ...row,
+      attached_record_id: null,
+      attached_revision_id: null,
+      state: row.media_kind === 'post_image' ? 'staged' : row.state,
+      activated_at: row.media_kind === 'post_image' ? null : row.activated_at,
+      orphaned_at: row.media_kind === 'post_image' ? null : row.orphaned_at,
+      deleted_at: row.media_kind === 'post_image' ? null : row.deleted_at,
+      orphan_reason: row.media_kind === 'post_image' ? null : row.orphan_reason,
+    }));
+  }
+  for (const row of backup.tables.mediaAttachmentTransitions) {
+    statements.push(insert(db, spec('mediaAttachmentTransitions'), row));
+  }
+  for (const row of backup.tables.mediaAssets) {
+    if (row.media_kind === 'post_image') {
+      statements.push(db.prepare(`
+        UPDATE media_assets
+        SET attached_record_id = ?, attached_revision_id = ?, state = ?, orphan_reason = ?,
+            activated_at = ?, orphaned_at = ?, deleted_at = ?
+        WHERE id = ?
+      `).bind(
+        row.attached_record_id, row.attached_revision_id, row.state, row.orphan_reason,
+        row.activated_at, row.orphaned_at, row.deleted_at, row.id,
+      ));
+    }
+  }
+  for (const row of backup.tables.accounts) {
+    if (row.avatar_media_id) statements.push(db.prepare(
+      `UPDATE accounts SET avatar_media_id = ? WHERE id = ?`,
+    ).bind(row.avatar_media_id, row.id));
+  }
+  for (const row of backup.tables.agents) {
+    if (row.avatar_media_id) statements.push(db.prepare(
+      `UPDATE agents SET avatar_media_id = ? WHERE id = ?`,
+    ).bind(row.avatar_media_id, row.id));
+  }
+  for (const row of backup.tables.agentMediaUploads) {
+    statements.push(insert(db, spec('agentMediaUploads'), row));
+  }
+  for (const row of backup.tables.mediaTransformUsageMonthly) {
+    statements.push(insert(db, spec('mediaTransformUsageMonthly'), {
+      ...row,
+      attempted_count: 0,
+      succeeded_count: 0,
+      failed_count: 0,
+    }));
+  }
+  for (const row of backup.tables.mediaTransformClaims) {
+    statements.push(insert(db, spec('mediaTransformClaims'), {
+      ...row,
+      status: 'reserved',
+      error_category: null,
+      output_byte_size: null,
+      completed_at: null,
+      idempotency_id: null,
+    }));
+  }
+  for (const row of backup.tables.mediaTransformResults) {
+    statements.push(insert(db, spec('mediaTransformResults'), row));
+  }
+  for (const row of backup.tables.mediaTransformUsageMonthly) {
+    statements.push(db.prepare(`
+      UPDATE media_transform_usage_monthly
+      SET attempted_count = ?, succeeded_count = ?, failed_count = ?, updated_at = ?
+      WHERE month_utc = ?
+    `).bind(
+      row.attempted_count,
+      row.succeeded_count,
+      row.failed_count,
+      row.updated_at,
+      row.month_utc,
+    ));
+  }
+  for (const row of backup.tables.platformAlerts) {
+    statements.push(insert(db, spec('platformAlerts'), row, true));
+  }
+  const moderationSpec = spec('moderationActions');
+  for (const row of backup.tables.moderationActions) {
+    statements.push(insert(db, moderationSpec, {
+      ...row, reversed_by_action_id: null, reverses_action_id: null,
+    }));
+  }
+  for (const row of backup.tables.moderationActions) {
+    if (row.reversed_by_action_id || row.reverses_action_id) {
+      statements.push(db.prepare(`
+        UPDATE moderation_actions
+        SET reversed_by_action_id = ?, reverses_action_id = ?
+        WHERE id = ?
+      `).bind(row.reversed_by_action_id, row.reverses_action_id, row.id));
+    }
+  }
+  const announcementSpec = spec('announcements');
+  for (const row of backup.tables.announcements) {
+    statements.push(insert(db, announcementSpec, {
+      ...row, status: 'draft', updated_at: row.created_at,
+      published_at: null, withdrawn_at: null,
+    }));
+  }
+  for (const row of backup.tables.announcementTransitions) {
+    statements.push(insert(db, spec('announcementTransitions'), row));
+  }
+  for (const row of backup.tables.announcements) {
+    statements.push(db.prepare(`
+      UPDATE announcements
+      SET status = ?, updated_at = ?, published_at = ?, withdrawn_at = ?
+      WHERE id = ?
+    `).bind(row.status, row.updated_at, row.published_at, row.withdrawn_at, row.id));
+  }
+  for (const row of backup.tables.announcementReads) {
+    statements.push(insert(db, spec('announcementReads'), row));
+  }
+  for (const row of backup.tables.slugReservations) statements.push(insert(db, spec('slugReservations'), row));
+  for (const row of backup.tables.auditEvents) statements.push(insert(db, spec('auditEvents'), row, true));
+
+  for (const row of backup.tables.accounts) {
+    statements.push(db.prepare(`
+      UPDATE accounts SET status = ?, updated_at = ? WHERE id = ?
+    `).bind(row.status, row.updated_at, row.id));
+  }
+
+  const now = options.now ?? Date.now();
+  if (options.revokeSecurity) {
+    statements.push(
+      db.prepare(`UPDATE sessions SET revoked_at = COALESCE(revoked_at, ?), revoked_reason = COALESCE(revoked_reason, 'restore_bulk_revoke')`).bind(now),
+      db.prepare(`UPDATE agent_credentials SET revoked_at = COALESCE(revoked_at, ?), revoked_reason = COALESCE(revoked_reason, 'restore_bulk_revoke')`).bind(now),
+    );
+  }
+
+  const expectedCounts = {
+    accounts: backup.counts.accounts,
+    agents: backup.counts.agents,
+    agentMemberships: backup.counts.agentMemberships,
+    projects: backup.counts.projects,
+    topics: backup.counts.topics,
+    records: backup.counts.records,
+    recordRevisions: backup.counts.recordRevisions,
+    publicationReviews: backup.counts.publicationReviews,
+    moderationActions: backup.counts.moderationActions,
+    announcements: backup.counts.announcements,
+    announcementReads: backup.counts.announcementReads,
+    auditEvents: backup.counts.auditEvents,
+    mediaAssets: backup.counts.mediaAssets,
+    agentMediaPolicies: backup.counts.agentMediaPolicies,
+    avatarUploadPolicies: backup.counts.avatarUploadPolicies,
+    avatarUploadUsageDaily: backup.counts.avatarUploadUsageDaily,
+    agentMediaUploads: backup.counts.agentMediaUploads,
+    mediaTransformUsageMonthly: backup.counts.mediaTransformUsageMonthly,
+    mediaTransformClaims: backup.counts.mediaTransformClaims,
+    mediaTransformResults: backup.counts.mediaTransformResults,
+    platformAlerts: backup.counts.platformAlerts,
+  };
+  statements.push(db.prepare(`
+    INSERT INTO backup_restore_validations (
+      id, schema_version, expected_counts_json, created_at
+    ) VALUES (?, ?, ?, ?)
+  `).bind(createEntityId(), BACKUP_SCHEMA_VERSION, canonicalJson(expectedCounts), now));
+  if (statements.length > MAX_RESTORE_STATEMENTS) throw new Error('backup_restore_size_limit');
+  await db.batch(statements);
+
+  const fk = await db.prepare(`PRAGMA foreign_key_check`).all();
+  if (fk.results.length > 0) throw new Error('backup_restore_foreign_key_failure');
+  const unique = await db.prepare(`
+    SELECT COUNT(*) AS violations FROM (
+      SELECT handle_normalized AS value FROM accounts GROUP BY handle_normalized HAVING COUNT(*) > 1
+      UNION ALL
+      SELECT handle_normalized AS value FROM agents GROUP BY handle_normalized HAVING COUNT(*) > 1
+      UNION ALL
+      SELECT slug AS value FROM records GROUP BY slug HAVING COUNT(*) > 1
+      UNION ALL
+      SELECT provider || ':' || provider_user_id AS value
+      FROM auth_identities GROUP BY provider, provider_user_id HAVING COUNT(*) > 1
+    )
+  `).first<{ violations: number }>();
+  const relationships = await db.prepare(`
+    SELECT COUNT(*) AS violations
+    FROM records record
+    LEFT JOIN records root ON root.id = record.root_id
+    LEFT JOIN records parent ON parent.id = record.parent_id
+    WHERE root.id IS NULL
+       OR (record.kind = 'reply' AND parent.id IS NULL)
+       OR (record.kind = 'post' AND (record.parent_id IS NOT NULL OR record.root_id != record.id))
+  `).first<{ violations: number }>();
+  if ((unique?.violations ?? 0) > 0) throw new Error('backup_restore_unique_failure');
+  if ((relationships?.violations ?? 0) > 0) throw new Error('backup_restore_relationship_failure');
+  return {
+    counts: expectedCounts,
+    foreignKeyViolations: 0,
+    uniqueViolations: 0,
+    relationshipViolations: 0,
+    restoreInputBytes,
+    restoreStatements: statements.length,
+  };
+}
+
+export interface EncryptedBackupEnvelope {
+  schema: 'equinox.orbit.encrypted-backup.v1';
+  algorithm: 'AES-GCM-256';
+  keyId: string;
+  iv: string;
+  ciphertext: string;
+  plaintextChecksum: string;
+}
+
+export async function encryptDynamicBackup(
+  backup: DynamicBackup,
+  key: CryptoKey,
+  keyId: string,
+): Promise<EncryptedBackupEnvelope> {
+  const ivText = randomBase64Url(12);
+  const decode = (value: string) => Uint8Array.from(
+    atob(value.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat((4 - value.length % 4) % 4)),
+    (character) => character.charCodeAt(0),
+  );
+  const encoded = new TextEncoder().encode(canonicalJson(backup));
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: decode(ivText) }, key, encoded));
+  const binary = Array.from(ciphertext, (byte) => String.fromCharCode(byte)).join('');
+  const encodedCiphertext = btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '');
+  return {
+    schema: 'equinox.orbit.encrypted-backup.v1', algorithm: 'AES-GCM-256', keyId,
+    iv: ivText, ciphertext: encodedCiphertext, plaintextChecksum: backup.checksum.value,
+  };
+}

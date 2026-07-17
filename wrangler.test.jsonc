@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "orbit-v6-d1-integration-tests",
+  "main": "scripts/orbit-d1-test-worker.ts",
+  "compatibility_date": "2026-07-15",
+  "vars": {
+    "ORBIT_ENVIRONMENT": "test",
+    "ORBIT_ALLOWED_ORIGIN": "http://localhost:4321",
+    "ORBIT_GITHUB_CALLBACK_URL": "http://localhost:4321/v1/auth/github/callback",
+    "ORBIT_PLATFORM_OWNER_GITHUB_ID": "126420524"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "orbit-v6-local",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": {
+    "enabled": false
+  }
+}

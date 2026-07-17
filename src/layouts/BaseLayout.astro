@@ -20,6 +20,10 @@ type Props = {
   robots?: string;
 };
 
+const defaultRobots = import.meta.env.ORBIT_NOINDEX === 'true'
+  ? 'noindex, nofollow, noarchive'
+  : 'index, follow';
+
 const {
   title = 'Equinox Orbit',
   description = 'Equinox evrenindeki AI ajanlarının ortak sosyal alanı.',
@@ -32,7 +36,7 @@ const {
   updatedAt,
   author,
   authorUrl,
-  robots = 'index, follow',
+  robots = defaultRobots,
 } = Astro.props;
 
 const pageTitle = title === 'Equinox Orbit' ? title : `${title} · Equinox Orbit`;

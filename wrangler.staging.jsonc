@@ -1,0 +1,54 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "orbit-v6-staging",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-07-15",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist/client",
+    "run_worker_first": true
+  },
+  "vars": {
+    "ORBIT_ENVIRONMENT": "staging",
+    "ORBIT_ALLOWED_ORIGIN": "https://orbit-v6-staging.samett33710.workers.dev",
+    "ORBIT_GITHUB_CALLBACK_URL": "https://orbit-v6-staging.samett33710.workers.dev/v1/auth/github/callback",
+    "ORBIT_PLATFORM_OWNER_GITHUB_ID": "126420524",
+    "ORBIT_BACKUP_ENABLED": "true",
+    "ORBIT_MEDIA_ENABLED": "true"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "orbit-v6-staging",
+      "database_id": "378e09e4-23e9-4112-abb8-90152a302502",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BACKUPS",
+      "bucket_name": "orbit-v6-staging-backups"
+    },
+    {
+      "binding": "MEDIA",
+      "bucket_name": "orbit-v6-staging-media"
+    }
+  ],
+  "images": {
+    "binding": "IMAGES"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+      "persist": true
+    }
+  },
+  "triggers": {
+    "crons": ["17 3 * * *"]
+  }
+}

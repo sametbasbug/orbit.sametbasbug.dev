@@ -149,6 +149,7 @@ try {
     preview_urls: false,
     vars: {
       ORBIT_ENVIRONMENT: 'test',
+      ORBIT_DEPLOYMENT_MODE: 'live',
       ORBIT_ALLOWED_ORIGIN: origin,
       ORBIT_GITHUB_CALLBACK_URL: `${origin}/v1/auth/github/callback`,
       ORBIT_PLATFORM_OWNER_GITHUB_ID: '126420524',

@@ -1,4 +1,8 @@
-import type { OrbitBindings } from './server/identity/bindings';
+import {
+  assertDeploymentBindings,
+  blocksSearchIndexing,
+  type OrbitBindings,
+} from './server/identity/bindings';
 import { handleApiRequest, runIdentityCleanup, type ApiDependencies } from './server/http/api';
 import { dashboardResponse } from './server/dashboard/html';
 import { runScheduledBackups } from './server/backup/r2-backup';
@@ -15,11 +19,20 @@ interface ExecutionContextLike {
   waitUntil(promise: Promise<unknown>): void;
 }
 
-function protectStagingFromIndexing(response: Response, env: OrbitBindings): Response {
-  if (env.ORBIT_ENVIRONMENT !== 'staging') return response;
+function protectFromIndexing(response: Response, env: OrbitBindings): Response {
+  if (!blocksSearchIndexing(env)) return response;
   const protectedResponse = new Response(response.body, response);
   protectedResponse.headers.set('x-robots-tag', 'noindex, nofollow, noarchive');
   return protectedResponse;
+}
+
+function denyAllRobots(): Response {
+  return new Response('User-agent: *\nDisallow: /\n', {
+    headers: {
+      'cache-control': 'no-store',
+      'content-type': 'text/plain; charset=utf-8',
+    },
+  });
 }
 
 async function startStagingOAuth(request: Request, env: OrbitBindings): Promise<Response> {
@@ -50,13 +63,14 @@ export async function handleWorkerRequest(
   env: OrbitBindings,
   dependencies: Omit<ApiDependencies, 'requestId'> = {},
 ): Promise<Response> {
-    return await observeRequest(request, async (requestId) => {
+  const response = await observeRequest(request, async (requestId) => {
+    assertDeploymentBindings(env);
     const url = new URL(request.url);
+    if (url.pathname === '/robots.txt' && blocksSearchIndexing(env)) {
+      return denyAllRobots();
+    }
     if (url.pathname === '/healthz') {
-      return protectStagingFromIndexing(
-        Response.json({ ok: true, service: 'orbit-v6', environment: env.ORBIT_ENVIRONMENT }),
-        env,
-      );
+      return Response.json({ ok: true, service: 'orbit-v6', environment: env.ORBIT_ENVIRONMENT });
     }
     if (url.pathname.startsWith('/v1/')) {
       const response = await servePublicRead(request, env, async () => {
@@ -72,19 +86,20 @@ export async function handleWorkerRequest(
       if (mutationInvalidatesPublicCache(request, response)) {
         await bumpPublicCacheEpoch(env);
       }
-      return protectStagingFromIndexing(response, env);
+      return response;
     }
     if ((url.pathname === '/dashboard' || url.pathname === '/dashboard/') && request.method === 'GET') {
-      return protectStagingFromIndexing(dashboardResponse(), env);
+      return dashboardResponse();
     }
     if (env.ORBIT_ENVIRONMENT === 'staging' && url.pathname === '/__staging/oauth') {
-      return protectStagingFromIndexing(await startStagingOAuth(request, env), env);
+      return await startStagingOAuth(request, env);
     }
     if (!env.ASSETS) {
-      return protectStagingFromIndexing(new Response('Not found', { status: 404 }), env);
+      return new Response('Not found', { status: 404 });
     }
-    return protectStagingFromIndexing(await env.ASSETS.fetch(request), env);
-    }, env.ORBIT_ENVIRONMENT);
+    return await env.ASSETS.fetch(request);
+  }, env.ORBIT_ENVIRONMENT);
+  return protectFromIndexing(response, env);
 }
 
 export default {
@@ -93,6 +108,7 @@ export default {
   },
 
   scheduled(_controller: unknown, env: OrbitBindings, ctx: ExecutionContextLike): void {
+    assertDeploymentBindings(env);
     ctx.waitUntil(Promise.all([
       runIdentityCleanup(env),
       runScheduledBackups(env),

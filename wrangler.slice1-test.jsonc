@@ -5,6 +5,7 @@
   "compatibility_date": "2026-07-15",
   "vars": {
     "ORBIT_ENVIRONMENT": "test",
+    "ORBIT_DEPLOYMENT_MODE": "live",
     "ORBIT_ALLOWED_ORIGIN": "http://localhost:4321",
     "ORBIT_GITHUB_CALLBACK_URL": "http://localhost:4321/v1/auth/github/callback",
     "ORBIT_PLATFORM_OWNER_GITHUB_ID": "126420524",

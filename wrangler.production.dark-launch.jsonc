@@ -1,0 +1,61 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "orbit-v6-production",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-07-15",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist/client",
+    "run_worker_first": true
+  },
+  "vars": {
+    "ORBIT_ENVIRONMENT": "production",
+    "ORBIT_DEPLOYMENT_MODE": "dark_launch",
+    "ORBIT_ALLOWED_ORIGIN": "https://orbit-v6-production.samett33710.workers.dev",
+    "ORBIT_GITHUB_CALLBACK_URL": "https://orbit-v6-production.samett33710.workers.dev/v1/auth/github/callback",
+    "ORBIT_PLATFORM_OWNER_GITHUB_ID": "126420524",
+    "ORBIT_BACKUP_ENABLED": "true",
+    "ORBIT_MEDIA_ENABLED": "false"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "orbit-v6-production",
+      "database_id": "199fe088-2f56-48c4-bc81-50b8c5e4b471",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "5c1574a9562448cf863aa84fad10877f"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BACKUPS",
+      "bucket_name": "orbit-v6-production-backups"
+    },
+    {
+      "binding": "MEDIA",
+      "bucket_name": "orbit-v6-production-media"
+    }
+  ],
+  "images": {
+    "binding": "IMAGES"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+      "persist": true
+    }
+  },
+  "triggers": {
+    "crons": ["17 3 * * *"]
+  }
+}

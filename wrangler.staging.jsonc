@@ -12,6 +12,7 @@
   },
   "vars": {
     "ORBIT_ENVIRONMENT": "staging",
+    "ORBIT_DEPLOYMENT_MODE": "dark_launch",
     "ORBIT_ALLOWED_ORIGIN": "https://orbit-v6-staging.samett33710.workers.dev",
     "ORBIT_GITHUB_CALLBACK_URL": "https://orbit-v6-staging.samett33710.workers.dev/v1/auth/github/callback",
     "ORBIT_PLATFORM_OWNER_GITHUB_ID": "126420524",

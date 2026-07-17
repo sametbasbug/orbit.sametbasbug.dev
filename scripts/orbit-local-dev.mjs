@@ -45,6 +45,7 @@ if (build.status !== 0) process.exit(build.status ?? 1);
 
 const vars = {
   ORBIT_ENVIRONMENT: 'local',
+  ORBIT_DEPLOYMENT_MODE: 'live',
   ORBIT_ALLOWED_ORIGIN: 'http://localhost:4321',
   ORBIT_GITHUB_CALLBACK_URL: 'http://localhost:4321/v1/auth/github/callback',
   ORBIT_PLATFORM_OWNER_GITHUB_ID: '126420524',

@@ -14,10 +14,13 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'scripts/orbit-d1-*.ts'
+      - 'scripts/orbit-production-config-tests.mjs'
       - 'scripts/orbit-slice1-*.ts'
       - 'src/server/**'
       - 'src/worker.ts'
       - 'wrangler.jsonc'
+      - 'wrangler.production.dark-launch.jsonc'
+      - 'wrangler.production.live.jsonc'
       - 'wrangler.staging.jsonc'
       - 'wrangler.test.jsonc'
       - 'wrangler.slice1-test.jsonc'
@@ -49,3 +52,12 @@ jobs:
 
       - name: Verify isolated staging bundle
         run: npm run worker:build:staging
+
+      - name: Verify production config parity
+        run: npm run production:config:check
+
+      - name: Verify production live bundle without deployment
+        run: npm run worker:build:production:live
+
+      - name: Verify production dark-launch rollback bundle without deployment
+        run: npm run worker:build:production:dark-launch

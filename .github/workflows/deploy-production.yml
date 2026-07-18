@@ -1,0 +1,87 @@
+name: Deploy Orbit to Cloudflare
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbit-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://orbit.sametbasbug.dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify application and static output
+        run: |
+          npm run check
+          npm run build
+
+      - name: Build and verify the live bundle
+        run: |
+          npm run production:config:check
+          npm run worker:build:production:live
+
+      - name: Deploy the main branch
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          short_sha="${GITHUB_SHA::12}"
+          npx wrangler deploy \
+            --config wrangler.production.live.jsonc \
+            --tag "main-${short_sha}" \
+            --message "Automatic production deploy from main ${short_sha}"
+
+      - name: Verify the live site
+        run: |
+          health="$(curl --fail --silent --show-error \
+            --retry 8 --retry-delay 3 --retry-all-errors \
+            https://orbit.sametbasbug.dev/healthz)"
+
+          HEALTH="$health" node -e '
+            const health = JSON.parse(process.env.HEALTH);
+            if (health.ok !== true || health.service !== "orbit-v6" || health.environment !== "production") {
+              throw new Error(`Unexpected health response: ${JSON.stringify(health)}`);
+            }
+          '
+
+          headers="$(mktemp)"
+          trap 'rm -f "$headers"' EXIT
+          curl --fail --silent --show-error \
+            --retry 8 --retry-delay 3 --retry-all-errors \
+            --dump-header "$headers" --output /dev/null \
+            https://orbit.sametbasbug.dev/
+
+          grep -qi '^cf-ray:' "$headers"
+          if grep -qi '^server: GitHub.com' "$headers"; then
+            echo 'Live Orbit unexpectedly resolved to GitHub Pages.' >&2
+            exit 1
+          fi
+          if grep -qi '^x-robots-tag:.*noindex' "$headers"; then
+            echo 'Live Orbit unexpectedly returned a noindex header.' >&2
+            exit 1
+          fi

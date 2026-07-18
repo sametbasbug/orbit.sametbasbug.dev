@@ -4,13 +4,12 @@ Date: 2026-07-18
 Starting main SHA: `ac41aef69e8b5bbcc0304374619f19cf369156a4`
 Gate 4 final backup ID: `019f6e6f-8aff-77ad-aa99-8bd7a51f9ba8`
 
-## 1. Scope and result
+## 1. Scope and final result
 
-Gate 5 authorized a separate live GitHub OAuth App only after the existing
-dark-launch credential pair was proven recoverable from approved production
-secret custody. The custody prerequisite did not pass.
-
-**Gate 5 result: `BLOCKED`.**
+Gate 5 initially authorized a separate live GitHub OAuth App only after the
+existing dark-launch credential pair was proven recoverable from approved
+production secret custody. That first custody prerequisite did not pass, so
+the first execution stopped fail-closed as `BLOCKED`.
 
 The production macOS Keychain service contains the Gate 4 backup encryption
 entry, but it does not contain either dark-launch GitHub OAuth client entry.
@@ -20,7 +19,15 @@ fail-closed rule was therefore applied before any live App, live secret, or
 token-endpoint probe was created.
 
 No GitHub OAuth App, secret, Worker, OAuth, DNS, Pages, D1, KV, R2, custom
-domain, route, or live-traffic mutation was performed.
+domain, route, or live-traffic mutation was performed during that first
+attempt.
+
+The user then explicitly authorized creation of one additional dark-launch
+client secret as a recoverable rollback credential while preserving the old
+working secret. Gate 5 resumed on the same branch and completed without any
+Worker, traffic, DNS, Pages, or production-data change.
+
+**Final Gate 5 result: `PASS`.**
 
 ## 2. Preflight
 
@@ -57,7 +64,7 @@ execution. It explains `backup_runs` increasing from 3 to 4 and the private
 backup bucket increasing from 3 to 4 objects. It was produced by the already
 configured daily cron, not by Gate 5. User data counts did not change.
 
-## 3. Existing dark-launch App
+## 3. Existing dark-launch App at the initial attempt
 
 The GitHub OAuth Apps list contained exactly the existing dark-launch and
 staging Apps. There was no App named exactly `Orbit Production`, so no
@@ -77,7 +84,7 @@ The existing dark-launch App was checked without editing it:
 
 No dark-launch App field or secret was changed.
 
-## 4. Custody audit and blocker
+## 4. Initial custody audit and blocker
 
 The approved production Keychain convention was discovered without reading or
 printing any stored value:
@@ -112,7 +119,7 @@ Gate 5 explicitly prohibited:
 
 The execution stopped at that boundary.
 
-## 5. Live App and probes
+## 5. State at the initial fail-closed stop
 
 The planned live App values remain:
 
@@ -133,7 +140,7 @@ probe was sent. Consequently:
 - there was no `incorrect_client_credentials`, `redirect_uri_mismatch`, or
   `bad_verification_code` result to claim.
 
-## 6. Final non-mutation evidence
+## 6. Non-mutation evidence at the initial stop
 
 Final checks matched the preflight:
 
@@ -166,32 +173,127 @@ timestamps. Non-mutation evidence therefore uses the unchanged secret
 name/type digest, unchanged serving deployment/version, and the fact that no
 secret mutation command or control-plane action was performed.
 
-## 7. Required remediation and remaining gates
+## 7. Explicit continuation authorization
 
-Before Gate 5 can be resumed, the existing dark-launch client pair must be
-placed in approved production custody without changing the GitHub App or
-Worker:
+After the initial blocker, the user explicitly authorized exactly one
+additional client secret on the existing `Orbit Production Dark Launch` App.
+The authorization required the old working secret to remain present and
+forbade any Worker secret/config deployment.
 
-1. Open GitHub **Settings → Developer settings → OAuth Apps → Orbit Production
-   Dark Launch** (settings ID `3733923`).
-2. Store the existing Client ID in macOS Keychain service
-   `production.orbit.sametbasbug`, account `GITHUB_OAUTH_CLIENT_ID`.
-3. Store the existing single Client secret in the same service, account
-   `GITHUB_OAUTH_CLIENT_SECRET`.
-4. Use Keychain's prompted-input path; do not place either value in a shell
-   argument, file, screenshot, log, or Git.
-5. Confirm both entries can be retrieved without displaying their values, then
-   explicitly resume Gate 5.
+Before generating it, the GitHub UI confirmed additive behavior: the existing
+secret could not be deleted until another secret existed. It did not present a
+replacement or automatic-revocation warning. One new secret was generated,
+and the App's secret count moved from 1 to 2. The old secret remained listed
+and retained its prior last-used evidence.
 
-For the macOS `security` CLI, `-w` must be the final option so the value is
-prompted instead of appearing in the process list. The two safe command forms
-are:
+The dark App's name, owner, homepage, callback, and Device Flow setting all
+remained exact. Its settings ID remained `3733923`.
 
-```text
-security add-generic-password -U -s production.orbit.sametbasbug -a GITHUB_OAUTH_CLIENT_ID -w
-security add-generic-password -U -s production.orbit.sametbasbug -a GITHUB_OAUTH_CLIENT_SECRET -w
-```
+## 8. Dark rollback credential custody and probe
 
-Gate 6 and Gate 7 remain separately gated. This blocked report does not
-authorize live credential creation, Worker secret installation, live config
-deployment, custom-domain attachment, Orbit DNS cutover, or Pages retirement.
+The new rollback pair was stored in macOS Keychain under service
+`production.orbit.sametbasbug` using two distinct accounts:
+
+- `GITHUB_OAUTH_DARK_CLIENT_ID`; and
+- `GITHUB_OAUTH_DARK_CLIENT_SECRET`.
+
+Both entries were retrieved and verified as non-empty without displaying
+their values. The dark Client ID matched the GitHub settings page; its
+secret-free SHA-256 proof is
+`348b087d7270ffcdc6a2d39741d795e754ee97b288c2f5f80e5bf356894efc8f`.
+
+The new dark credential pair was used for exactly one server-side token
+exchange probe with a cryptographically random invalid code and the exact
+Workers.dev callback. GitHub returned `bad_verification_code`; it did not
+return `incorrect_client_credentials`, an access token, or success.
+
+The new credential was retained only as rollback custody. It was not uploaded
+to the production Worker, and the existing old dark secret was not revoked,
+deleted, or changed.
+
+## 9. Live OAuth App and custody
+
+A separate GitHub OAuth App was created with the following exact state:
+
+| Field | Evidence |
+| --- | --- |
+| App name | `Orbit Production` |
+| Settings ID | `3736304` |
+| Owner | same GitHub personal account as the dark-launch App |
+| Homepage | `https://orbit.sametbasbug.dev` |
+| Callback | `https://orbit.sametbasbug.dev/v1/auth/github/callback` |
+| Callback count | 1 |
+| Description | empty |
+| Device Flow | disabled |
+| Client secret count | 1 |
+| Authorized users | 0 |
+
+The live pair was stored in the same Keychain service using separate accounts:
+
+- `GITHUB_OAUTH_LIVE_CLIENT_ID`; and
+- `GITHUB_OAUTH_LIVE_CLIENT_SECRET`.
+
+Both live entries were recoverable and non-empty, did not overwrite either
+dark entry, and the Client ID matched the settings page. Its secret-free
+SHA-256 proof is
+`6289621dd6613a54ae7b508f946dff1b777e5da02c51ac956e4119d4a8f49b96`.
+
+The live pair was used for exactly one server-side invalid-code probe with the
+exact live callback. GitHub returned `bad_verification_code`; it did not return
+`incorrect_client_credentials`, an access token, or success. No authorization
+or consent flow was started, and no authorization code, token, OAuth identity,
+or production session was created.
+
+## 10. Secret handling and cleanup
+
+The two newly generated secrets were moved directly from their one-time
+GitHub display into Keychain custody. Neither secret was written to a shell
+argument, environment dump, normal file, screenshot, report, Git object, or
+application log. The temporary pasteboard was cleared after each transfer.
+
+All four Keychain accounts were independently verified present and
+recoverable. The temporary signed local custody helper and its directory were
+removed after the final probes, no helper process remained, and the clipboard
+was empty. Invalid probe codes and request bodies were kept only in process
+memory and were not retained.
+
+## 11. Final non-mutation evidence
+
+Final checks after both probes established:
+
+- production Worker version
+  `01384034-5584-4181-8763-b31e3aecf95e` remained at 100 percent;
+- no Worker upload, deployment, secret update, or configuration promotion
+  occurred;
+- the Worker secret name/type inventory retained exact SHA-256
+  `3f0dfad8433bd2eed551eaace0131e07d253818718e9bdfe4db7ca17791992b1`;
+- the Worker remained Workers.dev-only and dark launch; its Domains page
+  showed only the Workers.dev URL and `No custom domains`;
+- Orbit DNS remained a CNAME to `sametbasbug.github.io.`;
+- Orbit `/` remained HTTP 200 from `server: GitHub.com`, while `/healthz`
+  remained the GitHub Pages HTTP 404;
+- Cloudflare delegation, DNSSEC validation, and the single parent DS remained
+  exact;
+- the latest Pages workflow run and deployment artifact remained unchanged;
+- production D1 remained at 1 account, 1 auth identity, 4 agents, 6 projects,
+  4 topics, 13 records, 13 revisions, 3 sessions, 0 credentials, 4 backup
+  runs, and 0 media assets, with zero foreign-key violations;
+- no new OAuth identity or session was created;
+- cache KV remained present and unchanged;
+- backup R2 remained at four objects and media R2 remained empty;
+- Gate 4 backup `019f6e6f-8aff-77ad-aa99-8bd7a51f9ba8` remained directly
+  readable with encrypted SHA-256
+  `cc3221a7fff29cb00f223bc7e42894b1235545469977dde41172f836c24835f1`;
+  and
+- no paid feature was enabled.
+
+The only authorized control-plane changes were the additional dark rollback
+secret and the new live OAuth App plus its single secret. Neither credential
+pair was installed on the Worker.
+
+## 12. Remaining gates
+
+Gate 6 and Gate 7 remain separately gated. This `PASS` does not authorize
+Worker secret installation, live configuration deployment, custom-domain
+attachment, Orbit DNS cutover, real live OAuth login/callback testing, or
+GitHub Pages retirement.

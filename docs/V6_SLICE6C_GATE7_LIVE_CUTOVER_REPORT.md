@@ -311,4 +311,3 @@ remain separately gated.
 | Backup R2 | 4 objects; Gate 4 backup exact |
 | Pages rollback surface | Preserved; no Gate 8 action |
 | Rollback executed | No |
-

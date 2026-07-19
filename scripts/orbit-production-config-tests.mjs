@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 const files = {
   live: new URL('../wrangler.production.live.jsonc', import.meta.url),
   darkLaunch: new URL('../wrangler.production.dark-launch.jsonc', import.meta.url),
+  deployWorkflow: new URL('../.github/workflows/deploy-production.yml', import.meta.url),
 };
 
 let assertions = 0;
@@ -179,6 +180,7 @@ function normalizeModeDifferences(config) {
 
 const live = await readConfig(files.live, 'live config');
 const darkLaunch = await readConfig(files.darkLaunch, 'dark-launch config');
+const deployWorkflow = await readFile(files.deployWorkflow, 'utf8');
 
 validateConfig(live, {
   label: 'live config',
@@ -198,6 +200,23 @@ assertDeepEqual(
   normalizeModeDifferences(live),
   normalizeModeDifferences(darkLaunch),
   'live and dark-launch configs differ outside the reviewed mode surface',
+);
+
+assert(
+  deployWorkflow.includes('ORBIT_LIVE_OAUTH_CLIENT_ID: ${{ secrets.ORBIT_LIVE_OAUTH_CLIENT_ID }}'),
+  'production deploy does not source the live OAuth client ID from the production environment',
+);
+assert(
+  deployWorkflow.includes('ORBIT_LIVE_OAUTH_CLIENT_SECRET: ${{ secrets.ORBIT_LIVE_OAUTH_CLIENT_SECRET }}'),
+  'production deploy does not source the live OAuth client secret from the production environment',
+);
+assert(
+  deployWorkflow.includes('--secrets-file "$oauth_secrets_file"'),
+  'production deploy does not upload the live OAuth pair with the Worker version',
+);
+assert(
+  deployWorkflow.includes("trap 'rm -f \"$oauth_secrets_file\"' EXIT"),
+  'production deploy does not clean up its temporary OAuth secrets file',
 );
 
 process.stdout.write(`Orbit production config tests: ${assertions} assertions passed\n`);

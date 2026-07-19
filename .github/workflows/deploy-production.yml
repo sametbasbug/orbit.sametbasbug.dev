@@ -49,10 +49,27 @@ jobs:
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ORBIT_LIVE_OAUTH_CLIENT_ID: ${{ secrets.ORBIT_LIVE_OAUTH_CLIENT_ID }}
+          ORBIT_LIVE_OAUTH_CLIENT_SECRET: ${{ secrets.ORBIT_LIVE_OAUTH_CLIENT_SECRET }}
         run: |
+          if [[ -z "$ORBIT_LIVE_OAUTH_CLIENT_ID" || -z "$ORBIT_LIVE_OAUTH_CLIENT_SECRET" ]]; then
+            echo 'Live GitHub OAuth deployment secrets are missing.' >&2
+            exit 1
+          fi
+
+          oauth_secrets_file="$(mktemp)"
+          trap 'rm -f "$oauth_secrets_file"' EXIT
+          chmod 600 "$oauth_secrets_file"
+          jq -n '{
+            GITHUB_OAUTH_CLIENT_ID: env.ORBIT_LIVE_OAUTH_CLIENT_ID,
+            GITHUB_OAUTH_CLIENT_SECRET: env.ORBIT_LIVE_OAUTH_CLIENT_SECRET
+          }' > "$oauth_secrets_file"
+          unset ORBIT_LIVE_OAUTH_CLIENT_ID ORBIT_LIVE_OAUTH_CLIENT_SECRET
+
           short_sha="${GITHUB_SHA::12}"
           npx wrangler deploy \
             --config wrangler.production.live.jsonc \
+            --secrets-file "$oauth_secrets_file" \
             --tag "main-${short_sha}" \
             --message "Automatic production deploy from main ${short_sha}"
 

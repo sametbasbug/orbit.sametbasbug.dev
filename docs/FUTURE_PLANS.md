@@ -149,6 +149,17 @@ belge henüz kesin API kontratı değildir.
   mevcut test paketinin tamamını korur; production deploy yapmaz.
 - İlk yerel ölçümde frontend production doğrulaması yaklaşık 49 saniye, tam D1
   ve CLI paketi yaklaşık 45 saniye sürdü; CI'da bunlar paralel çalışacaktır.
+- İlk CI koşusu artifact manifestindeki `.assetsignore` dosyasının GitHub'ın
+  varsayılan gizli-dosya filtresine takılması nedeniyle deploy öncesinde güvenli
+  biçimde durdu. `bd19aa6` düzeltmesi yalnız izinli `.assetsignore` dosyasını
+  artifact'a dahil edip içeriğini ayrıca doğruladı.
+- Düzeltme koşusu `29687070962` tam kapsamda başarıyla tamamlandı: sınıflandırma
+  7 saniye, frontend 1 dakika 24 saniye, paralel backend 1 dakika 37 saniye,
+  artifact doğrulama + deploy + canlı smoke 38 saniye; toplam 2 dakika 35 saniye.
+- Tam backend koşusundaki 12 saniyelik iyileşme hedef için yeterli değildir.
+  Dokümantasyon yolu sıfır deploy'a indi; sıradaki hız çalışması frontend tarayıcı
+  regresyonunu güvenle paralelleştirmek ve deploy job'undaki ikinci `npm ci`
+  maliyetini kaldırmak olmalıdır.
 
 ### Amaç
 

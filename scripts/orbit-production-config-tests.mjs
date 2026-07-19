@@ -229,6 +229,12 @@ assert(
   'production deploy does not use the trusted changed-path classifier',
 );
 assert(
+  !deployWorkflow.includes('\n  classify:')
+    && !deployWorkflow.includes('needs: classify')
+    && deployWorkflow.includes('needs.frontend.outputs.scope == needs.backend.outputs.scope'),
+  'path classification still serializes validation jobs or can disagree without failing closed',
+);
+assert(
   deployWorkflow.includes('npm run verify:frontend:production'),
   'production frontend is not built and verified through the single-build path',
 );

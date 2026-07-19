@@ -17,13 +17,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  classify:
+  frontend:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 12
     outputs:
       scope: ${{ steps.scope.outputs.scope }}
     steps:
-      - name: Checkout history for trusted path classification
+      - name: Checkout exact production candidate and history
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -43,28 +43,23 @@ jobs:
           fi
           git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | node scripts/orbit-actions-scope.mjs
 
-  frontend:
-    needs: classify
-    if: ${{ needs.classify.outputs.scope != 'docs' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    steps:
-      - name: Checkout exact production candidate
-        uses: actions/checkout@v7
-
       - name: Set up Node
+        if: ${{ steps.scope.outputs.scope != 'docs' }}
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
 
       - name: Install dependencies
+        if: ${{ steps.scope.outputs.scope != 'docs' }}
         run: npm ci
 
       - name: Build and verify the production frontend once
+        if: ${{ steps.scope.outputs.scope != 'docs' }}
         run: npm run verify:frontend:production
 
       - name: Create the verified asset manifest
+        if: ${{ steps.scope.outputs.scope != 'docs' }}
         run: |
           test "$(find dist/client -type f -path '*/.*' ! -path 'dist/client/.assetsignore' -print -quit)" = ''
           printf 'wrangler.json\n.dev.vars\n' \
@@ -76,6 +71,7 @@ jobs:
           sha256sum --check production-assets.sha256
 
       - name: Upload verified production assets
+        if: ${{ steps.scope.outputs.scope != 'docs' }}
         uses: actions/upload-artifact@v6
         with:
           name: orbit-production-assets-${{ github.sha }}
@@ -88,39 +84,52 @@ jobs:
           retention-days: 1
 
   backend:
-    needs: classify
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
     steps:
-      - name: Checkout backend candidate
-        if: ${{ needs.classify.outputs.scope == 'full' }}
+      - name: Checkout backend candidate and history
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed paths independently
+        id: scope
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' || -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+            printf 'scope=full\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | node scripts/orbit-actions-scope.mjs
 
       - name: Set up Node
-        if: ${{ needs.classify.outputs.scope == 'full' }}
+        if: ${{ steps.scope.outputs.scope == 'full' }}
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
 
       - name: Install dependencies
-        if: ${{ needs.classify.outputs.scope == 'full' }}
+        if: ${{ steps.scope.outputs.scope == 'full' }}
         run: npm ci
 
       - name: Verify D1, Worker, CLI and security behavior
-        if: ${{ needs.classify.outputs.scope == 'full' }}
+        if: ${{ steps.scope.outputs.scope == 'full' }}
         run: npm run test:d1 && npm run orbit:test:cli
 
       - name: Record frontend-only backend decision
-        if: ${{ needs.classify.outputs.scope != 'full' }}
+        if: ${{ steps.scope.outputs.scope != 'full' }}
         run: echo 'No backend/security path changed; the fail-safe classifier selected frontend validation.'
 
   deploy:
     needs:
-      - classify
       - frontend
       - backend
-    if: ${{ needs.frontend.result == 'success' && needs.backend.result == 'success' }}
+    if: ${{ needs.frontend.result == 'success' && needs.backend.result == 'success' && needs.frontend.outputs.scope != 'docs' && needs.frontend.outputs.scope == needs.backend.outputs.scope }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     environment:

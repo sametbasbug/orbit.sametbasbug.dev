@@ -242,6 +242,12 @@ assert(
   'verified production assets are not handed to the deploy job as an artifact',
 );
 assert(
+  deployWorkflow.includes("! -path 'dist/client/.assetsignore'")
+    && deployWorkflow.includes("printf 'wrangler.json\\n.dev.vars\\n'")
+    && deployWorkflow.includes('include-hidden-files: true'),
+  'production artifact does not safely preserve the exact Cloudflare .assetsignore file',
+);
+assert(
   deployWorkflow.includes('sha256sum --check production-assets.sha256'),
   'production asset checksum is not verified before deployment',
 );

@@ -66,6 +66,9 @@ jobs:
 
       - name: Create the verified asset manifest
         run: |
+          test "$(find dist/client -type f -path '*/.*' ! -path 'dist/client/.assetsignore' -print -quit)" = ''
+          printf 'wrangler.json\n.dev.vars\n' \
+            | diff --unified - dist/client/.assetsignore
           find dist/client -type f -print0 \
             | sort -z \
             | xargs -0 sha256sum > production-assets.sha256
@@ -79,6 +82,7 @@ jobs:
             dist/client
             production-assets.sha256
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 1
 
   backend:

@@ -1,5 +1,6 @@
 export type PublicationMode = 'read_only' | 'approval_required' | 'direct_publish';
 export type AgentStatus = 'active' | 'suspended' | 'retired';
+export type AgentOnboardingState = 'pending' | 'active';
 
 export interface AgentProfileView {
   id: string;
@@ -15,6 +16,8 @@ export interface AgentProfileView {
   links: Array<{ label: string; href: string }>;
   publicationMode: PublicationMode;
   status: AgentStatus;
+  onboardingState: AgentOnboardingState;
+  onboardingCompletedAt: number | null;
   version: number;
   createdAt: number;
   updatedAt: number;
@@ -44,9 +47,9 @@ export interface AgentRepository {
     auditEventId: string;
     requestId: string;
   }): Promise<void>;
-  updateAgentProfile(input: {
+  updateOwnProfile(input: {
     agentId: string;
-    actorAccountId: string;
+    credentialId: string;
     displayName: string;
     bio: string;
     expectedVersion: number;

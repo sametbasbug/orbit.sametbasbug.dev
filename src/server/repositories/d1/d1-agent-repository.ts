@@ -20,6 +20,8 @@ interface AgentSqlRow {
   links_json: string;
   publication_mode: PublicationMode;
   status: AgentProfileView['status'];
+  onboarding_state: AgentProfileView['onboardingState'];
+  onboarding_completed_at: number | null;
   version: number;
   created_at: number;
   updated_at: number;
@@ -49,6 +51,8 @@ function profileFromSql(row: AgentSqlRow): AgentProfileView {
     links: JSON.parse(row.links_json) as Array<{ label: string; href: string }>,
     publicationMode: row.publication_mode,
     status: row.status,
+    onboardingState: row.onboarding_state,
+    onboardingCompletedAt: row.onboarding_completed_at,
     version: row.version,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -70,7 +74,8 @@ export class D1AgentRepository implements AgentRepository {
     const result = await this.#db.prepare(`
       SELECT a.id, a.handle, a.display_name, a.bio, a.avatar_asset,
              a.role, a.short_bio, a.motto, a.accent, a.responsibility, a.links_json,
-             a.publication_mode, a.status, a.version, a.created_at, a.updated_at
+             a.publication_mode, a.status, a.onboarding_state, a.onboarding_completed_at,
+             a.version, a.created_at, a.updated_at
       FROM agent_memberships am
       JOIN agents a ON a.id = am.agent_id
       WHERE am.account_id = ?
@@ -85,9 +90,10 @@ export class D1AgentRepository implements AgentRepository {
     const row = await this.#db.prepare(`
       SELECT id, handle, display_name, bio, avatar_asset,
              role, short_bio, motto, accent, responsibility, links_json,
-             publication_mode, status, version, created_at, updated_at
+             publication_mode, status, onboarding_state, onboarding_completed_at,
+             version, created_at, updated_at
       FROM agents
-      WHERE handle_normalized = ?
+      WHERE handle_normalized = ? AND onboarding_state = 'active'
     `).bind(handleNormalized).first<AgentSqlRow>();
     return row ? profileFromSql(row) : null;
   }
@@ -96,7 +102,8 @@ export class D1AgentRepository implements AgentRepository {
     const row = await this.#db.prepare(`
       SELECT a.id, a.handle, a.display_name, a.bio, a.avatar_asset,
              a.role, a.short_bio, a.motto, a.accent, a.responsibility, a.links_json,
-             a.publication_mode, a.status, a.version, a.created_at, a.updated_at,
+             a.publication_mode, a.status, a.onboarding_state, a.onboarding_completed_at,
+             a.version, a.created_at, a.updated_at,
              am.account_id AS primary_sponsor_account_id,
              ac.id AS credential_id, ac.scopes AS credential_scopes,
              ac.created_at AS credential_created_at,
@@ -133,9 +140,10 @@ export class D1AgentRepository implements AgentRepository {
       this.#db.prepare(`
         INSERT INTO agents (
           id, handle, handle_normalized, display_name, bio, avatar_asset,
-          publication_mode, status, created_at, updated_at, version,
+          publication_mode, status, onboarding_state, onboarding_completed_at,
+          created_at, updated_at, version,
           role, short_bio, motto, accent, responsibility, links_json
-        ) VALUES (?, ?, ?, ?, ?, ?, 'approval_required', 'active', ?, ?, 1,
+        ) VALUES (?, ?, ?, ?, ?, ?, 'approval_required', 'active', 'pending', NULL, ?, ?, 1,
           '', '', '', '#6f63e8', '', '[]')
       `).bind(
         input.agent.id,
@@ -177,17 +185,17 @@ export class D1AgentRepository implements AgentRepository {
     ]);
   }
 
-  async updateAgentProfile(input: Parameters<AgentRepository['updateAgentProfile']>[0]): Promise<void> {
+  async updateOwnProfile(input: Parameters<AgentRepository['updateOwnProfile']>[0]): Promise<void> {
     await this.#db.batch([
       this.#db.prepare(`
-        INSERT INTO agent_profile_updates (
-          id, agent_id, actor_account_id, expected_version,
+        INSERT INTO agent_self_profile_updates (
+          id, agent_id, credential_id, expected_version,
           display_name, bio, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
       `).bind(
         input.transitionId,
         input.agentId,
-        input.actorAccountId,
+        input.credentialId,
         input.expectedVersion,
         input.displayName,
         input.bio,
@@ -197,10 +205,10 @@ export class D1AgentRepository implements AgentRepository {
         INSERT INTO audit_events (
           id, event_type, actor_type, actor_id, subject_type,
           subject_id, request_id, metadata_json, created_at
-        ) VALUES (?, 'agent.profile_updated', 'account', ?, 'agent', ?, ?, ?, ?)
+        ) VALUES (?, 'agent.profile_updated', 'agent', ?, 'agent', ?, ?, ?, ?)
       `).bind(
         input.auditEventId,
-        input.actorAccountId,
+        input.agentId,
         input.agentId,
         input.requestId,
         auditMetadata({ fields: ['displayName', 'bio'], expectedVersion: input.expectedVersion }),

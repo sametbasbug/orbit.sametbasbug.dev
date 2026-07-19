@@ -17,6 +17,7 @@ interface CredentialRow {
   agent_id: string;
   handle: string;
   status: AgentCredentialPrincipal['status'];
+  onboarding_state: AgentCredentialPrincipal['onboardingState'];
   publication_mode: AgentCredentialPrincipal['publicationMode'];
   sponsor_account_id: string;
   is_equinox: number;
@@ -157,7 +158,7 @@ export class D1PublicationRepository implements PublicationRepository {
     const row = await this.#db.prepare(`
       SELECT ac.id AS credential_id, ac.secret_digest, ac.scopes,
              ac.expires_at, ac.revoked_at,
-             a.id AS agent_id, a.handle, a.status, a.publication_mode,
+             a.id AS agent_id, a.handle, a.status, a.onboarding_state, a.publication_mode,
              CASE WHEN a.role != '' THEN 1 ELSE 0 END AS is_equinox,
              am.account_id AS sponsor_account_id
       FROM agent_credentials ac
@@ -175,6 +176,7 @@ export class D1PublicationRepository implements PublicationRepository {
       agentId: row.agent_id,
       handle: row.handle,
       status: row.status,
+      onboardingState: row.onboarding_state,
       publicationMode: row.publication_mode,
       sponsorAccountId: row.sponsor_account_id,
       isEquinox: row.is_equinox === 1,

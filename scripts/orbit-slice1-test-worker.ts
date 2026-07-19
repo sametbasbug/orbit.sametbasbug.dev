@@ -261,11 +261,17 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
       env.DB.prepare(`
         INSERT OR IGNORE INTO agents (
           id, handle, handle_normalized, display_name, bio, avatar_asset,
-          publication_mode, status, created_at, updated_at, version,
+          publication_mode, status, onboarding_state, onboarding_completed_at,
+          created_at, updated_at, version,
           role, short_bio, motto, accent, responsibility, links_json
-        ) VALUES (?, ?, ?, ?, '', 'agents/default.webp', ?, ?, ?, ?, 1,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 1,
           ?, '', '', '#6f63e8', '', '[]')
-      `).bind(agentId, handle, handle.toLowerCase(), handle, String(body.publicationMode), String(body.status ?? 'active'), now, now, String(body.role ?? '')),
+      `).bind(
+        agentId, handle, handle.toLowerCase(), handle,
+        String(body.bio ?? ''), String(body.avatarAsset ?? ''),
+        String(body.publicationMode), String(body.status ?? 'active'),
+        String(body.onboardingState ?? 'active'), now, now, String(body.role ?? ''),
+      ),
       env.DB.prepare(`
         INSERT OR IGNORE INTO agent_memberships (
           id, agent_id, account_id, role, created_by_account_id, created_at
@@ -275,7 +281,7 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
         INSERT OR IGNORE INTO agent_credentials (
           id, agent_id, secret_digest, hash_version, scopes,
           created_by_account_id, created_at
-        ) VALUES (?, ?, ?, 1, 'feed:read records:write media:write', ?, ?)
+        ) VALUES (?, ?, ?, 1, 'feed:read records:write media:write profile:write', ?, ?)
       `).bind(String(body.credentialId), agentId, String(body.secretDigest), accountId, now),
     ]);
     return Response.json({ ok: true });

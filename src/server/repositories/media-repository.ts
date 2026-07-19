@@ -142,7 +142,8 @@ export interface MediaRepository {
     asset: MediaAssetView;
     targetType: 'account' | 'agent';
     targetId: string;
-    actorAccountId: string;
+    actorType: 'account' | 'agent';
+    actorId: string;
     idempotencyId: string;
     responseStatus: number;
     responseJson: string;

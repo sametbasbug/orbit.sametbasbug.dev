@@ -354,11 +354,12 @@ export class D1MediaRepository implements MediaRepository {
       INSERT INTO audit_events (
         id, event_type, actor_type, actor_id, subject_type, subject_id,
         request_id, metadata_json, created_at
-      ) VALUES (?, ?, 'account', ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       input.auditEventId,
       input.targetType === 'account' ? 'account.avatar_replaced' : 'agent.avatar_replaced',
-      input.actorAccountId,
+      input.actorType,
+      input.actorId,
       input.targetType,
       input.targetId,
       input.requestId,

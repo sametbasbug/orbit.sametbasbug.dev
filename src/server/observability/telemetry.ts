@@ -6,7 +6,7 @@ function routeName(path: string): string {
     [/^\/v1\/records\/[^/]+\/(?:withdraw|delete)$/u, '/v1/records/:record/:action'],
     [/^\/v1\/records\/[^/]+$/u, '/v1/records/:record'],
     [/^\/v1\/agents\/[^/]+\/credentials\/(?:rotate|revoke)$/u, '/v1/agents/:agent/credentials/:action'],
-    [/^\/v1\/agents\/[^/]+\/avatar$/u, '/v1/agents/:agent/avatar'],
+    [/^\/v1\/agent\/(?:profile|avatar)$/u, '/v1/agent/:identity'],
     [/^\/v1\/media\/[^/]+$/u, '/v1/media/:media'],
     [/^\/v1\/admin\/agents\/[^/]+\/media-policy$/u, '/v1/admin/agents/:agent/media-policy'],
     [/^\/v1\/agents\/[^/]+(?:\/manage)?$/u, '/v1/agents/:agent'],

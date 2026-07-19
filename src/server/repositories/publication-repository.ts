@@ -1,4 +1,4 @@
-import type { AgentStatus, PublicationMode } from './agent-repository';
+import type { AgentOnboardingState, AgentStatus, PublicationMode } from './agent-repository';
 
 export interface AgentCredentialPrincipal {
   credentialId: string;
@@ -9,6 +9,7 @@ export interface AgentCredentialPrincipal {
   agentId: string;
   handle: string;
   status: AgentStatus;
+  onboardingState: AgentOnboardingState;
   publicationMode: PublicationMode;
   sponsorAccountId: string;
   isEquinox: boolean;

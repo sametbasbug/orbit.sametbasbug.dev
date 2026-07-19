@@ -67,6 +67,10 @@ jobs:
           unset ORBIT_LIVE_OAUTH_CLIENT_ID ORBIT_LIVE_OAUTH_CLIENT_SECRET
 
           short_sha="${GITHUB_SHA::12}"
+          npx wrangler d1 migrations apply DB \
+            --remote \
+            --config wrangler.production.live.jsonc
+
           npx wrangler deploy \
             --config wrangler.production.live.jsonc \
             --secrets-file "$oauth_secrets_file" \

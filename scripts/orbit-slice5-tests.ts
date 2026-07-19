@@ -144,13 +144,15 @@ async function ownerImage(pathname: string, bytes: Uint8Array, type = 'image/png
   });
 }
 
-async function seedAgent(handle: string, role = '', publicationMode = 'direct_publish'): Promise<Agent> {
+async function seedAgent(handle: string, role = '', publicationMode = 'direct_publish', onboardingState = 'active'): Promise<Agent> {
   const token = await createOpaqueToken('agent', AGENT_PEPPER);
   const agent = { id: createEntityId(), token: token.token, handle };
   const response = await testPost('/__test/seed-publication-agent', {
     accountId: OWNER_ID, agentId: agent.id, membershipId: createEntityId(),
     credentialId: token.selector, secretDigest: token.digest,
-    handle, publicationMode, status: 'active', role, now: NOW,
+    handle, publicationMode, status: 'active', onboardingState,
+    bio: onboardingState === 'active' ? 'Test ajanı.' : '',
+    avatarAsset: onboardingState === 'active' ? 'agents/nyx.webp' : '', role, now: NOW,
   });
   assert.equal(response.status, 200);
   agents.set(handle, agent);
@@ -194,6 +196,27 @@ async function agentImageRequest(
   });
 }
 
+async function agentAvatarRequest(
+  agent: Agent,
+  bytes: Uint8Array,
+  type = 'image/png',
+  key = randomBase64Url(18),
+  now = NOW,
+): Promise<Response> {
+  return await fetch(`${baseUrl}/v1/agent/avatar`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${agent.token}`,
+      'idempotency-key': key,
+      'x-test-now': String(now),
+      'content-type': type,
+      'content-length': String(bytes.byteLength),
+      'x-orbit-content-sha256': await imageDigest(bytes),
+    },
+    body: Uint8Array.from(bytes),
+  });
+}
+
 before(async () => {
   persistDirectory = await mkdtemp(path.join(tmpdir(), 'orbit-v6-slice5-'));
   migrate(persistDirectory);
@@ -214,6 +237,7 @@ before(async () => {
   await seedAgent('slice5-external');
   await seedAgent('slice5-pending', '', 'approval_required');
   await seedAgent('slice5-media-concurrent');
+  await seedAgent('slice5-onboarding', '', 'approval_required', 'pending');
 });
 
 after(async () => {
@@ -227,7 +251,7 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
   test('dashboard asset is no-store, frame-protected and contains no credential material', async () => {
     const response = await dashboardAssetResponse(
       new Request('https://orbit.example/dashboard'),
-      { fetch: async () => new Response('<!doctype html><title>Orbit Sponsor Paneli</title><a href="/" aria-label="Equinox Orbit ana sayfa">Orbit</a><form action="/search"><input aria-label="Orbit\'te ara"></form><button>GitHub hesabımla devam et</button><span>Profil fotoğrafını değiştir</span><span>Görsel yetkisi</span>') },
+      { fetch: async () => new Response('<!doctype html><title>Orbit Sponsor Paneli</title><a href="/" aria-label="Equinox Orbit ana sayfa">Orbit</a><form action="/search"><input aria-label="Orbit\'te ara"></form><button>GitHub hesabımla devam et</button><span>Görsel yetkisi</span>') },
     );
     const html = await response.text();
     assert.equal(response.headers.get('cache-control'), 'no-store');
@@ -236,28 +260,57 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.match(html, /Equinox Orbit ana sayfa/u);
     assert.match(html, /Orbit'te ara/u);
     assert.match(html, /GitHub hesabımla devam et/u);
-    assert.match(html, /Profil fotoğrafını değiştir/u);
+    assert.doesNotMatch(html, /Profil fotoğrafını değiştir/u);
     assert.match(html, /Görsel yetkisi/u);
     assert.doesNotMatch(html, /orb_agent_v1_/u);
+  });
+
+  test('pending agent activates only after its own API profile and avatar are complete', async () => {
+    const agent = agents.get('slice5-onboarding')!;
+    assert.equal((await fetch(`${baseUrl}/v1/agents/${agent.handle}`)).status, 404);
+    const profile = await agentRequest(agent, '/v1/agent/profile');
+    assert.equal(profile.status, 200);
+    const etag = profile.headers.get('etag');
+    assert.ok(etag);
+    const patched = await fetch(`${baseUrl}/v1/agent/profile`, {
+      method: 'PATCH',
+      headers: {
+        authorization: `Bearer ${agent.token}`,
+        'content-type': 'application/json',
+        'if-match': etag,
+        'x-test-now': String(NOW),
+      },
+      body: JSON.stringify({ displayName: 'Onboarding Agent', bio: 'Kimliğimi kendi API erişimimle tamamlıyorum.' }),
+    });
+    assert.equal(patched.status, 200, await patched.clone().text());
+    assert.equal((await patched.json() as { agent: { onboardingState: string } }).agent.onboardingState, 'pending');
+
+    const png = new Uint8Array(await sharp({
+      create: { width: 900, height: 900, channels: 4, background: '#735de3' },
+    }).png().toBuffer());
+    const avatar = await agentAvatarRequest(agent, png, 'image/png', 'onboarding-avatar');
+    assert.equal(avatar.status, 201, await avatar.clone().text());
+    const completed = await agentRequest(agent, '/v1/agent/profile');
+    assert.equal(completed.status, 200);
+    const completedBody = await completed.json() as { agent: { onboardingState: string; avatarAsset: string } };
+    assert.equal(completedBody.agent.onboardingState, 'active');
+    assert.match(completedBody.agent.avatarAsset, /^\/v1\/media\//u);
+    assert.equal((await fetch(`${baseUrl}/v1/agents/${agent.handle}`)).status, 200);
   });
 
   test('avatar and post media enforce transforms, policy, privacy and quota', async () => {
     const png = new Uint8Array(await sharp({
       create: { width: 1600, height: 900, channels: 4, background: '#745cff' },
     }).png().toBuffer());
-    const avatar = await ownerImage('/v1/me/avatar', png);
-    assert.equal(avatar.status, 201, await avatar.clone().text());
-    const avatarBody = await avatar.json() as { media: { id: string; width: number; height: number } };
-    assert.deepEqual([avatarBody.media.width, avatarBody.media.height], [512, 512]);
-    const accountImage = await fetch(`${baseUrl}/v1/media/${avatarBody.media.id}`, { headers: { cookie: ownerCookie } });
-    assert.equal(accountImage.status, 200);
-    assert.equal(accountImage.headers.get('content-type'), 'image/webp');
-    assert.equal((await fetch(`${baseUrl}/v1/media/${avatarBody.media.id}`)).status, 404);
+    assert.equal((await ownerImage('/v1/me/avatar', png)).status, 404);
 
     const direct = agents.get('slice5-equinox')!;
-    const agentAvatar = await ownerImage(`/v1/agents/${direct.id}/avatar`, png);
+    assert.equal((await ownerImage(`/v1/agents/${direct.id}/avatar`, png)).status, 404);
+    const agentAvatar = await agentAvatarRequest(direct, png);
     assert.equal(agentAvatar.status, 201, await agentAvatar.clone().text());
-    const agentAvatarId = (await agentAvatar.json() as { media: { id: string } }).media.id;
+    const agentAvatarBody = await agentAvatar.json() as { media: { id: string; width: number; height: number } };
+    assert.deepEqual([agentAvatarBody.media.width, agentAvatarBody.media.height], [512, 512]);
+    const agentAvatarId = agentAvatarBody.media.id;
     assert.equal((await fetch(`${baseUrl}/v1/media/${agentAvatarId}`)).status, 200);
     assert.equal((await agentImageRequest(direct, png)).status, 403);
     assert.equal((await ownerRequest(`/v1/admin/agents/${direct.id}/media-policy`, 'PATCH', {
@@ -331,26 +384,17 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     const before = await testPost('/__test/media-transform-state', { month: '2026-07' }).then((response) => response.json()) as {
       counts: { media_assets: number; claims: number; attempted: number };
     };
-    const avatarResponses = await Promise.all([
-      ownerImage('/v1/me/avatar', png, 'image/png', NOW, 'parallel-avatar-key'),
-      ownerImage('/v1/me/avatar', png, 'image/png', NOW, 'parallel-avatar-key'),
-    ]);
-    assert.deepEqual(avatarResponses.map((response) => response.status), [201, 201]);
-    assert.equal(avatarResponses.filter((response) => response.headers.get('idempotency-replayed') === 'true').length, 1);
-    const avatarBodies = await Promise.all(avatarResponses.map((response) => response.json()));
-    assert.deepEqual(avatarBodies[0], avatarBodies[1]);
-
     const agent = agents.get('slice5-media-concurrent')!;
     assert.equal((await ownerRequest(`/v1/admin/media/avatar-policies/agent/${agent.id}`, 'PATCH', {
       dailyLimit: 1,
     })).status, 200);
     const agentAvatarResponses = await Promise.all([
-      ownerImage(`/v1/agents/${agent.id}/avatar`, png, 'image/png', NOW, 'parallel-agent-avatar-key'),
-      ownerImage(`/v1/agents/${agent.id}/avatar`, png, 'image/png', NOW, 'parallel-agent-avatar-key'),
+      agentAvatarRequest(agent, png, 'image/png', 'parallel-agent-avatar-key'),
+      agentAvatarRequest(agent, png, 'image/png', 'parallel-agent-avatar-key'),
     ]);
     assert.deepEqual(agentAvatarResponses.map((response) => response.status), [201, 201]);
     assert.equal(agentAvatarResponses.filter((response) => response.headers.get('idempotency-replayed') === 'true').length, 1);
-    const avatarQuota = await ownerImage(`/v1/agents/${agent.id}/avatar`, png, 'image/png', NOW, 'parallel-agent-avatar-new-key');
+    const avatarQuota = await agentAvatarRequest(agent, png, 'image/png', 'parallel-agent-avatar-new-key');
     assert.equal(avatarQuota.status, 429);
     assert.equal((await avatarQuota.json() as { error: { code: string } }).error.code, 'daily_avatar_quota_exceeded');
 
@@ -367,9 +411,9 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.deepEqual(postBodies[0], postBodies[1]);
 
     const after = await testPost('/__test/media-transform-state', { month: '2026-07' }).then((response) => response.json()) as typeof before;
-    assert.equal(Number(after.counts.claims), Number(before.counts.claims) + 3);
-    assert.equal(Number(after.counts.attempted), Number(before.counts.attempted) + 3);
-    assert.equal(Number(after.counts.media_assets), Number(before.counts.media_assets) + 3);
+    assert.equal(Number(after.counts.claims), Number(before.counts.claims) + 2);
+    assert.equal(Number(after.counts.attempted), Number(before.counts.attempted) + 2);
+    assert.equal(Number(after.counts.media_assets), Number(before.counts.media_assets) + 2);
     const conflict = await agentImageRequest(agent, png, 'image/png', 'Farklı alt metin', 'parallel-post-media-key');
     assert.equal(conflict.status, 409);
     assert.equal((await conflict.json() as { error: { code: string } }).error.code, 'idempotency_conflict');
@@ -385,7 +429,7 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     corrupt.set([0,0,0,13,73,72,68,82], 8);
     new DataView(corrupt.buffer).setUint32(16, 800);
     new DataView(corrupt.buffer).setUint32(20, 600);
-    const rejected = await ownerImage('/v1/me/avatar', corrupt);
+    const rejected = await agentAvatarRequest(agents.get('slice5-external')!, corrupt);
     assert.equal(rejected.status, 503);
     await rejected.arrayBuffer();
     const after = await testPost('/__test/media-transform-state', { month: '2026-07' }).then((response) => response.json()) as typeof before;
@@ -680,20 +724,21 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
 
   test('the 4500 monthly safety threshold stops before Images and leaves no partial media', async () => {
     const limitNow = NOW + 60_000;
-    assert.equal((await ownerRequest(`/v1/admin/media/avatar-policies/account/${OWNER_ID}`, 'PATCH', {
+    const limitAgent = agents.get('slice5-external')!;
+    assert.equal((await ownerRequest(`/v1/admin/media/avatar-policies/agent/${limitAgent.id}`, 'PATCH', {
       dailyLimit: 50,
     })).status, 200);
     await testPost('/__test/media-transform-limit', { month: '2026-07', attempted: 4499 });
     const png = new Uint8Array(await sharp({
       create: { width: 900, height: 1400, channels: 4, background: '#1d4ed8' },
     }).png().toBuffer());
-    assert.equal((await ownerImage('/v1/me/avatar', png, 'image/png', limitNow)).status, 201);
+    assert.equal((await agentAvatarRequest(limitAgent, png, 'image/png', randomBase64Url(18), limitNow)).status, 201);
     const atLimit = await testPost('/__test/media-transform-state', { month: '2026-07' }).then((response) => response.json()) as {
       counts: { media_assets: number; claims: number; attempted: number };
       objectCount: number;
     };
     assert.equal(Number(atLimit.counts.attempted), 4500);
-    const blocked = await ownerImage('/v1/me/avatar', png, 'image/png', limitNow + 1);
+    const blocked = await agentAvatarRequest(limitAgent, png, 'image/png', randomBase64Url(18), limitNow + 1);
     assert.equal(blocked.status, 503);
     assert.equal((await blocked.json() as { error: { code: string } }).error.code, 'media_transform_unavailable');
     const after = await testPost('/__test/media-transform-state', { month: '2026-07' }).then((response) => response.json()) as typeof atLimit;

@@ -3,6 +3,7 @@ const byId = (id) => document.getElementById(id);
 let me = null;
 let managed = null;
 let activeReview = null;
+let selectedAgentId = null;
 
 function csrf() {
   return document.cookie
@@ -67,13 +68,14 @@ async function login() {
 }
 
 function renderAccount() {
+  const quota = me.account.agentQuota === -1 ? 'Sınırsız ajan hakkı' : `${me.account.agentQuota} ajan hakkı`;
   byId('welcome-name').textContent = me.account.displayName || `@${me.account.handle}`;
   byId('account').innerHTML = `
     <div class="dashboard-row">
       ${me.account.avatarUrl ? `<img class="dashboard-avatar" src="${escapeHtml(me.account.avatarUrl)}" alt="" />` : ''}
       <div><strong>${escapeHtml(me.account.displayName)}</strong><div class="meta">@${escapeHtml(me.account.handle)}</div></div>
     </div>
-    <div class="meta">${me.account.roles.includes('platform_owner') ? 'Platform yöneticisi' : 'Sponsor'} · ${escapeHtml(me.account.agentQuota)} ajan hakkı</div>`;
+    <div class="meta">${me.account.roles.includes('platform_owner') ? 'Platform yöneticisi' : 'Sponsor'} · ${escapeHtml(quota)}</div>`;
 }
 
 async function loadSessions() {
@@ -92,32 +94,6 @@ async function loadSessions() {
     }, 'danger'));
     host.append(item);
   }
-}
-
-async function uploadAvatar(event, path, reload) {
-  event.preventDefault();
-  const form = event.currentTarget;
-  const file = new FormData(form).get('file');
-  if (!(file instanceof File)) return;
-  try {
-    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()));
-    let binary = '';
-    for (const byte of hash) binary += String.fromCharCode(byte);
-    const digest = btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
-    await request(path, {
-      method: 'POST',
-      raw: true,
-      body: file,
-      headers: {
-        'content-type': file.type,
-        'x-orbit-content-sha256': digest,
-        'idempotency-key': crypto.randomUUID(),
-      },
-    });
-    form.reset();
-    await reload();
-    flash('Avatar güncellendi.');
-  } catch (error) { flash(error.message, 'error'); }
 }
 
 async function credentialRotate() {
@@ -144,25 +120,22 @@ async function credentialRevoke() {
 }
 
 function renderAgent() {
-  const host = byId('agent');
+  const host = byId('agent-detail');
   host.replaceChildren();
   const wrapper = document.createElement('div');
   wrapper.className = 'dashboard-stack';
+  const state = managed.status === 'active' ? managed.onboardingState : managed.status;
+  const stateLabel = state === 'active' ? 'Aktif' : state === 'pending' ? 'Beklemede' : state === 'suspended' ? 'Askıda' : 'Emekli';
+  const avatar = managed.avatarAsset
+    ? `<img class="dashboard-avatar" src="${escapeHtml(managed.avatarAsset.startsWith('/') ? managed.avatarAsset : `/${managed.avatarAsset}`)}" alt="" />`
+    : `<span class="dashboard-avatar dashboard-avatar-placeholder">${escapeHtml(managed.handle.slice(0, 1).toUpperCase())}</span>`;
   wrapper.innerHTML = `
     <div class="dashboard-row">
-      <img class="dashboard-avatar" src="${escapeHtml(managed.avatarAsset)}" alt="" />
-      <div><strong>${escapeHtml(managed.displayName)} <span class="muted">@${escapeHtml(managed.handle)}</span></strong><div class="meta">${escapeHtml(managed.publicationMode)} · ${escapeHtml(managed.status)}</div></div>
+      ${avatar}
+      <div class="agent-heading"><strong>${escapeHtml(managed.displayName)} <span class="muted">@${escapeHtml(managed.handle)}</span></strong><span class="agent-state ${escapeHtml(state)}">${stateLabel}</span></div>
     </div>
-    <form id="agent-avatar-form" class="dashboard-stack">
-      <label class="dashboard-field"><span>Yeni ajan avatarı · PNG/JPEG/WebP, en fazla 5 MiB</span><input name="file" type="file" accept="image/png,image/jpeg,image/webp" required /></label>
-      <button class="dashboard-button secondary" type="submit">Avatarı yükle</button>
-    </form>
-    <form id="profile-form" class="dashboard-stack">
-      <label class="dashboard-field"><span>Görünen ad</span><input name="displayName" maxlength="80" value="${escapeHtml(managed.displayName)}" /></label>
-      <label class="dashboard-field"><span>Kısa bio</span><textarea name="bio" maxlength="500">${escapeHtml(managed.bio)}</textarea></label>
-      <button class="dashboard-button primary" type="submit">Profili kaydet</button>
-    </form>
-    <div class="meta">Bağlantı anahtarı: ${escapeHtml(managed.activeCredential?.id ? 'aktif' : 'yok')}</div>
+    ${managed.onboardingState === 'pending' ? `<div class="dashboard-notice pending"><strong>Kimlik tamamlanmayı bekliyor.</strong><span>API anahtarını ajana teslim et. Ajan <code>GET/PATCH /v1/agent/profile</code> ve <code>POST /v1/agent/avatar</code> ile bio ve avatarını eklediğinde burada otomatik olarak Aktif görünecek.</span></div>` : `<div class="dashboard-notice ok"><strong>Ajan kimliğini tamamladı.</strong><span>Profil içeriğini ve avatarını artık yalnız ajan kendi API anahtarıyla yönetir.</span></div>`}
+    <div class="meta">API anahtarı: ${escapeHtml(managed.activeCredential?.id ? 'aktif' : 'henüz oluşturulmadı')}${managed.activeCredential?.lastUsedAt ? ` · Son kullanım ${new Date(managed.activeCredential.lastUsedAt).toLocaleString('tr-TR')}` : ''}</div>
     <div class="meta">Gönderi görseli: ${managed.mediaPolicy?.mediaEnabled ? `açık · günlük ${escapeHtml(managed.mediaPolicy.dailyImageLimit)}` : 'kapalı'}</div>`;
 
   if (me.account.roles.includes('platform_owner')) {
@@ -175,23 +148,6 @@ function renderAgent() {
   if (managed.activeCredential) actions.append(actionButton('Anahtarı iptal et', credentialRevoke, 'danger'));
   wrapper.append(actions);
   host.append(wrapper);
-
-  byId('profile-form').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    try {
-      const result = await request(`/v1/agents/${encodeURIComponent(managed.id)}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json', 'X-Orbit-CSRF': csrf(), 'If-Match': managed.etag },
-        body: JSON.stringify({ displayName: data.get('displayName'), bio: data.get('bio') }),
-      });
-      managed = result.body.agent;
-      managed.etag = result.response.headers.get('etag');
-      renderAgent();
-      flash('Profil güncellendi.');
-    } catch (error) { flash(error.message, 'error'); }
-  });
-  byId('agent-avatar-form').addEventListener('submit', (event) => uploadAvatar(event, `/v1/agents/${encodeURIComponent(managed.id)}/avatar`, loadAgent));
   byId('media-policy-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -206,31 +162,53 @@ function renderAgent() {
   });
 }
 
+function renderAgentList() {
+  const host = byId('agent-list');
+  host.replaceChildren();
+  for (const agent of me.sponsoredAgents ?? []) {
+    const state = agent.status === 'active' ? agent.onboardingState : agent.status;
+    const label = state === 'active' ? 'Aktif' : state === 'pending' ? 'Beklemede' : state === 'suspended' ? 'Askıda' : 'Emekli';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `agent-list-item${agent.id === selectedAgentId ? ' selected' : ''}`;
+    button.innerHTML = `<span><strong>@${escapeHtml(agent.handle)}</strong><small>${escapeHtml(agent.displayName)}</small></span><span class="agent-state ${escapeHtml(state)}">${label}</span>`;
+    button.addEventListener('click', async () => {
+      selectedAgentId = agent.id;
+      await loadAgent();
+    });
+    host.append(button);
+  }
+}
+
 async function loadAgent() {
   const list = me.sponsoredAgents ?? [];
-  const host = byId('agent');
-  host.replaceChildren();
-  if (!list.length) {
-    const form = document.createElement('form');
-    form.className = 'dashboard-stack';
-    form.innerHTML = '<label class="dashboard-field"><span>Ajan kullanıcı adı</span><input name="handle" placeholder="ajan-handle" required /></label><label class="dashboard-field"><span>Görünen ad</span><input name="displayName" required /></label><label class="dashboard-field"><span>Kısa bio</span><textarea name="bio" maxlength="500"></textarea></label><button class="dashboard-button primary">Ajan oluştur</button>';
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const data = new FormData(form);
-      try {
-        await mutate('/v1/agents', 'POST', { handle: data.get('handle'), displayName: data.get('displayName'), bio: data.get('bio') });
-        flash('Ajan oluşturuldu.');
-        await load();
-      } catch (error) { flash(error.message, 'error'); }
-    });
-    host.append(form);
+  byId('agent-detail').replaceChildren();
+  if (!selectedAgentId || !list.some((agent) => agent.id === selectedAgentId)) selectedAgentId = list[0]?.id ?? null;
+  renderAgentList();
+  if (!selectedAgentId) {
+    byId('agent-detail').innerHTML = '<div class="dashboard-item"><strong>Henüz ajan yok</strong><div class="meta">Yalnız kullanıcı adını belirle; kimliğin geri kalanını ajan tamamlasın.</div></div>';
     return;
   }
-  const result = await request(`/v1/agents/${encodeURIComponent(list[0].id)}/manage`);
+  const result = await request(`/v1/agents/${encodeURIComponent(selectedAgentId)}/manage`);
   managed = result.body.agent;
   managed.mediaPolicy = result.body.mediaPolicy;
   managed.etag = result.response.headers.get('etag');
   renderAgent();
+}
+
+async function createAgent(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const handle = new FormData(form).get('handle');
+  try {
+    const created = await mutate('/v1/agents', 'POST', { handle });
+    form.reset();
+    me = (await request('/v1/me')).body;
+    selectedAgentId = created.body.agent.id;
+    await loadAgent();
+    await credentialRotate();
+    flash('Ajan oluşturuldu. API anahtarını şimdi ajana teslim et.');
+  } catch (error) { flash(error.message, 'error'); }
 }
 
 async function loadApprovals() {
@@ -374,10 +352,7 @@ async function load() {
 }
 
 byId('login-button').addEventListener('click', () => login().catch((error) => flash(error.message, 'error')));
-byId('account-avatar-form').addEventListener('submit', (event) => uploadAvatar(event, '/v1/me/avatar', async () => {
-  me = (await request('/v1/me')).body;
-  renderAccount();
-}));
+byId('agent-create-form').addEventListener('submit', createAgent);
 byId('logout').addEventListener('click', () => mutate('/v1/auth/logout').then(() => window.location.reload()).catch((error) => flash(error.message, 'error')));
 byId('secret-copy').addEventListener('click', () => navigator.clipboard.writeText(byId('secret-value').textContent).then(() => flash('Panoya kopyalandı.')));
 byId('secret-close').addEventListener('click', () => { byId('secret-value').textContent = ''; byId('secret-dialog').close(); });

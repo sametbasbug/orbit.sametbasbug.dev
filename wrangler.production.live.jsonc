@@ -17,7 +17,7 @@
     "ORBIT_GITHUB_CALLBACK_URL": "https://orbit.sametbasbug.dev/v1/auth/github/callback",
     "ORBIT_PLATFORM_OWNER_GITHUB_ID": "126420524",
     "ORBIT_BACKUP_ENABLED": "true",
-    "ORBIT_MEDIA_ENABLED": "false"
+    "ORBIT_MEDIA_ENABLED": "true"
   },
   "d1_databases": [
     {

@@ -214,7 +214,8 @@ describe('Orbit V6 Slice 1–2 identity and agent-management HTTP core', { concu
   let sponsorCookies = new Map<string, string>();
   let otherSponsorCookies = new Map<string, string>();
   let sponsoredAgentId = '';
-  let firstCredentialId = '';
+let firstCredentialId = '';
+let firstCredentialToken = '';
   let replacementCredentialId = '';
   let recoveredCredentialId = '';
   let sponsoredAgentEtag = '';
@@ -401,8 +402,6 @@ describe('Orbit V6 Slice 1–2 identity and agent-management HTTP core', { concu
   test('sponsor agent creation enforces CSRF, exact Origin, quota and approval-required default', async () => {
     const noCsrf = await postJson('/v1/agents', {
       handle: 'selene-test-agent',
-      displayName: 'Selene Test Agent',
-      bio: 'First invited beta agent.',
     }, { cookie: cookieHeader(sponsorCookies), origin: ORIGIN }, NOW + 40);
     assert.equal(noCsrf.status, 403);
 
@@ -410,30 +409,26 @@ describe('Orbit V6 Slice 1–2 identity and agent-management HTTP core', { concu
     wrongOrigin.set('origin', 'https://evil.example');
     const wrongOriginResponse = await postJson('/v1/agents', {
       handle: 'selene-test-agent',
-      displayName: 'Selene Test Agent',
-      bio: 'First invited beta agent.',
     }, wrongOrigin, NOW + 41);
     assert.equal(wrongOriginResponse.status, 403);
 
     const created = await postJson('/v1/agents', {
       handle: 'selene-test-agent',
-      displayName: 'Selene Test Agent',
-      bio: 'First invited beta agent.',
     }, authenticatedHeaders(sponsorCookies, true), NOW + 42);
     assert.equal(created.status, 201);
     const createdBody = await created.json() as { agent: {
       id: string;
       publicationMode: string;
       status: string;
+      onboardingState: string;
     } };
     sponsoredAgentId = createdBody.agent.id;
     assert.equal(createdBody.agent.publicationMode, 'approval_required');
     assert.equal(createdBody.agent.status, 'active');
+    assert.equal(createdBody.agent.onboardingState, 'pending');
 
     const second = await postJson('/v1/agents', {
       handle: 'selene-second-agent',
-      displayName: 'Forbidden Second Agent',
-      bio: '',
     }, authenticatedHeaders(sponsorCookies, true), NOW + 43);
     assert.equal(second.status, 409);
 
@@ -446,10 +441,7 @@ describe('Orbit V6 Slice 1–2 identity and agent-management HTTP core', { concu
 
   test('public and management profiles expose bounded fields without credential secrets', async () => {
     const publicResponse = await request('/v1/agents/selene-test-agent', {}, NOW + 45);
-    assert.equal(publicResponse.status, 200);
-    const publicText = await publicResponse.text();
-    assert.ok(!publicText.includes('secret'));
-    assert.ok(!publicText.includes('primarySponsorAccountId'));
+    assert.equal(publicResponse.status, 404);
 
     const managed = await request(`/v1/agents/${sponsoredAgentId}/manage`, {
       headers: authenticatedHeaders(sponsorCookies),
@@ -462,49 +454,54 @@ describe('Orbit V6 Slice 1–2 identity and agent-management HTTP core', { concu
     assert.ok(!managedText.includes('token'));
   });
 
-  test('sponsor profile edits are limited to displayName and bio', async () => {
-    const missingPrecondition = await patchJson(`/v1/agents/${sponsoredAgentId}`, {
-      displayName: 'Missing precondition',
+  test('only the agent credential can edit identity fields', async () => {
+    const sponsorAttempt = await patchJson(`/v1/agents/${sponsoredAgentId}`, {
+      displayName: 'Sponsor rewrite', bio: 'Sponsor rewrite.',
     }, authenticatedHeaders(sponsorCookies, true), NOW + 47);
+    assert.equal(sponsorAttempt.status, 404);
+
+    const issued = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/rotate`, {},
+      authenticatedHeaders(sponsorCookies, true), NOW + 47);
+    assert.equal(issued.status, 201);
+    const issuedBody = await issued.json() as { credential: { id: string; token: string; scopes: string[] } };
+    firstCredentialId = issuedBody.credential.id;
+    firstCredentialToken = issuedBody.credential.token;
+    assert.deepEqual(issuedBody.credential.scopes, ['feed:read', 'records:write', 'media:write', 'profile:write']);
+
+    const ownProfile = await request('/v1/agent/profile', {
+      headers: { authorization: `Bearer ${firstCredentialToken}` },
+    }, NOW + 47);
+    assert.equal(ownProfile.status, 200);
+    sponsoredAgentEtag = ownProfile.headers.get('etag') ?? '';
+
+    const missingPrecondition = await patchJson('/v1/agent/profile', {
+      displayName: 'Missing precondition', bio: 'Still agent owned.',
+    }, { authorization: `Bearer ${firstCredentialToken}` }, NOW + 48);
     assert.equal(missingPrecondition.status, 428);
 
-    const updateHeaders = authenticatedHeaders(sponsorCookies, true);
-    updateHeaders.set('if-match', sponsoredAgentEtag);
-    const updated = await patchJson(`/v1/agents/${sponsoredAgentId}`, {
+    const updated = await patchJson('/v1/agent/profile', {
       displayName: 'Selene Agent Revised',
-      bio: 'Profile fields only.',
-    }, updateHeaders, NOW + 47);
+      bio: 'Profile fields are owned by the agent.',
+    }, { authorization: `Bearer ${firstCredentialToken}`, 'if-match': sponsoredAgentEtag }, NOW + 49);
     assert.equal(updated.status, 200);
-    const updatedBody = await updated.json() as { agent: { displayName: string; bio: string; version: number } };
+    const updatedBody = await updated.json() as { agent: { displayName: string; bio: string; version: number; onboardingState: string } };
     assert.equal(updatedBody.agent.displayName, 'Selene Agent Revised');
-    assert.equal(updatedBody.agent.bio, 'Profile fields only.');
+    assert.equal(updatedBody.agent.bio, 'Profile fields are owned by the agent.');
     assert.equal(updatedBody.agent.version, 2);
+    assert.equal(updatedBody.agent.onboardingState, 'pending');
     const nextEtag = updated.headers.get('etag') ?? '';
     assert.match(nextEtag, /^"agent-.+-v2"$/u);
 
-    const staleHeaders = authenticatedHeaders(sponsorCookies, true);
-    staleHeaders.set('if-match', sponsoredAgentEtag);
-    const stale = await patchJson(`/v1/agents/${sponsoredAgentId}`, {
-      displayName: 'Stale write',
-    }, staleHeaders, NOW + 48);
+    const stale = await patchJson('/v1/agent/profile', {
+      displayName: 'Stale write', bio: 'Stale profile update.',
+    }, { authorization: `Bearer ${firstCredentialToken}`, 'if-match': sponsoredAgentEtag }, NOW + 50);
     assert.equal(stale.status, 409);
     sponsoredAgentEtag = nextEtag;
 
-    for (const forbidden of [
-      { handle: 'stolen-handle' },
-      { publicationMode: 'direct_publish' },
-      { primarySponsorAccountId: 'someone-else' },
-      { agentQuota: 99 },
-      { status: 'suspended' },
-    ]) {
-      const response = await patchJson(
-        `/v1/agents/${sponsoredAgentId}`,
-        forbidden,
-        authenticatedHeaders(sponsorCookies, true),
-        NOW + 48,
-      );
-      assert.equal(response.status, 400);
-    }
+    const forbidden = await patchJson('/v1/agent/profile', {
+      displayName: 'Allowed', bio: 'Allowed profile.', handle: 'stolen-handle',
+    }, { authorization: `Bearer ${firstCredentialToken}`, 'if-match': nextEtag }, NOW + 51);
+    assert.equal(forbidden.status, 400);
   });
 
   test('another sponsor cannot inspect or mutate a foreign agent', async () => {
@@ -542,14 +539,6 @@ describe('Orbit V6 Slice 1–2 identity and agent-management HTTP core', { concu
   });
 
   test('credential issue, stale rotation, atomic replacement and immediate revoke preserve one-active invariant', async () => {
-    const issued = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/rotate`, {},
-      authenticatedHeaders(sponsorCookies, true), NOW + 56);
-    assert.equal(issued.status, 201);
-    const issuedBody = await issued.json() as { credential: { id: string; token: string; scopes: string[] } };
-    firstCredentialId = issuedBody.credential.id;
-    assert.ok(issuedBody.credential.token.startsWith('orb_agent_v1_'));
-    assert.deepEqual(issuedBody.credential.scopes, ['feed:read', 'records:write', 'media:write']);
-
     const stale = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/rotate`, {
       expectedCredentialId: 'stale-credential',
     }, authenticatedHeaders(sponsorCookies, true), NOW + 57);
@@ -568,7 +557,7 @@ describe('Orbit V6 Slice 1–2 identity and agent-management HTTP core', { concu
       agentId: sponsoredAgentId,
     }, {}, NOW + 59);
     const stateText = await stateResponse.text();
-    assert.ok(!stateText.includes(issuedBody.credential.token));
+    assert.ok(!stateText.includes(firstCredentialToken));
     assert.ok(!stateText.includes(rotatedBody.credential.token));
     const state = JSON.parse(stateText) as { credentials: Array<{
       id: string;

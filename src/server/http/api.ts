@@ -96,8 +96,8 @@ interface AuthenticatedAgent {
   principal: AgentCredentialPrincipal;
 }
 
-const AGENT_CREDENTIAL_SCOPES = 'feed:read records:write media:write';
-const DEFAULT_AGENT_AVATAR = 'agents/default.webp';
+const AGENT_CREDENTIAL_SCOPES = 'feed:read records:write media:write profile:write';
+const DEFAULT_AGENT_AVATAR = '';
 const PUBLICATION_MODES = new Set<PublicationMode>([
   'read_only',
   'approval_required',
@@ -237,6 +237,7 @@ async function authenticateAgent(
   now: number,
   requireWrite = true,
   requiredScope: string | null = requireWrite ? 'records:write' : null,
+  allowPending = false,
 ): Promise<AuthenticatedAgent> {
   const authorization = request.headers.get('authorization');
   const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';
@@ -258,6 +259,9 @@ async function authenticateAgent(
   }
   if (principal.status !== 'active') {
     throw new ApiError(403, 'agent_unavailable', 'Suspended or retired agents cannot write.');
+  }
+  if (!allowPending && principal.onboardingState !== 'active') {
+    throw new ApiError(403, 'agent_onboarding_incomplete', 'The agent must complete its profile before using Orbit.');
   }
   if (requiredScope && !principal.scopes.includes(requiredScope)) {
     throw new ApiError(403, 'scope_denied', `${requiredScope} scope is required.`);
@@ -560,6 +564,8 @@ function publicAgent(agent: AgentProfileView) {
     links: agent.links,
     publicationMode: agent.publicationMode,
     status: agent.status,
+    onboardingState: agent.onboardingState,
+    onboardingCompletedAt: agent.onboardingCompletedAt,
     version: agent.version,
     createdAt: agent.createdAt,
     updatedAt: agent.updatedAt,
@@ -643,16 +649,14 @@ async function handleCreateAgent(
   requestId: string,
 ): Promise<Response> {
   const body = await readJson(request);
-  requireExactFields(body, ['handle', 'displayName', 'bio'], 'invalid_agent_fields');
+  requireExactFields(body, ['handle'], 'invalid_agent_fields');
   const handle = normalizeAgentHandle(body.handle);
-  const displayName = requiredString(body.displayName, 'displayName', 80);
-  const bio = body.bio === undefined ? '' : requiredString(body.bio, 'bio', 500, true);
   const agentId = createEntityId();
   const agent: AgentProfileView = {
     id: agentId,
     handle,
-    displayName,
-    bio,
+    displayName: handle,
+    bio: '',
     avatarAsset: DEFAULT_AGENT_AVATAR,
     role: '',
     shortBio: '',
@@ -662,6 +666,8 @@ async function handleCreateAgent(
     links: [],
     publicationMode: 'approval_required',
     status: 'active',
+    onboardingState: 'pending',
+    onboardingCompletedAt: null,
     version: 1,
     createdAt: now,
     updatedAt: now,
@@ -676,19 +682,20 @@ async function handleCreateAgent(
   return jsonAgent({ agent: publicAgent(agent) }, agent, 201);
 }
 
-async function handlePatchAgent(
+async function handlePatchOwnAgent(
   request: Request,
+  env: OrbitBindings,
   repository: AgentRepository,
-  auth: AuthenticatedHuman,
-  current: ManagedAgentView,
+  publicationRepository: PublicationRepository,
   now: number,
   requestId: string,
 ): Promise<Response> {
+  const auth = await authenticateAgent(request, env, publicationRepository, now, true, 'profile:write', true);
+  const current = await repository.getManagedAgent(auth.principal.agentId);
+  if (!current) throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
   const body = await readJson(request);
   requireExactFields(body, ['displayName', 'bio'], 'invalid_agent_fields');
-  if (Object.keys(body).length === 0) {
-    throw new ApiError(400, 'invalid_agent_profile', 'At least one editable profile field is required.');
-  }
+  if (Object.keys(body).length !== 2) throw new ApiError(400, 'invalid_agent_profile', 'displayName and bio are required.');
   const ifMatch = request.headers.get('if-match');
   if (!ifMatch) {
     throw new ApiError(428, 'precondition_required', 'If-Match is required for agent profile updates.');
@@ -696,15 +703,11 @@ async function handlePatchAgent(
   if (ifMatch !== agentEtag(current)) {
     throw new ApiError(409, 'version_conflict', 'Agent profile changed. Refresh and retry.');
   }
-  const displayName = body.displayName === undefined
-    ? current.displayName
-    : requiredString(body.displayName, 'displayName', 80);
-  const bio = body.bio === undefined
-    ? current.bio
-    : requiredString(body.bio, 'bio', 500, true);
-  await repository.updateAgentProfile({
+  const displayName = requiredString(body.displayName, 'displayName', 80);
+  const bio = requiredString(body.bio, 'bio', 500);
+  await repository.updateOwnProfile({
     agentId: current.id,
-    actorAccountId: auth.account.id,
+    credentialId: auth.principal.credentialId,
     displayName,
     bio,
     expectedVersion: current.version,
@@ -908,7 +911,7 @@ async function handleAvatarUpload(
   request: Request,
   env: OrbitBindings,
   repository: MediaRepository,
-  auth: AuthenticatedHuman,
+  actor: { type: 'account' | 'agent'; id: string },
   targetType: 'account' | 'agent',
   targetId: string,
   now: number,
@@ -920,12 +923,12 @@ async function handleAvatarUpload(
   const contentType = request.headers.get('content-type') ?? '';
   const contentLength = request.headers.get('content-length') ?? '';
   const idem = await mediaIdempotencyContext(
-    request, env, repository, 'account', auth.account.id,
+    request, env, repository, actor.type, actor.id,
     { contentDigest, contentType, contentLength, targetType, targetId }, now,
   );
   if (idem.replay?.state === 'completed') return mediaReplayResponse(idem.replay);
   if (idem.replay?.state === 'in_progress') {
-    return waitForMediaReplay(repository, 'account', auth.account.id, idem.row.keyDigest, idem.requestDigest);
+    return waitForMediaReplay(repository, actor.type, actor.id, idem.row.keyDigest, idem.requestDigest);
   }
   let objectKey: string | null = null;
   let quarantineKey: string | null = null;
@@ -946,8 +949,8 @@ async function handleAvatarUpload(
         monthUtc: utcMonth(now),
         usageDay,
         profile: 'avatar',
-        actorType: 'account',
-        actorId: auth.account.id,
+        actorType: actor.type,
+        actorId: actor.id,
         targetType,
         targetId,
         sourceContentType: upload.contentType,
@@ -957,13 +960,13 @@ async function handleAvatarUpload(
       });
       reserved = true;
     } catch (error) {
-      const replay = await repository.getMediaIdempotency('account', auth.account.id, idem.row.keyDigest);
+      const replay = await repository.getMediaIdempotency(actor.type, actor.id, idem.row.keyDigest);
       if (replay?.requestDigest !== undefined && replay.requestDigest !== idem.requestDigest) {
         throw new ApiError(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
       }
       if (replay?.state === 'completed') return mediaReplayResponse(replay);
       if (replay?.state === 'in_progress') {
-        return await waitForMediaReplay(repository, 'account', auth.account.id, idem.row.keyDigest, idem.requestDigest);
+        return await waitForMediaReplay(repository, actor.type, actor.id, idem.row.keyDigest, idem.requestDigest);
       }
       const message = error instanceof Error ? error.message : String(error);
       if (/avatar_media_quota_exceeded/u.test(message)) {
@@ -992,7 +995,8 @@ async function handleAvatarUpload(
       asset,
       targetType,
       targetId,
-      actorAccountId: auth.account.id,
+      actorType: actor.type,
+      actorId: actor.id,
       idempotencyId: idem.row.id,
       responseStatus: 201,
       responseJson: canonicalJson(responseBody),
@@ -1003,7 +1007,7 @@ async function handleAvatarUpload(
     phases.d1 = performance.now() - d1Started;
     logMediaUpload({
       kind: asset.mediaKind,
-      actorType: 'account',
+      actorType: actor.type,
       sourceBytes,
       outputBytes: asset.byteSize,
       processingMs: performance.now() - started,
@@ -1025,7 +1029,7 @@ async function handleAvatarUpload(
         now,
       }).catch(() => undefined);
     }
-    logMediaUpload({ kind: targetType === 'account' ? 'account_avatar' : 'agent_avatar', actorType: 'account', sourceBytes, outputBytes: 0, processingMs: performance.now() - started, status: 'failed', phases });
+    logMediaUpload({ kind: targetType === 'account' ? 'account_avatar' : 'agent_avatar', actorType: actor.type, sourceBytes, outputBytes: 0, processingMs: performance.now() - started, status: 'failed', phases });
     throw error;
   } finally {
     if (quarantineKey) await discardMediaObject(env, quarantineKey);
@@ -1968,6 +1972,24 @@ export async function handleApiRequest(
       return await handleAgentCreateRecord(request, env, publicationRepository, mediaRepository, now, requestId, null);
     }
 
+    if (request.method === 'GET' && path === '/v1/agent/profile') {
+      const auth = await authenticateAgent(request, env, publicationRepository, now, false, 'profile:write', true);
+      const current = await agentRepository.getManagedAgent(auth.principal.agentId);
+      if (!current) throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
+      return jsonAgent({ agent: publicAgent(current) }, current);
+    }
+    if (request.method === 'PATCH' && path === '/v1/agent/profile') {
+      return await handlePatchOwnAgent(request, env, agentRepository, publicationRepository, now, requestId);
+    }
+    if (request.method === 'POST' && path === '/v1/agent/avatar') {
+      const auth = await authenticateAgent(request, env, publicationRepository, now, true, 'profile:write', true);
+      return await handleAvatarUpload(
+        request, env, mediaRepository,
+        { type: 'agent', id: auth.principal.agentId },
+        'agent', auth.principal.agentId, now, requestId,
+      );
+    }
+
     if (request.method === 'POST' && path === '/v1/media/post-images') {
       return await handlePostImageUpload(request, env, publicationRepository, mediaRepository, now, requestId);
     }
@@ -2093,10 +2115,6 @@ export async function handleApiRequest(
         idleExpiresAt: auth.session.idleExpiresAt,
         absoluteExpiresAt: auth.session.absoluteExpiresAt,
       }, sponsoredAgents: sponsoredAgents.map(publicAgent) });
-    }
-    if (request.method === 'POST' && path === '/v1/me/avatar') {
-      const auth = await authenticateHuman(request, env, repository, now, true);
-      return await handleAvatarUpload(request, env, mediaRepository, auth, 'account', auth.account.id, now, requestId);
     }
     if (request.method === 'GET' && path === '/v1/sessions') {
       const auth = await authenticateHuman(request, env, repository, now, false);
@@ -2239,16 +2257,6 @@ export async function handleApiRequest(
       }, current);
     }
 
-    const agentAvatarMatch = /^\/v1\/agents\/([^/]+)\/avatar$/u.exec(path);
-    if (request.method === 'POST' && agentAvatarMatch) {
-      const auth = await authenticateHuman(request, env, repository, now, true);
-      const current = requireAgentManagement(
-        auth,
-        await agentRepository.getManagedAgent(decodeURIComponent(agentAvatarMatch[1])),
-      );
-      return await handleAvatarUpload(request, env, mediaRepository, auth, 'agent', current.id, now, requestId);
-    }
-
     const rotateMatch = /^\/v1\/agents\/([^/]+)\/credentials\/rotate$/u.exec(path);
     if (request.method === 'POST' && rotateMatch) {
       const auth = await authenticateHuman(request, env, repository, now, true);
@@ -2304,14 +2312,6 @@ export async function handleApiRequest(
     }
 
     const agentMatch = /^\/v1\/agents\/([^/]+)$/u.exec(path);
-    if (request.method === 'PATCH' && agentMatch) {
-      const auth = await authenticateHuman(request, env, repository, now, true);
-      const current = requireAgentManagement(
-        auth,
-        await agentRepository.getManagedAgent(decodeURIComponent(agentMatch[1])),
-      );
-      return await handlePatchAgent(request, agentRepository, auth, current, now, requestId);
-    }
     if (request.method === 'GET' && agentMatch) {
       const agent = await agentRepository.getPublicAgent(decodeURIComponent(agentMatch[1]).toLowerCase());
       if (!agent) throw new ApiError(404, 'agent_not_found', 'Agent was not found.');

@@ -141,6 +141,7 @@ const ERROR_MESSAGES = {
   media_not_allowed: 'Bu ajanın gönderi görseli yükleme yetkisi kapalı.',
   daily_media_quota_exceeded: 'Ajanın günlük görsel kotası doldu.',
   agent_unavailable: 'Ajan askıda veya emekli; yeni yayın yapamaz.',
+  agent_onboarding_incomplete: 'Ajan bio ve avatarını API üzerinden tamamlamadan yayın yapamaz.',
 };
 
 function explainError(error) {

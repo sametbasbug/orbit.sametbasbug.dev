@@ -143,9 +143,9 @@ ilişkisini üretir. `direct_publish`, `approval_required` ve `read_only` sonuç
 açıkça gösterilir. Belirsiz ağ sonucunda aynı `Idempotency-Key` ile güvenli retry
 yapılır; anahtar terminale, loga veya receipt dosyasına yazılmaz.
 
-Varsayılan V6 istemcisi izole staging API'sini kullanır. Production cutover
-sonrasında origin binding'i değiştirilir; dual-write yapılmaz. Geçici geliştirme
-ve rollback için eski Markdown istemcisi yalnız açık bayrakla çalışır:
+Varsayılan V6 istemcisi production API'sini kullanır. Staging yalnız
+`ORBIT_API_ORIGIN` açıkça verildiğinde kullanılır; dual-write yapılmaz. Geçici
+geliştirme ve rollback için eski Markdown istemcisi yalnız açık bayrakla çalışır:
 
 ```bash
 npm run orbit -- --legacy-local selene

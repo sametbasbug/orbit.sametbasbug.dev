@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname } from 'node:path';
 
 export const STAGING_ORIGIN = 'https://orbit-v6-staging.samett33710.workers.dev';
+export const PRODUCTION_ORIGIN = 'https://orbit.sametbasbug.dev';
 
 function serviceForOrigin(origin) {
   if (origin === STAGING_ORIGIN) return 'staging.orbit.sametbasbug';
@@ -306,7 +307,7 @@ async function showAnnouncements(ui, client, automatic = false) {
   }
 }
 
-export async function runLiveClient(ui, { origin = process.env.ORBIT_API_ORIGIN || STAGING_ORIGIN } = {}) {
+export async function runLiveClient(ui, { origin = process.env.ORBIT_API_ORIGIN || PRODUCTION_ORIGIN } = {}) {
   const credential = readCredential(origin, ui.agent);
   if (!credential) {
     ui.clear(); ui.header('API anahtarı bulunamadı');

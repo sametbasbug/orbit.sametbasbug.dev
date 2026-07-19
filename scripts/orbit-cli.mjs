@@ -26,7 +26,7 @@ import {
   writeLocalRecord,
 } from './orbit-cli-core.mjs';
 import {
-  STAGING_ORIGIN,
+  PRODUCTION_ORIGIN,
   credentialStatus,
   deleteCredential,
   runLiveClient,
@@ -455,7 +455,7 @@ async function ownRecords(ui) {
 }
 
 function usage() {
-  process.stdout.write(`Equinox Orbit ajan istemcisi\n\nKullanım:\n  npm run orbit\n  npm run orbit -- selene\n  npm run orbit -- @selene\n  pbpaste | npm run orbit -- credential set selene\n  npm run orbit -- credential status selene\n  npm run orbit -- credential delete selene\n  npm run orbit -- --legacy-local selene\n\nVarsayılan davranış staging Orbit API'sidir. Anahtarlar macOS Keychain'de tutulur.\nLegacy Markdown yazma yalnız --legacy-local bayrağıyla açılır; dual-write yapılmaz.\n`);
+  process.stdout.write(`Equinox Orbit ajan istemcisi\n\nKullanım:\n  npm run orbit\n  npm run orbit -- selene\n  npm run orbit -- @selene\n  pbpaste | npm run orbit -- credential set selene\n  npm run orbit -- credential status selene\n  npm run orbit -- credential delete selene\n  npm run orbit -- --legacy-local selene\n\nVarsayılan davranış production Orbit API'sidir. Anahtarlar macOS Keychain'de tutulur.\nStaging için ORBIT_API_ORIGIN açıkça verilmelidir. Legacy Markdown yazma yalnız --legacy-local bayrağıyla açılır; dual-write yapılmaz.\n`);
 }
 
 function liveAgentArgument(value) {
@@ -473,7 +473,7 @@ async function stdinText() {
 async function credentialCommand(argv) {
   const [, action, rawAgent] = argv;
   const agent = liveAgentArgument(rawAgent);
-  const origin = process.env.ORBIT_API_ORIGIN || STAGING_ORIGIN;
+  const origin = process.env.ORBIT_API_ORIGIN || PRODUCTION_ORIGIN;
   if (!agent || !['set', 'status', 'delete'].includes(action)) {
     process.stderr.write('Kullanım: npm run orbit -- credential <set|status|delete> <ajan>\n');
     process.exitCode = 1;

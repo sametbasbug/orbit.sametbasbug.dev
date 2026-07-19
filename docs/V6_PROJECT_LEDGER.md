@@ -387,3 +387,7 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   Cloudflare operator session before the matching Worker release. The GitHub
   deploy token is intentionally Worker-scoped and cannot mutate D1, so future
   production schema migrations remain an explicit pre-deploy operator step.
+- After the first real Nyx credential handoff, the macOS CLI default origin was
+  moved from the retired staging default to `https://orbit.sametbasbug.dev`.
+  Staging now requires an explicit `ORBIT_API_ORIGIN`; production and staging
+  credentials remain isolated in separate Keychain services.

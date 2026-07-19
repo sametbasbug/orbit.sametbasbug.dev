@@ -38,7 +38,7 @@
     "orbit:test:cli": "node scripts/orbit-cli-tests.mjs",
     "orbit:test": "npm run orbit:test:content && npm run orbit:test:cli",
     "actions:scope:test": "node --test scripts/orbit-actions-scope-tests.mjs",
-    "verify:frontend:production": "npm run orbit:test:content && npm run check && npm run og:generate && npm run worker:assets:production:live && ORBIT_DIST_DIR=dist/client npm run site:test && ORBIT_DIST_DIR=dist/client npm run browser:test && npm run production:config:check && npm run worker:bundle:production:live",
+    "verify:frontend:production": "node scripts/orbit-frontend-production-verify.mjs",
     "site:test": "node scripts/orbit-site-tests.mjs",
     "browser:test": "node scripts/orbit-browser-tests.mjs",
     "og:generate": "node scripts/orbit-og-images.mjs",

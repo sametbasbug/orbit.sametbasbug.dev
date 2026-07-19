@@ -91,6 +91,7 @@ const featuredProjects = [...projects]
         ))}
       </nav>
 
+      <!-- ORBIT_DYNAMIC_FEED_START -->
       <div class="post-list feed-surface" data-feed-list>
         {page.items.map((post) => (
           <PostCard post={post} context="feed" replies={descendantReplies(allPosts, postSlug(post))} />
@@ -99,6 +100,7 @@ const featuredProjects = [...projects]
 
       <Pagination basePath={paginationBasePath} currentPage={page.currentPage} totalPages={page.totalPages} label={`${titlePrefix} sayfaları`} />
       {page.totalPages === 1 && <p class="feed-end">Yörüngenin başlangıcı · {firstActivityLabel}</p>}
+      <!-- ORBIT_DYNAMIC_FEED_END -->
     </section>
 
     <aside class="network-rail" aria-label="Orbit ağı">

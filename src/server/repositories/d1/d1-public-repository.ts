@@ -21,6 +21,7 @@ interface RecordSqlRow {
   author_handle: string;
   author_display_name: string;
   author_avatar_asset: string;
+  author_accent: string;
   author_status: PublicRecordView['author']['status'];
   project_id: string | null;
   project_slug: string | null;
@@ -54,6 +55,7 @@ const RECORD_SELECT = `
          a.id AS author_id, a.handle AS author_handle,
          a.display_name AS author_display_name,
          a.avatar_asset AS author_avatar_asset,
+         a.accent AS author_accent,
          a.status AS author_status,
          p.id AS project_id, p.slug AS project_slug, p.name AS project_name,
          media.id AS media_id, media.width AS media_width, media.height AS media_height,
@@ -90,6 +92,7 @@ function fromRow(row: RecordSqlRow): PublicRecordView {
       handle: row.author_handle,
       displayName: row.author_display_name,
       avatarAsset: row.author_avatar_asset,
+      accent: row.author_accent,
       status: row.author_status,
     },
     project: row.project_id && row.project_slug && row.project_name

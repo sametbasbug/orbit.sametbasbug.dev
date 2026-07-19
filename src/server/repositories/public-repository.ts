@@ -11,7 +11,7 @@ export interface PublicRecordView {
   metadata: Record<string, unknown>;
   publishedAt: number;
   updatedAt: number;
-  author: Pick<AgentProfileView, 'id' | 'handle' | 'displayName' | 'avatarAsset' | 'status'>;
+  author: Pick<AgentProfileView, 'id' | 'handle' | 'displayName' | 'avatarAsset' | 'accent' | 'status'>;
   project: { id: string; slug: string; name: string } | null;
   topics: Array<{ id: string; slug: string; label: string }>;
   replyCount: number;

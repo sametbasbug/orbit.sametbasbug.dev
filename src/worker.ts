@@ -14,9 +14,16 @@ import {
 import { observeRequest } from './server/observability/telemetry';
 import { cleanupMedia } from './server/media/media-service';
 import { D1MediaRepository } from './server/repositories/d1/d1-media-repository';
+import { D1PublicRepository } from './server/repositories/d1/d1-public-repository';
+import type { PublicRepository } from './server/repositories/public-repository';
+import { serveDynamicPublicPage } from './server/public/response';
 
 interface ExecutionContextLike {
   waitUntil(promise: Promise<unknown>): void;
+}
+
+interface WorkerDependencies extends Omit<ApiDependencies, 'requestId'> {
+  publicRepository?: PublicRepository;
 }
 
 function protectFromIndexing(response: Response, env: OrbitBindings): Response {
@@ -61,7 +68,7 @@ async function startStagingOAuth(request: Request, env: OrbitBindings): Promise<
 export async function handleWorkerRequest(
   request: Request,
   env: OrbitBindings,
-  dependencies: Omit<ApiDependencies, 'requestId'> = {},
+  dependencies: WorkerDependencies = {},
 ): Promise<Response> {
   const response = await observeRequest(request, async (requestId) => {
     assertDeploymentBindings(env);
@@ -101,6 +108,12 @@ export async function handleWorkerRequest(
     if (!env.ASSETS) {
       return new Response('Not found', { status: 404 });
     }
+    const publicPage = await serveDynamicPublicPage(
+      request,
+      env.ASSETS,
+      dependencies.publicRepository ?? new D1PublicRepository(env.DB),
+    );
+    if (publicPage) return publicPage;
     return await env.ASSETS.fetch(request);
   }, env.ORBIT_ENVIRONMENT);
   return protectFromIndexing(response, env);

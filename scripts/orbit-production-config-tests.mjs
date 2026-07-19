@@ -252,6 +252,11 @@ assert(
   'production asset checksum is not verified before deployment',
 );
 assert(
+  deployWorkflow.includes('sha256sum dist/worker-production-live/worker.js >> production-assets.sha256')
+    && deployWorkflow.includes('dist/worker-production-live/worker.js \\\n            --no-bundle'),
+  'verified Worker bundle is rebuilt instead of being deployed byte-for-byte',
+);
+assert(
   deployWorkflow.includes("test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\""),
   'deploy job does not verify the exact candidate commit',
 );

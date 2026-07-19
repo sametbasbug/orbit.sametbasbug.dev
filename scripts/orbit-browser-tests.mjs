@@ -99,7 +99,7 @@ if (errors.length === 0) {
   ];
 
   try {
-    for (const viewport of viewports) {
+    await Promise.all(viewports.map(async (viewport) => {
       const label = `${viewport.width}x${viewport.height}`;
       const context = await browser.newContext({ viewport, colorScheme: 'light' });
       const page = await context.newPage();
@@ -449,7 +449,7 @@ if (errors.length === 0) {
 
       }
       await context.close();
-    }
+    }));
   } finally {
     await browser.close();
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

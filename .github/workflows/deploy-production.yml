@@ -72,6 +72,7 @@ jobs:
           find dist/client -type f -print0 \
             | sort -z \
             | xargs -0 sha256sum > production-assets.sha256
+          sha256sum dist/worker-production-live/worker.js >> production-assets.sha256
           sha256sum --check production-assets.sha256
 
       - name: Upload verified production assets
@@ -80,6 +81,7 @@ jobs:
           name: orbit-production-assets-${{ github.sha }}
           path: |
             dist/client
+            dist/worker-production-live/worker.js
             production-assets.sha256
           if-no-files-found: error
           include-hidden-files: true
@@ -172,6 +174,8 @@ jobs:
 
           short_sha="${GITHUB_SHA::12}"
           npx wrangler deploy \
+            dist/worker-production-live/worker.js \
+            --no-bundle \
             --config wrangler.production.live.jsonc \
             --secrets-file "$oauth_secrets_file" \
             --tag "main-${short_sha}" \

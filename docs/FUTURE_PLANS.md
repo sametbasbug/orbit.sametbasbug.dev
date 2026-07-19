@@ -18,8 +18,10 @@ Durumlar:
 
 ## Plan 001 — GitHub-kotalı, ajan-başlatmalı güvenli eşleştirme
 
-**Durum:** Kabul edildi  
-**Karar tarihi:** 19 Temmuz 2026  
+**Durum:** Kabul edildi
+
+**Karar tarihi:** 19 Temmuz 2026
+
 **Uygulama:** Başlamadı
 
 ### Amaç
@@ -122,3 +124,120 @@ belge henüz kesin API kontratı değildir.
   ürettiği anahtar çiftine bağlı imzalı istek modeline mi geçilecek?
 - Manuel credential kurtarma yolu hangi beta aşamasında kaldırılacak?
 
+---
+
+## Plan 002 — Değişiklik kapsamına duyarlı hızlı GitHub Actions
+
+**Durum:** Kabul edildi
+
+**Karar tarihi:** 19 Temmuz 2026
+
+**Uygulama:** Başlamadı
+
+### Amaç
+
+Her `main` push'unda değişiklik kapsamından bağımsız olarak bütün test, statik
+site ve production Worker zincirini çalıştırmak yerine; yalnız etkilenen güvenlik
+ve ürün katmanlarını doğrulamak. Kritik backend değişikliklerinde mevcut tam
+korumayı sürdürürken dokümantasyon ve dar tasarım değişikliklerinin gereksiz yere
+yaklaşık üç dakika beklemesini önlemek.
+
+### Mevcut ölçüm
+
+19 Temmuz 2026 tarihli başarılı production çalışması toplam **2 dakika 47
+saniye** sürdü:
+
+- Bağımlılık kurulumu: yaklaşık 6 saniye.
+- Uygulama ve statik çıktı doğrulaması: **2 dakika 23 saniye**.
+- Production Worker paketleme: yaklaşık 5 saniye.
+- Cloudflare deploy: yaklaşık 5 saniye.
+- Canlı smoke kontrolü: yaklaşık 1 saniye.
+
+Sürenin yaklaşık yüzde 85'i Cloudflare dağıtımından değil, her push'ta çalışan
+tam doğrulama paketinden geliyor. Bu paket 80 D1/workerd testi, içerik ve CLI
+testleri, Astro build, 2.412 site kontrolü ve 372 tarayıcı kontrolü içeriyor.
+Yalnız `docs/**` altında değişiklik olduğunda bile aynı zincir çalışıyor.
+
+### Hedef doğrulama katmanları
+
+#### 1. Yalnız dokümantasyon
+
+Örnek kapsam: `docs/**` ve public ürüne dahil olmayan Markdown dosyaları.
+
+- Production deploy başlatılmaz.
+- Uygulama, D1, tarayıcı ve Worker testleri çalıştırılmaz.
+- Gerekirse yalnız hızlı Markdown/link biçim kontrolü çalışır.
+
+#### 2. İçerik ve görsel yüzey
+
+Örnek kapsam: public içerik, Astro sayfaları, bileşenler, CSS ve istemci
+scriptleri; server/API/migration değişikliği yoktur.
+
+- İçerik doğrulaması, Astro diagnostics ve site bütünlük testleri çalışır.
+- Etkilenen gerçek tarayıcı kontrolleri çalışır.
+- D1/server testleri yalnız ortak kontrat etkileniyorsa devreye girer.
+- Production Worker çıktısı bir kez üretilir ve aynı artifact deploy edilir.
+
+#### 3. Backend, kimlik, güvenlik ve migration
+
+Örnek kapsam: `src/server/**`, `migrations/**`, Wrangler production configleri,
+deploy workflow'u ve güvenlik-kritik ortak sözleşmeler.
+
+- Mevcut tam D1/workerd, CLI, içerik, Astro, site ve tarayıcı paketi korunur.
+- Production config ve Worker dry-run doğrulamaları zorunlu kalır.
+- Migration'lar mevcut operator kontrollü production sürecini kullanır.
+
+#### 4. Tam regresyon
+
+- Bütün doğrulama paketi zamanlanmış gece çalışmasında ve manuel
+  `workflow_dispatch` yüzeyinde her zaman kullanılabilir olur.
+- Dar bir push yolunda atlanan testler düzenli tam regresyonda mutlaka çalışır.
+
+### Uygulama ilkeleri
+
+- Değişiklik sınıflandırması varsayılan olarak güvenli davranır: bilinmeyen veya
+  birden fazla katmana dokunan kapsam tam doğrulamaya yükseltilir.
+- Sınıflandırma yalnız dosya adına değil, güvenlik-kritik ortak dosyaların açık
+  listesine dayanır.
+- Testleri atlama kararı kullanıcı girdisi, commit mesajı veya kolayca taklit
+  edilebilen bir etiketle verilemez.
+- Bağımsız test grupları mümkün olduğunda paralel job'lara ayrılır.
+- Aynı commit için statik/Worker production paketi iki kez oluşturulmaz;
+  doğrulanan artifact değiştirilmeden deploy edilir.
+- npm ve güvenli build cache'leri kullanılır; credential, secret, D1 state veya
+  kullanıcı verisi cache artifact'ına girmez.
+- Production deploy yalnız gerekli doğrulama job'larının tamamı başarılıysa
+  çalışır.
+- `concurrency` ve `cancel-in-progress` davranışı korunur; eski commit yeni
+  production sürümünün önüne geçemez.
+
+### Hedef süreler
+
+- Yalnız dokümantasyon: production Actions/deploy süresi **0**.
+- Dar içerik veya tasarım değişikliği: yaklaşık **30–60 saniye**.
+- Kritik backend/migration değişikliği: güvenlik kapsamı korunarak mümkün olan
+  en kısa süre; hız uğruna zorunlu test atlanmaz.
+
+### Kabul ölçütleri
+
+- `docs/**` ile sınırlı bir commit production deploy başlatmaz.
+- Server/API/migration değişikliği tam D1 ve güvenlik paketini atlayamaz.
+- Public tasarım değişikliği en az Astro, site bütünlüğü ve ilgili tarayıcı
+  kontrollerinden geçmeden deploy edilemez.
+- Deploy edilen artifact, doğrulanan artifact ile aynı commit ve checksum'a
+  sahiptir.
+- Gece/manuel tam regresyon mevcut bütün test sayılarını korur.
+- Workflow kapsam sınıflandırması için olumlu, olumsuz ve karma değişiklik
+  fixture'ları bulunur.
+- Optimizasyon öncesi ve sonrası adım süreleri ölçülüp proje ledger'ına
+  kaydedilir.
+
+### Açık kararlar
+
+- Değişiklik sınıflandırması yalnız yerel bir script ile mi, yoksa sabitlenmiş
+  güvenilir bir paths-filter action ile mi yapılacak?
+- Tarayıcı testleri dosya bazında güvenle bölünebilir mi, yoksa ilk aşamada tüm
+  frontend değişikliklerinde birlikte mi çalışmalı?
+- Paralel job'ların tekrar eden `npm ci` maliyeti artifact/cache kazancından
+  düşük mü; ölçümle hangi job sınırı en hızlı sonucu veriyor?
+- Gece tam regresyonunun zamanı ve başarısızlık bildirim kanalı ne olacak?

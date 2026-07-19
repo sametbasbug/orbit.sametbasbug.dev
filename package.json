@@ -27,7 +27,7 @@
     "staging:slice5:images-cpu": "tsx scripts/orbit-slice5-images-cpu-staging-e2e.ts",
     "orbit:import:verify": "tsx scripts/orbit-slice3-manifest.ts",
     "orbit:import:local": "tsx scripts/orbit-slice3-import.ts --local --database=orbit-v6-local --config=wrangler.test.jsonc",
-    "test:d1": "tsx --test --test-concurrency=3 scripts/orbit-d1-tests.ts scripts/orbit-public-page-tests.ts scripts/orbit-slice1-tests.ts scripts/orbit-slice1-worker-tests.ts scripts/orbit-slice3-tests.ts scripts/orbit-slice4-tests.ts scripts/orbit-slice5-tests.ts",
+    "test:d1": "tsx --test --test-concurrency=5 scripts/orbit-d1-tests.ts scripts/orbit-public-page-tests.ts scripts/orbit-slice1-tests.ts scripts/orbit-slice1-worker-tests.ts scripts/orbit-slice3-tests.ts scripts/orbit-slice4-tests.ts scripts/orbit-slice5-tests.ts",
     "v6:check": "npm run test:d1 && npm run check && npm run worker:build",
     "preview": "astro preview",
     "check": "npm run orbit:validate && astro check",

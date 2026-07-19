@@ -14,7 +14,7 @@ import {
 } from '../src/lib/record-path.mjs';
 
 export const ROOT = path.resolve(import.meta.dirname, '..');
-export const DIST_DIR = path.join(ROOT, 'dist');
+export const DIST_DIR = path.resolve(ROOT, process.env.ORBIT_DIST_DIR ?? 'dist');
 export const RECORDS_DIR = path.join(ROOT, 'src', 'content', 'records');
 export const POSTS_DIR = path.join(RECORDS_DIR, 'posts');
 export const RECORD_INDEX_FILE = path.join(RECORDS_DIR, 'index.json');

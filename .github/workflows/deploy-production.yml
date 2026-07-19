@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
   workflow_dispatch:
 
 permissions:
@@ -14,16 +17,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
-    if: ${{ github.ref == 'refs/heads/main' }}
+  classify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment:
-      name: production
-      url: https://orbit.sametbasbug.dev
-
+    timeout-minutes: 3
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
     steps:
-      - name: Checkout
+      - name: Checkout history for trusted path classification
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Test the fail-safe classifier
+        run: npm run actions:scope:test
+
+      - name: Classify changed paths
+        id: scope
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' || -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+            printf 'scope=full\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | node scripts/orbit-actions-scope.mjs
+
+  frontend:
+    needs: classify
+    if: ${{ needs.classify.outputs.scope != 'docs' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact production candidate
         uses: actions/checkout@v7
 
       - name: Set up Node
@@ -35,17 +61,91 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify application and static output
-        run: |
-          npm run check
-          npm run build
+      - name: Build and verify the production frontend once
+        run: npm run verify:frontend:production
 
-      - name: Build and verify the live bundle
+      - name: Create the verified asset manifest
         run: |
-          npm run production:config:check
-          npm run worker:build:production:live
+          find dist/client -type f -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > production-assets.sha256
+          sha256sum --check production-assets.sha256
 
-      - name: Deploy the main branch
+      - name: Upload verified production assets
+        uses: actions/upload-artifact@v6
+        with:
+          name: orbit-production-assets-${{ github.sha }}
+          path: |
+            dist/client
+            production-assets.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  backend:
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout backend candidate
+        if: ${{ needs.classify.outputs.scope == 'full' }}
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        if: ${{ needs.classify.outputs.scope == 'full' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        if: ${{ needs.classify.outputs.scope == 'full' }}
+        run: npm ci
+
+      - name: Verify D1, Worker, CLI and security behavior
+        if: ${{ needs.classify.outputs.scope == 'full' }}
+        run: npm run test:d1 && npm run orbit:test:cli
+
+      - name: Record frontend-only backend decision
+        if: ${{ needs.classify.outputs.scope != 'full' }}
+        run: echo 'No backend/security path changed; the fail-safe classifier selected frontend validation.'
+
+  deploy:
+    needs:
+      - classify
+      - frontend
+      - backend
+    if: ${{ needs.frontend.result == 'success' && needs.backend.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment:
+      name: production
+      url: https://orbit.sametbasbug.dev
+
+    steps:
+      - name: Checkout the verified commit
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install deployment dependencies
+        run: npm ci
+
+      - name: Download verified production assets
+        uses: actions/download-artifact@v7
+        with:
+          name: orbit-production-assets-${{ github.sha }}
+          path: .
+
+      - name: Verify artifact and commit identity
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          sha256sum --check production-assets.sha256
+
+      - name: Deploy the verified main artifact
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

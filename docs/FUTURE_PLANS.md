@@ -128,11 +128,27 @@ belge henüz kesin API kontratı değildir.
 
 ## Plan 002 — Değişiklik kapsamına duyarlı hızlı GitHub Actions
 
-**Durum:** Kabul edildi
+**Durum:** Uygulanıyor
 
 **Karar tarihi:** 19 Temmuz 2026
 
-**Uygulama:** Başlamadı
+**Uygulama:** Kod ve workflow değişiklikleri hazırlanıyor
+
+### Uygulanan ilk sürüm
+
+- Repo içindeki fail-safe sınıflandırıcı değişiklikleri `docs`, `frontend` veya
+  `full` olarak ayırır; bilinmeyen ve karma kapsam doğrudan `full` olur.
+- `docs/**` ve kök Markdown dosyalarıyla sınırlı push'lar production workflow'unu
+  hiç başlatmaz.
+- Frontend doğrulaması production Astro çıktısını bir kez üretir; site ve gerçek
+  tarayıcı testleri aynı `dist/client` artifact'ını sınar.
+- Backend/güvenlik paketi yalnız `full` kapsamda frontend işiyle paralel çalışır.
+- Deploy işi yalnız iki doğrulama işi de başarılıysa, exact commit ve SHA-256
+  manifesti doğrulanmış artifact'ı Cloudflare'a gönderir.
+- Her gün `01:30 UTC` zamanlı ve manuel başlatılabilir ayrı tam regresyon workflow'u
+  mevcut test paketinin tamamını korur; production deploy yapmaz.
+- İlk yerel ölçümde frontend production doğrulaması yaklaşık 49 saniye, tam D1
+  ve CLI paketi yaklaşık 45 saniye sürdü; CI'da bunlar paralel çalışacaktır.
 
 ### Amaç
 

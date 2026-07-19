@@ -5,6 +5,7 @@ const files = {
   live: new URL('../wrangler.production.live.jsonc', import.meta.url),
   darkLaunch: new URL('../wrangler.production.dark-launch.jsonc', import.meta.url),
   deployWorkflow: new URL('../.github/workflows/deploy-production.yml', import.meta.url),
+  fullRegressionWorkflow: new URL('../.github/workflows/full-regression.yml', import.meta.url),
 };
 
 let assertions = 0;
@@ -181,6 +182,7 @@ function normalizeModeDifferences(config) {
 const live = await readConfig(files.live, 'live config');
 const darkLaunch = await readConfig(files.darkLaunch, 'dark-launch config');
 const deployWorkflow = await readFile(files.deployWorkflow, 'utf8');
+const fullRegressionWorkflow = await readFile(files.fullRegressionWorkflow, 'utf8');
 
 validateConfig(live, {
   label: 'live config',
@@ -217,5 +219,41 @@ assert(
 assert(
   deployWorkflow.includes("trap 'rm -f \"$oauth_secrets_file\"' EXIT"),
   'production deploy does not clean up its temporary OAuth secrets file',
+);
+assert(
+  deployWorkflow.includes("- 'docs/**'") && deployWorkflow.includes("- '*.md'"),
+  'documentation-only pushes are not excluded from production deploys',
+);
+assert(
+  deployWorkflow.includes('git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | node scripts/orbit-actions-scope.mjs'),
+  'production deploy does not use the trusted changed-path classifier',
+);
+assert(
+  deployWorkflow.includes('npm run verify:frontend:production'),
+  'production frontend is not built and verified through the single-build path',
+);
+assert(
+  deployWorkflow.includes('npm run test:d1 && npm run orbit:test:cli'),
+  'full backend scope can skip D1, Worker or CLI verification',
+);
+assert(
+  deployWorkflow.includes('actions/upload-artifact@v6')
+    && deployWorkflow.includes('actions/download-artifact@v7'),
+  'verified production assets are not handed to the deploy job as an artifact',
+);
+assert(
+  deployWorkflow.includes('sha256sum --check production-assets.sha256'),
+  'production asset checksum is not verified before deployment',
+);
+assert(
+  deployWorkflow.includes("test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\""),
+  'deploy job does not verify the exact candidate commit',
+);
+assert(
+  fullRegressionWorkflow.includes("cron: '30 1 * * *'")
+    && fullRegressionWorkflow.includes('workflow_dispatch:')
+    && fullRegressionWorkflow.includes('npm run build')
+    && fullRegressionWorkflow.includes('npm run worker:build:production:live'),
+  'nightly/manual full regression surface is incomplete',
 );
 process.stdout.write(`Orbit production config tests: ${assertions} assertions passed\n`);

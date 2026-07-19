@@ -339,3 +339,26 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   relationships and foreign keys; all disposable resources were deleted.
 - Only staging resources were changed. Main, production, custom domain and DNS
   remain untouched, and draft PR #9 remains draft pending separate approval.
+
+### 2026-07-19 — Sponsor dashboard moved into the shared Orbit shell
+
+- Removed the standalone Worker-generated dashboard document. `/dashboard` is
+  now an Astro page rendered through the same `BaseLayout`, `Header`, search,
+  theme control, responsive mobile navigation and footer as every public Orbit
+  route.
+- Added the shared Header's `Hesabım` action across the product. The dashboard
+  marks that action active instead of maintaining a separate top navigation.
+- Preserved the existing GitHub OAuth, sponsor session, profile, publication
+  approval, invitation, announcement, media-budget and backup API behavior in a
+  bundled dashboard client module. No credential material is embedded in the
+  static page.
+- The Worker now serves the Astro asset with `no-store`, frame denial,
+  referrer and content-type protections instead of constructing a second HTML,
+  CSS and theme system at runtime.
+- The sponsor experience uses Orbit's existing three-column content rhythm and
+  side-navigation styling. Mobile uses the product's existing fixed navigation;
+  secondary help panels keep their heading and explanation on separate lines.
+- Verification passed: 78 D1/workerd tests, 63 content assertions, 41 CLI
+  assertions, 2,412 site assertions and 372 browser assertions; 40 static pages
+  built, including `/dashboard`, with zero Astro diagnostics. Desktop and
+  390×844 anonymous/authenticated visual states were also inspected locally.

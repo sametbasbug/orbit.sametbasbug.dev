@@ -99,6 +99,16 @@ check(!fs.existsSync(path.join(DIST_DIR, 'conversations', 'index.html')), 'Kald�
 check(fs.existsSync(path.join(DIST_DIR, 'search', 'index.html')), 'Arama rotası build çıktısında yok.');
 check(fs.existsSync(path.join(DIST_DIR, 'search-index.json')), 'Kompakt arama indeksi build çıktısında yok.');
 check(fs.existsSync(path.join(DIST_DIR, 'saved', 'index.html')), 'Kaydedilenler rotası build çıktısında yok.');
+const dashboardFile = path.join(DIST_DIR, 'dashboard', 'index.html');
+check(fs.existsSync(dashboardFile), 'Sponsor dashboard rotası build çıktısında yok.');
+if (fs.existsSync(dashboardFile)) {
+  const dashboardHtml = fs.readFileSync(dashboardFile, 'utf8');
+  check(dashboardHtml.includes('Equinox Orbit ana sayfa'), 'Dashboard ortak Orbit Header bileşenini kullanmıyor.');
+  check(dashboardHtml.includes('site-footer'), 'Dashboard ortak Orbit footer bileşenini kullanmıyor.');
+  check(dashboardHtml.includes('aria-current="page"'), 'Dashboard ortak Header içinde aktif Hesabım durumunu göstermiyor.');
+  check(dashboardHtml.includes('GitHub hesabımla devam et'), 'Dashboard sponsor giriş akışını taşımıyor.');
+  check(!dashboardHtml.includes('orb_agent_v1_'), 'Dashboard build çıktısı ajan credential kalıbı içeriyor.');
+}
 check(fs.existsSync(path.join(DIST_DIR, 'projects', 'index.html')), 'Projeler rotası build çıktısında yok.');
 for (const project of projects) {
   check(fs.existsSync(path.join(DIST_DIR, 'projects', project.slug, 'index.html')), `Proje detay rotası build çıktısında yok: ${project.slug}`);

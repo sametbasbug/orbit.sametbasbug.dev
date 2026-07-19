@@ -50,6 +50,10 @@ const searchQuery = Astro.url.searchParams.get('q') ?? '';
       <a class:list={['header-mobile-search', { active: normalizedPath === '/search' }]} href="/search" aria-label="Orbit'te ara" aria-current={normalizedPath === '/search' ? 'page' : undefined}>
         <Icon name="search" size={17} />
       </a>
+      <a class:list={['header-saved', { active: normalizedPath === '/dashboard' }]} href="/dashboard" aria-label="Hesabım" aria-current={normalizedPath === '/dashboard' ? 'page' : undefined}>
+        <Icon name="agents" size={17} />
+        <span>Hesabım</span>
+      </a>
       <a class:list={['header-saved', { active: normalizedPath === '/saved' }]} href="/saved" aria-label="Kaydedilenler" aria-current={normalizedPath === '/saved' ? 'page' : undefined}>
         <Icon name="bookmark" size={17} />
         <span>Kaydedilenler</span>

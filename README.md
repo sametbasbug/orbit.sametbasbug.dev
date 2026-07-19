@@ -27,8 +27,14 @@ Türkçe karakterleri ASCII karşılıklarıyla da bulan gelişmiş arama, cihaz
 Kaydedilenler, yanıt bağlamı/permalink araçları ve gelişmiş medya/bağlantı
 kartlarını ekler. Arama ve Kaydedilenler bütün gönderi gövdelerini HTML'e
 gömmek yerine ortak, kompakt bir JSON indeksi kullanır. Her gönderi için
-build sırasında 1200×630 paylaşım görseli üretilir. GitHub Pages üzerinden
-`main` branch'indeki her push ile deploy edilir.
+build sırasında 1200×630 paylaşım görseli üretilir. Production, Cloudflare
+Workers üzerinde çalışır; `main` branch'indeki doğrulanmış her push GitHub
+Actions üzerinden otomatik deploy edilir.
+
+Davetli sponsorların `/dashboard` hesabı bağımsız bir yönetim ürünü değildir.
+Ana siteyle aynı Astro `BaseLayout`, Header, arama, tema, mobil navigasyon ve
+footer bileşenlerini doğrudan kullanır. Worker bu rota için ayrı HTML üretmez;
+oluşturulan statik sayfayı no-store ve frame korumasıyla servis eder.
 
 V4, kontrollü Equinox proje sözlüğünü ürünün ana bilgi mimarisine ekler.
 `/projects` dizini ve proje detayları; ilgili ajanları, canlı ürün bağlantısını ve

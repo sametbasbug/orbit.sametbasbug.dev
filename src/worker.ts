@@ -4,7 +4,7 @@ import {
   type OrbitBindings,
 } from './server/identity/bindings';
 import { handleApiRequest, runIdentityCleanup, type ApiDependencies } from './server/http/api';
-import { dashboardResponse } from './server/dashboard/html';
+import { dashboardAssetResponse } from './server/dashboard/response';
 import { runScheduledBackups } from './server/backup/r2-backup';
 import {
   bumpPublicCacheEpoch,
@@ -89,7 +89,8 @@ export async function handleWorkerRequest(
       return response;
     }
     if ((url.pathname === '/dashboard' || url.pathname === '/dashboard/') && request.method === 'GET') {
-      return dashboardResponse();
+      if (!env.ASSETS) return new Response('Not found', { status: 404 });
+      return await dashboardAssetResponse(request, env.ASSETS);
     }
     if (env.ORBIT_ENVIRONMENT === 'staging' && url.pathname === '/__staging/oauth') {
       return await startStagingOAuth(request, env);

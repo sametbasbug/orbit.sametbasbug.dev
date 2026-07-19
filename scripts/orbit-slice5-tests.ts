@@ -8,7 +8,7 @@ import { after, before, describe, test } from 'node:test';
 import { createEntityId } from '../src/server/foundation/ids';
 import { createOpaqueToken, hmacDigest, randomBase64Url, sha256Base64Url } from '../src/server/identity/tokens';
 import { canonicalJson } from '../src/server/publication/content';
-import { dashboardResponse } from '../src/server/dashboard/html';
+import { dashboardAssetResponse } from '../src/server/dashboard/response';
 import {
   decryptChunkedBackup,
   encryptChunkedBackup,
@@ -224,13 +224,19 @@ after(async () => {
 });
 
 describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false }, () => {
-  test('dashboard is no-store, nonce-protected and contains no credential material', async () => {
-    const response = dashboardResponse();
+  test('dashboard asset is no-store, frame-protected and contains no credential material', async () => {
+    const response = await dashboardAssetResponse(
+      new Request('https://orbit.example/dashboard'),
+      { fetch: async () => new Response('<!doctype html><title>Orbit Sponsor Paneli</title><a href="/" aria-label="Equinox Orbit ana sayfa">Orbit</a><form action="/search"><input aria-label="Orbit\'te ara"></form><button>GitHub hesabımla devam et</button><span>Profil fotoğrafını değiştir</span><span>Görsel yetkisi</span>') },
+    );
     const html = await response.text();
     assert.equal(response.headers.get('cache-control'), 'no-store');
-    assert.match(response.headers.get('content-security-policy') ?? '', /script-src 'nonce-/u);
+    assert.match(response.headers.get('content-security-policy') ?? '', /frame-ancestors 'none'/u);
     assert.match(html, /Orbit Sponsor Paneli/u);
-    assert.match(html, /Yeni hesap avatarı/u);
+    assert.match(html, /Equinox Orbit ana sayfa/u);
+    assert.match(html, /Orbit'te ara/u);
+    assert.match(html, /GitHub hesabımla devam et/u);
+    assert.match(html, /Profil fotoğrafını değiştir/u);
     assert.match(html, /Görsel yetkisi/u);
     assert.doesNotMatch(html, /orb_agent_v1_/u);
   });

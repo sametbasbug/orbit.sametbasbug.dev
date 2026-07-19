@@ -132,7 +132,8 @@ belge henüz kesin API kontratı değildir.
 
 **Karar tarihi:** 19 Temmuz 2026
 
-**Uygulama:** Kod ve workflow değişiklikleri hazırlanıyor
+**Uygulama:** Kapsam yönlendirmesi ve paralel doğrulama production'da; runner
+dalgalanması izleniyor
 
 ### Uygulanan ilk sürüm
 
@@ -156,10 +157,29 @@ belge henüz kesin API kontratı değildir.
 - Düzeltme koşusu `29687070962` tam kapsamda başarıyla tamamlandı: sınıflandırma
   7 saniye, frontend 1 dakika 24 saniye, paralel backend 1 dakika 37 saniye,
   artifact doğrulama + deploy + canlı smoke 38 saniye; toplam 2 dakika 35 saniye.
-- Tam backend koşusundaki 12 saniyelik iyileşme hedef için yeterli değildir.
-  Dokümantasyon yolu sıfır deploy'a indi; sıradaki hız çalışması frontend tarayıcı
-  regresyonunu güvenle paralelleştirmek ve deploy job'undaki ikinci `npm ci`
-  maliyetini kaldırmak olmalıdır.
+- `667eedd` ile altı tarayıcı görünümü paralelleştirildi, doğrulanmış Worker
+  bundle'ı byte-for-byte `--no-bundle` dağıtımına geçirildi ve ilk başarılı tam
+  koşu `29687367124` toplam 1 dakika 52 saniyeye indi.
+- `86e8fe8` D1 test paralelliğini güvenli sınırda artırdı; yerelde 86 test 12,9
+  saniyede geçti. Gerçek `29687507980` koşusu 1 dakika 49 saniye sürdü.
+- `c5e4836` ayrı sınıflandırma job'unun başlangıç bariyerini kaldırdı. Frontend
+  ve backend kapsamı bağımsız hesaplıyor; sonuçlar uyuşmazsa deploy fail-closed
+  kalıyor. `29687639389` toplam 1 dakika 33 saniyede tamamlandı.
+- `6ab5d35` frontend kaynak kontrollerini ve build-sonrası kontrolleri iki paralel
+  faza ayırdı. Yerel production doğrulaması 20,2 saniyeden 18,4 saniyeye indi;
+  ilk CI ölçümünde frontend job'u 1 dakika 3 saniyeden 49 saniyeye düştü.
+- `0e06fc4` 86 D1/Worker testini kapsam azaltmadan üç ayrı runner'a böldü:
+  54 çekirdek/kimlik testi, 14 yayın/backup testi ve 18 dashboard/media/platform
+  testi. `29687972410` koşusunda bu job'lar 36, 34 ve 34 saniyede tamamlandı;
+  önceki tek backend job'u 1 dakika 2 saniyeydi.
+- Son tam koşuda GitHub runner dalgalanması tarayıcı regresyonunu 18 saniyeden
+  42 saniyeye çıkardığı için toplam yeniden 2 dakikaya ulaştı. Gözlenen başarılı
+  yeni toplamlar 1:33, 1:35 ve 2:00 aralığında; önceki 2:35 koşusundan her durumda
+  hızlı, fakat 30–60 saniyelik dar frontend hedefi henüz istikrarlı biçimde
+  karşılanmıyor.
+- Deploy job'undaki ikinci `npm ci` korunmuştur. Onu kaldırmak yalnız birkaç
+  saniye kazandırırken kilit dosyasıyla doğrulanmış Wrangler bağımlılık zincirini
+  zayıflatacaktı; production secret izolasyonu hız uğruna gevşetilmedi.
 
 ### Amaç
 

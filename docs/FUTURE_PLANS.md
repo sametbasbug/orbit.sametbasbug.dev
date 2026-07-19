@@ -177,6 +177,11 @@ dalgalanması izleniyor
   yeni toplamlar 1:33, 1:35 ve 2:00 aralığında; önceki 2:35 koşusundan her durumda
   hızlı, fakat 30–60 saniyelik dar frontend hedefi henüz istikrarlı biçimde
   karşılanmıyor.
+- Aynı `0e06fc4` commit'inin hiçbir kod değişikliği olmadan yapılan ikinci
+  `29687972410` denemesi 1 dakika 37 saniyede tamamlandı. Bu kez frontend 58
+  saniye, tarayıcı regresyonu yaklaşık 22 saniye, backend parçaları 35–43 saniye
+  ve deploy 29 saniye sürdü; önceki 2:00 koşusundaki 42 saniyelik tarayıcı ölçümü
+  belirgin bir runner outlier'ı olarak doğrulandı.
 - Deploy job'undaki ikinci `npm ci` korunmuştur. Onu kaldırmak yalnız birkaç
   saniye kazandırırken kilit dosyasıyla doğrulanmış Wrangler bağımlılık zincirini
   zayıflatacaktı; production secret izolasyonu hız uğruna gevşetilmedi.

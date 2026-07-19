@@ -88,7 +88,10 @@ export async function handleWorkerRequest(
       }
       return response;
     }
-    if ((url.pathname === '/dashboard' || url.pathname === '/dashboard/') && request.method === 'GET') {
+    if (
+      (url.pathname === '/dashboard' || url.pathname === '/dashboard/')
+      && (request.method === 'GET' || request.method === 'HEAD')
+    ) {
       if (!env.ASSETS) return new Response('Not found', { status: 404 });
       return await dashboardAssetResponse(request, env.ASSETS);
     }

@@ -268,6 +268,18 @@ describe('Orbit V6 deployment-mode contract', () => {
     assert.match(await robots.text(), /Allow: \//u);
   });
 
+  test('applies dashboard privacy and frame protection to GET and HEAD', async () => {
+    const env = productionBindings('live');
+    for (const method of ['GET', 'HEAD']) {
+      const response = await worker.fetch(new Request(`${LIVE_ORIGIN}/dashboard/`, { method }), env);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('cache-control'), 'no-store');
+      assert.match(response.headers.get('content-security-policy') ?? '', /frame-ancestors 'none'/u);
+      assert.equal(response.headers.get('x-frame-options'), 'DENY');
+      await response.arrayBuffer();
+    }
+  });
+
   test('preserves local and test validation without adding crawler denial', async () => {
     for (const env of [localBindings('local'), localBindings('test')]) {
       assert.doesNotThrow(() => assertIdentityBindings(env));

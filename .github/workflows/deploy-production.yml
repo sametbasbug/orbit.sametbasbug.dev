@@ -119,17 +119,103 @@ jobs:
 
       - name: Verify D1, Worker, CLI and security behavior
         if: ${{ steps.scope.outputs.scope == 'full' }}
-        run: npm run test:d1 && npm run orbit:test:cli
+        run: npm run test:d1:core && npm run orbit:test:cli
 
       - name: Record frontend-only backend decision
         if: ${{ steps.scope.outputs.scope != 'full' }}
         run: echo 'No backend/security path changed; the fail-safe classifier selected frontend validation.'
 
+  backend-publication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
+    steps:
+      - name: Checkout publication candidate and history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed paths independently
+        id: scope
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' || -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+            printf 'scope=full\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | node scripts/orbit-actions-scope.mjs
+
+      - name: Set up Node
+        if: ${{ steps.scope.outputs.scope == 'full' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        if: ${{ steps.scope.outputs.scope == 'full' }}
+        run: npm ci
+
+      - name: Verify publication, backup, media and dashboard behavior
+        if: ${{ steps.scope.outputs.scope == 'full' }}
+        run: npm run test:d1:publication
+
+      - name: Record frontend-only publication decision
+        if: ${{ steps.scope.outputs.scope != 'full' }}
+        run: echo 'No backend/security path changed; publication validation is not required.'
+
+  backend-platform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
+    steps:
+      - name: Checkout platform candidate and history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed paths independently
+        id: scope
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' || -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+            printf 'scope=full\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | node scripts/orbit-actions-scope.mjs
+
+      - name: Set up Node
+        if: ${{ steps.scope.outputs.scope == 'full' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        if: ${{ steps.scope.outputs.scope == 'full' }}
+        run: npm ci
+
+      - name: Verify dashboard, media and platform behavior
+        if: ${{ steps.scope.outputs.scope == 'full' }}
+        run: npm run test:d1:platform
+
+      - name: Record frontend-only platform decision
+        if: ${{ steps.scope.outputs.scope != 'full' }}
+        run: echo 'No backend/security path changed; platform validation is not required.'
+
   deploy:
     needs:
       - frontend
       - backend
-    if: ${{ needs.frontend.result == 'success' && needs.backend.result == 'success' && needs.frontend.outputs.scope != 'docs' && needs.frontend.outputs.scope == needs.backend.outputs.scope }}
+      - backend-publication
+      - backend-platform
+    if: ${{ needs.frontend.result == 'success' && needs.backend.result == 'success' && needs.backend-publication.result == 'success' && needs.backend-platform.result == 'success' && needs.frontend.outputs.scope != 'docs' && needs.frontend.outputs.scope == needs.backend.outputs.scope && needs.frontend.outputs.scope == needs.backend-publication.outputs.scope && needs.frontend.outputs.scope == needs.backend-platform.outputs.scope }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     environment:

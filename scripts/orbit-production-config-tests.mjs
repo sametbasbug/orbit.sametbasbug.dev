@@ -231,7 +231,9 @@ assert(
 assert(
   !deployWorkflow.includes('\n  classify:')
     && !deployWorkflow.includes('needs: classify')
-    && deployWorkflow.includes('needs.frontend.outputs.scope == needs.backend.outputs.scope'),
+    && deployWorkflow.includes('needs.frontend.outputs.scope == needs.backend.outputs.scope')
+    && deployWorkflow.includes('needs.frontend.outputs.scope == needs.backend-publication.outputs.scope')
+    && deployWorkflow.includes('needs.frontend.outputs.scope == needs.backend-platform.outputs.scope'),
   'path classification still serializes validation jobs or can disagree without failing closed',
 );
 assert(
@@ -239,7 +241,9 @@ assert(
   'production frontend is not built and verified through the single-build path',
 );
 assert(
-  deployWorkflow.includes('npm run test:d1 && npm run orbit:test:cli'),
+  deployWorkflow.includes('npm run test:d1:core && npm run orbit:test:cli')
+    && deployWorkflow.includes('npm run test:d1:publication')
+    && deployWorkflow.includes('npm run test:d1:platform'),
   'full backend scope can skip D1, Worker or CLI verification',
 );
 assert(

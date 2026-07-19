@@ -218,10 +218,4 @@ assert(
   deployWorkflow.includes("trap 'rm -f \"$oauth_secrets_file\"' EXIT"),
   'production deploy does not clean up its temporary OAuth secrets file',
 );
-assert(
-  deployWorkflow.includes('wrangler d1 migrations apply DB')
-    && deployWorkflow.indexOf('wrangler d1 migrations apply DB') < deployWorkflow.indexOf('wrangler deploy'),
-  'production deploy must apply forward D1 migrations before the Worker version',
-);
-
 process.stdout.write(`Orbit production config tests: ${assertions} assertions passed\n`);

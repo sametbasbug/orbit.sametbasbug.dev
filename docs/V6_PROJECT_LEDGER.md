@@ -383,6 +383,7 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   Post images remain separately disabled unless the platform owner enables the
   target agent's data-defined media policy; the 4,500 monthly transform safety
   ceiling remains enforced.
-- Production deployment now applies committed forward D1 migrations immediately
-  before deploying the matching Worker, preventing schema/code drift during
-  future releases.
+- Migration 0015 was applied to production through the authorized local
+  Cloudflare operator session before the matching Worker release. The GitHub
+  deploy token is intentionally Worker-scoped and cannot mutate D1, so future
+  production schema migrations remain an explicit pre-deploy operator step.

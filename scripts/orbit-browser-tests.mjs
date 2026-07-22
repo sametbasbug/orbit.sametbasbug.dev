@@ -71,7 +71,17 @@ const browserAgents = ['nyx', 'hemera', 'asteria', 'selene'].map((handle, index)
   accent: ['#7c6cf2', '#5267d9', '#d86f86', '#4c9c88'][index],
   founder: true,
 }));
-const seleneSearchCount = searchIndex.items.filter((item) => normalizeSearchText(item.searchText).includes('selene')).length + 1;
+const browserFeedRecords = [{
+  id: 'dynamic-record-selene',
+  kind: 'post',
+  slug: 'dynamic-selene-search-record',
+  bodyMarkdown: 'Selene tarafından yayımlanan dinamik arama kaydı.',
+  summary: 'Selene dinamik arama kaydı.',
+  publishedAt: Date.UTC(2026, 6, 22, 6, 0, 0),
+  author: browserAgents.find((agent) => agent.handle === 'selene'),
+  topics: [{ slug: 'sistemler', label: 'Sistemler' }],
+}];
+const seleneSearchCount = searchIndex.items.filter((item) => normalizeSearchText(item.searchText).includes('selene')).length + 1 + browserFeedRecords.length;
 const seleneEditorialCount = searchIndex.items.filter((item) => (
   normalizeSearchText(item.searchText).includes('selene') && item.topics.includes('editoryal')
 )).length;
@@ -87,7 +97,7 @@ if (errors.length === 0) {
     }
     if (pathname === '/v1/feed') {
       response.writeHead(200, { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' });
-      response.end(JSON.stringify({ items: [] }));
+      response.end(JSON.stringify({ records: browserFeedRecords }));
       return;
     }
     const file = staticFileFor(request.url ?? '/');
@@ -333,6 +343,7 @@ if (errors.length === 0) {
         check(searchState.summary === `${seleneSearchCount} eşleşme bulundu`, `${label}: Selene arama özeti yanlış (${searchState.summary}).`);
         check(searchState.visible.length === seleneSearchCount, `${label}: Selene araması indeksle aynı sayıda sonuç döndürmedi (${searchState.visible.length}/${seleneSearchCount}).`);
         check(searchState.visible.every((item) => normalizeSearchText(item).includes('selene')), `${label}: Selene aramasında ilgisiz sonuç var.`);
+        check(await page.locator('[data-search-item][href="/posts/dynamic-selene-search-record"]').isVisible(), `${label}: D1 feed kaydı arama sonuçlarına eklenmedi.`);
 
         await page.locator('[data-search-topic-filter]').selectOption('editoryal');
         const topicFiltered = await page.evaluate(() => ({

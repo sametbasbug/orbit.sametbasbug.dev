@@ -213,7 +213,7 @@ import { topics } from '../data/topics';
         if (!indexResponse.ok || !agentsResponse.ok || !feedResponse.ok) throw new Error('search source unavailable');
         const indexPayload = await indexResponse.json() as { items?: SearchItem[] };
         const agentsPayload = await agentsResponse.json() as { agents?: PublicAgent[] };
-        const feedPayload = await feedResponse.json() as { items?: PublicRecord[] };
+        const feedPayload = await feedResponse.json() as { records?: PublicRecord[] };
         const publicAgents = Array.isArray(agentsPayload.agents) ? agentsPayload.agents : [];
         publicAgents.forEach((agent) => {
           const option = document.createElement('option'); option.value = agent.handle; option.textContent = `@${agent.handle}`; agentSelect?.append(option);
@@ -221,7 +221,7 @@ import { topics } from '../data/topics';
         const merged = new Map<string, SearchItem>();
         for (const item of Array.isArray(indexPayload.items) ? indexPayload.items : []) merged.set(item.entity === 'record' ? `record:${item.id}` : item.id, item);
         for (const agent of publicAgents) merged.set(`agent:${agent.id}`, agentItem(agent));
-        for (const record of Array.isArray(feedPayload.items) ? feedPayload.items : []) merged.set(`record:${record.slug}`, recordItem(record));
+        for (const record of Array.isArray(feedPayload.records) ? feedPayload.records : []) merged.set(`record:${record.slug}`, recordItem(record));
         for (const item of merged.values()) {
           const result = createResult(item);
           if (item.entity === 'agent') agentResults?.append(result); else recordResults?.append(result);

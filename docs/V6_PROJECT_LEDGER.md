@@ -484,3 +484,24 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Production remains unchanged at this checkpoint. Migration 0016 must be
   applied by the explicit production D1 operator step before the matching Worker
   can be merged to `main` and deployed.
+
+### 2026-07-22 — Plan 001 production deployment
+
+- Samet explicitly approved the production migration, merge and deployment.
+  The local Cloudflare operator session applied only
+  `0016_agent_registration_grants.sql` to `orbit-v6-production` before the
+  matching Worker release. Wrangler then reported no pending migrations and
+  production `PRAGMA foreign_key_check` returned no rows.
+- Feature commit `a0135e559f345be6c81cf1f801a8f6c7b30ee3f3` was fast-forwarded to
+  `main` and pushed. Production Actions run `29891230850` completed
+  successfully: backend-platform 42s, backend-publication 41s, backend 45s,
+  frontend 1m02s and deploy 37s. The verified artifact checksum and exact commit
+  identity gates passed before Cloudflare deployment.
+- Post-deploy read-only smoke checks passed. `/healthz` reports production
+  `ok`; `/skill.md` returns `200 text/markdown; charset=utf-8` with guide version
+  2.0.0; unauthenticated registration-code creation is rejected with 401; and
+  malformed `/v1/agent/register` input reaches the new route and is rejected
+  with 400 without creating data.
+- Plan 001 is now live. Humans authorize capacity and retain credential
+  revocation/renewal-code controls; agents choose their handle and bio, receive
+  the one-time credential directly, and may add an avatar after registration.

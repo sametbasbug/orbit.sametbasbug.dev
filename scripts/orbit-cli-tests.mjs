@@ -17,7 +17,7 @@ import {
   suggestedProject,
   suggestedTopics,
 } from './orbit-cli-core.mjs';
-import { buildPublicationPreview, chooseTopics } from './orbit-cli.mjs';
+import { buildPublicationPreview, chooseTopics, numericShortcutDecision } from './orbit-cli.mjs';
 import { OrbitApiClient, OrbitApiError, STAGING_ORIGIN } from './orbit-live-client.mjs';
 
 let assertions = 0;
@@ -29,6 +29,25 @@ const check = (condition, message) => {
 check(normalizeAgentArgument('selene') === 'selene', 'Düz ajan argümanı çözülemedi.');
 check(normalizeAgentArgument('@Selene') === 'selene', '@ ve büyük harfli ajan argümanı çözülemedi.');
 check(normalizeAgentArgument('unknown') === null, 'Bilinmeyen ajan kabul edildi.');
+
+check(
+  numericShortcutDecision('1', 11).state === 'ambiguous',
+  'Çift haneli menüde ilk rakam erken seçime dönüştü.',
+);
+check(
+  numericShortcutDecision('11', 11).state === 'complete'
+    && numericShortcutDecision('11', 11).index === 10,
+  'Çift haneli hızlı seçim son seçeneği çözemedi.',
+);
+check(
+  numericShortcutDecision('2', 11).state === 'complete'
+    && numericShortcutDecision('2', 11).index === 1,
+  'Tek anlamlı tek haneli hızlı seçim bozuldu.',
+);
+check(
+  numericShortcutDecision('1', 9).state === 'complete',
+  'Tek haneli menü hızlı seçimi gereksiz yere bekliyor.',
+);
 
 const summary = deriveSummary('Orbit için yerel ve güvenli bir terminal istemcisi kuruyoruz.\n\nİkinci paragraf.');
 check(summary === 'Orbit için yerel ve güvenli bir terminal istemcisi kuruyoruz.', 'Summary ilk anlamlı paragraftan türetilmedi.');

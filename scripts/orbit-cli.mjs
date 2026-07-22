@@ -46,6 +46,23 @@ const color = {
 
 class ExitOrbit extends Error {}
 
+const NUMERIC_SHORTCUT_DELAY_MS = 700;
+
+export function numericShortcutDecision(buffer, optionCount) {
+  if (!/^[1-9]\d*$/.test(buffer) || !Number.isInteger(optionCount) || optionCount < 1) {
+    return { state: 'invalid', index: null };
+  }
+
+  const matches = Array.from({ length: optionCount }, (_, index) => String(index + 1))
+    .filter((value) => value.startsWith(buffer));
+  if (!matches.length) return { state: 'invalid', index: null };
+
+  const exactIndex = matches.includes(buffer) ? Number(buffer) - 1 : null;
+  const hasLongerMatch = matches.some((value) => value.length > buffer.length);
+  if (exactIndex !== null && !hasLongerMatch) return { state: 'complete', index: exactIndex };
+  return { state: exactIndex === null ? 'partial' : 'ambiguous', index: exactIndex };
+}
+
 export class TerminalUI {
   constructor() {
     this.interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
@@ -97,6 +114,7 @@ export class TerminalUI {
 
     readline.emitKeypressEvents(process.stdin);
     let selected = 0;
+    let numericBuffer = '';
     const render = () => {
       this.clear();
       this.header(title);
@@ -104,27 +122,64 @@ export class TerminalUI {
         const active = index === selected;
         process.stdout.write(`${active ? `${color.violet}›${color.reset}` : ' '} ${index + 1}  ${active ? color.bold : ''}${option.label}${color.reset}\n`);
       });
-      process.stdout.write(`\n${color.dim}↑↓ gezin · Enter seç · numara hızlı seçim · Ctrl+C çıkış${color.reset}\n`);
+      const numericStatus = numericBuffer ? ` · seçim: ${numericBuffer}` : '';
+      process.stdout.write(`\n${color.dim}↑↓ gezin · Enter seç · numara hızlı seçim${numericStatus} · Ctrl+C çıkış${color.reset}\n`);
     };
 
     return new Promise((resolve, reject) => {
       const previousRaw = process.stdin.isRaw;
+      let numericTimer = null;
+      let finished = false;
       process.stdin.setRawMode(true);
       process.stdin.resume();
+      const clearNumericTimer = () => {
+        if (numericTimer !== null) clearTimeout(numericTimer);
+        numericTimer = null;
+      };
       const finish = (callback) => {
+        if (finished) return;
+        finished = true;
+        clearNumericTimer();
         process.stdin.off('keypress', onKeypress);
         process.stdin.setRawMode(previousRaw ?? false);
         process.stdin.pause();
         process.stdout.write('\x1b[?25h');
         callback();
       };
+      const clearNumericInput = () => {
+        clearNumericTimer();
+        numericBuffer = '';
+      };
+      const resolveNumericInput = (decision) => finish(() => resolve(options[decision.index].value));
+      const armNumericFallback = (decision) => {
+        clearNumericTimer();
+        if (decision.index === null) return;
+        numericTimer = setTimeout(() => resolveNumericInput(decision), NUMERIC_SHORTCUT_DELAY_MS);
+      };
       const onKeypress = (text, key = {}) => {
         if (key.ctrl && key.name === 'c') return finish(() => reject(new ExitOrbit()));
-        if (key.name === 'up') selected = (selected - 1 + options.length) % options.length;
-        else if (key.name === 'down') selected = (selected + 1) % options.length;
-        else if (key.name === 'return') return finish(() => resolve(options[selected].value));
-        else if (/^[1-9]$/.test(text) && options[Number(text) - 1]) {
-          return finish(() => resolve(options[Number(text) - 1].value));
+        if (key.name === 'up') {
+          clearNumericInput();
+          selected = (selected - 1 + options.length) % options.length;
+        } else if (key.name === 'down') {
+          clearNumericInput();
+          selected = (selected + 1) % options.length;
+        } else if (key.name === 'return') {
+          const decision = numericShortcutDecision(numericBuffer, options.length);
+          if (decision.index !== null) return resolveNumericInput(decision);
+          return finish(() => resolve(options[selected].value));
+        } else if (/^\d$/.test(text)) {
+          clearNumericTimer();
+          const decision = numericShortcutDecision(`${numericBuffer}${text}`, options.length);
+          if (decision.state === 'invalid') {
+            numericBuffer = '';
+            process.stdout.write('\x07');
+          } else {
+            numericBuffer += text;
+            if (decision.index !== null) selected = decision.index;
+            if (decision.state === 'complete') return resolveNumericInput(decision);
+            armNumericFallback(decision);
+          }
         } else return;
         render();
       };

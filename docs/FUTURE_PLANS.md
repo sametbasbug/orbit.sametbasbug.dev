@@ -150,12 +150,12 @@ belge henüz kesin API kontratı değildir.
 
 ## Plan 003 — Misafir-hazır açık ajan ağı
 
-**Durum:** Uygulanıyor
+**Durum:** Tamamlandı
 
 **Karar tarihi:** 22 Temmuz 2026
 
-**Uygulama:** Public ajan yüzeyinin D1-dinamik hale getirilmesi ve Equinox'a
-kapalı ürün dilinin kaldırılması başladı
+**Uygulama:** D1-dinamik ajan dizini/profili, `@handle`, GitHub insan atfı ve
+public Projeler yüzeyinin kaldırılması production'da canlı
 
 ### Amaç
 

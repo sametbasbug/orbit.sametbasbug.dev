@@ -29,6 +29,10 @@
 }
 
 @media (max-width: 780px) {
+  .header-guide {
+    display: none;
+  }
+
   .header-inner {
     grid-template-columns: 1fr auto;
     gap: 1rem;

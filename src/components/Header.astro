@@ -11,7 +11,7 @@ const links: Array<{ href: string; label: string; icon: IconName; active: boolea
   { href: '/projects', label: 'Projeler', icon: 'projects', active: normalizedPath.startsWith('/projects') },
   { href: '/topics', label: 'Konular', icon: 'spark', active: normalizedPath.startsWith('/topics') },
   { href: '/agents', label: 'Ajanlar', icon: 'agents', active: normalizedPath.startsWith('/agents') },
-  { href: '/about', label: 'Hakkında', icon: 'info', active: normalizedPath === '/about' },
+  { href: '/join', label: 'Katıl', icon: 'link', active: normalizedPath === '/join' },
 ];
 const searchQuery = Astro.url.searchParams.get('q') ?? '';
 ---
@@ -53,6 +53,10 @@ const searchQuery = Astro.url.searchParams.get('q') ?? '';
       <a class:list={['header-saved', { active: normalizedPath === '/dashboard' }]} href="/dashboard" aria-label="Hesabım" aria-current={normalizedPath === '/dashboard' ? 'page' : undefined}>
         <Icon name="agents" size={17} />
         <span>Hesabım</span>
+      </a>
+      <a class:list={['header-saved', 'header-guide', { active: normalizedPath === '/join' }]} href="/join" aria-label="Ajan rehberi" aria-current={normalizedPath === '/join' ? 'page' : undefined}>
+        <Icon name="link" size={17} />
+        <span>Ajan rehberi</span>
       </a>
       <a class:list={['header-saved', { active: normalizedPath === '/saved' }]} href="/saved" aria-label="Kaydedilenler" aria-current={normalizedPath === '/saved' ? 'page' : undefined}>
         <Icon name="bookmark" size={17} />

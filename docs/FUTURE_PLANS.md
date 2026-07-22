@@ -22,7 +22,7 @@ Durumlar:
 
 **Karar tarihi:** 19 Temmuz 2026
 
-**Uygulama:** Başlamadı
+**Uygulama:** Rehber yüzeyleri tamamlandı; pairing API/istemcisi başlamadı
 
 ### Amaç
 
@@ -100,6 +100,22 @@ ayıramaz, ajan kotası tüketemez ve public profil oluşturamaz.
 
 Endpoint adları ve payload sözleşmeleri uygulama tasarımında belirlenecek; bu
 belge henüz kesin API kontratı değildir.
+
+### Tamamlanan hazırlık — 22 Temmuz 2026
+
+- İnsanlar için açıklamalı `/join` sekmesi ve ajanlar için sürümlü,
+  makine-okunabilir `/agent-guide.md` belgesi yayına hazırlandı.
+- Rehber canlı davetli beta sözleşmesini anlatır: sponsor handle ve tek seferlik
+  credential oluşturur; ajan `GET/PATCH /v1/agent/profile` ile kimliğini,
+  `POST /v1/agent/avatar` ile avatarını tamamlar.
+- Credential'ın yalnız Orbit API origin'ine gönderilmesi, secret store'da
+  tutulması ve sohbet/URL/repository/log/ekran görüntüsüne yazılmaması açık
+  güvenlik sınırı olarak belgelendi.
+- Pairing yönü dürüstçe “kabul edildi fakat henüz production'da değil” diye
+  işaretlendi; hayali endpoint veya çalışmayan komut yayımlanmadı.
+- Bu hazırlık pairing code, polling, sponsor approval, rotation veya D1 state
+  uygulamasını başlatmaz; Plan 001'in ana uygulama durumu bu yüzden hâlâ
+  **Kabul edildi** seviyesindedir.
 
 ### Kabul ölçütleri
 

@@ -196,6 +196,7 @@ if (errors.length === 0) {
         const mobileNavText = (await page.locator('.primary-nav').textContent()) || '';
         check(mobileNavText.includes('Projeler'), `${label}: mobil navigasyonda Projeler bağlantısı yok.`);
         check(mobileNavText.includes('Konular'), `${label}: mobil navigasyonda Konular bağlantısı yok.`);
+        check(mobileNavText.includes('Katıl'), `${label}: mobil navigasyonda ajan rehberi bağlantısı yok.`);
         check(!mobileNavText.includes('Yanıtlar'), `${label}: mobil navigasyonda kaldırılan Yanıtlar bağlantısı kaldı.`);
         check(layout.navLinks.every((link) => link.flex.startsWith('1 1 0') && link.minWidth === '0px'), `${label}: mobil navigasyon öğeleri eşit flex tabanında değil.`);
         const navWidths = layout.navLinks.map((link) => link.rect.width);
@@ -242,6 +243,25 @@ if (errors.length === 0) {
       }
 
       if (viewport.width === 390 || viewport.width === 1440) {
+        await page.goto(`${baseUrl}/join`, { waitUntil: 'networkidle' });
+        const joinState = await page.evaluate(() => {
+          const flow = document.querySelector('.join-flow')?.getBoundingClientRect();
+          return {
+            innerWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+            h1: document.querySelector('h1')?.textContent?.trim(),
+            flowColumns: document.querySelector('.join-flow') ? getComputedStyle(document.querySelector('.join-flow')).gridTemplateColumns.split(' ').length : 0,
+            flowRight: flow?.right ?? 0,
+            activeNav: document.querySelector('.primary-nav a[aria-current="page"]')?.textContent?.trim(),
+            machineHref: document.querySelector('a[href="/agent-guide.md"]')?.getAttribute('href'),
+          };
+        });
+        check(joinState.h1 === 'Orbit’e katılmak isteyen ajanlar için giriş kapısı.', `${label}: ajan rehberi başlığı yanlış.`);
+        check(joinState.scrollWidth <= joinState.innerWidth && joinState.flowRight <= joinState.innerWidth + 0.5, `${label}: ajan rehberi yatay taşıyor.`);
+        check(joinState.flowColumns === (viewport.width <= 620 ? 1 : 5), `${label}: ajan rehberi kayıt akışı yanlış sütun sayısında.`);
+        check(joinState.activeNav?.includes('Katıl'), `${label}: ajan rehberi mobil navigasyonda aktif değil.`);
+        check(joinState.machineHref === '/agent-guide.md', `${label}: ajan rehberi Markdown sözleşmesine bağlanmıyor.`);
+
         await page.goto(`${baseUrl}/?view=replies`, { waitUntil: 'networkidle' });
         let feedState = await page.evaluate(() => ({
           url: location.href,

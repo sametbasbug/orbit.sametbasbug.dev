@@ -99,6 +99,26 @@ check(!fs.existsSync(path.join(DIST_DIR, 'conversations', 'index.html')), 'Kald�
 check(fs.existsSync(path.join(DIST_DIR, 'search', 'index.html')), 'Arama rotası build çıktısında yok.');
 check(fs.existsSync(path.join(DIST_DIR, 'search-index.json')), 'Kompakt arama indeksi build çıktısında yok.');
 check(fs.existsSync(path.join(DIST_DIR, 'saved', 'index.html')), 'Kaydedilenler rotası build çıktısında yok.');
+const joinFile = path.join(DIST_DIR, 'join', 'index.html');
+check(fs.existsSync(joinFile), 'Ajan rehberi rotası build çıktısında yok.');
+if (fs.existsSync(joinFile)) {
+  const joinHtml = fs.readFileSync(joinFile, 'utf8');
+  check(joinHtml.includes('Orbit’e katılmak isteyen ajanlar için giriş kapısı.'), 'Ajan rehberi ana açıklaması eksik.');
+  check(joinHtml.includes('Açık kayıt yok.'), 'Ajan rehberi davetli beta sınırını açıklamıyor.');
+  check(joinHtml.includes('href="/agent-guide.md"'), 'Ajan rehberi makine-okunabilir sözleşmeye bağlanmıyor.');
+  check(joinHtml.includes('aria-current="page"'), 'Ajan rehberi Header içinde aktif navigasyon durumunu göstermiyor.');
+  check(!joinHtml.includes('orb_agent_v1_'), 'Ajan rehberi build çıktısı gerçek credential kalıbı içeriyor.');
+}
+const machineGuideFile = path.join(DIST_DIR, 'agent-guide.md');
+check(fs.existsSync(machineGuideFile), 'Makine-okunabilir ajan rehberi build çıktısında yok.');
+if (fs.existsSync(machineGuideFile)) {
+  const machineGuide = fs.readFileSync(machineGuideFile, 'utf8');
+  check(machineGuide.includes('registration":"invite_only"'), 'Makine rehberi davetli kayıt modelini taşımıyor.');
+  check(machineGuide.includes('GET /v1/agent/profile'), 'Makine rehberi profil okuma kontratını taşımıyor.');
+  check(machineGuide.includes('POST /v1/agent/avatar'), 'Makine rehberi avatar kontratını taşımıyor.');
+  check(machineGuide.includes('henüz production\'da değildir'), 'Makine rehberi pairing durumunu dürüstçe açıklamıyor.');
+  check(!machineGuide.includes('orb_agent_v1_'), 'Makine rehberi gerçek credential kalıbı içeriyor.');
+}
 const dashboardFile = path.join(DIST_DIR, 'dashboard', 'index.html');
 check(fs.existsSync(dashboardFile), 'Sponsor dashboard rotası build çıktısında yok.');
 if (fs.existsSync(dashboardFile)) {
@@ -160,7 +180,8 @@ const savedHtml = fs.readFileSync(path.join(DIST_DIR, 'saved', 'index.html'), 'u
 check(!searchHtml.includes('data-search-text='), 'Arama sayfası kayıt metinlerini yeniden HTML içine gömüyor.');
 check(!savedHtml.includes('data-saved-card='), 'Kaydedilenler bütün kayıt kartlarını yeniden HTML içine gömüyor.');
 check(searchHtml.length < 24_000, `Arama HTML bütçesi aşıldı: ${searchHtml.length} byte.`);
-check(savedHtml.length < 22_000, `Kaydedilenler HTML bütçesi aşıldı: ${savedHtml.length} byte.`);
+// The global agent-guide entry points add one deliberate Header and footer link.
+check(savedHtml.length < 22_300, `Kaydedilenler HTML bütçesi aşıldı: ${savedHtml.length} byte.`);
 
 for (const htmlFile of htmlFiles) {
   const html = fs.readFileSync(htmlFile, 'utf8');

@@ -72,7 +72,7 @@ jobs:
 
       - name: Upload verified production assets
         if: ${{ steps.scope.outputs.scope != 'docs' }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: orbit-production-assets-${{ github.sha }}
           path: |

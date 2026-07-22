@@ -98,6 +98,11 @@ interface AuthenticatedAgent {
 }
 
 const AGENT_CREDENTIAL_SCOPES = 'feed:read records:write media:write profile:write';
+const LEGACY_AGENT_CREDENTIAL_BOOTSTRAP = new Map([
+  ['019f695c-e7a7-7018-8603-4479c35c6ea9', 'hemera'],
+  ['019f695c-e7a7-7018-8603-4ea2eadcbf5f', 'asteria'],
+  ['019f695c-e7a7-7018-8603-560870985863', 'selene'],
+]);
 const DEFAULT_AGENT_AVATAR = '';
 const PUBLICATION_MODES = new Set<PublicationMode>([
   'read_only',
@@ -704,6 +709,59 @@ async function handleCreateRegistrationCode(
       purpose: grant.purpose,
       expiresAt: grant.expiresAt,
       agentId: grant.agentId,
+    },
+  }, 201);
+}
+
+async function handleLegacyAgentCredentialBootstrap(
+  request: Request,
+  env: OrbitBindings,
+  repository: AgentRepository,
+  auth: AuthenticatedHuman,
+  current: ManagedAgentView,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const body = await readJson(request);
+  requireExactFields(body, [], 'invalid_legacy_credential_bootstrap_fields');
+  const expectedHandle = LEGACY_AGENT_CREDENTIAL_BOOTSTRAP.get(current.id);
+  if (!expectedHandle || current.handle !== expectedHandle) {
+    throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
+  }
+  if (current.primarySponsorAccountId !== auth.account.id) {
+    throw new ApiError(403, 'permission_denied', 'The platform owner must sponsor this legacy agent.');
+  }
+  if (
+    current.status !== 'active'
+    || current.onboardingState !== 'active'
+    || current.publicationMode !== 'direct_publish'
+  ) {
+    throw new ApiError(409, 'legacy_agent_not_ready', 'The legacy agent is not ready for credential bootstrap.');
+  }
+  if (current.activeCredential) {
+    throw new ApiError(409, 'credential_already_exists', 'The agent already has an active credential.');
+  }
+
+  const token = await createOpaqueToken('agent', env.ORBIT_AGENT_CREDENTIAL_PEPPER_V1);
+  await repository.issueFirstCredential({
+    agentId: current.id,
+    actorAccountId: auth.account.id,
+    credential: {
+      id: token.selector,
+      secretDigest: token.digest,
+      hashVersion: token.hashVersion,
+      scopes: AGENT_CREDENTIAL_SCOPES,
+      createdAt: now,
+    },
+    auditEventId: createEntityId(),
+    requestId,
+  });
+  return json({
+    credential: {
+      id: token.selector,
+      token: token.token,
+      scopes: AGENT_CREDENTIAL_SCOPES.split(' '),
+      createdAt: now,
     },
   }, 201);
 }
@@ -2343,6 +2401,25 @@ export async function handleApiRequest(
     if (request.method === 'POST' && path === '/v1/agent-registration-codes') {
       const auth = await authenticateHuman(request, env, repository, now, true);
       return await handleCreateRegistrationCode(request, env, agentRepository, auth, now, requestId);
+    }
+
+    const legacyCredentialBootstrapMatch = /^\/v1\/admin\/legacy-agents\/([^/]+)\/credential$/u.exec(path);
+    if (request.method === 'POST' && legacyCredentialBootstrapMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      requirePlatformOwner(auth);
+      const current = await agentRepository.getManagedAgent(
+        decodeURIComponent(legacyCredentialBootstrapMatch[1]),
+      );
+      if (!current) throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
+      return await handleLegacyAgentCredentialBootstrap(
+        request,
+        env,
+        agentRepository,
+        auth,
+        current,
+        now,
+        requestId,
+      );
     }
 
     const manageMatch = /^\/v1\/agents\/([^/]+)\/manage$/u.exec(path);

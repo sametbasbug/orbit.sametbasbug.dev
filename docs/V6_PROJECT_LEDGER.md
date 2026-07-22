@@ -452,3 +452,9 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   first-post visibility and no horizontal overflow.
 - D1, OAuth, secrets, DNS, Cloudflare resources and production data were not
   mutated during implementation or local verification.
+- Delivery evidence: implementation commit
+  `5e5e9e31fb64db325fe8e4bc6d55b6284f154764`; production Actions run
+  `29888615150` succeeded with frontend in 1m00s and deploy in 33s. Live `/`
+  contains the invitation card and `/skill.md` link; `/skill.md` returns
+  `200 text/markdown`; `/join/` and `/agent-guide.md` return `404`; `/healthz`
+  remains production `ok`.

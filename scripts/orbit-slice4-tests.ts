@@ -18,6 +18,8 @@ const AGENT_PEPPER = 'test-agent-pepper-at-least-32-bytes-long';
 const SESSION_PEPPER = 'test-session-pepper-at-least-32-bytes-long';
 const CSRF_PEPPER = 'test-csrf-pepper-at-least-32-bytes-long';
 const OWNER_ID = '019f64d2-0109-7644-9a4e-a0d25df888e2';
+const MODERATOR_ID = '019f64d2-0109-7644-9a4e-a0d25df888e3';
+const MEMBER_ID = '019f64d2-0109-7644-9a4e-a0d25df888e4';
 const NOW = Date.parse('2026-07-16T09:30:00Z');
 
 let persistDirectory = '';
@@ -26,6 +28,11 @@ let worker: ChildProcessWithoutNullStreams | undefined;
 let workerOutput = '';
 let ownerCookie = '';
 let ownerCsrf = '';
+let moderatorCookie = '';
+let moderatorCsrf = '';
+let memberCookie = '';
+let memberCsrf = '';
+const agentClocks = new Map<string, number>();
 
 interface SeededAgent {
   id: string;
@@ -71,10 +78,12 @@ async function availablePort(): Promise<number> {
 
 async function startWorker(persist: string): Promise<{ process: ChildProcessWithoutNullStreams; url: string; output: () => string }> {
   const port = await availablePort();
+  let inspectorPort = await availablePort();
+  while (inspectorPort === port) inspectorPort = await availablePort();
   const url = `http://127.0.0.1:${port}`;
   let output = '';
   const child = spawn(process.execPath, [
-    WRANGLER, 'dev', '--config', CONFIG, '--local', `--port=${port}`, `--persist-to=${persist}`,
+    WRANGLER, 'dev', '--config', CONFIG, '--local', `--port=${port}`, `--inspector-port=${inspectorPort}`, `--persist-to=${persist}`,
   ], { cwd: ROOT, env: { ...process.env, CI: '1', NO_COLOR: '1' }, stdio: ['pipe','pipe','pipe'] });
   child.stdout.on('data', (chunk) => { output += String(chunk); });
   child.stderr.on('data', (chunk) => { output += String(chunk); });
@@ -132,33 +141,71 @@ async function agentWrite(
   body: Record<string, unknown>,
   key: string,
   method = 'POST',
+  exactNow?: number,
 ): Promise<Response> {
+  const previous = agentClocks.get(agent.id) ?? NOW;
+  const isRootPost = method === 'POST' && pathname === '/v1/records';
+  const isReply = method === 'POST' && pathname.endsWith('/replies');
+  const requestNow = exactNow ?? previous + (isRootPost ? 61 * 60 * 1000 : isReply ? 8 * 60 * 1000 : 16_000);
+  agentClocks.set(agent.id, Math.max(previous, requestNow));
   return await fetch(`${baseUrl}${pathname}`, {
     method,
     headers: {
       authorization: `Bearer ${agent.token}`,
       'content-type': 'application/json',
       'idempotency-key': key,
-      'x-test-now': String(NOW),
+      'x-test-now': String(requestNow),
     },
     body: JSON.stringify(body),
   });
 }
 
-async function ownerRequest(pathname: string, method = 'GET', body?: Record<string, unknown>, key?: string): Promise<Response> {
+async function humanRequest(
+  cookie: string,
+  csrf: string,
+  pathname: string,
+  method = 'GET',
+  body?: Record<string, unknown>,
+  key?: string,
+): Promise<Response> {
   const headers: Record<string, string> = {
-    cookie: ownerCookie,
+    cookie,
     'x-test-now': String(NOW),
   };
   if (method !== 'GET') {
     headers.origin = 'http://localhost:4321';
-    headers['x-orbit-csrf'] = ownerCsrf;
+    headers['x-orbit-csrf'] = csrf;
     headers['content-type'] = 'application/json';
     if (key) headers['idempotency-key'] = key;
   }
   return await fetch(`${baseUrl}${pathname}`, {
     method, headers, body: body === undefined ? undefined : JSON.stringify(body),
   });
+}
+
+const ownerRequest = (pathname: string, method = 'GET', body?: Record<string, unknown>, key?: string) =>
+  humanRequest(ownerCookie, ownerCsrf, pathname, method, body, key);
+
+const moderatorRequest = (pathname: string, method = 'GET', body?: Record<string, unknown>, key?: string) =>
+  humanRequest(moderatorCookie, moderatorCsrf, pathname, method, body, key);
+
+const memberRequest = (pathname: string, method = 'GET', body?: Record<string, unknown>, key?: string) =>
+  humanRequest(memberCookie, memberCsrf, pathname, method, body, key);
+
+async function seedRoleSession(accountId: string, handle: string, role: 'member' | 'moderator') {
+  const session = await createOpaqueToken('session', SESSION_PEPPER);
+  const csrf = randomBase64Url(32);
+  const csrfDigest = await hmacDigest(`orbit:csrf:v1:${session.selector}:${csrf}`, CSRF_PEPPER);
+  assert.equal((await testPost('/__test/seed-role-session', {
+    accountId,
+    handle,
+    role,
+    roleId: createEntityId(),
+    sessionId: session.selector,
+    secretDigest: session.digest,
+    csrfDigest,
+  })).status, 200);
+  return { cookie: `__Host-orbit_session=${session.token}; __Host-orbit_csrf=${csrf}`, csrf };
 }
 
 before(async () => {
@@ -180,11 +227,21 @@ before(async () => {
   })).status, 200);
   ownerCookie = `__Host-orbit_session=${session.token}; __Host-orbit_csrf=${ownerCsrf}`;
 
+  const moderator = await seedRoleSession(MODERATOR_ID, 'slice4-moderator', 'moderator');
+  moderatorCookie = moderator.cookie;
+  moderatorCsrf = moderator.csrf;
+  const member = await seedRoleSession(MEMBER_ID, 'slice4-member', 'member');
+  memberCookie = member.cookie;
+  memberCsrf = member.csrf;
+
   await seedAgent('slice4-direct', 'direct_publish');
   await seedAgent('slice4-review', 'approval_required');
   await seedAgent('slice4-readonly', 'read_only');
   await seedAgent('slice4-suspended', 'direct_publish', 'suspended');
   await seedAgent('slice4-quota', 'direct_publish');
+  await seedAgent('slice4-hourly', 'direct_publish');
+  await seedAgent('slice4-burst', 'direct_publish');
+  await seedAgent('slice4-pending-limits', 'approval_required');
 });
 
 after(async () => {
@@ -249,7 +306,7 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     assert.equal(nestedBody.record.rootId, directRecordId);
   });
 
-  test('approval-required content stays hidden until sponsor approval', async () => {
+  test('approval-required content stays hidden until moderator approval while ordinary members are denied', async () => {
     const agent = agents.get('slice4-review')!;
     const pending = await agentWrite(agent, '/v1/records', {
       bodyMarkdown: 'Sponsor onayı bekleyen kayıt.', projectSlug: 'orbit', topicSlugs: ['orbit'],
@@ -260,16 +317,17 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     assert.equal(pendingBody.record.lifecycleState, 'pending');
     assert.equal((await fetch(`${baseUrl}/v1/records/${reviewRecordId}`)).status, 404);
 
-    const queue = await ownerRequest('/v1/approvals');
+    assert.equal((await memberRequest('/v1/approvals')).status, 403);
+    const queue = await moderatorRequest('/v1/approvals');
     assert.equal(queue.status, 200);
     const queueBody = await queue.json() as { reviews: Array<{ id: string; record: { id: string } }> };
     const review = queueBody.reviews.find((item) => item.record.id === reviewRecordId);
     assert.ok(review);
-    const approved = await ownerRequest(`/v1/approvals/${review.id}/approve`, 'POST', { note: 'Uygun.' }, 'approve-1');
+    const approved = await moderatorRequest(`/v1/approvals/${review.id}/approve`, 'POST', { note: 'Uygun.' }, 'approve-1');
     assert.equal(approved.status, 200);
     assert.equal((await fetch(`${baseUrl}/v1/records/${reviewRecordId}`)).status, 200);
 
-    const replay = await ownerRequest(`/v1/approvals/${review.id}/approve`, 'POST', { note: 'Uygun.' }, 'approve-1');
+    const replay = await moderatorRequest(`/v1/approvals/${review.id}/approve`, 'POST', { note: 'Uygun.' }, 'approve-1');
     assert.equal(replay.status, 200);
     assert.equal(replay.headers.get('idempotency-replayed'), 'true');
   });
@@ -419,6 +477,86 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     const sponsorDelete = await agentWrite(deleteAgent, '/v1/records', { bodyMarkdown: 'Paralel sponsor silme kaydı.' }, 'concurrent-sponsor-delete-create')
       .then((response) => response.json()) as { record: { id: string } };
     await pair(() => ownerRequest(`/v1/manage/records/${sponsorDelete.record.id}/delete`, 'POST', { reason: 'parallel' }, 'concurrent-sponsor-delete'), 200);
+  });
+
+  test('hourly post and reply quotas reject atomically', async () => {
+    const agent = agents.get('slice4-hourly')!;
+    const requestNow = NOW + 10 * 60 * 60 * 1000;
+    const hourUtc = new Date(requestNow).toISOString().slice(0, 13);
+    await testPost('/__test/set-hourly-usage', {
+      agentId: agent.id,
+      hourUtc,
+      postsCreated: 2,
+      repliesCreated: 0,
+      lastRecordCreatedAt: requestNow - 15_000,
+    });
+    const post = await agentWrite(agent, '/v1/records', { bodyMarkdown: 'Saatlik üçüncü gönderi.' }, 'hourly-post', 'POST', requestNow);
+    assert.equal(post.status, 429);
+    assert.equal((await post.json() as { error: { code: string } }).error.code, 'hourly_quota_exceeded');
+
+    await testPost('/__test/set-hourly-usage', {
+      agentId: agent.id,
+      hourUtc,
+      postsCreated: 0,
+      repliesCreated: 8,
+      lastRecordCreatedAt: requestNow - 15_000,
+    });
+    const reply = await agentWrite(agent, `/v1/records/${directRecordId}/replies`, {
+      bodyMarkdown: 'Saatlik dokuzuncu yanıt.',
+    }, 'hourly-reply', 'POST', requestNow);
+    assert.equal(reply.status, 429);
+    assert.equal((await reply.json() as { error: { code: string } }).error.code, 'hourly_quota_exceeded');
+    const usage = await testPost('/__test/usage', { agentId: agent.id }).then((response) => response.json()) as {
+      rows: unknown[];
+      hourly: Array<{ hour_utc: string; posts_created: number; replies_created: number }>;
+    };
+    assert.deepEqual(usage.rows, []);
+    assert.deepEqual(usage.hourly, [{ hour_utc: hourUtc, posts_created: 0, replies_created: 8 }]);
+  });
+
+  test('publication burst and pending queue limits reject atomically', async () => {
+    const burstAgent = agents.get('slice4-burst')!;
+    const burstNow = NOW + 12 * 60 * 60 * 1000;
+    const burstResponses = await Promise.all([
+      agentWrite(burstAgent, '/v1/records', { bodyMarkdown: 'Burst gönderisi A.' }, 'burst-a', 'POST', burstNow),
+      agentWrite(burstAgent, '/v1/records', { bodyMarkdown: 'Burst gönderisi B.' }, 'burst-b', 'POST', burstNow),
+    ]);
+    assert.deepEqual(burstResponses.map((response) => response.status).sort(), [201, 429]);
+    const burstError = burstResponses.find((response) => response.status === 429)!;
+    assert.equal((await burstError.json() as { error: { code: string } }).error.code, 'publication_burst_limited');
+    const burstUsage = await testPost('/__test/usage', { agentId: burstAgent.id }).then((response) => response.json()) as {
+      rows: Array<{ posts_created: number }>;
+      hourly: Array<{ posts_created: number }>;
+    };
+    assert.equal(burstUsage.rows.at(-1)?.posts_created, 1);
+    assert.equal(burstUsage.hourly.at(-1)?.posts_created, 1);
+
+    const pendingAgent = agents.get('slice4-pending-limits')!;
+    const pendingBase = NOW + 14 * 60 * 60 * 1000;
+    for (let index = 0; index < 2; index += 1) {
+      const response = await agentWrite(pendingAgent, '/v1/records', {
+        bodyMarkdown: `Bekleyen gönderi ${index + 1}.`,
+      }, `pending-limit-post-${index + 1}`, 'POST', pendingBase + index * 61 * 60 * 1000);
+      assert.equal(response.status, 202);
+    }
+    const thirdPost = await agentWrite(pendingAgent, '/v1/records', {
+      bodyMarkdown: 'Bekleyen üçüncü gönderi.',
+    }, 'pending-limit-post-3', 'POST', pendingBase + 2 * 61 * 60 * 1000);
+    assert.equal(thirdPost.status, 429);
+    assert.equal((await thirdPost.json() as { error: { code: string } }).error.code, 'pending_queue_full');
+
+    const replyBase = pendingBase + 4 * 60 * 60 * 1000;
+    for (let index = 0; index < 5; index += 1) {
+      const response = await agentWrite(pendingAgent, `/v1/records/${directRecordId}/replies`, {
+        bodyMarkdown: `Bekleyen yanıt ${index + 1}.`,
+      }, `pending-limit-reply-${index + 1}`, 'POST', replyBase + index * 16_000);
+      assert.equal(response.status, 202);
+    }
+    const sixthReply = await agentWrite(pendingAgent, `/v1/records/${directRecordId}/replies`, {
+      bodyMarkdown: 'Bekleyen altıncı yanıt.',
+    }, 'pending-limit-reply-6', 'POST', replyBase + 5 * 16_000);
+    assert.equal(sixthReply.status, 429);
+    assert.equal((await sixthReply.json() as { error: { code: string } }).error.code, 'pending_queue_full');
   });
 
   test('daily post and reply quotas roll the entire write back', async () => {

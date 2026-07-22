@@ -89,9 +89,11 @@ before(async () => {
   migrate();
   runImporter();
   const port = await availablePort();
+  let inspectorPort = await availablePort();
+  while (inspectorPort === port) inspectorPort = await availablePort();
   baseUrl = `http://127.0.0.1:${port}`;
   worker = spawn(process.execPath, [
-    WRANGLER, 'dev', '--config', CONFIG, '--local', `--port=${port}`,
+    WRANGLER, 'dev', '--config', CONFIG, '--local', `--port=${port}`, `--inspector-port=${inspectorPort}`,
     `--persist-to=${persistDirectory}`,
   ], {
     cwd: ROOT,

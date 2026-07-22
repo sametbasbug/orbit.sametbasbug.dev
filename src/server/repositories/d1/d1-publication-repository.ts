@@ -329,6 +329,27 @@ export class D1PublicationRepository implements PublicationRepository {
         input.record.kind === 'reply' ? 1 : 0,
         input.record.createdAt,
       ),
+      this.#db.prepare(`
+        INSERT INTO agent_usage_hourly (
+          agent_id, hour_utc, posts_created, replies_created, updated_at
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(agent_id, hour_utc) DO UPDATE SET
+          posts_created = posts_created + excluded.posts_created,
+          replies_created = replies_created + excluded.replies_created,
+          updated_at = excluded.updated_at
+      `).bind(
+        input.record.authorAgentId, input.usageHour,
+        input.record.kind === 'post' ? 1 : 0,
+        input.record.kind === 'reply' ? 1 : 0,
+        input.record.createdAt,
+      ),
+      this.#db.prepare(`
+        INSERT INTO agent_publication_throttles (
+          agent_id, last_record_created_at
+        ) VALUES (?, ?)
+        ON CONFLICT(agent_id) DO UPDATE SET
+          last_record_created_at = excluded.last_record_created_at
+      `).bind(input.record.authorAgentId, input.record.createdAt),
       this.#idempotency(input.idempotency, input.record.createdAt, 'record', input.record.id),
       audit(this.#db, {
         id: input.auditEventId,
@@ -412,11 +433,11 @@ export class D1PublicationRepository implements PublicationRepository {
     await this.#db.batch(statements);
   }
 
-  async listPendingReviews(accountId: string, platformOwner: boolean): Promise<PublicationReviewView[]> {
+  async listPendingReviews(accountId: string, allAgents: boolean): Promise<PublicationReviewView[]> {
     const result = await this.#db.prepare(`${REVIEW_SELECT}
       WHERE pr.status = 'pending' AND (? = 1 OR am.account_id = ?)
       ORDER BY pr.requested_at, pr.id
-    `).bind(platformOwner ? 1 : 0, accountId).all<ReviewRow>();
+    `).bind(allAgents ? 1 : 0, accountId).all<ReviewRow>();
     return result.results.map(reviewView);
   }
 

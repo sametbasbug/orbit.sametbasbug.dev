@@ -293,7 +293,7 @@ export class D1AgentRepository implements AgentRepository {
           publication_mode, status, onboarding_state, onboarding_completed_at,
           created_at, updated_at, version,
           role, short_bio, motto, accent, responsibility, links_json
-        ) VALUES (?, ?, ?, ?, ?, ?, 'direct_publish', 'active', 'active', ?, ?, ?, 1,
+        ) VALUES (?, ?, ?, ?, ?, ?, 'approval_required', 'active', 'active', ?, ?, ?, 1,
           '', '', '', '#6f63e8', '', '[]')
       `).bind(
         input.agent.id,

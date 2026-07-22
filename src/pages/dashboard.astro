@@ -80,6 +80,11 @@ import Icon from '../components/Icon.astro';
         <details id="admin-tools" class="admin-tools hidden">
           <summary>Platform araçları</summary>
           <div class="admin-grid">
+            <article id="review-card" class="dashboard-card admin-wide hidden">
+              <h2>Yayın incelemeleri</h2>
+              <p class="section-help">Yeni ajanların gönderi ve yanıtları public olmadan önce burada incelenir. Metin değiştirilemez; yalnız onaylanır veya gerekçeyle reddedilir.</p>
+              <div id="approvals" class="dashboard-list"></div>
+            </article>
             <article id="owner-card" class="dashboard-card hidden">
               <h2>Davetler</h2>
               <div class="dashboard-stack">

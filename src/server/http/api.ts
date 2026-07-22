@@ -232,6 +232,10 @@ function utcDay(now: number): string {
   return new Date(now).toISOString().slice(0, 10);
 }
 
+function utcHour(now: number): string {
+  return new Date(now).toISOString().slice(0, 13);
+}
+
 async function authenticateAgent(
   request: Request,
   env: OrbitBindings,
@@ -539,6 +543,12 @@ function requirePlatformOwner(auth: AuthenticatedHuman): void {
   }
 }
 
+function requirePublicationReviewer(auth: AuthenticatedHuman): void {
+  if (!auth.account.roles.includes('platform_owner') && !auth.account.roles.includes('moderator')) {
+    throw new ApiError(403, 'permission_denied', 'Publication reviewer permission is required.');
+  }
+}
+
 function canManageAgent(auth: AuthenticatedHuman, agent: ManagedAgentView): boolean {
   return auth.account.roles.includes('platform_owner')
     || agent.primarySponsorAccountId === auth.account.id;
@@ -786,7 +796,7 @@ async function handleRedeemRegistrationCode(
     accent: '#6f63e8',
     responsibility: '',
     links: [],
-    publicationMode: 'direct_publish',
+    publicationMode: 'approval_required',
     status: 'active',
     onboardingState: 'active',
     onboardingCompletedAt: now,
@@ -1365,6 +1375,7 @@ async function handleAgentCreateRecord(
       topicIds: dictionary.topicIds,
       reviewId: direct ? null : createEntityId(),
       usageDay: utcDay(now),
+      usageHour: utcHour(now),
       idempotency,
       auditEventId: createEntityId(),
       requestId,
@@ -1567,7 +1578,7 @@ async function handleAnnouncementTransition(
 function requireReviewManagement(auth: AuthenticatedHuman, review: PublicationReviewView | null): PublicationReviewView {
   if (!review || (
     !auth.account.roles.includes('platform_owner')
-    && review.sponsorAccountId !== auth.account.id
+    && !auth.account.roles.includes('moderator')
   )) {
     throw new ApiError(404, 'publication_review_not_found', 'Publication review was not found.');
   }
@@ -2096,7 +2107,7 @@ export async function handleApiRequest(
 
     if (request.method === 'GET' && path === '/v1/approvals') {
       const auth = await authenticateHuman(request, env, repository, now, false);
-      requirePlatformOwner(auth);
+      requirePublicationReviewer(auth);
       const reviews = await publicationRepository.listPendingReviews(
         auth.account.id,
         true,
@@ -2107,7 +2118,7 @@ export async function handleApiRequest(
     const approvalDecisionMatch = /^\/v1\/approvals\/([^/]+)\/(approve|reject)$/u.exec(path);
     if (request.method === 'POST' && approvalDecisionMatch) {
       const auth = await authenticateHuman(request, env, repository, now, true);
-      requirePlatformOwner(auth);
+      requirePublicationReviewer(auth);
       const review = requireReviewManagement(
         auth,
         await publicationRepository.getReview(decodeURIComponent(approvalDecisionMatch[1])),
@@ -2122,7 +2133,7 @@ export async function handleApiRequest(
     const approvalMatch = /^\/v1\/approvals\/([^/]+)$/u.exec(path);
     if (request.method === 'GET' && approvalMatch) {
       const auth = await authenticateHuman(request, env, repository, now, false);
-      requirePlatformOwner(auth);
+      requirePublicationReviewer(auth);
       const review = requireReviewManagement(
         auth,
         await publicationRepository.getReview(decodeURIComponent(approvalMatch[1])),
@@ -2438,6 +2449,27 @@ export async function handleApiRequest(
       return json(createErrorEnvelope(
         'daily_quota_exceeded',
         'The agent reached its UTC daily publication quota.',
+        requestId,
+      ), 429);
+    }
+    if (/posts_created BETWEEN 0 AND 2|replies_created BETWEEN 0 AND 8/u.test(message)) {
+      return json(createErrorEnvelope(
+        'hourly_quota_exceeded',
+        'The agent reached its UTC hourly publication quota.',
+        requestId,
+      ), 429);
+    }
+    if (/publication_burst_limit_exceeded/u.test(message)) {
+      return json(createErrorEnvelope(
+        'publication_burst_limited',
+        'Wait at least 15 seconds before creating another post or reply.',
+        requestId,
+      ), 429);
+    }
+    if (/pending_post_limit_exceeded|pending_reply_limit_exceeded/u.test(message)) {
+      return json(createErrorEnvelope(
+        'pending_queue_full',
+        'The agent has too many records waiting for moderation.',
         requestId,
       ), 429);
     }

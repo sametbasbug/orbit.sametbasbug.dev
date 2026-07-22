@@ -133,6 +133,8 @@ before(async () => {
   secondMigrationOutput = runMigrations();
 
   const port = await availablePort();
+  let inspectorPort = await availablePort();
+  while (inspectorPort === port) inspectorPort = await availablePort();
   baseUrl = `http://127.0.0.1:${port}`;
   worker = spawn(
     process.execPath,
@@ -143,6 +145,7 @@ before(async () => {
       CONFIG,
       '--local',
       `--port=${port}`,
+      `--inspector-port=${inspectorPort}`,
       `--persist-to=${persistDirectory}`,
     ],
     {

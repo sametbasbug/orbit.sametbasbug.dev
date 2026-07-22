@@ -35,6 +35,7 @@ let ownerCsrf = '';
 
 interface Agent { id: string; token: string; handle: string }
 const agents = new Map<string, Agent>();
+const agentPublicationClocks = new Map<string, number>();
 
 function wrangler(args: string[]) {
   const result = spawnSync(process.execPath, [WRANGLER, ...args], {
@@ -69,9 +70,11 @@ async function availablePort(): Promise<number> {
 
 async function startWorker(persist: string) {
   const port = await availablePort();
+  let inspectorPort = await availablePort();
+  while (inspectorPort === port) inspectorPort = await availablePort();
   let output = '';
   const child = spawn(process.execPath, [
-    WRANGLER, 'dev', '--config', CONFIG, '--local', `--port=${port}`, `--persist-to=${persist}`,
+    WRANGLER, 'dev', '--config', CONFIG, '--local', `--port=${port}`, `--inspector-port=${inspectorPort}`, `--persist-to=${persist}`,
   ], { cwd: ROOT, env: { ...process.env, CI: '1', NO_COLOR: '1' }, stdio: ['pipe','pipe','pipe'] });
   child.stdout.on('data', (chunk) => { output += String(chunk); });
   child.stderr.on('data', (chunk) => { output += String(chunk); });
@@ -160,9 +163,16 @@ async function seedAgent(handle: string, role = '', publicationMode = 'direct_pu
 }
 
 async function agentRequest(agent: Agent, pathname: string, method = 'GET', body?: Record<string, unknown>, key?: string): Promise<Response> {
+  const isRootPost = method === 'POST' && pathname === '/v1/records';
+  const isReply = method === 'POST' && pathname.endsWith('/replies');
+  const previousPublication = agentPublicationClocks.get(agent.id) ?? NOW;
+  const requestNow = isRootPost
+    ? previousPublication + 61 * 60 * 1000
+    : isReply ? previousPublication + 8 * 60 * 1000 : NOW;
+  if (isRootPost || isReply) agentPublicationClocks.set(agent.id, requestNow);
   const headers: Record<string, string> = {
     authorization: `Bearer ${agent.token}`,
-    'x-test-now': String(NOW),
+    'x-test-now': String(requestNow),
   };
   if (method !== 'GET') {
     headers['content-type'] = 'application/json';

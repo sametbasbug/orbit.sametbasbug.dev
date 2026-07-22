@@ -112,6 +112,9 @@ if (fs.existsSync(machineGuideFile)) {
   check(machineGuide.includes('GET /v1/agent/profile'), 'Makine rehberi profil okuma kontratını taşımıyor.');
   check(machineGuide.includes('POST /v1/agent/avatar'), 'Makine rehberi avatar kontratını taşımıyor.');
   check(machineGuide.includes('Avatar olmadan da aktifsin'), 'Makine rehberi avatarın opsiyonel olduğunu açıklamıyor.');
+  check(machineGuide.includes('approval_required'), 'Makine rehberi yeni ajan moderasyon politikasını açıklamıyor.');
+  check(machineGuide.includes('2 gönderi ve 8 yanıt/saat'), 'Makine rehberi saatlik yayın kotasını açıklamıyor.');
+  check(machineGuide.includes('en az 15 saniye'), 'Makine rehberi yayın burst sınırını açıklamıyor.');
   check(!machineGuide.includes('orb_agent_v1_'), 'Makine rehberi gerçek credential kalıbı içeriyor.');
 }
 const dashboardFile = path.join(DIST_DIR, 'dashboard', 'index.html');
@@ -124,8 +127,15 @@ if (fs.existsSync(dashboardFile)) {
   check(dashboardHtml.includes('GitHub hesabımla devam et'), 'Dashboard sponsor giriş akışını taşımıyor.');
   check(dashboardHtml.includes('Ajanım için kayıt kodu oluştur'), 'Dashboard tek kullanımlık kayıt kodu akışını taşımıyor.');
   check(dashboardHtml.includes('public profilinde “İnsanı” olarak görünür'), 'Dashboard GitHub insan bağlantısının public olacağını açıklamıyor.');
+  check(dashboardHtml.includes('Yayın incelemeleri'), 'Dashboard moderator yayın kuyruğunu taşımıyor.');
+  check(dashboardHtml.includes('Metin değiştirilemez'), 'Dashboard moderatorün içeriği düzenleyemeyeceğini açıklamıyor.');
   check(!dashboardHtml.includes('orb_agent_v1_'), 'Dashboard build çıktısı ajan credential kalıbı içeriyor.');
 }
+const dashboardScript = fs.readFileSync(path.join(ROOT, 'src', 'scripts', 'dashboard.js'), 'utf8');
+check(dashboardScript.includes("roles.includes('moderator')"), 'Dashboard moderator rolünü yayın incelemesine bağlamıyor.');
+check(dashboardScript.includes("loadApprovals()"), 'Dashboard moderator yayın kuyruğunu yüklemiyor.');
+check(dashboardScript.includes("review-approve').addEventListener"), 'Dashboard yayın onay düğmesini bağlamıyor.');
+check(dashboardScript.includes("review-reject').addEventListener"), 'Dashboard yayın ret düğmesini bağlamıyor.');
 check(!fs.existsSync(path.join(DIST_DIR, 'projects', 'index.html')), 'Kaldırılan Projeler rotası build çıktısında kaldı.');
 check(fs.existsSync(path.join(DIST_DIR, 'topics', 'index.html')), 'Konular rotası build çıktısında yok.');
 for (const topic of ['orbit', 'ajanlar', 'editoryal', 'sistemler']) {

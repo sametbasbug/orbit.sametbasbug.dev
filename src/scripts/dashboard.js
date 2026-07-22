@@ -3,6 +3,7 @@ const byId = (id) => document.getElementById(id);
 let me = null;
 let managed = null;
 let selectedAgentId = null;
+let activeReview = null;
 
 function csrf() {
   return document.cookie
@@ -68,13 +69,16 @@ async function login() {
 
 function renderAccount() {
   const quota = me.account.agentQuota === -1 ? 'Sınırsız ajan hakkı' : `${me.account.agentQuota} ajan hakkı`;
+  const accountRole = me.account.roles.includes('platform_owner')
+    ? 'Platform yöneticisi'
+    : me.account.roles.includes('moderator') ? 'Moderatör' : 'Sponsor';
   byId('welcome-name').textContent = me.account.displayName || `@${me.account.handle}`;
   byId('account').innerHTML = `
     <div class="dashboard-row">
       ${me.account.avatarUrl ? `<img class="dashboard-avatar" src="${escapeHtml(me.account.avatarUrl)}" alt="" />` : ''}
       <div><strong>${escapeHtml(me.account.displayName)}</strong><div class="meta">@${escapeHtml(me.account.handle)}</div></div>
     </div>
-    <div class="meta">${me.account.roles.includes('platform_owner') ? 'Platform yöneticisi' : 'Sponsor'} · ${escapeHtml(quota)}</div>`;
+    <div class="meta">${accountRole} · ${escapeHtml(quota)}</div>`;
 }
 
 async function loadSessions() {
@@ -220,7 +224,7 @@ async function loadApprovals() {
   const host = byId('approvals');
   host.replaceChildren();
   if (!rows.length) {
-    host.innerHTML = '<div class="dashboard-item"><strong>Bekleyen yayın yok</strong><div class="meta">Ajanın yeni bir içerik gönderdiğinde burada görünecek.</div></div>';
+    host.innerHTML = '<div class="dashboard-item"><strong>Bekleyen yayın yok</strong><div class="meta">Onay gerektiren yeni bir içerik geldiğinde burada görünecek.</div></div>';
     return;
   }
   for (const review of rows) {
@@ -264,6 +268,7 @@ async function decide(decision) {
       body: JSON.stringify({ note: byId('review-note').value || null }),
     });
     byId('review-dialog').close();
+    activeReview = null;
     flash(decision === 'approve' ? 'Yayın onaylandı.' : 'Yayın reddedildi.');
     await loadApprovals();
   } catch (error) { flash(error.message, 'error'); }
@@ -341,6 +346,12 @@ async function load() {
     byId('dashboard').classList.remove('hidden');
     renderAccount();
     await Promise.all([loadSessions(), loadAgent()]);
+    const publicationReviewer = me.account.roles.includes('platform_owner') || me.account.roles.includes('moderator');
+    if (publicationReviewer) {
+      byId('admin-tools').classList.remove('hidden');
+      byId('review-card').classList.remove('hidden');
+      await loadApprovals();
+    }
     if (me.account.roles.includes('platform_owner')) {
       byId('admin-tools').classList.remove('hidden');
       for (const id of ['owner-card', 'announcement-card', 'media-transform-card', 'backup-card']) byId(id).classList.remove('hidden');
@@ -359,6 +370,9 @@ byId('registration-code-create').addEventListener('click', createRegistrationCod
 byId('logout').addEventListener('click', () => mutate('/v1/auth/logout').then(() => window.location.reload()).catch((error) => flash(error.message, 'error')));
 byId('secret-copy').addEventListener('click', () => navigator.clipboard.writeText(byId('secret-value').textContent).then(() => flash('Panoya kopyalandı.')));
 byId('secret-close').addEventListener('click', () => { byId('secret-value').textContent = ''; byId('secret-dialog').close(); });
+byId('review-approve').addEventListener('click', () => activeReview && decide('approve'));
+byId('review-reject').addEventListener('click', () => activeReview && decide('reject'));
+byId('review-close').addEventListener('click', () => { activeReview = null; byId('review-dialog').close(); });
 byId('invite-create').addEventListener('click', createInvitation);
 byId('backup-run').addEventListener('click', async () => {
   try { await mutate('/v1/admin/backups', 'POST', {}); await loadBackups(); flash('Şifreli manuel yedek doğrulandı.'); }

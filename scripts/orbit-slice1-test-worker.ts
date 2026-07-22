@@ -302,6 +302,36 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     return Response.json({ ok: true });
   }
 
+  if (url.pathname === '/__test/seed-role-session') {
+    const accountId = String(body.accountId);
+    const handle = String(body.handle);
+    const role = String(body.role);
+    await env.DB.batch([
+      env.DB.prepare(`
+        INSERT INTO accounts (
+          id, handle, handle_normalized, display_name, avatar_url,
+          status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, NULL, 'active', ?, ?)
+      `).bind(accountId, handle, handle.toLowerCase(), handle, now, now),
+      env.DB.prepare(`
+        INSERT INTO account_roles (
+          id, account_id, role, granted_by_account_id, granted_at
+        ) VALUES (?, ?, ?, NULL, ?)
+      `).bind(String(body.roleId), accountId, role, now),
+      env.DB.prepare(`
+        INSERT INTO sessions (
+          id, account_id, secret_digest, hash_version, csrf_digest,
+          created_at, last_seen_at, idle_expires_at, absolute_expires_at
+        ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
+      `).bind(
+        String(body.sessionId), accountId, String(body.secretDigest),
+        String(body.csrfDigest), now, now, now + 7 * 86400000,
+        now + 30 * 86400000,
+      ),
+    ]);
+    return Response.json({ ok: true });
+  }
+
   if (url.pathname === '/__test/seed-closed-account-session') {
     const accountId = String(body.accountId);
     await env.DB.batch([
@@ -358,11 +388,19 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
   }
 
   if (url.pathname === '/__test/usage') {
-    const rows = await env.DB.prepare(`
+    const daily = await env.DB.prepare(`
       SELECT day_utc, posts_created, replies_created, write_attempts
       FROM agent_usage_daily WHERE agent_id = ? ORDER BY day_utc
     `).bind(String(body.agentId)).all();
-    return Response.json({ rows: rows.results });
+    const hourly = await env.DB.prepare(`
+      SELECT hour_utc, posts_created, replies_created
+      FROM agent_usage_hourly WHERE agent_id = ? ORDER BY hour_utc
+    `).bind(String(body.agentId)).all();
+    const throttle = await env.DB.prepare(`
+      SELECT last_record_created_at
+      FROM agent_publication_throttles WHERE agent_id = ?
+    `).bind(String(body.agentId)).first();
+    return Response.json({ rows: daily.results, hourly: hourly.results, throttle });
   }
 
   if (url.pathname === '/__test/set-usage') {
@@ -379,6 +417,31 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
       String(body.agentId), String(body.dayUtc), Number(body.postsCreated ?? 0),
       Number(body.repliesCreated ?? 0), Number(body.writeAttempts ?? 0), now,
     ).run();
+    return Response.json({ ok: true });
+  }
+
+  if (url.pathname === '/__test/set-hourly-usage') {
+    await env.DB.batch([
+      env.DB.prepare(`
+        INSERT INTO agent_usage_hourly (
+          agent_id, hour_utc, posts_created, replies_created, updated_at
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(agent_id, hour_utc) DO UPDATE SET
+          posts_created = excluded.posts_created,
+          replies_created = excluded.replies_created,
+          updated_at = excluded.updated_at
+      `).bind(
+        String(body.agentId), String(body.hourUtc), Number(body.postsCreated ?? 0),
+        Number(body.repliesCreated ?? 0), now,
+      ),
+      env.DB.prepare(`
+        DELETE FROM agent_publication_throttles WHERE agent_id = ?
+      `).bind(String(body.agentId)),
+      env.DB.prepare(`
+        INSERT INTO agent_publication_throttles (agent_id, last_record_created_at)
+        VALUES (?, ?)
+      `).bind(String(body.agentId), Number(body.lastRecordCreatedAt ?? now - 15000)),
+    ]);
     return Response.json({ ok: true });
   }
 

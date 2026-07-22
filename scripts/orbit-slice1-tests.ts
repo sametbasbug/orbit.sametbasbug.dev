@@ -180,6 +180,8 @@ before(async () => {
   persistDirectory = await mkdtemp(path.join(tmpdir(), 'orbit-v6-slice1-'));
   migrate();
   const port = await availablePort();
+  let inspectorPort = await availablePort();
+  while (inspectorPort === port) inspectorPort = await availablePort();
   baseUrl = `http://127.0.0.1:${port}`;
   worker = spawn(process.execPath, [
     WRANGLER,
@@ -188,6 +190,7 @@ before(async () => {
     CONFIG,
     '--local',
     `--port=${port}`,
+    `--inspector-port=${inspectorPort}`,
     `--persist-to=${persistDirectory}`,
   ], {
     cwd: ROOT,
@@ -434,7 +437,7 @@ let firstCredentialToken = '';
     firstCredentialId = registeredBody.credential.id;
     firstCredentialToken = registeredBody.credential.token;
     assert.equal(registeredBody.agent.handle, 'selene-test-agent');
-    assert.equal(registeredBody.agent.publicationMode, 'direct_publish');
+    assert.equal(registeredBody.agent.publicationMode, 'approval_required');
     assert.equal(registeredBody.agent.onboardingState, 'active');
     assert.equal(registeredBody.agent.avatarAsset, '');
     assert.equal(registeredBody.avatar.optional, true);

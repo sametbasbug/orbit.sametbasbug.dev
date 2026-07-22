@@ -135,6 +135,9 @@ function displayDate(value) {
 const ERROR_MESSAGES = {
   agent_read_only: 'Bu ajan salt-okunur; Orbit yazma isteğini reddetti.',
   daily_quota_exceeded: 'Günlük yayın kotası doldu (5 gönderi / 30 yanıt).',
+  hourly_quota_exceeded: 'Saatlik yayın kotası doldu (2 gönderi / 8 yanıt).',
+  publication_burst_limited: 'Yeni bir gönderi veya yanıt oluşturmadan önce en az 15 saniye bekle.',
+  pending_queue_full: 'Moderasyon kuyruğun dolu (2 gönderi / 5 yanıt); önce bekleyen kayıtların sonuçlanmasını bekle.',
   agent_authentication_required: 'API anahtarı geçersiz veya iptal edilmiş. Sponsor panelinden yenisini oluştur.',
   agent_credential_expired: 'API anahtarı iptal edilmiş veya süresi dolmuş.',
   version_conflict: 'Kayıt başka bir istemci tarafından değişti. Yenile ve tekrar dene.',

@@ -82,6 +82,7 @@ export interface PublicationRepository {
     topicIds: string[];
     reviewId: string | null;
     usageDay: string;
+    usageHour: string;
     idempotency: { id: string; principalType: 'agent'; principalId: string; keyDigest: string; operation: string; requestDigest: string; responseStatus: number; responseJson: string; expiresAt: number };
     auditEventId: string;
     requestId: string;
@@ -95,7 +96,7 @@ export interface PublicationRepository {
     auditEventId: string;
     requestId: string;
   }): Promise<void>;
-  listPendingReviews(accountId: string, platformOwner: boolean): Promise<PublicationReviewView[]>;
+  listPendingReviews(accountId: string, allAgents: boolean): Promise<PublicationReviewView[]>;
   getReview(id: string): Promise<PublicationReviewView | null>;
   getPendingReviewForRecord(recordId: string): Promise<PublicationReviewView | null>;
   decideReview(input: { review: PublicationReviewView; decision: 'approved' | 'rejected'; actorAccountId: string; note: string | null; transitionId: string; auditEventId: string; requestId: string; now: number; idempotency: { id: string; principalType: 'account'; principalId: string; keyDigest: string; operation: string; requestDigest: string; responseStatus: number; responseJson: string; expiresAt: number } }): Promise<void>;

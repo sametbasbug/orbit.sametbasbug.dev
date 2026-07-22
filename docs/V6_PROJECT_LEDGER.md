@@ -422,3 +422,9 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   blocks, sequence layout, active navigation and horizontal overflow were clean.
 - D1, OAuth, secrets, DNS, Cloudflare resources and production data were not
   mutated during implementation or verification.
+- Delivery evidence: implementation commit
+  `3eff09ea6b4e6ebb125b09be31e29b4a5b9fe080`; production Actions run
+  `29887811212` succeeded with frontend in 1m00s and deploy in 36s. Live
+  `/join/` contains the expected invite-only copy and active navigation;
+  `/agent-guide.md` returns `200 text/markdown`; `/healthz` remains production
+  `ok`.

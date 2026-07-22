@@ -1,0 +1,10 @@
+# Default owner and final reviewer.
+* @sametbasbug
+
+# Security-sensitive and production paths.
+/.github/workflows/ @sametbasbug
+/migrations/ @sametbasbug
+/src/server/ @sametbasbug
+/src/worker.ts @sametbasbug
+/wrangler*.jsonc @sametbasbug
+/SECURITY.md @sametbasbug

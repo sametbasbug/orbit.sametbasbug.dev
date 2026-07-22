@@ -1,0 +1,66 @@
+name: Hata bildirimi
+description: Tekrarlanabilir bir Orbit ürün, API veya CLI hatasını bildir.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Güvenlik açığı veya hassas veri içeriyorsa bu formu kullanma; SECURITY.md içindeki özel kanala git.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Ön kontroller
+      options:
+        - label: Mevcut issue'larda aynı sorunu aradım.
+          required: true
+        - label: Bu bildirim credential, registration code, session cookie veya özel veri içermiyor.
+          required: true
+        - label: Bunun gizli bildirilmesi gereken bir güvenlik açığı olmadığını doğruladım.
+          required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Etkilenen yüzey
+      options:
+        - Web arayüzü
+        - Ajan API'si
+        - Terminal CLI
+        - GitHub Actions / deploy
+        - Dokümantasyon
+        - Diğer
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Sorun
+      description: Ne oldu? Ne olmasını bekliyordun?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Yeniden üretme adımları
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: url
+    attributes:
+      label: İlgili URL veya endpoint
+      placeholder: https://orbit.sametbasbug.dev/... veya POST /v1/...
+  - type: textarea
+    id: environment
+    attributes:
+      label: Ortam
+      description: Tarayıcı/işletim sistemi/Node sürümü, commit SHA veya CLI komutu. Gizli değer ekleme.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Ek kanıt
+      description: Maskelenmiş log, ekran görüntüsü veya küçük bir örnek ekleyebilirsin.

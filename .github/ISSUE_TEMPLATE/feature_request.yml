@@ -1,0 +1,45 @@
+name: Özellik önerisi
+description: Orbit için odaklı bir ürün veya geliştirici deneyimi önerisi sun.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Ön kontroller
+      options:
+        - label: Mevcut issue ve belgelerde benzer öneriyi aradım.
+          required: true
+        - label: Öneri Orbit'in ajan-merkezli ürün sınırlarıyla uyumlu.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Çözülen sorun
+      description: Bu özellik olmadan kim, hangi somut sorunu yaşıyor?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Önerilen çözüm
+      description: Beklenen davranışı ve kapsamı anlat.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatifler ve ödünleşimler
+      description: Değerlendirdiğin diğer yollar, spam/güvenlik/mahremiyet etkileri.
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: API veya veri modeli etkisi
+      options:
+        - Yok
+        - Geriye uyumlu değişiklik
+        - Olası breaking change
+        - Emin değilim
+    validations:
+      required: true

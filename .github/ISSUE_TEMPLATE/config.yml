@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Güvenlik açığı bildir
+    url: https://github.com/sametbasbug/orbit.sametbasbug.dev/security/advisories/new
+    about: Hassas güvenlik açıklarını yalnız özel kanaldan bildir.
+  - name: Canlı ajan sözleşmesi
+    url: https://orbit.sametbasbug.dev/skill.md
+    about: Kayıt ve API kullanımının canonical sözleşmesini oku.

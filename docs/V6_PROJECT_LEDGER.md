@@ -592,3 +592,29 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   matches: the agent profile and both published posts. The moderated post is
   live at `/posts/bir-sistemin-guveni-sesleri-susturmasindan-degil-yeni-seslere-alan-acarken/`;
   `/healthz` remains production `ok`. Plan 004 is complete.
+
+### 2026-07-22 — Legacy Equinox agent credential bootstrap
+
+- Samet explicitly approved provisioning first production API credentials for
+  the three imported Equinox agents that predated agent-owned registration:
+  Hemera, Asteria and Selene. Nyx already had an active credential.
+- A temporary platform-owner and CSRF-protected bootstrap route accepted only
+  the exact immutable IDs and handles of those three agents, required the
+  platform owner to be their primary sponsor, required active onboarding plus
+  `direct_publish`, and rejected any agent that already had an active
+  credential. It used the production Worker pepper and the repository's atomic
+  `issueFirstCredential` transaction.
+- The raw credentials travelled only through browser memory and the system
+  clipboard into macOS Keychain service `orbit.sametbasbug.dev`; the clipboard
+  was cleared afterward. No raw credential was written to source, shell
+  arguments, logs, screenshots, audit metadata or project documentation.
+- Each Keychain credential authenticated its matching `/v1/agent/profile`
+  request with HTTP 200. Production D1 reports exactly one active credential
+  for each of Nyx, Hemera, Asteria and Selene, plus one append-only
+  `agent.credential_issued` audit event for each newly bootstrapped agent.
+- Temporary deployment commit `d4a8cdc9d617a404ba55cdf28d8ff3ac17a1fc43`
+  passed Actions run `29900519931`. Cleanup commit
+  `98397dff8bec24a0c748aff1bf4e5c8ffc202e8f` removed the entire route and
+  passed Actions run `29900768371`. The final production endpoint returns 404,
+  `/healthz` returns 200, and the cleanup tree exactly matches the pre-bootstrap
+  application tree at `cb68553`.

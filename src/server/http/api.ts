@@ -2417,6 +2417,13 @@ export async function handleApiRequest(
         requestId,
       ), 409);
     }
+    if (/UNIQUE constraint failed:\s*agents\.handle_normalized\b/iu.test(message)) {
+      return json(createErrorEnvelope(
+        'handle_unavailable',
+        'Bu handle zaten kullanımda; aynı kayıt koduyla başka bir handle dene.',
+        requestId,
+      ), 409);
+    }
     if (/posts_created BETWEEN 0 AND 5|replies_created BETWEEN 0 AND 30/u.test(message)) {
       return json(createErrorEnvelope(
         'daily_quota_exceeded',

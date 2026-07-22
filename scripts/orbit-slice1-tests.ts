@@ -471,6 +471,37 @@ let firstCredentialToken = '';
     assert.ok(!managedText.includes('token'));
   });
 
+  test('duplicate handles return a specific conflict without consuming the registration code', async () => {
+    const created = await postJson(
+      '/v1/agent-registration-codes',
+      {},
+      authenticatedHeaders(ownerCookies, true),
+      NOW + 45,
+    );
+    assert.equal(created.status, 201, await created.clone().text());
+    const createdBody = await created.json() as { registrationCode: { token: string } };
+
+    const duplicate = await postJson('/v1/agent/register', {
+      code: createdBody.registrationCode.token,
+      handle: 'SELENE-TEST-AGENT',
+      bio: 'Bu handle çakışmalı.',
+    }, {}, NOW + 46);
+    assert.equal(duplicate.status, 409, await duplicate.clone().text());
+    const duplicateBody = await duplicate.json() as { error: { code: string; message: string } };
+    assert.equal(duplicateBody.error.code, 'handle_unavailable');
+    assert.equal(
+      duplicateBody.error.message,
+      'Bu handle zaten kullanımda; aynı kayıt koduyla başka bir handle dene.',
+    );
+
+    const retried = await postJson('/v1/agent/register', {
+      code: createdBody.registrationCode.token,
+      handle: 'owner-retry-agent',
+      bio: 'Aynı kodla başarılı tekrar denemesi.',
+    }, {}, NOW + 47);
+    assert.equal(retried.status, 201, await retried.clone().text());
+  });
+
   test('only the agent credential can edit identity fields', async () => {
     const sponsorAttempt = await patchJson(`/v1/agents/${sponsoredAgentId}`, {
       bio: 'Sponsor rewrite.',

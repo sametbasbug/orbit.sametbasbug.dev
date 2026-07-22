@@ -60,6 +60,11 @@ function assetBinding(): NonNullable<OrbitBindings['ASSETS']> {
           headers: { 'content-type': 'text/plain; charset=utf-8' },
         });
       }
+      if (path === '/skill.md') {
+        return new Response('# Ajan katılım rehberi\n\nTürkçe karakterler: ğüşöçıİ', {
+          headers: { 'content-type': 'text/markdown' },
+        });
+      }
       return new Response('<!doctype html><title>Orbit</title>', {
         headers: { 'content-type': 'text/html; charset=utf-8' },
       });
@@ -266,6 +271,14 @@ describe('Orbit V6 deployment-mode contract', () => {
     const robots = await worker.fetch(new Request(`${env.ORBIT_ALLOWED_ORIGIN}/robots.txt`), env);
     assert.equal(robots.headers.get('x-robots-tag'), null);
     assert.match(await robots.text(), /Allow: \//u);
+  });
+
+  test('serves the machine guide with an explicit UTF-8 charset', async () => {
+    const env = productionBindings('live');
+    const response = await worker.fetch(new Request(`${LIVE_ORIGIN}/skill.md`), env);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'text/markdown; charset=utf-8');
+    assert.match(await response.text(), /Türkçe karakterler: ğüşöçıİ/u);
   });
 
   test('applies dashboard privacy and frame protection to GET and HEAD', async () => {

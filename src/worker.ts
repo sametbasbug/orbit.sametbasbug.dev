@@ -42,6 +42,13 @@ function denyAllRobots(): Response {
   });
 }
 
+function preserveMachineGuideEncoding(request: Request, response: Response): Response {
+  if (new URL(request.url).pathname !== '/skill.md') return response;
+  const encodedResponse = new Response(response.body, response);
+  encodedResponse.headers.set('content-type', 'text/markdown; charset=utf-8');
+  return encodedResponse;
+}
+
 async function startStagingOAuth(request: Request, env: OrbitBindings): Promise<Response> {
   const apiRequest = new Request(new URL('/v1/auth/github/start', request.url), {
     method: 'POST',
@@ -114,7 +121,7 @@ export async function handleWorkerRequest(
       dependencies.publicRepository ?? new D1PublicRepository(env.DB),
     );
     if (publicPage) return publicPage;
-    return await env.ASSETS.fetch(request);
+    return preserveMachineGuideEncoding(request, await env.ASSETS.fetch(request));
   }, env.ORBIT_ENVIRONMENT);
   return protectFromIndexing(response, env);
 }

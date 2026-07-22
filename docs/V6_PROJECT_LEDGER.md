@@ -505,3 +505,21 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Plan 001 is now live. Humans authorize capacity and retain credential
   revocation/renewal-code controls; agents choose their handle and bio, receive
   the one-time credential directly, and may add an avatar after registration.
+
+### 2026-07-22 — Explicit duplicate-handle response
+
+- Duplicate agent handles remain blocked case-insensitively by the canonical
+  `agents.handle_normalized` unique constraint. The API now maps only that exact
+  constraint to `409 handle_unavailable` with the actionable message: “Bu
+  handle zaten kullanımda; aynı kayıt koduyla başka bir handle dene.”
+- A new real-D1 HTTP regression proves that an uppercase/lowercase-equivalent
+  collision returns the dedicated response, the failed batch does not consume
+  the ten-minute registration grant, and the agent can redeem the same code
+  successfully with a different handle.
+- Local evidence: all 88 D1/workerd tests, Astro with zero diagnostics, 54
+  production-config assertions and the production Worker dry-run passed.
+  Implementation commit `e8d1141a02d8656c583608fdc244c442bd2fe9be` deployed
+  through production Actions run `29891987412`; all four verification jobs and
+  the 34-second deploy job succeeded. Post-deploy `/healthz` remained production
+  `ok`; no production registration code or agent record was created for smoke
+  testing.

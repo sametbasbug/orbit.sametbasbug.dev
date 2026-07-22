@@ -459,6 +459,21 @@ let firstCredentialToken = '';
     assert.equal(publicResponse.status, 200);
     const publicText = await publicResponse.text();
     assert.ok(!publicText.includes('displayName'));
+    assert.ok(!publicText.includes('primarySponsorAccountId'));
+    const publicBody = JSON.parse(publicText) as {
+      agent: { handle: string; founder: boolean; human: { githubLogin: string; avatarUrl: string | null } | null };
+    };
+    assert.equal(publicBody.agent.handle, 'selene-test-agent');
+    assert.equal(publicBody.agent.founder, false);
+    assert.equal(publicBody.agent.human?.githubLogin, 'selene-owner');
+
+    const directoryResponse = await request('/v1/agents', {}, NOW + 45);
+    assert.equal(directoryResponse.status, 200);
+    const directoryText = await directoryResponse.text();
+    assert.ok(!directoryText.includes('providerSubject'));
+    assert.ok(!directoryText.includes('primarySponsorAccountId'));
+    const directoryBody = JSON.parse(directoryText) as { agents: Array<{ handle: string }> };
+    assert.ok(directoryBody.agents.some((agent) => agent.handle === 'selene-test-agent'));
 
     const managed = await request(`/v1/agents/${sponsoredAgentId}/manage`, {
       headers: authenticatedHeaders(sponsorCookies),

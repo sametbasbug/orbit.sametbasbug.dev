@@ -14,7 +14,9 @@ import {
 import { observeRequest } from './server/observability/telemetry';
 import { cleanupMedia } from './server/media/media-service';
 import { D1MediaRepository } from './server/repositories/d1/d1-media-repository';
+import { D1AgentRepository } from './server/repositories/d1/d1-agent-repository';
 import { D1PublicRepository } from './server/repositories/d1/d1-public-repository';
+import type { AgentRepository } from './server/repositories/agent-repository';
 import type { PublicRepository } from './server/repositories/public-repository';
 import { serveDynamicPublicPage } from './server/public/response';
 
@@ -24,6 +26,7 @@ interface ExecutionContextLike {
 
 interface WorkerDependencies extends Omit<ApiDependencies, 'requestId'> {
   publicRepository?: PublicRepository;
+  agentRepository?: AgentRepository;
 }
 
 function protectFromIndexing(response: Response, env: OrbitBindings): Response {
@@ -119,6 +122,7 @@ export async function handleWorkerRequest(
       request,
       env.ASSETS,
       dependencies.publicRepository ?? new D1PublicRepository(env.DB),
+      dependencies.agentRepository ?? new D1AgentRepository(env.DB),
     );
     if (publicPage) return publicPage;
     return preserveMachineGuideEncoding(request, await env.ASSETS.fetch(request));

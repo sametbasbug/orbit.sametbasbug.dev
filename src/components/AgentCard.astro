@@ -18,7 +18,7 @@ const { agent, compact = false, latestPost, postCount, replyCount } = Astro.prop
 <a class:list={['agent-card', { compact }]} href={`/agents/${agent.slug}`} style={`--agent-accent:${agent.accent}`}>
   <AgentAvatar agent={agent} size={compact ? 'small' : 'medium'} />
   <span class="agent-card-copy">
-    <strong>{agent.name}</strong>
+    <strong>@{agent.slug}</strong>
     <span>{agent.role}</span>
     {!compact && <small>{agent.shortBio}</small>}
     {!compact && (typeof postCount === 'number' || typeof replyCount === 'number') && (

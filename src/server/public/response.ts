@@ -1,11 +1,36 @@
 import type { AssetsBinding } from '../identity/bindings';
+import type { AgentRepository } from '../repositories/agent-repository';
 import type { PublicRecordView, PublicRepository } from '../repositories/public-repository';
+import {
+  renderAgentDirectory,
+  renderAgentFilter,
+  renderAgentProfile,
+  renderCompactAgentList,
+} from './agent-html';
 import { renderPublicFeed, renderPublicRecordPage } from './html';
+
+type PublicAgentPageRepository = Pick<AgentRepository, 'listPublicAgents' | 'getPublicAgent'>;
 
 const FEED_START = '<!-- ORBIT_DYNAMIC_FEED_START -->';
 const FEED_END = '<!-- ORBIT_DYNAMIC_FEED_END -->';
 const RECORD_PLACEHOLDER = '__ORBIT_DYNAMIC_RECORD__';
 const RUNTIME_PATH = '/orbit-runtime/post/';
+const AGENT_DIRECTORY_PLACEHOLDER = '__ORBIT_DYNAMIC_AGENT_DIRECTORY__';
+const AGENT_PROFILE_PLACEHOLDER = '__ORBIT_DYNAMIC_AGENT_PROFILE__';
+const AGENT_DIRECTORY_RUNTIME_PATH = '/orbit-runtime/agents/';
+const AGENT_PROFILE_RUNTIME_PATH = '/orbit-runtime/agent/';
+const AGENT_FILTER_START = '<!-- ORBIT_DYNAMIC_AGENT_FILTER_START -->';
+const AGENT_FILTER_END = '<!-- ORBIT_DYNAMIC_AGENT_FILTER_END -->';
+const AGENT_RAIL_START = '<!-- ORBIT_DYNAMIC_AGENT_RAIL_START -->';
+const AGENT_RAIL_END = '<!-- ORBIT_DYNAMIC_AGENT_RAIL_END -->';
+const PROJECT_REDIRECTS = new Map([
+  ['orbit', '/'],
+  ['equinox', 'https://equinox.sametbasbug.dev/'],
+  ['blog', 'https://sametbasbug.dev/'],
+  ['haber', 'https://haber.sametbasbug.dev/'],
+  ['status', 'https://status.sametbasbug.dev/'],
+  ['signal-drift', 'https://play.sametbasbug.dev/'],
+]);
 
 function escapeHtml(value: string): string {
   return value
@@ -20,7 +45,7 @@ function shortTitle(record: PublicRecordView): string {
   const summary = record.summary.length > 76
     ? `${record.summary.slice(0, 73).trim()}…`
     : record.summary;
-  return `${record.author.handle}: ${summary}`;
+  return `@${record.author.handle}: ${summary}`;
 }
 
 function replaceMarkedRegion(
@@ -97,6 +122,7 @@ async function renderFeedRoute(
   request: Request,
   assets: AssetsBinding,
   repository: PublicRepository,
+  agentRepository: PublicAgentPageRepository | undefined,
   agentHandle: string | null,
 ): Promise<Response> {
   const page = await repository.listFeed({
@@ -113,15 +139,73 @@ async function renderFeedRoute(
     ? '<p class="feed-end">En yeni 50 kayıt gösteriliyor.</p>'
     : '<p class="feed-end">Yörüngenin güncel ucu</p>'}`;
   const original = await shell.text();
-  const html = replaceMarkedRegion(original, FEED_START, FEED_END, feed);
-  if (html === null) return htmlResponse(shell, original, request.method === 'HEAD');
+  let html = replaceMarkedRegion(original, FEED_START, FEED_END, feed) ?? original;
+  if (agentRepository) {
+    const agents = await agentRepository.listPublicAgents();
+    html = replaceMarkedRegion(html, AGENT_FILTER_START, AGENT_FILTER_END, renderAgentFilter(agents, agentHandle)) ?? html;
+    html = replaceMarkedRegion(html, AGENT_RAIL_START, AGENT_RAIL_END, renderCompactAgentList(agents)) ?? html;
+  }
   return htmlResponse(shell, html, request.method === 'HEAD');
+}
+
+async function renderAgentDirectoryRoute(
+  request: Request,
+  assets: AssetsBinding,
+  repository: PublicAgentPageRepository,
+): Promise<Response> {
+  const shell = await assets.fetch(new Request(new URL(AGENT_DIRECTORY_RUNTIME_PATH, request.url)));
+  if (!shell.ok) return shell;
+  const agents = await repository.listPublicAgents();
+  const source = await shell.text();
+  if (!source.includes(AGENT_DIRECTORY_PLACEHOLDER)) throw new Error('dynamic_agent_directory_placeholder_missing');
+  const html = source
+    .replaceAll(AGENT_DIRECTORY_RUNTIME_PATH, '/agents/')
+    .replace(AGENT_DIRECTORY_PLACEHOLDER, renderAgentDirectory(agents));
+  return htmlResponse(shell, html, request.method === 'HEAD');
+}
+
+async function renderAgentProfileRoute(
+  request: Request,
+  assets: AssetsBinding,
+  agentRepository: PublicAgentPageRepository,
+  publicRepository: PublicRepository,
+  handle: string,
+): Promise<Response> {
+  const agent = await agentRepository.getPublicAgent(handle.toLowerCase());
+  if (!agent) return await notFound(request, assets);
+  const activity = await publicRepository.listAgentActivity({ agentId: agent.id, limit: 50, cursor: null });
+  const shell = await assets.fetch(new Request(new URL(AGENT_PROFILE_RUNTIME_PATH, request.url)));
+  if (!shell.ok) return shell;
+  let html = await shell.text();
+  if (!html.includes(AGENT_PROFILE_PLACEHOLDER)) throw new Error('dynamic_agent_profile_placeholder_missing');
+  const canonicalPath = `/agents/${encodeURIComponent(agent.handle)}/`;
+  const metadata = new Map([
+    ['__ORBIT_AGENT_TITLE__', escapeHtml(`@${agent.handle}`)],
+    ['__ORBIT_AGENT_DESCRIPTION__', escapeHtml(agent.bio)],
+    ['__ORBIT_AGENT_IMAGE_ALT__', escapeHtml(`@${agent.handle} Orbit ajanı`)],
+  ]);
+  html = html
+    .replaceAll(AGENT_PROFILE_RUNTIME_PATH, canonicalPath)
+    .replace(/__ORBIT_AGENT_(?:TITLE|DESCRIPTION|IMAGE_ALT)__/gu, (token) => metadata.get(token) ?? token)
+    .replace(AGENT_PROFILE_PLACEHOLDER, renderAgentProfile(agent, activity.items, activity.hasMore));
+  return htmlResponse(shell, html, request.method === 'HEAD');
+}
+
+function projectRedirect(request: Request, path: string): Response | null {
+  const match = path.match(/^\/projects(?:\/([^/]+))?(?:\/page\/\d+)?\/?$/u);
+  if (!match) return null;
+  const destination = match[1] ? PROJECT_REDIRECTS.get(match[1]) ?? '/agents/' : '/agents/';
+  return new Response(null, {
+    status: 308,
+    headers: { location: new URL(destination, request.url).href, 'cache-control': 'public, max-age=86400' },
+  });
 }
 
 export async function serveDynamicPublicPage(
   request: Request,
   assets: AssetsBinding,
   repository: PublicRepository,
+  agentRepository?: PublicAgentPageRepository,
 ): Promise<Response | null> {
   if (request.method !== 'GET' && request.method !== 'HEAD') return null;
   const url = new URL(request.url);
@@ -129,6 +213,9 @@ export async function serveDynamicPublicPage(
   if (url.pathname.startsWith('/orbit-runtime/')) {
     return await notFound(request, assets);
   }
+
+  const redirect = projectRedirect(request, url.pathname);
+  if (redirect) return redirect;
 
   const postMatch = url.pathname.match(/^\/posts\/([^/]+)\/?$/u);
   if (postMatch) {
@@ -142,12 +229,21 @@ export async function serveDynamicPublicPage(
   }
 
   if (url.pathname === '/') {
-    return await renderFeedRoute(request, assets, repository, null);
+    return await renderFeedRoute(request, assets, repository, agentRepository, null);
   }
 
   const feedMatch = url.pathname.match(/^\/feed\/([a-z0-9][a-z0-9-]{0,62})\/?$/u);
   if (feedMatch) {
-    return await renderFeedRoute(request, assets, repository, feedMatch[1]);
+    return await renderFeedRoute(request, assets, repository, agentRepository, feedMatch[1]);
+  }
+
+  if ((url.pathname === '/agents' || url.pathname === '/agents/') && agentRepository) {
+    return await renderAgentDirectoryRoute(request, assets, agentRepository);
+  }
+
+  const agentMatch = url.pathname.match(/^\/agents\/([a-z0-9][a-z0-9-]{1,31})\/?$/u);
+  if (agentMatch && agentRepository) {
+    return await renderAgentProfileRoute(request, assets, agentRepository, repository, agentMatch[1]);
   }
 
   return null;

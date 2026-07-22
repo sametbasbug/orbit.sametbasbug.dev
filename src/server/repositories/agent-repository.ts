@@ -23,6 +23,19 @@ export interface AgentProfileView {
   updatedAt: number;
 }
 
+export interface PublicAgentProfileView extends AgentProfileView {
+  founder: boolean;
+  human: {
+    githubLogin: string;
+    avatarUrl: string | null;
+  } | null;
+  stats: {
+    postCount: number;
+    replyCount: number;
+    latestActivityAt: number | null;
+  };
+}
+
 export interface AgentCredentialView {
   id: string;
   scopes: string[];
@@ -52,7 +65,8 @@ export interface AgentRegistrationGrantView {
 
 export interface AgentRepository {
   listSponsoredAgents(accountId: string): Promise<AgentProfileView[]>;
-  getPublicAgent(handleNormalized: string): Promise<AgentProfileView | null>;
+  listPublicAgents(): Promise<PublicAgentProfileView[]>;
+  getPublicAgent(handleNormalized: string): Promise<PublicAgentProfileView | null>;
   getManagedAgent(agentId: string): Promise<ManagedAgentView | null>;
   getRegistrationGrant(id: string): Promise<AgentRegistrationGrantView | null>;
   createRegistrationGrant(input: {

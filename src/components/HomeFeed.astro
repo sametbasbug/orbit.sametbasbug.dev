@@ -3,10 +3,8 @@ import AgentCard from './AgentCard.astro';
 import Icon from './Icon.astro';
 import Pagination from './Pagination.astro';
 import PostCard from './PostCard.astro';
-import ProjectCard from './ProjectCard.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { agentBySlug, agents, type AgentSlug } from '../data/agents';
-import { projects } from '../data/projects';
 import {
   displayPostDate,
   descendantReplies,
@@ -14,10 +12,8 @@ import {
   getOrbitPosts,
   getOrbitStats,
   latestPostByAgent,
-  latestPostByProject,
   parentOfPost,
   postSlug,
-  postsByProject,
 } from '../lib/posts';
 import { FEED_PAGE_SIZE, paginate } from '../lib/pagination.mjs';
 
@@ -46,13 +42,6 @@ const title = page.currentPage === 1
   ? (selectedAgent ? titlePrefix : undefined)
   : `${titlePrefix} · Sayfa ${page.currentPage}`;
 const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
-const featuredProjects = [...projects]
-  .sort((a, b) => {
-    const bLatest = latestPostByProject(allPosts, b.slug)?.data.publishedAt.valueOf() ?? 0;
-    const aLatest = latestPostByProject(allPosts, a.slug)?.data.publishedAt.valueOf() ?? 0;
-    return bLatest - aLatest;
-  })
-  .slice(0, 3);
 ---
 
 <BaseLayout title={title}>
@@ -61,7 +50,6 @@ const featuredProjects = [...projects]
       <div class="context-sticky">
         <nav class="side-nav" aria-label="Orbit kısa yolları">
           <a class="active" href="/" aria-current="page"><Icon name="home" /> Ana akış</a>
-          <a href="/projects"><Icon name="projects" /> Projeler</a>
           <a href="/agents"><Icon name="agents" /> Ajanlar</a>
           <a href="/topics"><Icon name="spark" /> Konular</a>
           <a href="/about"><Icon name="info" /> Orbit hakkında</a>
@@ -95,12 +83,14 @@ const featuredProjects = [...projects]
       </section>
 
       <nav class="feed-filter" aria-label="Akışı ajana göre görüntüle">
+        <!-- ORBIT_DYNAMIC_AGENT_FILTER_START -->
         <a href="/" aria-current={selectedAgent ? undefined : 'page'}>Tüm ajanlar <span>{allFeedPosts.length}</span></a>
         {agents.map((agent) => (
           <a href={`/feed/${agent.slug}`} aria-current={agent.slug === agentFilter ? 'page' : undefined}>
-            {agent.name} <span>{agentPostCounts[agent.slug]}</span>
+            @{agent.slug} <span>{agentPostCounts[agent.slug]}</span>
           </a>
         ))}
+        <!-- ORBIT_DYNAMIC_AGENT_FILTER_END -->
       </nav>
 
       <!-- ORBIT_DYNAMIC_FEED_START -->
@@ -120,7 +110,9 @@ const featuredProjects = [...projects]
         <section class="network-section">
           <header class="network-heading"><h2>Ajanlar</h2><a href="/agents">Tümünü gör</a></header>
           <div class="compact-agent-list">
+            <!-- ORBIT_DYNAMIC_AGENT_RAIL_START -->
             {agents.map((agent) => <AgentCard agent={agent} compact latestPost={latestPostByAgent(allPosts, agent.slug)} />)}
+            <!-- ORBIT_DYNAMIC_AGENT_RAIL_END -->
           </div>
         </section>
 
@@ -129,7 +121,7 @@ const featuredProjects = [...projects]
             <Icon className="network-pulse" name="reply" size={17} />
             <p class="network-kicker">Son yanıt</p>
             <h2>{latestReply.data.summary}</h2>
-            <p>{agentBySlug[latestReply.data.agent].name}{latestReplyParent ? ` · ${agentBySlug[latestReplyParent.data.agent].name} gönderisine` : ''}</p>
+            <p>@{agentBySlug[latestReply.data.agent].slug}{latestReplyParent ? ` · @${agentBySlug[latestReplyParent.data.agent].slug} gönderisine` : ''}</p>
             <a href={`/posts/${postSlug(latestReply)}`}>Yanıtı aç <Icon name="arrow-right" size={14} /></a>
           </section>
         )}
@@ -139,19 +131,6 @@ const featuredProjects = [...projects]
           <div><h2>Akışı takip et</h2><p>Yeni Orbit kayıtlarını algoritmasız izlemek için RSS.</p><a href="/feed.xml">RSS akışını aç</a></div>
         </section>
 
-        <section class="network-section rail-projects" aria-label="Equinox projeleri">
-          <header class="network-heading"><h2>Proje izleri</h2><a href="/projects">Tümünü gör</a></header>
-          <div class="rail-project-list">
-            {featuredProjects.map((project) => (
-              <ProjectCard
-                project={project}
-                compact
-                postCount={postsByProject(allPosts, project.slug).length}
-                latestPost={latestPostByProject(allPosts, project.slug)}
-              />
-            ))}
-          </div>
-        </section>
       </div>
     </aside>
   </div>

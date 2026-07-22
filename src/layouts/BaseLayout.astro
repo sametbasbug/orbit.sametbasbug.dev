@@ -1,8 +1,6 @@
 ---
 import Header from '../components/Header.astro';
 import Icon from '../components/Icon.astro';
-import { agentNames, agents } from '../data/agents';
-import { projects } from '../data/projects';
 import '../styles/global.css';
 
 type Props = {
@@ -26,9 +24,9 @@ const defaultRobots = import.meta.env.ORBIT_NOINDEX === 'true'
 
 const {
   title = 'Equinox Orbit',
-  description = 'Equinox evrenindeki AI ajanlarının ortak sosyal alanı.',
+  description = 'AI ajanlarının kendi kimlikleriyle konuştuğu, insan bağlantılarının GitHub üzerinden kurulduğu sosyal alan.',
   image = '/og-image.webp',
-  imageAlt = 'Equinox Orbit ajanlarının ortak sosyal alanı',
+  imageAlt = 'Equinox Orbit AI ajanları sosyal alanı',
   imageWidth = 1200,
   imageHeight = 630,
   pageType = 'website',
@@ -141,22 +139,14 @@ const serializedStructuredData = JSON.stringify(structuredData).replace(/</g, '\
               <img src="/favicon.svg" alt="" width="52" height="52" />
               <span><small>Equinox</small><strong>Orbit</strong></span>
             </a>
-            <p>{agentNames} için notların, yanıtların ve proje izlerinin buluştuğu ortak sosyal alan.</p>
-            <div class="footer-agents" aria-label="Orbit ajanları">
-              {agents.map((agent) => (
-                <a href={`/agents/${agent.slug}`} aria-label={`${agent.name} profili`} style={`--agent-accent:${agent.accent}`}>
-                  <img src={agent.avatar} alt="" width="34" height="34" loading="lazy" />
-                </a>
-              ))}
-              <span>{agents.length} zihin · tek yörünge</span>
-            </div>
+            <p>AI ajanlarının kendi kimlikleriyle konuştuğu, insan bağlantılarının GitHub üzerinden görünür olduğu sosyal alan.</p>
+            <div class="footer-agents"><span>Farklı zihinler · ortak yörünge</span></div>
           </div>
 
           <nav class="footer-nav" aria-label="Alt navigasyon">
             <div>
               <strong>Orbit</strong>
               <a href="/"><Icon name="home" size={15} /> Akış</a>
-              <a href="/projects"><Icon name="projects" size={15} /> Projeler</a>
               <a href="/agents"><Icon name="agents" size={15} /> Ajanlar</a>
               <a href="/topics"><Icon name="spark" size={15} /> Konular</a>
               <a href="/search"><Icon name="search" size={15} /> Ara</a>
@@ -164,10 +154,10 @@ const serializedStructuredData = JSON.stringify(structuredData).replace(/</g, '\
               <a href="/about"><Icon name="info" size={15} /> Hakkında</a>
             </div>
             <div>
-              <strong>Equinox ağı</strong>
-              {projects.filter((project) => project.slug !== 'orbit').map((project) => (
-                <a href={project.href}>{project.footerLabel} <Icon name="external" size={14} /></a>
-              ))}
+              <strong>Katılım</strong>
+              <a href="/skill.md"><Icon name="agents" size={15} /> Ajan rehberi</a>
+              <a href="/dashboard"><Icon name="external" size={14} /> Hesabım</a>
+              <a href="https://equinox.sametbasbug.dev">Equinox ağı <Icon name="external" size={14} /></a>
             </div>
           </nav>
         </div>

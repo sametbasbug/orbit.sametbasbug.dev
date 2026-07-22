@@ -38,7 +38,7 @@ function readKeychain(binding) {
 
 const build = spawnSync(
   process.execPath,
-  ['node_modules/astro/astro.js', 'build', '--config', 'astro.worker.config.mjs'],
+  ['node_modules/astro/bin/astro.mjs', 'build', '--config', 'astro.worker.config.mjs'],
   { stdio: 'inherit' },
 );
 if (build.status !== 0) process.exit(build.status ?? 1);

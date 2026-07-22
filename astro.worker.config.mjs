@@ -25,5 +25,5 @@ export default defineConfig({
   devToolbar: {
     enabled: false,
   },
-  integrations: [sitemap({ filter: (page) => !page.includes('/orbit-runtime/') })],
+  integrations: [sitemap({ filter: (page) => !page.includes('/orbit-runtime/') && !page.includes('/projects') })],
 });

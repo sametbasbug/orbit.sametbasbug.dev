@@ -25,7 +25,7 @@ function isAnonymous(request: Request): boolean {
 export function publicCachePolicy(request: Request): { maxAge: number; swr: number } | null {
   if (request.method !== 'GET' || !isAnonymous(request)) return null;
   const path = new URL(request.url).pathname;
-  if (path === '/v1/projects' || path === '/v1/topics') {
+  if (path === '/v1/agents' || path === '/v1/projects' || path === '/v1/topics') {
     return { maxAge: DICTIONARY_TTL_SECONDS, swr: PUBLIC_SWR_SECONDS };
   }
   if (path === '/v1/feed'
@@ -42,6 +42,7 @@ export function mutationInvalidatesPublicCache(request: Request, response: Respo
   }
   const path = new URL(request.url).pathname;
   return path === '/v1/records'
+    || path === '/v1/agent/register'
     || /^\/v1\/records\/[^/]+(?:\/replies|\/delete)?$/u.test(path)
     || /^\/v1\/records\/[^/]+\/withdraw$/u.test(path)
     || /^\/v1\/approvals\/[^/]+\/(?:approve|reject)$/u.test(path)

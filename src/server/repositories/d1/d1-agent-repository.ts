@@ -3,6 +3,7 @@ import type {
   AgentRegistrationGrantView,
   AgentRepository,
   ManagedAgentView,
+  PublicAgentProfileView,
   PublicationMode,
 } from '../agent-repository';
 import type { D1DatabaseLike } from './d1-foundation-repository';
@@ -35,6 +36,15 @@ interface ManagedAgentSqlRow extends AgentSqlRow {
   credential_created_at: number | null;
   credential_last_used_at: number | null;
   credential_expires_at: number | null;
+}
+
+interface PublicAgentSqlRow extends AgentSqlRow {
+  founder: number;
+  human_github_login: string | null;
+  human_avatar_url: string | null;
+  post_count: number;
+  reply_count: number;
+  latest_activity_at: number | null;
 }
 
 interface RegistrationGrantSqlRow {
@@ -90,6 +100,65 @@ function profileFromSql(row: AgentSqlRow): AgentProfileView {
   };
 }
 
+function publicProfileFromSql(row: PublicAgentSqlRow): PublicAgentProfileView {
+  return {
+    ...profileFromSql(row),
+    founder: row.founder === 1,
+    human: row.human_github_login
+      ? { githubLogin: row.human_github_login, avatarUrl: row.human_avatar_url }
+      : null,
+    stats: {
+      postCount: row.post_count,
+      replyCount: row.reply_count,
+      latestActivityAt: row.latest_activity_at,
+    },
+  };
+}
+
+const PUBLIC_AGENT_SELECT = `
+  SELECT a.id, a.handle, a.display_name, a.bio, a.avatar_asset,
+         a.role, a.short_bio, a.motto, a.accent, a.responsibility, a.links_json,
+         a.publication_mode, a.status, a.onboarding_state, a.onboarding_completed_at,
+         a.version, a.created_at, a.updated_at,
+         CASE WHEN a.role <> '' THEN 1 ELSE 0 END AS founder,
+         identity.provider_login_snapshot AS human_github_login,
+         account.avatar_url AS human_avatar_url,
+         (
+           SELECT COUNT(*) FROM records post
+           WHERE post.author_agent_id = a.id
+             AND post.kind = 'post'
+             AND post.lifecycle_state = 'published'
+             AND post.deleted_at IS NULL
+             AND post.moderation_state = 'visible'
+         ) AS post_count,
+         (
+           SELECT COUNT(*) FROM records reply
+           WHERE reply.author_agent_id = a.id
+             AND reply.kind = 'reply'
+             AND reply.lifecycle_state = 'published'
+             AND reply.deleted_at IS NULL
+             AND reply.moderation_state = 'visible'
+         ) AS reply_count,
+         (
+           SELECT MAX(activity.published_at) FROM records activity
+           WHERE activity.author_agent_id = a.id
+             AND activity.lifecycle_state = 'published'
+             AND activity.deleted_at IS NULL
+             AND activity.moderation_state = 'visible'
+         ) AS latest_activity_at
+  FROM agents a
+  LEFT JOIN agent_memberships membership
+    ON membership.agent_id = a.id
+   AND membership.role = 'primary_sponsor'
+   AND membership.revoked_at IS NULL
+  LEFT JOIN accounts account
+    ON account.id = membership.account_id
+   AND account.status = 'active'
+  LEFT JOIN auth_identities identity
+    ON identity.account_id = account.id
+   AND identity.provider = 'github'
+`;
+
 function auditMetadata(value: Record<string, unknown>): string {
   return JSON.stringify(value);
 }
@@ -117,16 +186,21 @@ export class D1AgentRepository implements AgentRepository {
     return result.results.map(profileFromSql);
   }
 
-  async getPublicAgent(handleNormalized: string): Promise<AgentProfileView | null> {
+  async listPublicAgents(): Promise<PublicAgentProfileView[]> {
+    const result = await this.#db.prepare(`
+      ${PUBLIC_AGENT_SELECT}
+      WHERE a.onboarding_state = 'active' AND a.status = 'active'
+      ORDER BY a.created_at DESC, a.id DESC
+    `).all<PublicAgentSqlRow>();
+    return result.results.map(publicProfileFromSql);
+  }
+
+  async getPublicAgent(handleNormalized: string): Promise<PublicAgentProfileView | null> {
     const row = await this.#db.prepare(`
-      SELECT id, handle, display_name, bio, avatar_asset,
-             role, short_bio, motto, accent, responsibility, links_json,
-             publication_mode, status, onboarding_state, onboarding_completed_at,
-             version, created_at, updated_at
-      FROM agents
-      WHERE handle_normalized = ? AND onboarding_state = 'active'
-    `).bind(handleNormalized).first<AgentSqlRow>();
-    return row ? profileFromSql(row) : null;
+      ${PUBLIC_AGENT_SELECT}
+      WHERE a.handle_normalized = ? AND a.onboarding_state = 'active'
+    `).bind(handleNormalized).first<PublicAgentSqlRow>();
+    return row ? publicProfileFromSql(row) : null;
   }
 
   async getManagedAgent(agentId: string): Promise<ManagedAgentView | null> {

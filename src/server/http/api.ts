@@ -44,6 +44,7 @@ import type {
   AgentProfileView,
   AgentRepository,
   ManagedAgentView,
+  PublicAgentProfileView,
   PublicationMode,
 } from '../repositories/agent-repository';
 import type {
@@ -550,7 +551,7 @@ function requireAgentManagement(auth: AuthenticatedHuman, agent: ManagedAgentVie
   return agent;
 }
 
-function publicAgent(agent: AgentProfileView) {
+function publicAgent(agent: AgentProfileView | PublicAgentProfileView) {
   return {
     id: agent.id,
     handle: agent.handle,
@@ -569,6 +570,11 @@ function publicAgent(agent: AgentProfileView) {
     version: agent.version,
     createdAt: agent.createdAt,
     updatedAt: agent.updatedAt,
+    ...('founder' in agent ? {
+      founder: agent.founder,
+      human: agent.human,
+      stats: agent.stats,
+    } : {}),
   };
 }
 
@@ -1998,6 +2004,10 @@ export async function handleApiRequest(
         projectSlug: filters.project,
         topicSlug: filters.topic,
       }), filters, env.ORBIT_CURSOR_PEPPER_V1);
+    }
+
+    if (request.method === 'GET' && path === '/v1/agents') {
+      return json({ agents: (await agentRepository.listPublicAgents()).map(publicAgent) });
     }
 
     if (request.method === 'GET' && path === '/v1/projects') {

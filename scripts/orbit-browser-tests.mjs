@@ -62,16 +62,34 @@ const normalizeSearchText = (value) => String(value)
   .normalize('NFD')
   .replace(/\p{Diacritic}/gu, '')
   .trim();
-const seleneSearchCount = searchIndex.items.filter((item) => normalizeSearchText(item.searchText).includes('selene')).length;
+const browserAgents = ['nyx', 'hemera', 'asteria', 'selene'].map((handle, index) => ({
+  id: `agent-${handle}`,
+  handle,
+  bio: `${handle} Orbit ajanı`,
+  role: '',
+  avatarAsset: `/avatars/${handle}.webp`,
+  accent: ['#7c6cf2', '#5267d9', '#d86f86', '#4c9c88'][index],
+  founder: true,
+}));
+const seleneSearchCount = searchIndex.items.filter((item) => normalizeSearchText(item.searchText).includes('selene')).length + 1;
 const seleneEditorialCount = searchIndex.items.filter((item) => (
   normalizeSearchText(item.searchText).includes('selene') && item.topics.includes('editoryal')
 )).length;
-const orbitProjectSearchCount = searchIndex.items.filter((item) => item.project === 'orbit').length;
-const orbitProjectRecordCount = searchIndex.items.filter((item) => item.entity === 'record' && item.project === 'orbit').length;
 const agentTopicRecordCount = searchIndex.items.filter((item) => item.entity === 'record' && item.topics.includes('ajanlar')).length;
 
 if (errors.length === 0) {
   const server = http.createServer((request, response) => {
+    const pathname = new URL(request.url ?? '/', 'http://localhost').pathname;
+    if (pathname === '/v1/agents') {
+      response.writeHead(200, { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ agents: browserAgents }));
+      return;
+    }
+    if (pathname === '/v1/feed') {
+      response.writeHead(200, { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ items: [] }));
+      return;
+    }
     const file = staticFileFor(request.url ?? '/');
     if (!file) {
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
@@ -192,9 +210,9 @@ if (errors.length === 0) {
         check(await page.locator('.header-mobile-search').isVisible(), `${label}: mobil arama erişimi görünür değil.`);
         check(layout.navPosition === 'fixed', `${label}: mobil alt navigasyon fixed değil.`);
         check(layout.nav.x >= 0 && layout.nav.right <= layout.innerWidth && layout.nav.bottom <= viewport.height, `${label}: mobil alt navigasyon kırpılıyor.`);
-        check(layout.navLinks.length === 5, `${label}: mobil navigasyonda beş öğe yok.`);
+        check(layout.navLinks.length === 4, `${label}: mobil navigasyonda dört temel öğe yok.`);
         const mobileNavText = (await page.locator('.primary-nav').textContent()) || '';
-        check(mobileNavText.includes('Projeler'), `${label}: mobil navigasyonda Projeler bağlantısı yok.`);
+        check(!mobileNavText.includes('Projeler'), `${label}: mobil navigasyonda kaldırılan Projeler bağlantısı kaldı.`);
         check(mobileNavText.includes('Konular'), `${label}: mobil navigasyonda Konular bağlantısı yok.`);
         check(mobileNavText.includes('Hakkında'), `${label}: mobil navigasyonda Hakkında bağlantısı yok.`);
         check(!mobileNavText.includes('Katıl'), `${label}: mobil navigasyonda kaldırılan Katıl bağlantısı kaldı.`);
@@ -280,7 +298,7 @@ if (errors.length === 0) {
         }));
         check(new URL(feedState.url).pathname === '/feed/selene', `${label}: Selene filtresi kendi akış rotasını açmadı.`);
         check(feedState.visible.length > 0 && feedState.visible.every((item) => item.agent === 'selene' && item.type !== 'reply'), `${label}: Selene filtresi ilgisiz veya yanıt kaydı gösterdi.`);
-        check((await page.locator('.feed-filter a[aria-current="page"]').textContent())?.includes('Selene'), `${label}: Selene filtresi aktif görünmüyor.`);
+        check(normalizeSearchText(await page.locator('.feed-filter a[aria-current="page"]').textContent() || '').includes('selene'), `${label}: Selene filtresi aktif görünmüyor.`);
         const activeFilterVisibility = await page.evaluate(() => {
           const rail = document.querySelector('.feed-filter').getBoundingClientRect();
           const active = document.querySelector('.feed-filter a[aria-current="page"]').getBoundingClientRect();
@@ -314,7 +332,7 @@ if (errors.length === 0) {
         check(searchState.scrollWidth <= searchState.innerWidth, `${label}: arama sayfası yatay taşıyor.`);
         check(searchState.summary === `${seleneSearchCount} eşleşme bulundu`, `${label}: Selene arama özeti yanlış (${searchState.summary}).`);
         check(searchState.visible.length === seleneSearchCount, `${label}: Selene araması indeksle aynı sayıda sonuç döndürmedi (${searchState.visible.length}/${seleneSearchCount}).`);
-        check(searchState.visible.every((item) => item.includes('Selene')), `${label}: Selene aramasında ilgisiz sonuç var.`);
+        check(searchState.visible.every((item) => normalizeSearchText(item).includes('selene')), `${label}: Selene aramasında ilgisiz sonuç var.`);
 
         await page.locator('[data-search-topic-filter]').selectOption('editoryal');
         const topicFiltered = await page.evaluate(() => ({
@@ -324,7 +342,7 @@ if (errors.length === 0) {
             .map((item) => item.textContent.trim().replace(/\s+/g, ' ')),
         }));
         check(topicFiltered.url.includes('topic=editoryal'), `${label}: arama konu filtresi URL state yazmadı.`);
-        check(topicFiltered.visible.length === seleneEditorialCount && topicFiltered.visible.every((item) => item.includes('Selene')), `${label}: Selene + Editoryal arama filtresi yanlış.`);
+        check(topicFiltered.visible.length === seleneEditorialCount && topicFiltered.visible.every((item) => normalizeSearchText(item).includes('selene')), `${label}: Selene + Editoryal arama filtresi yanlış.`);
 
         await page.goto(`${baseUrl}/search?q=katki`, { waitUntil: 'networkidle' });
         await page.waitForSelector('[data-search-item]:not([hidden])');
@@ -351,43 +369,10 @@ if (errors.length === 0) {
         check(await page.locator('[data-search-empty]').isVisible(), `${label}: sonuçsuz aramada boş durum görünmüyor.`);
         check(await page.evaluate(() => [...document.querySelectorAll('[data-search-item]')].every((item) => getComputedStyle(item).display === 'none')), `${label}: sonuçsuz aramada kayıtlar gizlenmedi.`);
 
-        await page.goto(`${baseUrl}/search?q=Equinox%20Haber`, { waitUntil: 'networkidle' });
-        await page.waitForSelector('[data-search-item]:not([hidden])');
-        const projectSearch = await page.evaluate(() => ({
-          hrefs: [...document.querySelectorAll('[data-search-item]')]
-            .filter((item) => getComputedStyle(item).display !== 'none')
-            .map((item) => item.getAttribute('href')),
-          overflow: document.documentElement.scrollWidth > innerWidth,
-        }));
-        check(projectSearch.hrefs.includes('/projects/haber'), `${label}: Equinox Haber aramasında proje sonucu yok.`);
-        check(projectSearch.hrefs.includes('/posts/akis-gundem-degildir'), `${label}: Equinox Haber aramasında bağlı kayıt yok.`);
-        check(!projectSearch.overflow, `${label}: proje araması yatay taşıyor.`);
-
         await page.goto(`${baseUrl}/search?project=orbit`, { waitUntil: 'networkidle' });
         await page.waitForSelector('[data-search-item]:not([hidden])');
-        const projectFiltered = await page.evaluate(() => ({
-          items: [...document.querySelectorAll('[data-search-item]')]
-            .filter((item) => getComputedStyle(item).display !== 'none')
-            .map((item) => ({ href: item.getAttribute('href'), project: item.dataset.searchProject })),
-          summary: document.querySelector('[data-search-summary]')?.textContent?.trim(),
-        }));
-        check(projectFiltered.items.length === orbitProjectSearchCount && projectFiltered.items.every((item) => item.project === 'orbit'), `${label}: Orbit proje filtresi indeksle aynı sayıda sonuç döndürmedi.`);
-        check(projectFiltered.summary === `${orbitProjectSearchCount} eşleşme bulundu`, `${label}: Orbit proje filtresi özeti yanlış (${projectFiltered.summary}).`);
-
-        await page.goto(`${baseUrl}/projects`, { waitUntil: 'networkidle' });
-        check(await page.locator('.project-directory [data-project-card]').count() === 6, `${label}: proje dizini altı kontrollü proje göstermiyor.`);
-        check(await page.locator('[data-project-card="signal-drift"]').count() === 1, `${label}: Signal Drift proje dizininde görünmüyor.`);
-        check(await page.locator('.footer-nav a[href="https://play.sametbasbug.dev"]').count() === 1, `${label}: Signal Drift footer bağlantısı eksik.`);
-        check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: proje dizini yatay taşıyor.`);
-
-        await page.goto(`${baseUrl}/projects/orbit`, { waitUntil: 'networkidle' });
-        check(await page.locator('[data-project-detail="orbit"] .project-feed [data-feed-post]').count() === orbitProjectRecordCount, `${label}: Orbit proje sayfası indeksle aynı sayıda gerçek kayıt göstermiyor.`);
-        check((await page.locator('.primary-nav a[aria-current="page"]').textContent())?.includes('Projeler'), `${label}: proje detayında Projeler navigasyonu aktif değil.`);
-        check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: Orbit proje sayfası yatay taşıyor.`);
-
-        await page.goto(`${baseUrl}/projects/status`, { waitUntil: 'networkidle' });
-        check(await page.locator('.project-empty').isVisible(), `${label}: kayıtsız projede dürüst boş durum görünmüyor.`);
-        check((await page.locator('.project-empty').textContent())?.includes('Henüz Orbit kaydı yok.'), `${label}: kayıtsız proje boş durum metni yanlış.`);
+        check(await page.locator('[data-search-project-filter]').count() === 0, `${label}: kaldırılan proje filtresi aramada kaldı.`);
+        check(await page.locator('a[href^="/projects"]').count() === 0, `${label}: arama kaldırılan proje rotasına bağlanıyor.`);
 
         await page.goto(`${baseUrl}/agents/nyx`, { waitUntil: 'networkidle' });
         const profileState = await page.evaluate(() => {
@@ -407,7 +392,7 @@ if (errors.length === 0) {
             peerCount: document.querySelectorAll('.profile-peer-nav a').length,
             statCount: document.querySelectorAll('.profile-summary-stats > div').length,
             statColumns: stats ? getComputedStyle(stats).gridTemplateColumns.split(' ').length : 0,
-            projectHrefs: [...document.querySelectorAll('.profile-project-links a')].map((link) => link.getAttribute('href')),
+            projectHrefs: [...document.querySelectorAll('a[href^="/projects"]')].map((link) => link.getAttribute('href')),
             oldCoverCount: document.querySelectorAll('.profile-cover').length,
             hero: rect('.profile-hero'),
             heroMain: rect('.profile-hero-main'),
@@ -417,10 +402,10 @@ if (errors.length === 0) {
           };
         });
         check(profileState.profile === 'nyx', `${label}: Nyx profil kimliği eksik.`);
-        check(profileState.h1Count === 1 && profileState.h1Text === 'Nyx', `${label}: Nyx profil başlığı semantik olarak yanlış.`);
+        check(profileState.h1Count === 1 && profileState.h1Text === '@nyx', `${label}: Nyx profil başlığı semantik olarak yanlış.`);
         check(profileState.peerCount === 3, `${label}: profilde diğer üç ajana geçiş yok.`);
         check(profileState.statCount === 4, `${label}: profil aktivite özeti dört gerçek ölçüm taşımıyor.`);
-        check(profileState.projectHrefs.length === 4 && profileState.projectHrefs.includes('/projects/signal-drift'), `${label}: Nyx proje hatları Signal Drift dahil dört proje taşımıyor.`);
+        check(profileState.projectHrefs.length === 0, `${label}: Nyx profilinde kaldırılan proje bağlantısı kaldı.`);
         check(profileState.oldCoverCount === 0, `${label}: kaldırılan tam genişlik profil kapağı DOM'da kaldı.`);
         check(profileState.scrollWidth <= profileState.innerWidth, `${label}: ajan profili yatay taşıyor.`);
         check(profileState.hero && profileState.hero.x >= 0 && profileState.hero.right <= profileState.innerWidth, `${label}: profil kimlik sahnesi viewport dışına taşıyor.`);

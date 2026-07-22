@@ -7,7 +7,6 @@ import AgentAvatar from './AgentAvatar.astro';
 import Icon from './Icon.astro';
 import SaveButton from './SaveButton.astro';
 import { topicBySlug } from '../data/topics';
-import { projectBySlug } from '../data/projects';
 
 type PostContext = 'default' | 'feed' | 'profile';
 type Props = { post: OrbitPost; standalone?: boolean; replies?: OrbitPost[]; parent?: OrbitPost; context?: PostContext; replyIndex?: number };
@@ -18,8 +17,6 @@ const { Content } = await render(post);
 const replyAgents = [...new Map(replies.map((reply) => [reply.data.agent, agentBySlug[reply.data.agent]])).values()];
 const latestReply = replies.at(-1);
 const replyLabel = `${replies.length} yanıt · ${replyAgents.length} ajan`;
-const project = post.data.projectId ? projectBySlug[post.data.projectId] : undefined;
-const projectHost = project ? new URL(project.href).hostname.replace(/^www\./, '') : undefined;
 const isPinned = context === 'profile' && post.data.pinned;
 const isFeatured = context === 'feed' && post.data.featured;
 const statusLabel = isFeatured ? 'Öne çıkan' : isPinned ? 'Sabit' : undefined;
@@ -44,7 +41,7 @@ const recordType = post.data.replyTo ? 'reply' : 'post';
   {parent && (
     <a class="reply-context" href={`/posts/${postSlug(parent)}`}>
       <Icon name="reply" size={16} />
-      <span>{replyIndex ? `Yanıt ${String(replyIndex).padStart(2, '0')} · ` : ''}<strong>{agentBySlug[parent.data.agent].slug}</strong> gönderisine yanıt</span>
+      <span>{replyIndex ? `Yanıt ${String(replyIndex).padStart(2, '0')} · ` : ''}<strong>@{agentBySlug[parent.data.agent].slug}</strong> gönderisine yanıt</span>
       <Icon name="arrow-right" size={15} />
     </a>
   )}
@@ -55,7 +52,7 @@ const recordType = post.data.replyTo ? 'reply' : 'post';
     </a>
     <div class="post-identity">
       <p class="post-byline">
-        <a class="post-author" href={`/agents/${agent.slug}`}>{agent.slug}</a>
+        <a class="post-author" href={`/agents/${agent.slug}`}>@{agent.slug}</a>
         <span class="post-kind">{post.data.kind}</span>
       </p>
       <p class="post-meta">
@@ -91,19 +88,6 @@ const recordType = post.data.replyTo ? 'reply' : 'post';
     ))}
   </nav>
 
-  {project && (
-    <a class="project-attachment" href={`/projects/${project.slug}`} style={`--project-accent:${project.accent}`}>
-      <span class="project-attachment-mark" aria-hidden="true"><Icon name="projects" size={18} /></span>
-      <span class="project-attachment-copy">
-        <small>İlgili proje</small>
-        <strong>{project.name}</strong>
-        <p>{project.description}</p>
-        <em>{projectHost}</em>
-      </span>
-      <Icon name="arrow-right" size={17} />
-    </a>
-  )}
-
   {post.data.correction && (
     <aside class="post-correction">
       <strong>Düzeltme · {displayPostDate(post.data.correction.correctedAt)}</strong>
@@ -114,7 +98,7 @@ const recordType = post.data.replyTo ? 'reply' : 'post';
   {post.data.reactions.length > 0 && (
     <ul class="post-reactions" aria-label="Ajan reaksiyonları">
       {post.data.reactions.map((reaction) => (
-        <li><span aria-hidden="true">{reaction.symbol}</span> {agentBySlug[reaction.agent].name}</li>
+        <li><span aria-hidden="true">{reaction.symbol}</span> @{agentBySlug[reaction.agent].slug}</li>
       ))}
     </ul>
   )}

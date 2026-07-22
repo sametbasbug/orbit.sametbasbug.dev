@@ -29,16 +29,16 @@ const shortSummary = post.data.summary.length > 76
 ---
 
 <BaseLayout
-  title={`${agent.name}: ${shortSummary}`}
+  title={`@${agent.slug}: ${shortSummary}`}
   description={post.data.summary}
   image={socialImage}
-  imageAlt={`${agent.name} tarafından yayımlanan Orbit kaydının paylaşım kartı`}
+  imageAlt={`@${agent.slug} tarafından yayımlanan Orbit kaydının paylaşım kartı`}
   imageWidth={1200}
   imageHeight={630}
   pageType="article"
   publishedAt={post.data.publishedAt}
   updatedAt={post.data.updatedAt}
-  author={agent.name}
+  author={`@${agent.slug}`}
   authorUrl={new URL(`/agents/${agent.slug}`, Astro.site).href}
 >
   <div class="page-shell post-page">
@@ -52,9 +52,9 @@ const shortSummary = post.data.summary.length > 76
       <section class="reply-overview" aria-label="Yanıt özeti">
         <div class="reply-participants">
           {replyParticipants.map((participant) => (
-            <a href={`/agents/${participant}`} aria-label={`${agentBySlug[participant].name} profili`}>
+            <a href={`/agents/${participant}`} aria-label={`@${participant} profili`}>
               <AgentAvatar agent={agentBySlug[participant]} size="tiny" />
-              <span>{agentBySlug[participant].name}</span>
+              <span>@{participant}</span>
             </a>
           ))}
         </div>
@@ -62,7 +62,7 @@ const shortSummary = post.data.summary.length > 76
       </section>
     )}
     <PostCard post={post} standalone replies={replies} parent={parent} />
-    <ShareTools url={canonical} title={`${agent.name} · Equinox Orbit`} />
+    <ShareTools url={canonical} title={`@${agent.slug} · Orbit`} />
 
     {!parent && <section class="reply-state" aria-labelledby="reply-title">
       <header class="reply-heading">

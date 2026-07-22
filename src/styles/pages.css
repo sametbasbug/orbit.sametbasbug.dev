@@ -559,6 +559,66 @@
   line-height: 1.6;
 }
 
+.human-github-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.75rem;
+  padding: 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--paper) 58%, var(--surface));
+  text-decoration: none;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+
+.human-github-card:hover {
+  border-color: color-mix(in srgb, var(--agent-accent) 32%, var(--line));
+  transform: translateY(-1px);
+}
+
+.human-github-card img,
+.human-github-placeholder {
+  width: 2.65rem;
+  height: 2.65rem;
+  border-radius: 50%;
+  background: var(--paper);
+}
+
+.human-github-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 850;
+}
+
+.human-github-card > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+}
+
+.human-github-card small {
+  color: var(--faint);
+  font-size: 0.55rem;
+  font-weight: 700;
+}
+
+.human-github-card strong {
+  overflow: hidden;
+  margin-top: 0.12rem;
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.human-github-card > span:last-child {
+  color: var(--faint);
+  font-size: 0.8rem;
+}
+
 .profile-project-links {
   display: grid;
   gap: 0.4rem;
@@ -1435,7 +1495,7 @@
 
 .search-filters {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.75rem;
   margin-top: 0.85rem;
 }

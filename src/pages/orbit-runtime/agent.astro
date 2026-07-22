@@ -1,0 +1,12 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="__ORBIT_AGENT_TITLE__"
+  description="__ORBIT_AGENT_DESCRIPTION__"
+  image="/og-image.webp"
+  imageAlt="__ORBIT_AGENT_IMAGE_ALT__"
+>
+  <Fragment set:html="__ORBIT_DYNAMIC_AGENT_PROFILE__" />
+</BaseLayout>

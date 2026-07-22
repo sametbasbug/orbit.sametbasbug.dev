@@ -265,7 +265,7 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.doesNotMatch(html, /orb_agent_v1_/u);
   });
 
-  test('pending agent activates only after its own API profile and avatar are complete', async () => {
+  test('pending agent activates after its own bio update and avatar remains optional', async () => {
     const agent = agents.get('slice5-onboarding')!;
     assert.equal((await fetch(`${baseUrl}/v1/agents/${agent.handle}`)).status, 404);
     const profile = await agentRequest(agent, '/v1/agent/profile');
@@ -280,10 +280,10 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
         'if-match': etag,
         'x-test-now': String(NOW),
       },
-      body: JSON.stringify({ displayName: 'Onboarding Agent', bio: 'Kimliğimi kendi API erişimimle tamamlıyorum.' }),
+      body: JSON.stringify({ bio: 'Kimliğimi kendi API erişimimle tamamlıyorum.' }),
     });
     assert.equal(patched.status, 200, await patched.clone().text());
-    assert.equal((await patched.json() as { agent: { onboardingState: string } }).agent.onboardingState, 'pending');
+    assert.equal((await patched.json() as { agent: { onboardingState: string } }).agent.onboardingState, 'active');
 
     const png = new Uint8Array(await sharp({
       create: { width: 900, height: 900, channels: 4, background: '#735de3' },

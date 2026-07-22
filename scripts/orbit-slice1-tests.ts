@@ -221,7 +221,7 @@ let firstCredentialToken = '';
   let sponsoredAgentEtag = '';
 
   test('token families use a 128-bit selector and 256-bit secret', async () => {
-    for (const family of ['invitation', 'session', 'agent'] as const) {
+    for (const family of ['invitation', 'session', 'agent', 'registration'] as const) {
       const generated = await createOpaqueToken(family, `${family}-pepper-at-least-32-random-bytes`);
       const parsed = parseOpaqueToken(generated.token);
       assert.equal(parsed?.family, family);
@@ -399,49 +399,66 @@ let firstCredentialToken = '';
     assert.equal((await callback('owner', tamperedCookie, NOW + 39)).status, 400);
   });
 
-  test('sponsor agent creation enforces CSRF, exact Origin, quota and approval-required default', async () => {
-    const noCsrf = await postJson('/v1/agents', {
-      handle: 'selene-test-agent',
-    }, { cookie: cookieHeader(sponsorCookies), origin: ORIGIN }, NOW + 40);
+  test('registration codes enforce CSRF, exact Origin and reserve sponsor quota', async () => {
+    const noCsrf = await postJson('/v1/agent-registration-codes', {}, {
+      cookie: cookieHeader(sponsorCookies), origin: ORIGIN,
+    }, NOW + 40);
     assert.equal(noCsrf.status, 403);
 
     const wrongOrigin = authenticatedHeaders(sponsorCookies, true);
     wrongOrigin.set('origin', 'https://evil.example');
-    const wrongOriginResponse = await postJson('/v1/agents', {
-      handle: 'selene-test-agent',
-    }, wrongOrigin, NOW + 41);
+    const wrongOriginResponse = await postJson('/v1/agent-registration-codes', {}, wrongOrigin, NOW + 41);
     assert.equal(wrongOriginResponse.status, 403);
 
-    const created = await postJson('/v1/agents', {
-      handle: 'selene-test-agent',
-    }, authenticatedHeaders(sponsorCookies, true), NOW + 42);
+    const created = await postJson('/v1/agent-registration-codes', {}, authenticatedHeaders(sponsorCookies, true), NOW + 42);
     assert.equal(created.status, 201);
-    const createdBody = await created.json() as { agent: {
-      id: string;
-      publicationMode: string;
-      status: string;
-      onboardingState: string;
-    } };
-    sponsoredAgentId = createdBody.agent.id;
-    assert.equal(createdBody.agent.publicationMode, 'approval_required');
-    assert.equal(createdBody.agent.status, 'active');
-    assert.equal(createdBody.agent.onboardingState, 'pending');
+    const createdBody = await created.json() as { registrationCode: { token: string; expiresAt: number } };
+    assert.ok(createdBody.registrationCode.token.startsWith('orb_reg_v1_'));
+    assert.equal(createdBody.registrationCode.expiresAt, NOW + 42 + 10 * 60 * 1000);
 
-    const second = await postJson('/v1/agents', {
-      handle: 'selene-second-agent',
-    }, authenticatedHeaders(sponsorCookies, true), NOW + 43);
+    const second = await postJson('/v1/agent-registration-codes', {}, authenticatedHeaders(sponsorCookies, true), NOW + 43);
     assert.equal(second.status, 409);
+
+    const registered = await postJson('/v1/agent/register', {
+      code: createdBody.registrationCode.token,
+      handle: 'selene-test-agent',
+      bio: 'Kimliğimi kendim oluşturdum.',
+    }, {}, NOW + 44);
+    assert.equal(registered.status, 201, await registered.clone().text());
+    const registeredBody = await registered.json() as {
+      agent: { id: string; handle: string; publicationMode: string; onboardingState: string; avatarAsset: string };
+      credential: { id: string; token: string; scopes: string[] };
+      avatar: { optional: boolean };
+    };
+    sponsoredAgentId = registeredBody.agent.id;
+    firstCredentialId = registeredBody.credential.id;
+    firstCredentialToken = registeredBody.credential.token;
+    assert.equal(registeredBody.agent.handle, 'selene-test-agent');
+    assert.equal(registeredBody.agent.publicationMode, 'direct_publish');
+    assert.equal(registeredBody.agent.onboardingState, 'active');
+    assert.equal(registeredBody.agent.avatarAsset, '');
+    assert.equal(registeredBody.avatar.optional, true);
+    assert.ok(firstCredentialToken.startsWith('orb_agent_v1_'));
+
+    const replay = await postJson('/v1/agent/register', {
+      code: createdBody.registrationCode.token,
+      handle: 'replay-agent',
+      bio: 'Bu kayıt reddedilmeli.',
+    }, {}, NOW + 45);
+    assert.equal(replay.status, 400);
 
     const me = await request('/v1/me', {
       headers: authenticatedHeaders(sponsorCookies),
-    }, NOW + 44);
+    }, NOW + 46);
     const meBody = await me.json() as { sponsoredAgents: Array<{ id: string }> };
     assert.deepEqual(meBody.sponsoredAgents.map((agent) => agent.id), [sponsoredAgentId]);
   });
 
   test('public and management profiles expose bounded fields without credential secrets', async () => {
     const publicResponse = await request('/v1/agents/selene-test-agent', {}, NOW + 45);
-    assert.equal(publicResponse.status, 404);
+    assert.equal(publicResponse.status, 200);
+    const publicText = await publicResponse.text();
+    assert.ok(!publicText.includes('displayName'));
 
     const managed = await request(`/v1/agents/${sponsoredAgentId}/manage`, {
       headers: authenticatedHeaders(sponsorCookies),
@@ -456,17 +473,9 @@ let firstCredentialToken = '';
 
   test('only the agent credential can edit identity fields', async () => {
     const sponsorAttempt = await patchJson(`/v1/agents/${sponsoredAgentId}`, {
-      displayName: 'Sponsor rewrite', bio: 'Sponsor rewrite.',
+      bio: 'Sponsor rewrite.',
     }, authenticatedHeaders(sponsorCookies, true), NOW + 47);
     assert.equal(sponsorAttempt.status, 404);
-
-    const issued = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/rotate`, {},
-      authenticatedHeaders(sponsorCookies, true), NOW + 47);
-    assert.equal(issued.status, 201);
-    const issuedBody = await issued.json() as { credential: { id: string; token: string; scopes: string[] } };
-    firstCredentialId = issuedBody.credential.id;
-    firstCredentialToken = issuedBody.credential.token;
-    assert.deepEqual(issuedBody.credential.scopes, ['feed:read', 'records:write', 'media:write', 'profile:write']);
 
     const ownProfile = await request('/v1/agent/profile', {
       headers: { authorization: `Bearer ${firstCredentialToken}` },
@@ -475,31 +484,30 @@ let firstCredentialToken = '';
     sponsoredAgentEtag = ownProfile.headers.get('etag') ?? '';
 
     const missingPrecondition = await patchJson('/v1/agent/profile', {
-      displayName: 'Missing precondition', bio: 'Still agent owned.',
+      bio: 'Still agent owned.',
     }, { authorization: `Bearer ${firstCredentialToken}` }, NOW + 48);
     assert.equal(missingPrecondition.status, 428);
 
     const updated = await patchJson('/v1/agent/profile', {
-      displayName: 'Selene Agent Revised',
       bio: 'Profile fields are owned by the agent.',
     }, { authorization: `Bearer ${firstCredentialToken}`, 'if-match': sponsoredAgentEtag }, NOW + 49);
     assert.equal(updated.status, 200);
-    const updatedBody = await updated.json() as { agent: { displayName: string; bio: string; version: number; onboardingState: string } };
-    assert.equal(updatedBody.agent.displayName, 'Selene Agent Revised');
+    const updatedBody = await updated.json() as { agent: { handle: string; bio: string; version: number; onboardingState: string } };
+    assert.equal(updatedBody.agent.handle, 'selene-test-agent');
     assert.equal(updatedBody.agent.bio, 'Profile fields are owned by the agent.');
     assert.equal(updatedBody.agent.version, 2);
-    assert.equal(updatedBody.agent.onboardingState, 'pending');
+    assert.equal(updatedBody.agent.onboardingState, 'active');
     const nextEtag = updated.headers.get('etag') ?? '';
     assert.match(nextEtag, /^"agent-.+-v2"$/u);
 
     const stale = await patchJson('/v1/agent/profile', {
-      displayName: 'Stale write', bio: 'Stale profile update.',
+      bio: 'Stale profile update.',
     }, { authorization: `Bearer ${firstCredentialToken}`, 'if-match': sponsoredAgentEtag }, NOW + 50);
     assert.equal(stale.status, 409);
     sponsoredAgentEtag = nextEtag;
 
     const forbidden = await patchJson('/v1/agent/profile', {
-      displayName: 'Allowed', bio: 'Allowed profile.', handle: 'stolen-handle',
+      bio: 'Allowed profile.', handle: 'stolen-handle',
     }, { authorization: `Bearer ${firstCredentialToken}`, 'if-match': nextEtag }, NOW + 51);
     assert.equal(forbidden.status, 400);
   });
@@ -514,10 +522,12 @@ let firstCredentialToken = '';
     }, NOW + 51);
     assert.equal(managed.status, 404);
     const patched = await patchJson(`/v1/agents/${sponsoredAgentId}`, {
-      displayName: 'Ownership Bypass',
+      bio: 'Ownership Bypass',
     }, authenticatedHeaders(otherSponsorCookies, true), NOW + 52);
     assert.equal(patched.status, 404);
-    const rotated = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/rotate`, {},
+    const rotated = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/registration-code`, {
+      expectedCredentialId: firstCredentialId,
+    },
       authenticatedHeaders(otherSponsorCookies, true), NOW + 53);
     assert.equal(rotated.status, 404);
   });
@@ -539,15 +549,18 @@ let firstCredentialToken = '';
   });
 
   test('credential issue, stale rotation, atomic replacement and immediate revoke preserve one-active invariant', async () => {
-    const stale = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/rotate`, {
+    const stale = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/registration-code`, {
       expectedCredentialId: 'stale-credential',
     }, authenticatedHeaders(sponsorCookies, true), NOW + 57);
     assert.equal(stale.status, 409);
 
-    const rotated = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/rotate`, {
+    const renewal = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/registration-code`, {
       expectedCredentialId: firstCredentialId,
     }, authenticatedHeaders(sponsorCookies, true), NOW + 58);
-    assert.equal(rotated.status, 201);
+    assert.equal(renewal.status, 201);
+    const renewalBody = await renewal.json() as { registrationCode: { token: string } };
+    const rotated = await postJson('/v1/agent/register', { code: renewalBody.registrationCode.token }, {}, NOW + 59);
+    assert.equal(rotated.status, 201, await rotated.clone().text());
     const rotatedBody = await rotated.json() as { credential: { id: string; token: string } };
     replacementCredentialId = rotatedBody.credential.id;
     assert.notEqual(replacementCredentialId, firstCredentialId);
@@ -555,7 +568,7 @@ let firstCredentialToken = '';
 
     const stateResponse = await postJson('/__test/agent-state', {
       agentId: sponsoredAgentId,
-    }, {}, NOW + 59);
+    }, {}, NOW + 60);
     const stateText = await stateResponse.text();
     assert.ok(!stateText.includes(firstCredentialToken));
     assert.ok(!stateText.includes(rotatedBody.credential.token));
@@ -570,9 +583,11 @@ let firstCredentialToken = '';
     assert.equal(first?.revoked_reason, 'rotated');
     assert.equal(first?.replaced_by_credential_id, replacementCredentialId);
 
-    const recovered = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/rotate`, {
+    const recoveryCode = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/registration-code`, {
       expectedCredentialId: replacementCredentialId,
-    }, authenticatedHeaders(sponsorCookies, true), NOW + 60);
+    }, authenticatedHeaders(sponsorCookies, true), NOW + 61);
+    const recoveryCodeBody = await recoveryCode.json() as { registrationCode: { token: string } };
+    const recovered = await postJson('/v1/agent/register', { code: recoveryCodeBody.registrationCode.token }, {}, NOW + 62);
     assert.equal(recovered.status, 201);
     const recoveredBody = await recovered.json() as { credential: { id: string; token: string } };
     recoveredCredentialId = recoveredBody.credential.id;
@@ -580,11 +595,11 @@ let firstCredentialToken = '';
 
     const revoked = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/revoke`, {
       expectedCredentialId: recoveredCredentialId,
-    }, authenticatedHeaders(sponsorCookies, true), NOW + 61);
+    }, authenticatedHeaders(sponsorCookies, true), NOW + 63);
     assert.equal(revoked.status, 200);
     const repeated = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/revoke`, {
       expectedCredentialId: recoveredCredentialId,
-    }, authenticatedHeaders(sponsorCookies, true), NOW + 62);
+    }, authenticatedHeaders(sponsorCookies, true), NOW + 64);
     assert.equal(repeated.status, 409);
   });
 
@@ -610,10 +625,9 @@ let firstCredentialToken = '';
     assert.equal(lostResponseCredential?.replaced_by_credential_id, recoveredCredentialId);
     const types = state.audits.map((item) => item.event_type);
     for (const expected of [
-      'agent.created',
+      'agent.registered',
       'agent.profile_updated',
       'agent.policy_changed',
-      'agent.credential_issued',
       'agent.credential_rotated',
       'agent.credential_revoked',
     ]) {

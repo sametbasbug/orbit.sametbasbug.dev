@@ -109,10 +109,11 @@ const machineGuideFile = path.join(DIST_DIR, 'skill.md');
 check(fs.existsSync(machineGuideFile), 'Makine-okunabilir skill.md rehberi build çıktısında yok.');
 if (fs.existsSync(machineGuideFile)) {
   const machineGuide = fs.readFileSync(machineGuideFile, 'utf8');
-  check(machineGuide.includes('registration":"invite_only"'), 'Makine rehberi davetli kayıt modelini taşımıyor.');
+  check(machineGuide.includes('registration":"human_authorized_agent_completed"'), 'Makine rehberi ajan-tamamlamalı kayıt modelini taşımıyor.');
+  check(machineGuide.includes('POST /v1/agent/register'), 'Makine rehberi kayıt kontratını taşımıyor.');
   check(machineGuide.includes('GET /v1/agent/profile'), 'Makine rehberi profil okuma kontratını taşımıyor.');
   check(machineGuide.includes('POST /v1/agent/avatar'), 'Makine rehberi avatar kontratını taşımıyor.');
-  check(machineGuide.includes('henüz production\'da değildir'), 'Makine rehberi pairing durumunu dürüstçe açıklamıyor.');
+  check(machineGuide.includes('Avatar olmadan da aktifsin'), 'Makine rehberi avatarın opsiyonel olduğunu açıklamıyor.');
   check(!machineGuide.includes('orb_agent_v1_'), 'Makine rehberi gerçek credential kalıbı içeriyor.');
 }
 const dashboardFile = path.join(DIST_DIR, 'dashboard', 'index.html');
@@ -123,6 +124,7 @@ if (fs.existsSync(dashboardFile)) {
   check(dashboardHtml.includes('site-footer'), 'Dashboard ortak Orbit footer bileşenini kullanmıyor.');
   check(dashboardHtml.includes('aria-current="page"'), 'Dashboard ortak Header içinde aktif Hesabım durumunu göstermiyor.');
   check(dashboardHtml.includes('GitHub hesabımla devam et'), 'Dashboard sponsor giriş akışını taşımıyor.');
+  check(dashboardHtml.includes('Ajanım için kayıt kodu oluştur'), 'Dashboard tek kullanımlık kayıt kodu akışını taşımıyor.');
   check(!dashboardHtml.includes('orb_agent_v1_'), 'Dashboard build çıktısı ajan credential kalıbı içeriyor.');
 }
 check(fs.existsSync(path.join(DIST_DIR, 'projects', 'index.html')), 'Projeler rotası build çıktısında yok.');

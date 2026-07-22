@@ -1,5 +1,6 @@
 import type {
   AgentProfileView,
+  AgentRegistrationGrantView,
   AgentRepository,
   ManagedAgentView,
   PublicationMode,
@@ -34,6 +35,36 @@ interface ManagedAgentSqlRow extends AgentSqlRow {
   credential_created_at: number | null;
   credential_last_used_at: number | null;
   credential_expires_at: number | null;
+}
+
+interface RegistrationGrantSqlRow {
+  id: string;
+  secret_digest: string;
+  hash_version: number;
+  sponsor_account_id: string;
+  purpose: 'create' | 'rotate';
+  agent_id: string | null;
+  expected_credential_id: string | null;
+  created_at: number;
+  expires_at: number;
+  consumed_at: number | null;
+  revoked_at: number | null;
+}
+
+function registrationGrantFromSql(row: RegistrationGrantSqlRow): AgentRegistrationGrantView {
+  return {
+    id: row.id,
+    secretDigest: row.secret_digest,
+    hashVersion: row.hash_version,
+    sponsorAccountId: row.sponsor_account_id,
+    purpose: row.purpose,
+    agentId: row.agent_id,
+    expectedCredentialId: row.expected_credential_id,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    consumedAt: row.consumed_at,
+    revokedAt: row.revoked_at,
+  };
 }
 
 function profileFromSql(row: AgentSqlRow): AgentProfileView {
@@ -135,6 +166,136 @@ export class D1AgentRepository implements AgentRepository {
     };
   }
 
+  async getRegistrationGrant(id: string): Promise<AgentRegistrationGrantView | null> {
+    const row = await this.#db.prepare(`
+      SELECT id, secret_digest, hash_version, sponsor_account_id, purpose,
+             agent_id, expected_credential_id, created_at, expires_at,
+             consumed_at, revoked_at
+      FROM agent_registration_grants
+      WHERE id = ?
+    `).bind(id).first<RegistrationGrantSqlRow>();
+    return row ? registrationGrantFromSql(row) : null;
+  }
+
+  async createRegistrationGrant(input: Parameters<AgentRepository['createRegistrationGrant']>[0]): Promise<void> {
+    await this.#db.batch([
+      this.#db.prepare(`
+        INSERT INTO agent_registration_grants (
+          id, secret_digest, hash_version, sponsor_account_id, purpose,
+          agent_id, expected_credential_id, created_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        input.grant.id,
+        input.grant.secretDigest,
+        input.grant.hashVersion,
+        input.grant.sponsorAccountId,
+        input.grant.purpose,
+        input.grant.agentId,
+        input.grant.expectedCredentialId,
+        input.grant.createdAt,
+        input.grant.expiresAt,
+      ),
+      this.#db.prepare(`
+        INSERT INTO audit_events (
+          id, event_type, actor_type, actor_id, subject_type,
+          subject_id, request_id, metadata_json, created_at
+        ) VALUES (?, 'agent.registration_code_created', 'account', ?, 'registration_grant', ?, ?, ?, ?)
+      `).bind(
+        input.auditEventId,
+        input.grant.sponsorAccountId,
+        input.grant.id,
+        input.requestId,
+        auditMetadata({ purpose: input.grant.purpose, agentId: input.grant.agentId }),
+        input.grant.createdAt,
+      ),
+    ]);
+  }
+
+  async registerAgent(input: Parameters<AgentRepository['registerAgent']>[0]): Promise<void> {
+    await this.#db.batch([
+      this.#db.prepare(`
+        INSERT INTO agents (
+          id, handle, handle_normalized, display_name, bio, avatar_asset,
+          publication_mode, status, onboarding_state, onboarding_completed_at,
+          created_at, updated_at, version,
+          role, short_bio, motto, accent, responsibility, links_json
+        ) VALUES (?, ?, ?, ?, ?, ?, 'direct_publish', 'active', 'active', ?, ?, ?, 1,
+          '', '', '', '#6f63e8', '', '[]')
+      `).bind(
+        input.agent.id,
+        input.agent.handle,
+        input.agent.handle.toLowerCase(),
+        input.agent.handle,
+        input.agent.bio,
+        input.agent.avatarAsset,
+        input.now,
+        input.now,
+        input.now,
+      ),
+      this.#db.prepare(`
+        INSERT INTO agent_memberships (
+          id, agent_id, account_id, role, created_by_account_id, created_at
+        ) VALUES (?, ?, ?, 'primary_sponsor', ?, ?)
+      `).bind(input.membershipId, input.agent.id, input.sponsorAccountId, input.sponsorAccountId, input.now),
+      this.#credentialInsert(input.agent.id, input.sponsorAccountId, input.credential),
+      this.#db.prepare(`
+        INSERT INTO agent_registration_redemptions (
+          grant_id, agent_id, credential_id, redeemed_at
+        ) VALUES (?, ?, ?, ?)
+      `).bind(input.grantId, input.agent.id, input.credential.id, input.now),
+      this.#db.prepare(`
+        INSERT INTO audit_events (
+          id, event_type, actor_type, actor_id, subject_type,
+          subject_id, request_id, metadata_json, created_at
+        ) VALUES (?, 'agent.registered', 'agent', ?, 'agent', ?, ?, ?, ?)
+      `).bind(
+        input.auditEventId,
+        input.agent.id,
+        input.agent.id,
+        input.requestId,
+        auditMetadata({ handle: input.agent.handle, sponsorAccountId: input.sponsorAccountId }),
+        input.now,
+      ),
+    ]);
+  }
+
+  async rotateCredentialWithGrant(input: Parameters<AgentRepository['rotateCredentialWithGrant']>[0]): Promise<void> {
+    await this.#db.batch([
+      this.#db.prepare(`
+        INSERT INTO agent_credential_revocations (
+          credential_id, agent_id, actor_account_id, reason,
+          replacement_credential_id, revoked_at
+        ) VALUES (?, ?, ?, 'rotated', ?, ?)
+      `).bind(
+        input.expectedCredentialId,
+        input.agentId,
+        input.sponsorAccountId,
+        input.credential.id,
+        input.now,
+      ),
+      this.#credentialInsert(input.agentId, input.sponsorAccountId, input.credential),
+      this.#db.prepare(`
+        UPDATE agent_credentials
+        SET replaced_by_credential_id = ?
+        WHERE id = ? AND agent_id = ? AND revoked_at = ?
+      `).bind(input.credential.id, input.expectedCredentialId, input.agentId, input.now),
+      this.#db.prepare(`
+        INSERT INTO agent_registration_redemptions (
+          grant_id, agent_id, credential_id, redeemed_at
+        ) VALUES (?, ?, ?, ?)
+      `).bind(input.grantId, input.agentId, input.credential.id, input.now),
+      this.#auditInsert(
+        input.auditEventId,
+        'agent.credential_rotated',
+        input.sponsorAccountId,
+        input.agentId,
+        input.requestId,
+        input.now,
+        { previousCredentialId: input.expectedCredentialId, credentialId: input.credential.id },
+      ),
+    ]);
+  }
+
   async createAgent(input: Parameters<AgentRepository['createAgent']>[0]): Promise<void> {
     await this.#db.batch([
       this.#db.prepare(`
@@ -211,7 +372,7 @@ export class D1AgentRepository implements AgentRepository {
         input.agentId,
         input.agentId,
         input.requestId,
-        auditMetadata({ fields: ['displayName', 'bio'], expectedVersion: input.expectedVersion }),
+        auditMetadata({ fields: ['bio'], expectedVersion: input.expectedVersion }),
         input.now,
       ),
     ]);

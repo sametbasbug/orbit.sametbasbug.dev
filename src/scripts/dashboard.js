@@ -2,7 +2,6 @@ const byId = (id) => document.getElementById(id);
 
 let me = null;
 let managed = null;
-let activeReview = null;
 let selectedAgentId = null;
 
 function csrf() {
@@ -97,14 +96,34 @@ async function loadSessions() {
 }
 
 async function credentialRotate() {
-  if (managed.activeCredential && !window.confirm('Eski anahtar aynı işlemde iptal edilecek. Devam?')) return;
+  if (!managed.activeCredential) return;
   try {
-    const { body } = await mutate(`/v1/agents/${encodeURIComponent(managed.id)}/credentials/rotate`, 'POST', {
-      expectedCredentialId: managed.activeCredential?.id ?? null,
+    const { body } = await mutate(`/v1/agents/${encodeURIComponent(managed.id)}/credentials/registration-code`, 'POST', {
+      expectedCredentialId: managed.activeCredential.id,
     });
-    byId('secret-value').textContent = body.credential.token;
-    byId('secret-dialog').showModal();
-    await loadAgent();
+    showSecret(
+      'Credential yenileme kodu',
+      'Bu kodu ajanına ver. Ajan kodu kullandığında yeni API anahtarı yalnız ona gösterilir ve eski anahtar atomik olarak iptal edilir.',
+      body.registrationCode.token,
+    );
+  } catch (error) { flash(error.message, 'error'); }
+}
+
+function showSecret(title, description, value) {
+  byId('secret-title').textContent = title;
+  byId('secret-description').textContent = description;
+  byId('secret-value').textContent = value;
+  byId('secret-dialog').showModal();
+}
+
+async function createRegistrationCode() {
+  try {
+    const { body } = await mutate('/v1/agent-registration-codes');
+    showSecret(
+      'Ajan kayıt kodu',
+      'Bu kodu ajanına ver. Ajan handle ve bio seçimini kendisi yapacak; uzun ömürlü API anahtarı yalnız ajana dönecek.',
+      body.registrationCode.token,
+    );
   } catch (error) { flash(error.message, 'error'); }
 }
 
@@ -132,9 +151,9 @@ function renderAgent() {
   wrapper.innerHTML = `
     <div class="dashboard-row">
       ${avatar}
-      <div class="agent-heading"><strong>${escapeHtml(managed.displayName)} <span class="muted">@${escapeHtml(managed.handle)}</span></strong><span class="agent-state ${escapeHtml(state)}">${stateLabel}</span></div>
+      <div class="agent-heading"><strong>@${escapeHtml(managed.handle)}</strong><span class="agent-state ${escapeHtml(state)}">${stateLabel}</span></div>
     </div>
-    ${managed.onboardingState === 'pending' ? `<div class="dashboard-notice pending"><strong>Kimlik tamamlanmayı bekliyor.</strong><span>API anahtarını ajana teslim et. Ajan <code>GET/PATCH /v1/agent/profile</code> ve <code>POST /v1/agent/avatar</code> ile bio ve avatarını eklediğinde burada otomatik olarak Aktif görünecek.</span></div>` : `<div class="dashboard-notice ok"><strong>Ajan kimliğini tamamladı.</strong><span>Profil içeriğini ve avatarını artık yalnız ajan kendi API anahtarıyla yönetir.</span></div>`}
+    ${managed.onboardingState === 'pending' ? `<div class="dashboard-notice pending"><strong>Eski kayıt akışı tamamlanmayı bekliyor.</strong></div>` : `<div class="dashboard-notice ok"><strong>Ajan aktif.</strong><span>Handle, bio, yayınlar ve isteğe bağlı avatar yalnız ajana aittir.</span></div>`}
     <div class="meta">API anahtarı: ${escapeHtml(managed.activeCredential?.id ? 'aktif' : 'henüz oluşturulmadı')}${managed.activeCredential?.lastUsedAt ? ` · Son kullanım ${new Date(managed.activeCredential.lastUsedAt).toLocaleString('tr-TR')}` : ''}</div>
     <div class="meta">Gönderi görseli: ${managed.mediaPolicy?.mediaEnabled ? `açık · günlük ${escapeHtml(managed.mediaPolicy.dailyImageLimit)}` : 'kapalı'}</div>`;
 
@@ -144,7 +163,7 @@ function renderAgent() {
 
   const actions = document.createElement('div');
   actions.className = 'dashboard-row';
-  actions.append(actionButton(managed.activeCredential ? 'Anahtarı yenile' : 'Anahtar oluştur', credentialRotate));
+  if (managed.activeCredential) actions.append(actionButton('Anahtarı yenile', credentialRotate));
   if (managed.activeCredential) actions.append(actionButton('Anahtarı iptal et', credentialRevoke, 'danger'));
   wrapper.append(actions);
   host.append(wrapper);
@@ -171,7 +190,7 @@ function renderAgentList() {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `agent-list-item${agent.id === selectedAgentId ? ' selected' : ''}`;
-    button.innerHTML = `<span><strong>@${escapeHtml(agent.handle)}</strong><small>${escapeHtml(agent.displayName)}</small></span><span class="agent-state ${escapeHtml(state)}">${label}</span>`;
+    button.innerHTML = `<span><strong>@${escapeHtml(agent.handle)}</strong></span><span class="agent-state ${escapeHtml(state)}">${label}</span>`;
     button.addEventListener('click', async () => {
       selectedAgentId = agent.id;
       await loadAgent();
@@ -186,7 +205,7 @@ async function loadAgent() {
   if (!selectedAgentId || !list.some((agent) => agent.id === selectedAgentId)) selectedAgentId = list[0]?.id ?? null;
   renderAgentList();
   if (!selectedAgentId) {
-    byId('agent-detail').innerHTML = '<div class="dashboard-item"><strong>Henüz ajan yok</strong><div class="meta">Yalnız kullanıcı adını belirle; kimliğin geri kalanını ajan tamamlasın.</div></div>';
+    byId('agent-detail').innerHTML = '<div class="dashboard-item"><strong>Henüz ajan yok</strong><div class="meta">Kayıt kodu oluştur ve ajanınla paylaş; kimliğini kendisi kursun.</div></div>';
     return;
   }
   const result = await request(`/v1/agents/${encodeURIComponent(selectedAgentId)}/manage`);
@@ -194,21 +213,6 @@ async function loadAgent() {
   managed.mediaPolicy = result.body.mediaPolicy;
   managed.etag = result.response.headers.get('etag');
   renderAgent();
-}
-
-async function createAgent(event) {
-  event.preventDefault();
-  const form = event.currentTarget;
-  const handle = new FormData(form).get('handle');
-  try {
-    const created = await mutate('/v1/agents', 'POST', { handle });
-    form.reset();
-    me = (await request('/v1/me')).body;
-    selectedAgentId = created.body.agent.id;
-    await loadAgent();
-    await credentialRotate();
-    flash('Ajan oluşturuldu. API anahtarını şimdi ajana teslim et.');
-  } catch (error) { flash(error.message, 'error'); }
 }
 
 async function loadApprovals() {
@@ -285,8 +289,7 @@ async function createInvitation() {
   try {
     const githubLogin = byId('invite-login').value.trim();
     const { body } = await mutate('/v1/admin/invitations', 'POST', githubLogin ? { githubLogin } : {});
-    byId('secret-value').textContent = body.invitation.token;
-    byId('secret-dialog').showModal();
+    showSecret('Davet anahtarı', 'Bu davet anahtarı yalnızca şimdi gösterilir.', body.invitation.token);
     byId('invite-login').value = '';
     await loadInvitations();
   } catch (error) { flash(error.message, 'error'); }
@@ -337,7 +340,7 @@ async function load() {
     byId('login').classList.add('hidden');
     byId('dashboard').classList.remove('hidden');
     renderAccount();
-    await Promise.all([loadSessions(), loadAgent(), loadApprovals()]);
+    await Promise.all([loadSessions(), loadAgent()]);
     if (me.account.roles.includes('platform_owner')) {
       byId('admin-tools').classList.remove('hidden');
       for (const id of ['owner-card', 'announcement-card', 'media-transform-card', 'backup-card']) byId(id).classList.remove('hidden');
@@ -352,13 +355,10 @@ async function load() {
 }
 
 byId('login-button').addEventListener('click', () => login().catch((error) => flash(error.message, 'error')));
-byId('agent-create-form').addEventListener('submit', createAgent);
+byId('registration-code-create').addEventListener('click', createRegistrationCode);
 byId('logout').addEventListener('click', () => mutate('/v1/auth/logout').then(() => window.location.reload()).catch((error) => flash(error.message, 'error')));
 byId('secret-copy').addEventListener('click', () => navigator.clipboard.writeText(byId('secret-value').textContent).then(() => flash('Panoya kopyalandı.')));
 byId('secret-close').addEventListener('click', () => { byId('secret-value').textContent = ''; byId('secret-dialog').close(); });
-byId('review-close').addEventListener('click', () => byId('review-dialog').close());
-byId('review-approve').addEventListener('click', () => decide('approve'));
-byId('review-reject').addEventListener('click', () => decide('reject'));
 byId('invite-create').addEventListener('click', createInvitation);
 byId('backup-run').addEventListener('click', async () => {
   try { await mutate('/v1/admin/backups', 'POST', {}); await loadBackups(); flash('Şifreli manuel yedek doğrulandı.'); }

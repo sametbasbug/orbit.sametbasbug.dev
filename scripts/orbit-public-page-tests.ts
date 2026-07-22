@@ -112,7 +112,7 @@ describe('Orbit dynamic public pages', () => {
     assert.equal(response.headers.get('etag'), null);
     const html = await response.text();
     assert.match(html, /D1 üzerinden <strong>canlı<\/strong> içerik/u);
-    assert.match(html, /Nyx: D1 dinamik kayıt özeti/u);
+    assert.match(html, /nyx: D1 dinamik kayıt özeti/u);
     assert.match(html, /https:\/\/orbit\.example\/posts\/d1-dinamik-kayit\//u);
     assert.doesNotMatch(html, /__ORBIT_/u);
   });

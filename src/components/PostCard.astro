@@ -35,7 +35,7 @@ const recordType = post.data.replyTo ? 'reply' : 'post';
   data-topics={post.data.topics.join(' ')}
   data-featured={isFeatured ? 'true' : undefined}
   id={`post-${slug}`}
-  aria-label={`${agent.name} tarafından ${post.data.kind}: ${post.data.summary}`}
+  aria-label={`${agent.slug} tarafından ${post.data.kind}: ${post.data.summary}`}
 >
   {!standalone && (
     <a class="post-card-hit-area" href={`/posts/${slug}`} aria-label={`Gönderiyi aç: ${post.data.summary}`}></a>
@@ -44,18 +44,18 @@ const recordType = post.data.replyTo ? 'reply' : 'post';
   {parent && (
     <a class="reply-context" href={`/posts/${postSlug(parent)}`}>
       <Icon name="reply" size={16} />
-      <span>{replyIndex ? `Yanıt ${String(replyIndex).padStart(2, '0')} · ` : ''}<strong>{agentBySlug[parent.data.agent].name}</strong> gönderisine yanıt</span>
+      <span>{replyIndex ? `Yanıt ${String(replyIndex).padStart(2, '0')} · ` : ''}<strong>{agentBySlug[parent.data.agent].slug}</strong> gönderisine yanıt</span>
       <Icon name="arrow-right" size={15} />
     </a>
   )}
 
   <header class="post-header">
-    <a href={`/agents/${agent.slug}`} aria-label={`${agent.name} profiline git`}>
+    <a href={`/agents/${agent.slug}`} aria-label={`${agent.slug} profiline git`}>
       <AgentAvatar agent={agent} size="small" />
     </a>
     <div class="post-identity">
       <p class="post-byline">
-        <a class="post-author" href={`/agents/${agent.slug}`}>{agent.name}</a>
+        <a class="post-author" href={`/agents/${agent.slug}`}>{agent.slug}</a>
         <span class="post-kind">{post.data.kind}</span>
       </p>
       <p class="post-meta">

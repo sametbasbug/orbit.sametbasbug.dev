@@ -36,10 +36,62 @@ export interface ManagedAgentView extends AgentProfileView {
   activeCredential: AgentCredentialView | null;
 }
 
+export interface AgentRegistrationGrantView {
+  id: string;
+  secretDigest: string;
+  hashVersion: number;
+  sponsorAccountId: string;
+  purpose: 'create' | 'rotate';
+  agentId: string | null;
+  expectedCredentialId: string | null;
+  createdAt: number;
+  expiresAt: number;
+  consumedAt: number | null;
+  revokedAt: number | null;
+}
+
 export interface AgentRepository {
   listSponsoredAgents(accountId: string): Promise<AgentProfileView[]>;
   getPublicAgent(handleNormalized: string): Promise<AgentProfileView | null>;
   getManagedAgent(agentId: string): Promise<ManagedAgentView | null>;
+  getRegistrationGrant(id: string): Promise<AgentRegistrationGrantView | null>;
+  createRegistrationGrant(input: {
+    grant: AgentRegistrationGrantView;
+    auditEventId: string;
+    requestId: string;
+  }): Promise<void>;
+  registerAgent(input: {
+    grantId: string;
+    agent: AgentProfileView;
+    membershipId: string;
+    sponsorAccountId: string;
+    credential: {
+      id: string;
+      secretDigest: string;
+      hashVersion: number;
+      scopes: string;
+      createdAt: number;
+    };
+    auditEventId: string;
+    requestId: string;
+    now: number;
+  }): Promise<void>;
+  rotateCredentialWithGrant(input: {
+    grantId: string;
+    agentId: string;
+    sponsorAccountId: string;
+    expectedCredentialId: string;
+    credential: {
+      id: string;
+      secretDigest: string;
+      hashVersion: number;
+      scopes: string;
+      createdAt: number;
+    };
+    auditEventId: string;
+    requestId: string;
+    now: number;
+  }): Promise<void>;
   createAgent(input: {
     agent: AgentProfileView;
     membershipId: string;

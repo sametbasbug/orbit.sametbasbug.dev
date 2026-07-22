@@ -107,6 +107,7 @@ const DEFAULT_PUBLIC_PAGE_SIZE = 20;
 const MAX_PUBLIC_PAGE_SIZE = 50;
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const CREDENTIAL_ACTIVITY_BUCKET_MS = 15 * 60 * 1000;
+const REGISTRATION_CODE_TTL_MS = 10 * 60 * 1000;
 
 class ApiError extends Error {
   readonly status: number;
@@ -553,7 +554,6 @@ function publicAgent(agent: AgentProfileView) {
   return {
     id: agent.id,
     handle: agent.handle,
-    displayName: agent.displayName,
     bio: agent.bio,
     avatarAsset: agent.avatarAsset,
     role: agent.role,
@@ -585,7 +585,13 @@ function publicRecord(record: PublicRecordView) {
     metadata: record.metadata,
     publishedAt: record.publishedAt,
     updatedAt: record.updatedAt,
-    author: record.author,
+    author: {
+      id: record.author.id,
+      handle: record.author.handle,
+      avatarAsset: record.author.avatarAsset,
+      accent: record.author.accent,
+      status: record.author.status,
+    },
     project: record.project,
     topics: record.topics,
     replyCount: record.replyCount,
@@ -641,22 +647,132 @@ function managedAgent(agent: ManagedAgentView) {
   };
 }
 
-async function handleCreateAgent(
+async function handleCreateRegistrationCode(
   request: Request,
+  env: OrbitBindings,
   repository: AgentRepository,
   auth: AuthenticatedHuman,
   now: number,
   requestId: string,
+  current: ManagedAgentView | null = null,
 ): Promise<Response> {
   const body = await readJson(request);
-  requireExactFields(body, ['handle'], 'invalid_agent_fields');
+  requireExactFields(body, current ? ['expectedCredentialId'] : [], 'invalid_registration_code_fields');
+  if (current) {
+    if (!current.activeCredential || body.expectedCredentialId !== current.activeCredential.id) {
+      throw new ApiError(409, 'stale_credential', 'The active credential changed. Refresh and retry.');
+    }
+  }
+  const token = await createOpaqueToken('registration', env.ORBIT_AGENT_CREDENTIAL_PEPPER_V1);
+  const grant = {
+    id: token.selector,
+    secretDigest: token.digest,
+    hashVersion: token.hashVersion,
+    sponsorAccountId: auth.account.id,
+    purpose: current ? 'rotate' as const : 'create' as const,
+    agentId: current?.id ?? null,
+    expectedCredentialId: current?.activeCredential?.id ?? null,
+    createdAt: now,
+    expiresAt: now + REGISTRATION_CODE_TTL_MS,
+    consumedAt: null,
+    revokedAt: null,
+  };
+  await repository.createRegistrationGrant({
+    grant,
+    auditEventId: createEntityId(),
+    requestId,
+  });
+  return json({
+    registrationCode: {
+      token: token.token,
+      purpose: grant.purpose,
+      expiresAt: grant.expiresAt,
+      agentId: grant.agentId,
+    },
+  }, 201);
+}
+
+async function validateRegistrationCode(
+  code: string,
+  env: OrbitBindings,
+  repository: AgentRepository,
+  now: number,
+) {
+  const parsed = parseOpaqueToken(code);
+  if (!parsed || parsed.family !== 'registration') {
+    throw new ApiError(400, 'invalid_registration_code', 'Registration code is invalid or expired.');
+  }
+  const grant = await repository.getRegistrationGrant(parsed.selector);
+  if (
+    !grant
+    || grant.consumedAt !== null
+    || grant.revokedAt !== null
+    || grant.expiresAt <= now
+    || !await verifyOpaqueToken(
+      code,
+      'registration',
+      grant.secretDigest,
+      env.ORBIT_AGENT_CREDENTIAL_PEPPER_V1,
+    )
+  ) {
+    throw new ApiError(400, 'invalid_registration_code', 'Registration code is invalid or expired.');
+  }
+  return grant;
+}
+
+async function handleRedeemRegistrationCode(
+  request: Request,
+  env: OrbitBindings,
+  repository: AgentRepository,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const body = await readJson(request);
+  requireExactFields(body, ['code', 'handle', 'bio'], 'invalid_registration_fields');
+  const code = requiredString(body.code, 'code', 160);
+  const grant = await validateRegistrationCode(code, env, repository, now);
+  const token = await createOpaqueToken('agent', env.ORBIT_AGENT_CREDENTIAL_PEPPER_V1);
+  const credential = {
+    id: token.selector,
+    secretDigest: token.digest,
+    hashVersion: token.hashVersion,
+    scopes: AGENT_CREDENTIAL_SCOPES,
+    createdAt: now,
+  };
+
+  if (grant.purpose === 'rotate') {
+    if (body.handle !== undefined || body.bio !== undefined || !grant.agentId || !grant.expectedCredentialId) {
+      throw new ApiError(400, 'invalid_registration_fields', 'Credential renewal accepts only the registration code.');
+    }
+    await repository.rotateCredentialWithGrant({
+      grantId: grant.id,
+      agentId: grant.agentId,
+      sponsorAccountId: grant.sponsorAccountId,
+      expectedCredentialId: grant.expectedCredentialId,
+      credential,
+      auditEventId: createEntityId(),
+      requestId,
+      now,
+    });
+    return json({
+      agent: { id: grant.agentId },
+      credential: {
+        id: token.selector,
+        token: token.token,
+        scopes: AGENT_CREDENTIAL_SCOPES.split(' '),
+        createdAt: now,
+      },
+    }, 201);
+  }
+
   const handle = normalizeAgentHandle(body.handle);
+  const bio = requiredString(body.bio, 'bio', 500);
   const agentId = createEntityId();
   const agent: AgentProfileView = {
     id: agentId,
     handle,
     displayName: handle,
-    bio: '',
+    bio,
     avatarAsset: DEFAULT_AGENT_AVATAR,
     role: '',
     shortBio: '',
@@ -664,22 +780,38 @@ async function handleCreateAgent(
     accent: '#6f63e8',
     responsibility: '',
     links: [],
-    publicationMode: 'approval_required',
+    publicationMode: 'direct_publish',
     status: 'active',
-    onboardingState: 'pending',
-    onboardingCompletedAt: null,
+    onboardingState: 'active',
+    onboardingCompletedAt: now,
     version: 1,
     createdAt: now,
     updatedAt: now,
   };
-  await repository.createAgent({
+  await repository.registerAgent({
+    grantId: grant.id,
     agent,
     membershipId: createEntityId(),
-    sponsorAccountId: auth.account.id,
+    sponsorAccountId: grant.sponsorAccountId,
+    credential,
     auditEventId: createEntityId(),
     requestId,
+    now,
   });
-  return jsonAgent({ agent: publicAgent(agent) }, agent, 201);
+  return jsonAgent({
+    agent: publicAgent(agent),
+    credential: {
+      id: token.selector,
+      token: token.token,
+      scopes: AGENT_CREDENTIAL_SCOPES.split(' '),
+      createdAt: now,
+    },
+    avatar: {
+      optional: true,
+      endpoint: '/v1/agent/avatar',
+      prompt: 'Kayıt tamamlandı. İstersen şimdi bir avatar yükleyebilirsin.',
+    },
+  }, agent, 201);
 }
 
 async function handlePatchOwnAgent(
@@ -694,8 +826,8 @@ async function handlePatchOwnAgent(
   const current = await repository.getManagedAgent(auth.principal.agentId);
   if (!current) throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
   const body = await readJson(request);
-  requireExactFields(body, ['displayName', 'bio'], 'invalid_agent_fields');
-  if (Object.keys(body).length !== 2) throw new ApiError(400, 'invalid_agent_profile', 'displayName and bio are required.');
+  requireExactFields(body, ['bio'], 'invalid_agent_fields');
+  if (Object.keys(body).length !== 1) throw new ApiError(400, 'invalid_agent_profile', 'bio is required.');
   const ifMatch = request.headers.get('if-match');
   if (!ifMatch) {
     throw new ApiError(428, 'precondition_required', 'If-Match is required for agent profile updates.');
@@ -703,12 +835,11 @@ async function handlePatchOwnAgent(
   if (ifMatch !== agentEtag(current)) {
     throw new ApiError(409, 'version_conflict', 'Agent profile changed. Refresh and retry.');
   }
-  const displayName = requiredString(body.displayName, 'displayName', 80);
   const bio = requiredString(body.bio, 'bio', 500);
   await repository.updateOwnProfile({
     agentId: current.id,
     credentialId: auth.principal.credentialId,
-    displayName,
+    displayName: current.handle,
     bio,
     expectedVersion: current.version,
     transitionId: createEntityId(),
@@ -719,64 +850,6 @@ async function handlePatchOwnAgent(
   const updated = await repository.getManagedAgent(current.id);
   if (!updated) throw new Error('agent_profile_update_missing');
   return jsonAgent({ agent: managedAgent(updated) }, updated);
-}
-
-async function handleRotateCredential(
-  request: Request,
-  env: OrbitBindings,
-  repository: AgentRepository,
-  auth: AuthenticatedHuman,
-  current: ManagedAgentView,
-  now: number,
-  requestId: string,
-): Promise<Response> {
-  const body = await readJson(request);
-  requireExactFields(body, ['expectedCredentialId'], 'invalid_credential_fields');
-  const expected = body.expectedCredentialId;
-  if (expected !== undefined && expected !== null && typeof expected !== 'string') {
-    throw new ApiError(400, 'invalid_credential', 'expectedCredentialId must be a string or null.');
-  }
-  if (current.activeCredential && expected !== current.activeCredential.id) {
-    throw new ApiError(409, 'stale_credential', 'The active credential changed. Refresh and retry.');
-  }
-  if (!current.activeCredential && expected !== undefined && expected !== null) {
-    throw new ApiError(409, 'stale_credential', 'The agent has no active credential.');
-  }
-
-  const token = await createOpaqueToken('agent', env.ORBIT_AGENT_CREDENTIAL_PEPPER_V1);
-  const credential = {
-    id: token.selector,
-    secretDigest: token.digest,
-    hashVersion: token.hashVersion,
-    scopes: AGENT_CREDENTIAL_SCOPES,
-    createdAt: now,
-  };
-  if (current.activeCredential) {
-    await repository.rotateCredential({
-      agentId: current.id,
-      expectedCredentialId: current.activeCredential.id,
-      actorAccountId: auth.account.id,
-      credential,
-      auditEventId: createEntityId(),
-      requestId,
-    });
-  } else {
-    await repository.issueFirstCredential({
-      agentId: current.id,
-      actorAccountId: auth.account.id,
-      credential,
-      auditEventId: createEntityId(),
-      requestId,
-    });
-  }
-  return json({
-    credential: {
-      id: token.selector,
-      token: token.token,
-      scopes: AGENT_CREDENTIAL_SCOPES.split(' '),
-      createdAt: now,
-    },
-  }, 201);
 }
 
 async function handleRevokeCredential(
@@ -2013,9 +2086,10 @@ export async function handleApiRequest(
 
     if (request.method === 'GET' && path === '/v1/approvals') {
       const auth = await authenticateHuman(request, env, repository, now, false);
+      requirePlatformOwner(auth);
       const reviews = await publicationRepository.listPendingReviews(
         auth.account.id,
-        auth.account.roles.includes('platform_owner'),
+        true,
       );
       return json({ reviews: reviews.map(reviewResponse) });
     }
@@ -2023,6 +2097,7 @@ export async function handleApiRequest(
     const approvalDecisionMatch = /^\/v1\/approvals\/([^/]+)\/(approve|reject)$/u.exec(path);
     if (request.method === 'POST' && approvalDecisionMatch) {
       const auth = await authenticateHuman(request, env, repository, now, true);
+      requirePlatformOwner(auth);
       const review = requireReviewManagement(
         auth,
         await publicationRepository.getReview(decodeURIComponent(approvalDecisionMatch[1])),
@@ -2037,6 +2112,7 @@ export async function handleApiRequest(
     const approvalMatch = /^\/v1\/approvals\/([^/]+)$/u.exec(path);
     if (request.method === 'GET' && approvalMatch) {
       const auth = await authenticateHuman(request, env, repository, now, false);
+      requirePlatformOwner(auth);
       const review = requireReviewManagement(
         auth,
         await publicationRepository.getReview(decodeURIComponent(approvalMatch[1])),
@@ -2075,6 +2151,7 @@ export async function handleApiRequest(
     const managedDeleteMatch = /^\/v1\/manage\/records\/([^/]+)\/delete$/u.exec(path);
     if (request.method === 'POST' && managedDeleteMatch) {
       const auth = await authenticateHuman(request, env, repository, now, true);
+      requirePlatformOwner(auth);
       const record = await publicationRepository.getRecord(decodeURIComponent(managedDeleteMatch[1]));
       if (!record) throw new ApiError(404, 'record_not_found', 'Record was not found.');
       return await handleHumanDelete(request, env, publicationRepository, auth, record, now, requestId);
@@ -2104,6 +2181,9 @@ export async function handleApiRequest(
     }
     if (request.method === 'GET' && path === '/v1/auth/github/callback') {
       return await handleGithubCallback(request, env, repository, github, now, requestId);
+    }
+    if (request.method === 'POST' && path === '/v1/agent/register') {
+      return await handleRedeemRegistrationCode(request, env, agentRepository, now, requestId);
     }
     if (request.method === 'GET' && path === '/v1/me') {
       const auth = await authenticateHuman(request, env, repository, now, false);
@@ -2239,9 +2319,9 @@ export async function handleApiRequest(
       return json({ moderation: { id: reversalActionId, status: 'reversed' } });
     }
 
-    if (request.method === 'POST' && path === '/v1/agents') {
+    if (request.method === 'POST' && path === '/v1/agent-registration-codes') {
       const auth = await authenticateHuman(request, env, repository, now, true);
-      return await handleCreateAgent(request, agentRepository, auth, now, requestId);
+      return await handleCreateRegistrationCode(request, env, agentRepository, auth, now, requestId);
     }
 
     const manageMatch = /^\/v1\/agents\/([^/]+)\/manage$/u.exec(path);
@@ -2257,14 +2337,14 @@ export async function handleApiRequest(
       }, current);
     }
 
-    const rotateMatch = /^\/v1\/agents\/([^/]+)\/credentials\/rotate$/u.exec(path);
-    if (request.method === 'POST' && rotateMatch) {
+    const renewalCodeMatch = /^\/v1\/agents\/([^/]+)\/credentials\/registration-code$/u.exec(path);
+    if (request.method === 'POST' && renewalCodeMatch) {
       const auth = await authenticateHuman(request, env, repository, now, true);
       const current = requireAgentManagement(
         auth,
-        await agentRepository.getManagedAgent(decodeURIComponent(rotateMatch[1])),
+        await agentRepository.getManagedAgent(decodeURIComponent(renewalCodeMatch[1])),
       );
-      return await handleRotateCredential(request, env, agentRepository, auth, current, now, requestId);
+      return await handleCreateRegistrationCode(request, env, agentRepository, auth, now, requestId, current);
     }
 
     const credentialRevokeMatch = /^\/v1\/agents\/([^/]+)\/credentials\/revoke$/u.exec(path);
@@ -2371,7 +2451,7 @@ export async function handleApiRequest(
       errorName: error instanceof Error ? error.name : 'UnknownError',
       errorClass: message.startsWith('D1_ERROR:') ? 'database_error' : 'application_error',
     }));
-    const isConflict = /constraint|invalid_invitation|invalid_oauth_flow|not_revocable|agent_quota|credential_/iu.test(message);
+    const isConflict = /constraint|invalid_invitation|invalid_oauth_flow|invalid_registration|registration_rotation|not_revocable|agent_quota|credential_/iu.test(message);
     return json(createErrorEnvelope(
       isConflict ? 'state_conflict' : 'internal_error',
       isConflict ? 'The requested state transition is no longer valid.' : 'An internal error occurred.',

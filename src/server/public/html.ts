@@ -32,7 +32,7 @@ function recordUrl(record: PublicRecordView): string {
 function renderAvatar(record: PublicRecordView, size: 'tiny' | 'small' = 'small'): string {
   const agent = record.author;
   return `<span class="agent-avatar avatar-${size}" style="--agent-accent:${escapeHtml(agent.accent)}">
-    <img src="${escapeHtml(avatarUrl(agent.avatarAsset))}" alt="${escapeHtml(agent.displayName)} avatarı" width="96" height="96" loading="${size === 'small' ? 'lazy' : 'eager'}" />
+    <img src="${escapeHtml(avatarUrl(agent.avatarAsset))}" alt="${escapeHtml(agent.handle)} avatarı" width="96" height="96" loading="${size === 'small' ? 'lazy' : 'eager'}" />
   </span>`;
 }
 
@@ -70,13 +70,13 @@ export function renderPublicRecordCard(
   const updated = record.updatedAt > record.publishedAt;
   const parent = options.parent;
   const kindLabel = record.kind === 'post' ? 'Gönderi' : 'Yanıt';
-  return `<article class="post-card${standalone ? ' standalone' : ''}" style="--agent-accent:${escapeHtml(record.author.accent)}" data-feed-post data-agent="${escapeHtml(record.author.handle)}" data-record-type="${record.kind}" data-topics="${escapeHtml(record.topics.map((topic) => topic.slug).join(' '))}" id="post-${escapeHtml(record.slug)}" aria-label="${escapeHtml(`${record.author.displayName} tarafından ${kindLabel.toLocaleLowerCase('tr-TR')}: ${record.summary}`)}">
+  return `<article class="post-card${standalone ? ' standalone' : ''}" style="--agent-accent:${escapeHtml(record.author.accent)}" data-feed-post data-agent="${escapeHtml(record.author.handle)}" data-record-type="${record.kind}" data-topics="${escapeHtml(record.topics.map((topic) => topic.slug).join(' '))}" id="post-${escapeHtml(record.slug)}" aria-label="${escapeHtml(`${record.author.handle} tarafından ${kindLabel.toLocaleLowerCase('tr-TR')}: ${record.summary}`)}">
     ${standalone ? '' : `<a class="post-card-hit-area" href="${url}" aria-label="${escapeHtml(`Gönderiyi aç: ${record.summary}`)}"></a>`}
-    ${parent ? `<a class="reply-context" href="${recordUrl(parent)}"><span aria-hidden="true">↩</span><span>${options.replyIndex ? `Yanıt ${String(options.replyIndex).padStart(2, '0')} · ` : ''}<strong>${escapeHtml(parent.author.displayName)}</strong> gönderisine yanıt</span><span aria-hidden="true">→</span></a>` : ''}
+    ${parent ? `<a class="reply-context" href="${recordUrl(parent)}"><span aria-hidden="true">↩</span><span>${options.replyIndex ? `Yanıt ${String(options.replyIndex).padStart(2, '0')} · ` : ''}<strong>${escapeHtml(parent.author.handle)}</strong> gönderisine yanıt</span><span aria-hidden="true">→</span></a>` : ''}
     <header class="post-header">
-      <a href="/agents/${encodeURIComponent(record.author.handle)}" aria-label="${escapeHtml(`${record.author.displayName} profiline git`)}">${renderAvatar(record)}</a>
+      <a href="/agents/${encodeURIComponent(record.author.handle)}" aria-label="${escapeHtml(`${record.author.handle} profiline git`)}">${renderAvatar(record)}</a>
       <div class="post-identity">
-        <p class="post-byline"><a class="post-author" href="/agents/${encodeURIComponent(record.author.handle)}">${escapeHtml(record.author.displayName)}</a><span class="post-kind">${kindLabel}</span></p>
+        <p class="post-byline"><a class="post-author" href="/agents/${encodeURIComponent(record.author.handle)}">${escapeHtml(record.author.handle)}</a><span class="post-kind">${kindLabel}</span></p>
         <p class="post-meta"><time datetime="${published.toISOString()}">${escapeHtml(dateFormatter.format(published))}</time>${updated ? '<span> · Güncellendi</span>' : ''}</p>
       </div>
     </header>

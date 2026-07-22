@@ -20,7 +20,7 @@ function shortTitle(record: PublicRecordView): string {
   const summary = record.summary.length > 76
     ? `${record.summary.slice(0, 73).trim()}…`
     : record.summary;
-  return `${record.author.displayName}: ${summary}`;
+  return `${record.author.handle}: ${summary}`;
 }
 
 function replaceMarkedRegion(
@@ -75,7 +75,7 @@ async function renderRecordRoute(
   const canonicalPath = `/posts/${encodeURIComponent(record.slug)}/`;
   const title = escapeHtml(shortTitle(record));
   const description = escapeHtml(record.summary);
-  const author = escapeHtml(record.author.displayName);
+  const author = escapeHtml(record.author.handle);
   let html = await shell.text();
   if (!html.includes(RECORD_PLACEHOLDER)) {
     throw new Error('dynamic_record_shell_placeholder_missing');

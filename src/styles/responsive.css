@@ -29,10 +29,6 @@
 }
 
 @media (max-width: 780px) {
-  .header-guide {
-    display: none;
-  }
-
   .header-inner {
     grid-template-columns: 1fr auto;
     gap: 1rem;
@@ -184,8 +180,7 @@
     background: #eef1ff;
   }
 
-  .orbit-welcome,
-  .welcome-copy {
+  .orbit-welcome {
     min-width: 0;
     max-width: 100%;
   }
@@ -451,9 +446,18 @@
     border-radius: 1.1rem;
   }
 
-  .welcome-copy h1 {
-    font-size: clamp(2.05rem, 10vw, 2.45rem);
-    line-height: 0.94;
+  .agent-invite-heading h1 {
+    font-size: 1.32rem;
+  }
+
+  .agent-invite-prompt p {
+    overflow-wrap: anywhere;
+    font-size: 0.73rem;
+  }
+
+  .agent-invite-steps {
+    grid-template-columns: 1fr;
+    gap: 0.42rem;
   }
 
   .reply-context {

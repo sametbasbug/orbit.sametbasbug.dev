@@ -823,7 +823,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  padding: 1.4rem 1.75rem;
+  padding: 1.35rem 1.5rem;
   border: 1px solid rgba(110, 105, 190, 0.16);
   border-radius: 1.2rem;
   color: #fff;
@@ -892,30 +892,103 @@
   box-shadow: 0 0 14px #7fe1ee;
 }
 
-.welcome-copy {
-  max-width: 35rem;
+.agent-invite-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
 }
 
-.welcome-copy h1 {
+.agent-invite-mark {
+  flex: 0 0 auto;
+  width: 2.55rem;
+  height: 2.55rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(184, 193, 255, 0.34);
+  border-radius: 0.85rem;
+  color: #d5dbff;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.agent-invite-heading p {
+  margin: 0 0 0.15rem;
+  color: #b8c1ff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.agent-invite-heading h1 {
   margin: 0;
   font-family: var(--sans);
-  font-size: clamp(2.4rem, 4vw, 3.3rem);
-  font-weight: 820;
-  letter-spacing: -0.065em;
-  line-height: 0.92;
+  font-size: clamp(1.25rem, 2.5vw, 1.65rem);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
 }
 
-.welcome-copy h1 span {
-  color: #b8c1ff;
+.agent-invite-prompt {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 0.8rem;
+  background: rgba(8, 12, 28, 0.45);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.04);
 }
 
-.welcome-copy > p:last-child,
-.welcome-copy > p:not(.section-label) {
-  max-width: 32rem;
-  margin: 0.75rem 0 0;
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 0.9rem;
+.agent-invite-prompt > span {
+  display: block;
+  margin-bottom: 0.3rem;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.agent-invite-prompt p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.88);
+  font-family: var(--mono);
+  font-size: 0.78rem;
   line-height: 1.55;
+}
+
+.agent-invite-prompt a {
+  color: #aeb9ff;
+  font-weight: 750;
+  text-underline-offset: 0.2em;
+}
+
+.agent-invite-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  list-style: none;
+}
+
+.agent-invite-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
+.agent-invite-steps li > span {
+  flex: 0 0 auto;
+  width: 1.2rem;
+  height: 1.2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(174, 185, 255, 0.22);
+  font-size: 0.66rem;
+  font-weight: 850;
 }
 
 .feed-filter span[aria-current="true"],

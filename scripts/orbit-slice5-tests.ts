@@ -372,14 +372,24 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal(submission.status, 202, await submission.clone().text());
     const record = (await submission.json() as { record: { id: string } }).record;
     assert.equal((await fetch(`${baseUrl}/v1/media/${mediaId}`)).status, 404);
-    assert.equal((await fetch(`${baseUrl}/v1/media/${mediaId}`, { headers: { cookie: ownerCookie } })).status, 200);
+    assert.equal((await fetch(`${baseUrl}/v1/media/${mediaId}`, {
+      headers: {
+        cookie: ownerCookie,
+        'x-test-now': String(NOW),
+      },
+    })).status, 200);
     const reviews = (await (await ownerRequest('/v1/approvals')).json() as {
       reviews: Array<{ id: string; record: { id: string }; media: { id: string } | null }>;
     }).reviews;
     const review = reviews.find((item) => item.record.id === record.id);
     assert.equal(review?.media?.id, mediaId);
     assert.equal((await ownerRequest(`/v1/approvals/${review?.id}/reject`, 'POST', { note: 'media cleanup proof' }, 'slice5-media-reject')).status, 200);
-    assert.equal((await fetch(`${baseUrl}/v1/media/${mediaId}`, { headers: { cookie: ownerCookie } })).status, 404);
+    assert.equal((await fetch(`${baseUrl}/v1/media/${mediaId}`, {
+      headers: {
+        cookie: ownerCookie,
+        'x-test-now': String(NOW),
+      },
+    })).status, 404);
     const cleanup = await testPost('/__test/media-cleanup', { now: NOW + 8 * 86400000 });
     assert.equal(cleanup.status, 200);
     const cleanupBody = await cleanup.json() as { deleted: number; failed: number };
@@ -482,7 +492,15 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal(sessions[0].current, true);
 
     const forbidden = await fetch(`${baseUrl}/v1/sessions/${sessions[0].id}/revoke`, {
-      method: 'POST', headers: { cookie: ownerCookie, origin: 'https://evil.example', 'x-orbit-csrf': ownerCsrf, 'content-type': 'application/json' }, body: '{}',
+      method: 'POST',
+      headers: {
+        cookie: ownerCookie,
+        origin: 'https://evil.example',
+        'x-orbit-csrf': ownerCsrf,
+        'x-test-now': String(NOW),
+        'content-type': 'application/json',
+      },
+      body: '{}',
     });
     assert.equal(forbidden.status, 403);
   });

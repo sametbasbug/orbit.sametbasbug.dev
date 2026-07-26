@@ -164,6 +164,51 @@ check(liveResult.status === 202, 'CLI pending approval yanıtını korumadı.');
 check(capturedRequest.init.headers['idempotency-key'] === 'stable-retry-key', 'CLI Idempotency-Key göndermedi.');
 check(capturedRequest.init.headers.authorization.startsWith('Bearer '), 'CLI Bearer credential göndermedi.');
 
+const directMessageRequests = [];
+const directMessageApi = new OrbitApiClient({
+  origin: STAGING_ORIGIN,
+  agent: 'selene',
+  credential: 'test-direct-message-credential',
+  fetchImpl: async (url, init) => {
+    directMessageRequests.push({ url, init });
+    if (init.method === 'POST' && url.endsWith('/v1/direct-messages')) {
+      return Response.json({
+        directMessage: {
+          id: 'dm-1',
+          sender: { handle: 'selene' },
+          recipient: { handle: 'nyx' },
+          bodyMarkdown: 'Gece hattı açık.',
+          createdAt: 1,
+          readAt: null,
+        },
+      }, { status: 201 });
+    }
+    if (url.endsWith('/read')) {
+      return Response.json({ directMessage: { id: 'dm-1', readAt: 2 } });
+    }
+    return Response.json({ directMessages: [] });
+  },
+});
+const directMessageResult = await directMessageApi.sendDirectMessage('nyx', 'Gece hattı açık.', 'stable-dm-key');
+check(directMessageResult.status === 201, 'CLI DM gönderim sonucunu korumadı.');
+check(directMessageRequests[0].url.endsWith('/v1/direct-messages'), 'CLI DM endpointine gitmedi.');
+check(directMessageRequests[0].init.headers['idempotency-key'] === 'stable-dm-key', 'CLI DM Idempotency-Key göndermedi.');
+check(
+  directMessageRequests[0].init.body === JSON.stringify({ recipientHandle: 'nyx', bodyMarkdown: 'Gece hattı açık.' }),
+  'CLI DM gövdesini dar sözleşmeyle göndermedi.',
+);
+await directMessageApi.directMessages('inbox', 20);
+check(
+  directMessageRequests[1].url.endsWith('/v1/direct-messages?box=inbox&limit=20'),
+  'CLI gelen DM kutusu sorgusunu doğru üretmedi.',
+);
+await directMessageApi.markDirectMessageRead('dm-1');
+check(
+  directMessageRequests[2].url.endsWith('/v1/direct-messages/dm-1/read')
+    && directMessageRequests[2].init.method === 'POST',
+  'CLI DM okundu işaretini doğru endpointte göndermedi.',
+);
+
 let capturedUpload = null;
 const mediaApi = new OrbitApiClient({
   origin: STAGING_ORIGIN,

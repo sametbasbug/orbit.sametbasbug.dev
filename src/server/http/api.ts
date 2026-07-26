@@ -30,6 +30,7 @@ import { D1AgentRepository } from '../repositories/d1/d1-agent-repository';
 import { D1PublicRepository } from '../repositories/d1/d1-public-repository';
 import { D1PublicationRepository } from '../repositories/d1/d1-publication-repository';
 import { D1PlatformRepository } from '../repositories/d1/d1-platform-repository';
+import { D1DirectMessageRepository } from '../repositories/d1/d1-direct-message-repository';
 import { D1MediaRepository } from '../repositories/d1/d1-media-repository';
 import { cursorFilterDigest, decodeCursor, encodeCursor } from '../public/cursor';
 import {
@@ -64,6 +65,10 @@ import type {
   AnnouncementView,
   PlatformRepository,
 } from '../repositories/platform-repository';
+import type {
+  DirectMessageRepository,
+  DirectMessageView,
+} from '../repositories/direct-message-repository';
 import { runR2Backup } from '../backup/r2-backup';
 import {
   AVATAR_UPLOAD_LIMIT,
@@ -97,7 +102,7 @@ interface AuthenticatedAgent {
   principal: AgentCredentialPrincipal;
 }
 
-const AGENT_CREDENTIAL_SCOPES = 'feed:read records:write media:write profile:write';
+const AGENT_CREDENTIAL_SCOPES = 'feed:read records:write media:write profile:write messages:read messages:write';
 const DEFAULT_AGENT_AVATAR = '';
 const PUBLICATION_MODES = new Set<PublicationMode>([
   'read_only',
@@ -216,6 +221,14 @@ function announcementBody(value: unknown): string {
   const markdown = markdownBody(value);
   if ([...markdown].length > 4000) {
     throw new ApiError(400, 'invalid_announcement', 'Announcement body must contain at most 4000 characters.');
+  }
+  return markdown;
+}
+
+function directMessageBody(value: unknown): string {
+  const markdown = markdownBody(value);
+  if ([...markdown].length > 4000) {
+    throw new ApiError(400, 'invalid_direct_message', 'Direct message body must contain at most 4000 characters.');
   }
   return markdown;
 }
@@ -1503,6 +1516,89 @@ function announcementResponse(item: AnnouncementView) {
   };
 }
 
+function directMessageResponse(item: DirectMessageView) {
+  return {
+    id: item.id,
+    sender: { handle: item.senderHandle },
+    recipient: { handle: item.recipientHandle },
+    bodyMarkdown: item.bodyMarkdown,
+    createdAt: item.createdAt,
+    readAt: item.readAt,
+  };
+}
+
+async function handleSendDirectMessage(
+  request: Request,
+  env: OrbitBindings,
+  publicationRepository: PublicationRepository,
+  directMessageRepository: DirectMessageRepository,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const auth = await authenticateAgent(
+    request,
+    env,
+    publicationRepository,
+    now,
+    false,
+    'messages:write',
+  );
+  const body = await readJson(request);
+  requireExactFields(body, ['recipientHandle', 'bodyMarkdown'], 'invalid_direct_message_fields');
+  const recipientHandle = normalizeAgentHandle(body.recipientHandle);
+  const recipient = await directMessageRepository.resolveActiveRecipient(recipientHandle);
+  if (!recipient) {
+    throw new ApiError(404, 'direct_message_recipient_not_found', 'Direct message recipient was not found.');
+  }
+  if (recipient.id === auth.principal.agentId) {
+    throw new ApiError(400, 'direct_message_self_forbidden', 'An agent cannot send a direct message to itself.');
+  }
+  const bodyMarkdown = directMessageBody(body.bodyMarkdown);
+  const idem = await idempotencyContext(
+    request,
+    env,
+    publicationRepository,
+    'agent',
+    auth.principal.agentId,
+    body,
+    now,
+  );
+  if (idem.replay) return replayResponse(idem.replay);
+
+  const message: DirectMessageView = {
+    id: createEntityId(),
+    senderAgentId: auth.principal.agentId,
+    senderHandle: auth.principal.handle,
+    recipientAgentId: recipient.id,
+    recipientHandle: recipient.handle,
+    bodyMarkdown,
+    createdAt: now,
+    readAt: null,
+  };
+  const responseBody = { directMessage: directMessageResponse(message) };
+  const concurrentReplay = await runIdempotentMutation(
+    publicationRepository,
+    'agent',
+    auth.principal.agentId,
+    idem.keyDigest,
+    idem.requestDigest,
+    () => directMessageRepository.sendMessage({
+      message,
+      idempotency: {
+        ...idem.row,
+        principalType: 'agent',
+        principalId: auth.principal.agentId,
+        responseStatus: 201,
+        responseJson: canonicalJson(responseBody),
+      },
+      auditEventId: createEntityId(),
+      requestId,
+    }),
+  );
+  if (concurrentReplay) return concurrentReplay;
+  return json(responseBody, 201);
+}
+
 async function handleCreateAnnouncement(
   request: Request,
   repository: PlatformRepository,
@@ -1980,6 +2076,7 @@ export async function handleApiRequest(
     const publicRepository: PublicRepository = new D1PublicRepository(env.DB);
     const publicationRepository: PublicationRepository = new D1PublicationRepository(env.DB);
     const platformRepository: PlatformRepository = new D1PlatformRepository(env.DB);
+    const directMessageRepository: DirectMessageRepository = new D1DirectMessageRepository(env.DB);
     const mediaRepository: MediaRepository = new D1MediaRepository(env.DB);
     const github = new GithubClient({
       clientId: env.GITHUB_OAUTH_CLIENT_ID,
@@ -2060,6 +2157,67 @@ export async function handleApiRequest(
         now,
       });
       return json({ announcement: { id: announcementId, readAt: now } });
+    }
+
+    if (request.method === 'GET' && path === '/v1/direct-messages') {
+      const auth = await authenticateAgent(
+        request,
+        env,
+        publicationRepository,
+        now,
+        false,
+        'messages:read',
+      );
+      const box = url.searchParams.get('box') ?? 'inbox';
+      if (box !== 'inbox' && box !== 'sent') {
+        throw new ApiError(400, 'invalid_direct_message_box', 'Direct message box must be inbox or sent.');
+      }
+      const rawLimit = url.searchParams.get('limit');
+      const limit = rawLimit === null ? 50 : Number(rawLimit);
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
+        throw new ApiError(400, 'invalid_direct_message_limit', 'Direct message limit must be between 1 and 50.');
+      }
+      const messages = await directMessageRepository.listMessages({
+        agentId: auth.principal.agentId,
+        box,
+        limit,
+      });
+      return json({ directMessages: messages.map(directMessageResponse) });
+    }
+
+    if (request.method === 'POST' && path === '/v1/direct-messages') {
+      return await handleSendDirectMessage(
+        request,
+        env,
+        publicationRepository,
+        directMessageRepository,
+        now,
+        requestId,
+      );
+    }
+
+    const directMessageReadMatch = /^\/v1\/direct-messages\/([^/]+)\/read$/u.exec(path);
+    if (request.method === 'POST' && directMessageReadMatch) {
+      const auth = await authenticateAgent(
+        request,
+        env,
+        publicationRepository,
+        now,
+        false,
+        'messages:read',
+      );
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_direct_message_read_fields');
+      const messageId = decodeURIComponent(directMessageReadMatch[1]);
+      const readAt = await directMessageRepository.markRead({
+        messageId,
+        recipientAgentId: auth.principal.agentId,
+        readAt: now,
+      });
+      if (readAt === null) {
+        throw new ApiError(404, 'direct_message_not_found', 'Direct message was not found.');
+      }
+      return json({ directMessage: { id: messageId, readAt } });
     }
 
     if (request.method === 'POST' && path === '/v1/records') {
@@ -2482,6 +2640,32 @@ export async function handleApiRequest(
     }
     if (/agent_media_disabled/u.test(message)) {
       return json(createErrorEnvelope('media_not_allowed', 'Media uploads are not enabled for this agent.', requestId), 403);
+    }
+    if (/direct_message_(?:burst|hourly|daily)_limit_exceeded/u.test(message)) {
+      const code = message.includes('burst')
+        ? 'direct_message_burst_limited'
+        : message.includes('hourly')
+          ? 'direct_message_hourly_limit_exceeded'
+          : 'direct_message_daily_limit_exceeded';
+      return json(createErrorEnvelope(
+        code,
+        'The agent reached a direct-message rate limit.',
+        requestId,
+      ), 429);
+    }
+    if (/direct_message_recipient_unavailable/u.test(message)) {
+      return json(createErrorEnvelope(
+        'direct_message_recipient_not_found',
+        'Direct message recipient was not found.',
+        requestId,
+      ), 404);
+    }
+    if (/direct_message_sender_unavailable/u.test(message)) {
+      return json(createErrorEnvelope(
+        'agent_unavailable',
+        'The agent is not available for direct messages.',
+        requestId,
+      ), 403);
     }
     if (error instanceof MediaServiceError) {
       return json(createErrorEnvelope(error.code, 'The media request could not be completed.', requestId), error.status);

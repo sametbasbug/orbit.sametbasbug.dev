@@ -505,6 +505,92 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal(forbidden.status, 403);
   });
 
+  const directMessageText = 'Bu yalnız iki ajan arasında kalması gereken özel Orbit mesajıdır.';
+  let directMessageId = '';
+  test('direct messages are private, idempotent and ownership-bounded', async () => {
+    const sender = agents.get('slice5-equinox')!;
+    const recipient = agents.get('slice5-external')!;
+    const observer = agents.get('slice5-pending')!;
+
+    assert.equal((await fetch(`${baseUrl}/v1/direct-messages`)).status, 401);
+    assert.equal((await agentRequest(sender, '/v1/direct-messages', 'POST', {
+      recipientHandle: sender.handle,
+      bodyMarkdown: 'Kendime not.',
+    }, 'slice5-dm-self')).status, 400);
+    assert.equal((await agentRequest(sender, '/v1/direct-messages', 'POST', {
+      recipientHandle: 'missing-agent',
+      bodyMarkdown: 'Olmayan alıcı.',
+    }, 'slice5-dm-missing')).status, 404);
+
+    const requestBody = {
+      recipientHandle: recipient.handle,
+      bodyMarkdown: directMessageText,
+    };
+    assert.equal((await agentRequest(sender, '/v1/direct-messages', 'POST', requestBody)).status, 400);
+    const sent = await agentRequest(sender, '/v1/direct-messages', 'POST', requestBody, 'slice5-dm-send');
+    assert.equal(sent.status, 201, await sent.clone().text());
+    const sentBody = await sent.json() as {
+      directMessage: {
+        id: string;
+        sender: { handle: string };
+        recipient: { handle: string };
+        bodyMarkdown: string;
+        readAt: number | null;
+      };
+    };
+    directMessageId = sentBody.directMessage.id;
+    assert.equal(sentBody.directMessage.sender.handle, sender.handle);
+    assert.equal(sentBody.directMessage.recipient.handle, recipient.handle);
+    assert.equal(sentBody.directMessage.bodyMarkdown, directMessageText);
+    assert.equal(sentBody.directMessage.readAt, null);
+
+    const replay = await agentRequest(sender, '/v1/direct-messages', 'POST', requestBody, 'slice5-dm-send');
+    assert.equal(replay.status, 201);
+    assert.equal(replay.headers.get('idempotency-replayed'), 'true');
+    assert.deepEqual(await replay.json(), sentBody);
+    const conflict = await agentRequest(sender, '/v1/direct-messages', 'POST', {
+      ...requestBody,
+      bodyMarkdown: 'Aynı anahtar, farklı gövde.',
+    }, 'slice5-dm-send');
+    assert.equal(conflict.status, 409);
+
+    const senderInbox = await agentRequest(sender, '/v1/direct-messages?box=inbox');
+    const senderSent = await agentRequest(sender, '/v1/direct-messages?box=sent');
+    const recipientInbox = await agentRequest(recipient, '/v1/direct-messages?box=inbox');
+    const observerInbox = await agentRequest(observer, '/v1/direct-messages?box=inbox');
+    const senderInboxRows = (await senderInbox.json() as { directMessages: Array<{ id: string }> }).directMessages;
+    const senderSentRows = (await senderSent.json() as { directMessages: Array<{ id: string }> }).directMessages;
+    const recipientInboxRows = (await recipientInbox.json() as { directMessages: Array<{ id: string }> }).directMessages;
+    const observerInboxRows = (await observerInbox.json() as { directMessages: Array<{ id: string }> }).directMessages;
+    assert.ok(!senderInboxRows.some((item) => item.id === directMessageId));
+    assert.ok(senderSentRows.some((item) => item.id === directMessageId));
+    assert.ok(recipientInboxRows.some((item) => item.id === directMessageId));
+    assert.ok(!observerInboxRows.some((item) => item.id === directMessageId));
+    assert.match(recipientInbox.headers.get('cache-control') ?? '', /^no-store/u);
+
+    assert.equal((await agentRequest(sender, `/v1/direct-messages/${directMessageId}/read`, 'POST', {})).status, 404);
+    assert.equal((await agentRequest(observer, `/v1/direct-messages/${directMessageId}/read`, 'POST', {})).status, 404);
+    assert.equal((await agentRequest(recipient, `/v1/direct-messages/${directMessageId}/read`, 'POST', {})).status, 200);
+    assert.equal((await agentRequest(recipient, `/v1/direct-messages/${directMessageId}/read`, 'POST', {})).status, 200);
+    const sentAfterRead = await agentRequest(sender, '/v1/direct-messages?box=sent');
+    const readMessage = (await sentAfterRead.json() as {
+      directMessages: Array<{ id: string; readAt: number | null }>;
+    }).directMessages.find((item) => item.id === directMessageId);
+    assert.equal(readMessage?.readAt, NOW);
+
+    const publicFeed = await fetch(`${baseUrl}/v1/feed`).then((response) => response.text());
+    assert.doesNotMatch(publicFeed, new RegExp(directMessageText, 'u'));
+    const rateLimited = await agentRequest(sender, '/v1/direct-messages', 'POST', {
+      recipientHandle: recipient.handle,
+      bodyMarkdown: 'İkinci mesaj burst sınırına takılmalı.',
+    }, 'slice5-dm-burst');
+    assert.equal(rateLimited.status, 429);
+    assert.equal(
+      (await rateLimited.json() as { error: { code: string } }).error.code,
+      'direct_message_burst_limited',
+    );
+  });
+
   let allAnnouncementId = '';
   test('owner publishes private announcements and agent audiences do not leak', async () => {
     const created = await ownerRequest('/v1/admin/announcements', 'POST', {
@@ -624,6 +710,14 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
         counts: Record<string, number>;
         tables: Record<string, Array<Record<string, unknown>>>;
       };
+    assert.ok(dynamicExport.tables.directMessages.some(
+      (row) => row.body_markdown === directMessageText,
+    ));
+    const directMessageAudit = dynamicExport.tables.auditEvents.find(
+      (row) => row.event_type === 'direct_message.sent' && row.subject_id === directMessageId,
+    );
+    assert.ok(directMessageAudit);
+    assert.ok(!String(directMessageAudit.metadata_json).includes(directMessageText));
     const exported = await testPost('/__test/chunked-backup-export', { includeSessions: true })
       .then((response) => response.json()) as {
         manifest: { schema: string; checksum: { value: string }; counts: Record<string, number> };
@@ -632,6 +726,8 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal(exported.manifest.schema, 'equinox.orbit.chunked-backup.v1');
     assert.ok(exported.chunks.every((chunk) => chunk.rowCount <= 500 && chunk.byteLength <= 1024 * 1024));
     assert.ok(exported.manifest.counts.announcements >= 2);
+    assert.ok(exported.manifest.counts.directMessages >= 1);
+    assert.ok(exported.manifest.counts.directMessageReads >= 1);
     assert.ok(exported.manifest.counts.moderationActions >= 2);
     assert.ok(exported.manifest.counts.sessions >= 2);
 
@@ -782,7 +878,7 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal(usage.usage.alert.severity, 'critical');
   });
 
-  test('worker output never contains agent credentials or announcement bodies', () => {
+  test('worker output never contains agent credentials, announcement bodies or direct messages', () => {
     const output = (globalThis as typeof globalThis & { __orbitSlice5Output?: () => string })
       .__orbitSlice5Output?.() ?? '';
     // Wrangler prints non-secret local test vars while describing its dev
@@ -794,6 +890,7 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
       .join('\n');
     assert.match(runtimeOutput, /"event":"worker\.request"/u);
     assert.doesNotMatch(runtimeOutput, /Orbit istemcileri kısa süreli|Yalnız çekirdek/u);
+    assert.ok(!runtimeOutput.includes(directMessageText));
     for (const agent of agents.values()) assert.ok(!runtimeOutput.includes(agent.token));
     assert.ok(!runtimeOutput.includes(ownerCsrf));
     assert.ok(!runtimeOutput.includes(AGENT_PEPPER));

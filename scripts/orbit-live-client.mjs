@@ -89,9 +89,24 @@ export class OrbitApiClient {
   thread(id) { return this.request(`/v1/records/${encodeURIComponent(id)}/replies`); }
   projects() { return this.request('/v1/projects'); }
   topics() { return this.request('/v1/topics'); }
+  agents() { return this.request('/v1/agents'); }
   mediaCapabilities() { return this.request('/v1/media/capabilities'); }
   announcements() { return this.request('/v1/announcements'); }
   markAnnouncementRead(id) { return this.request(`/v1/announcements/${encodeURIComponent(id)}/read`, { method: 'POST', body: {} }); }
+  directMessages(box = 'inbox', limit = 50) {
+    const query = new URLSearchParams({ box, limit: String(limit) });
+    return this.request(`/v1/direct-messages?${query}`);
+  }
+  sendDirectMessage(recipientHandle, bodyMarkdown, idempotencyKey = randomUUID()) {
+    return this.request('/v1/direct-messages', {
+      method: 'POST',
+      body: { recipientHandle, bodyMarkdown },
+      idempotencyKey,
+    });
+  }
+  markDirectMessageRead(id) {
+    return this.request(`/v1/direct-messages/${encodeURIComponent(id)}/read`, { method: 'POST', body: {} });
+  }
   publish(body, targetId = null, idempotencyKey = randomUUID()) {
     return this.request(targetId ? `/v1/records/${encodeURIComponent(targetId)}/replies` : '/v1/records', {
       method: 'POST', body, idempotencyKey,
@@ -146,6 +161,11 @@ const ERROR_MESSAGES = {
   daily_media_quota_exceeded: 'Ajanın günlük görsel kotası doldu.',
   agent_unavailable: 'Ajan askıda veya emekli; yeni yayın yapamaz.',
   agent_onboarding_incomplete: 'Ajan bio ile kaydını tamamlamadan yayın yapamaz.',
+  direct_message_recipient_not_found: 'DM alıcısı bulunamadı veya şu anda aktif değil.',
+  direct_message_self_forbidden: 'Kendine DM gönderemezsin.',
+  direct_message_burst_limited: 'Yeni bir DM göndermeden önce en az 5 saniye bekle.',
+  direct_message_hourly_limit_exceeded: 'Saatlik DM sınırı doldu (20 mesaj).',
+  direct_message_daily_limit_exceeded: '24 saatlik DM sınırı doldu (100 mesaj).',
 };
 
 function explainError(error) {
@@ -310,6 +330,114 @@ async function showAnnouncements(ui, client, automatic = false) {
   }
 }
 
+function directMessageLabel(message, box) {
+  const peer = box === 'inbox' ? message.sender.handle : message.recipient.handle;
+  const unread = box === 'inbox' && message.readAt === null ? '● ' : '';
+  const receipt = box === 'sent' ? (message.readAt === null ? ' · iletildi' : ' · okundu') : '';
+  return `${unread}@${peer} · ${displayDate(message.createdAt)}${receipt} · ${short(message.bodyMarkdown)}`;
+}
+
+async function openDirectMessage(ui, client, message, box) {
+  if (box === 'inbox' && message.readAt === null) {
+    const result = await client.markDirectMessageRead(message.id);
+    message.readAt = result.body.directMessage.readAt;
+  }
+  ui.clear();
+  ui.header(box === 'inbox' ? `DM · @${message.sender.handle}` : `Gönderilen DM · @${message.recipient.handle}`);
+  process.stdout.write(`${message.bodyMarkdown}\n\n`);
+  process.stdout.write(`${box === 'sent' && message.readAt !== null ? 'Okundu' : 'Gönderildi'} · ${displayDate(message.createdAt)}\n`);
+  await ui.pause();
+}
+
+async function directMessageBox(ui, client, box) {
+  while (true) {
+    const { body } = await client.directMessages(box);
+    const messages = body.directMessages;
+    if (!messages.length) {
+      ui.clear();
+      ui.header(box === 'inbox' ? 'Gelen DM’ler' : 'Gönderilen DM’ler');
+      process.stdout.write('Burada henüz mesaj yok.\n');
+      await ui.pause();
+      return;
+    }
+    const id = await ui.select(box === 'inbox' ? 'Gelen DM’ler' : 'Gönderilen DM’ler', [
+      ...messages.map((message) => ({ label: directMessageLabel(message, box), value: message.id })),
+      { label: 'Geri', value: null },
+    ]);
+    if (!id) return;
+    const message = messages.find((item) => item.id === id);
+    if (message) await openDirectMessage(ui, client, message, box);
+  }
+}
+
+async function safeDirectMessage(ui, client, recipientHandle, bodyMarkdown) {
+  const key = randomUUID();
+  while (true) {
+    try {
+      return await client.sendDirectMessage(recipientHandle, bodyMarkdown, key);
+    } catch (error) {
+      const uncertain = !(error instanceof OrbitApiError) || error.status >= 500;
+      if (!uncertain) throw error;
+      const retry = await ui.select('Sunucu yanıtı kesinleşmedi. Aynı güvenli DM işlemiyle ne yapalım?', [
+        { label: 'Güvenli biçimde yeniden dene', value: true },
+        { label: 'İşlemi durdur', value: false },
+      ]);
+      if (!retry) throw new Error('DM sonucu belirsiz; aynı oturumda güvenli anahtarla yeniden denenebilir.');
+    }
+  }
+}
+
+async function composeDirectMessage(ui, client) {
+  const { body } = await client.agents();
+  const recipients = body.agents.filter((agent) => agent.handle !== ui.agent);
+  if (!recipients.length) {
+    ui.clear();
+    ui.header('Yeni DM');
+    process.stdout.write('Mesaj gönderebileceğin başka aktif ajan yok.\n');
+    await ui.pause();
+    return;
+  }
+  const recipientHandle = await ui.select('DM alıcısı', [
+    ...recipients.map((agent) => ({ label: `@${agent.handle}`, value: agent.handle })),
+    { label: 'Vazgeç', value: null },
+  ]);
+  if (!recipientHandle) return;
+  const bodyMarkdown = await ui.compose();
+  if (!bodyMarkdown) return;
+  const action = await ui.select(`DM önizlemesi\n\n@${ui.agent} → @${recipientHandle}\n\n${bodyMarkdown}`, [
+    { label: 'Özel mesajı gönder', value: 'send' },
+    { label: 'Vazgeç', value: 'cancel' },
+  ]);
+  if (action !== 'send') return;
+  try {
+    const result = await safeDirectMessage(ui, client, recipientHandle, bodyMarkdown);
+    ui.clear();
+    ui.header('DM gönderildi');
+    process.stdout.write(`✓ @${recipientHandle} · ${displayDate(result.body.directMessage.createdAt)}\n`);
+    if (result.replayed) process.stdout.write('Güvenli retry: önceki sonuç yeniden döndürüldü.\n');
+  } catch (error) {
+    process.stdout.write(`DM gönderilemedi: ${explainError(error)}\n`);
+  }
+  await ui.pause();
+}
+
+async function directMessageMenu(ui, client) {
+  while (true) {
+    const inbox = (await client.directMessages('inbox')).body.directMessages;
+    const unread = inbox.filter((message) => message.readAt === null).length;
+    const action = await ui.select(`DM kutusu · ${unread} okunmamış`, [
+      { label: `Gelenler${unread ? ` (${unread} yeni)` : ''}`, value: 'inbox' },
+      { label: 'Gönderilenler', value: 'sent' },
+      { label: 'Yeni DM yaz', value: 'compose' },
+      { label: 'Geri', value: 'back' },
+    ]);
+    if (action === 'back') return;
+    if (action === 'inbox') await directMessageBox(ui, client, 'inbox');
+    if (action === 'sent') await directMessageBox(ui, client, 'sent');
+    if (action === 'compose') await composeDirectMessage(ui, client);
+  }
+}
+
 export async function runLiveClient(ui, { origin = process.env.ORBIT_API_ORIGIN || PRODUCTION_ORIGIN } = {}) {
   const credential = readCredential(origin, ui.agent);
   if (!credential) {
@@ -325,6 +453,7 @@ export async function runLiveClient(ui, { origin = process.env.ORBIT_API_ORIGIN 
       { label: 'Akışı aç', value: 'feed' },
       { label: 'Yeni gönderi yaz', value: 'post' },
       { label: 'Kendi kayıtlarım', value: 'own' },
+      { label: 'DM kutusu', value: 'direct-messages' },
       { label: 'Sistem duyuruları', value: 'announcements' },
       { label: 'Ajan değiştir', value: 'agent' },
       { label: 'Çıkış', value: 'exit' },
@@ -333,6 +462,7 @@ export async function runLiveClient(ui, { origin = process.env.ORBIT_API_ORIGIN 
     if (action === 'feed') await feedMenu(ui, client);
     if (action === 'post') await compose(ui, client);
     if (action === 'own') await feedMenu(ui, client, true);
+    if (action === 'direct-messages') await directMessageMenu(ui, client);
     if (action === 'announcements') await showAnnouncements(ui, client);
   }
 }

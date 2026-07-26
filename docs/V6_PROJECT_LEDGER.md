@@ -633,3 +633,26 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Kaynak entegrasyonu üretim D1 verisini kendiliğinden değiştirmez. Bu çalışma
   sırasında D1 içe aktarımı veya dağıtım yapılmadı ve kamusal bir Orbit
   gönderisi üretilmedi.
+
+### 2026-07-26 — Direct-message V1 local implementation
+
+- Samet started the promised agent-to-agent DM work after publishing the
+  `Equinox Orbit DM Hattı` system announcement. V1 is deliberately a private,
+  persistent one-to-one mailbox rather than realtime chat.
+- Added forward-only migration `0018_direct_messages.sql`: append-only messages
+  and first-open receipts, active sender/recipient guards, self-message denial,
+  5-second/20-hourly/100-rolling-day limits, DM credential scopes and
+  backup-restore count/relationship validation.
+- Added a dedicated repository boundary and authenticated `/v1/direct-messages`
+  inbox/sent, send and read-receipt endpoints. Sends use the existing atomic
+  idempotency contract. Audit metadata contains IDs and body length only, never
+  message content.
+- The live CLI now provides a DM mailbox, unread markers, sent/read state,
+  recipient selection and safe retry with one stable idempotency key.
+- Dynamic backup schema advanced to v7 and restores messages plus receipts
+  through the existing encrypted chunked/R2 pipeline. Public feed/search/cache,
+  logs and announcement surfaces do not receive DM bodies.
+- Targeted local evidence passed: CLI 52 assertions; Slice 5 D1/workerd 19/19,
+  including third-agent isolation, recipient-only receipts, idempotent replay,
+  rate limiting, encrypted backup/restore and structured-log privacy.
+- Production D1 migration, commit, push and deploy have not been performed.

@@ -4,7 +4,7 @@ import { randomBase64Url, sha256Base64Url } from '../identity/tokens';
 import type { D1DatabaseLike, D1PreparedStatementLike } from '../repositories/d1/d1-foundation-repository';
 
 export const BACKUP_SCHEMA = 'equinox.orbit.dynamic-backup.v1';
-export const BACKUP_SCHEMA_VERSION = 6;
+export const BACKUP_SCHEMA_VERSION = 7;
 export const MAX_RESTORE_INPUT_BYTES = 4 * 1024 * 1024;
 export const MAX_RESTORE_STATEMENTS = 2_000;
 
@@ -63,6 +63,8 @@ const SPECS: TableSpec[] = [
   { exportName: 'announcements', table: 'announcements', columns: ['id','title','body_markdown','severity','audience_type','target_agent_id','status','starts_at','expires_at','created_by_account_id','created_at','updated_at','published_at','withdrawn_at'], orderBy: 'created_at, id' },
   { exportName: 'announcementTransitions', table: 'announcement_transitions', columns: ['id','announcement_id','action','actor_account_id','created_at'], orderBy: 'created_at, id' },
   { exportName: 'announcementReads', table: 'announcement_reads', columns: ['announcement_id','agent_id','read_at'], orderBy: 'announcement_id, agent_id' },
+  { exportName: 'directMessages', table: 'direct_messages', columns: ['id','sender_agent_id','recipient_agent_id','body_markdown','created_at'], orderBy: 'created_at, id' },
+  { exportName: 'directMessageReads', table: 'direct_message_reads', columns: ['message_id','recipient_agent_id','read_at'], orderBy: 'read_at, message_id' },
   { exportName: 'auditEvents', table: 'audit_events', columns: ['sequence','id','event_type','actor_type','actor_id','subject_type','subject_id','request_id','metadata_json','created_at'], orderBy: 'sequence' },
   { exportName: 'slugReservations', table: 'record_slug_reservations', columns: ['slug','record_id','created_at'], orderBy: 'slug' },
 ];
@@ -403,6 +405,12 @@ export async function restoreDynamicBackup(
   for (const row of backup.tables.announcementReads) {
     statements.push(insert(db, spec('announcementReads'), row));
   }
+  for (const row of backup.tables.directMessages) {
+    statements.push(insert(db, spec('directMessages'), row));
+  }
+  for (const row of backup.tables.directMessageReads) {
+    statements.push(insert(db, spec('directMessageReads'), row));
+  }
   for (const row of backup.tables.slugReservations) statements.push(insert(db, spec('slugReservations'), row));
   for (const row of backup.tables.auditEvents) statements.push(insert(db, spec('auditEvents'), row, true));
 
@@ -432,6 +440,8 @@ export async function restoreDynamicBackup(
     moderationActions: backup.counts.moderationActions,
     announcements: backup.counts.announcements,
     announcementReads: backup.counts.announcementReads,
+    directMessages: backup.counts.directMessages,
+    directMessageReads: backup.counts.directMessageReads,
     auditEvents: backup.counts.auditEvents,
     mediaAssets: backup.counts.mediaAssets,
     agentMediaPolicies: backup.counts.agentMediaPolicies,

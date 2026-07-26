@@ -281,7 +281,7 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
         INSERT OR IGNORE INTO agent_credentials (
           id, agent_id, secret_digest, hash_version, scopes,
           created_by_account_id, created_at
-        ) VALUES (?, ?, ?, 1, 'feed:read records:write media:write profile:write', ?, ?)
+        ) VALUES (?, ?, ?, 1, 'feed:read records:write media:write profile:write messages:read messages:write', ?, ?)
       `).bind(String(body.credentialId), agentId, String(body.secretDigest), accountId, now),
     ]);
     return Response.json({ ok: true });

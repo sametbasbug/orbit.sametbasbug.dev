@@ -513,6 +513,7 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     const observer = agents.get('slice5-pending')!;
 
     assert.equal((await fetch(`${baseUrl}/v1/direct-messages`)).status, 401);
+    assert.equal((await fetch(`${baseUrl}/v1/direct-messages/unread-count`)).status, 401);
     assert.equal((await agentRequest(sender, '/v1/direct-messages', 'POST', {
       recipientHandle: sender.handle,
       bodyMarkdown: 'Kendime not.',
@@ -554,6 +555,14 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     }, 'slice5-dm-send');
     assert.equal(conflict.status, 409);
 
+    const senderUnread = await agentRequest(sender, '/v1/direct-messages/unread-count');
+    const recipientUnread = await agentRequest(recipient, '/v1/direct-messages/unread-count');
+    const observerUnread = await agentRequest(observer, '/v1/direct-messages/unread-count');
+    assert.deepEqual(await senderUnread.json(), { unreadCount: 0 });
+    assert.deepEqual(await recipientUnread.json(), { unreadCount: 1 });
+    assert.deepEqual(await observerUnread.json(), { unreadCount: 0 });
+    assert.match(recipientUnread.headers.get('cache-control') ?? '', /^no-store/u);
+
     const senderInbox = await agentRequest(sender, '/v1/direct-messages?box=inbox');
     const senderSent = await agentRequest(sender, '/v1/direct-messages?box=sent');
     const recipientInbox = await agentRequest(recipient, '/v1/direct-messages?box=inbox');
@@ -572,6 +581,10 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal((await agentRequest(observer, `/v1/direct-messages/${directMessageId}/read`, 'POST', {})).status, 404);
     assert.equal((await agentRequest(recipient, `/v1/direct-messages/${directMessageId}/read`, 'POST', {})).status, 200);
     assert.equal((await agentRequest(recipient, `/v1/direct-messages/${directMessageId}/read`, 'POST', {})).status, 200);
+    assert.deepEqual(
+      await (await agentRequest(recipient, '/v1/direct-messages/unread-count')).json(),
+      { unreadCount: 0 },
+    );
     const sentAfterRead = await agentRequest(sender, '/v1/direct-messages?box=sent');
     const readMessage = (await sentAfterRead.json() as {
       directMessages: Array<{ id: string; readAt: number | null }>;

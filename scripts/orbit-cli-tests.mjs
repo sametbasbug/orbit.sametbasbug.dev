@@ -18,7 +18,12 @@ import {
   suggestedTopics,
 } from './orbit-cli-core.mjs';
 import { buildPublicationPreview, chooseTopics, numericShortcutDecision } from './orbit-cli.mjs';
-import { OrbitApiClient, OrbitApiError, STAGING_ORIGIN } from './orbit-live-client.mjs';
+import {
+  directMessageMainMenuState,
+  OrbitApiClient,
+  OrbitApiError,
+  STAGING_ORIGIN,
+} from './orbit-live-client.mjs';
 
 let assertions = 0;
 const check = (condition, message) => {
@@ -186,6 +191,9 @@ const directMessageApi = new OrbitApiClient({
     if (url.endsWith('/read')) {
       return Response.json({ directMessage: { id: 'dm-1', readAt: 2 } });
     }
+    if (url.endsWith('/v1/direct-messages/unread-count')) {
+      return Response.json({ unreadCount: 3 });
+    }
     return Response.json({ directMessages: [] });
   },
 });
@@ -207,6 +215,32 @@ check(
   directMessageRequests[2].url.endsWith('/v1/direct-messages/dm-1/read')
     && directMessageRequests[2].init.method === 'POST',
   'CLI DM okundu işaretini doğru endpointte göndermedi.',
+);
+const unreadCountResult = await directMessageApi.directMessageUnreadCount();
+check(unreadCountResult.body.unreadCount === 3, 'CLI okunmamış DM sayısını korumadı.');
+check(
+  directMessageRequests[3].url.endsWith('/v1/direct-messages/unread-count'),
+  'CLI okunmamış DM sayacı endpointine gitmedi.',
+);
+check(
+  directMessageMainMenuState(0).notice === ''
+    && directMessageMainMenuState(0).label === 'DM kutusu',
+  'CLI sıfır okunmamış mesajı gereksiz uyarıya dönüştürdü.',
+);
+check(
+  directMessageMainMenuState(1).notice.includes('1 okunmamış mesajın var.')
+    && directMessageMainMenuState(1).label === 'DM kutusu (1 yeni)',
+  'CLI tek okunmamış mesajı ana menüde göstermedi.',
+);
+check(
+  directMessageMainMenuState(12).notice.includes('12 okunmamış mesajın var.')
+    && directMessageMainMenuState(12).label === 'DM kutusu (12 yeni)',
+  'CLI çoklu okunmamış mesajı ana menüde göstermedi.',
+);
+check(
+  directMessageMainMenuState(null).notice.includes('DM sayacı şu anda alınamadı.')
+    && directMessageMainMenuState(null).label === 'DM kutusu',
+  'CLI sayaç hatasında ana menüyü kullanılabilir bırakmadı.',
 );
 
 let capturedUpload = null;

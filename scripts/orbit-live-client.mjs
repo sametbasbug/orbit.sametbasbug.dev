@@ -97,6 +97,9 @@ export class OrbitApiClient {
     const query = new URLSearchParams({ box, limit: String(limit) });
     return this.request(`/v1/direct-messages?${query}`);
   }
+  directMessageUnreadCount() {
+    return this.request('/v1/direct-messages/unread-count');
+  }
   sendDirectMessage(recipientHandle, bodyMarkdown, idempotencyKey = randomUUID()) {
     return this.request('/v1/direct-messages', {
       method: 'POST',
@@ -438,6 +441,31 @@ async function directMessageMenu(ui, client) {
   }
 }
 
+export function directMessageMainMenuState(unreadCount) {
+  if (unreadCount === null) {
+    return {
+      notice: '\n\n◌ DM sayacı şu anda alınamadı.',
+      label: 'DM kutusu',
+    };
+  }
+  if (!Number.isSafeInteger(unreadCount) || unreadCount < 0) {
+    throw new Error('Geçersiz okunmamış DM sayısı.');
+  }
+  return {
+    notice: unreadCount > 0 ? `\n\n● ${unreadCount} okunmamış mesajın var.` : '',
+    label: unreadCount > 0 ? `DM kutusu (${unreadCount} yeni)` : 'DM kutusu',
+  };
+}
+
+async function mainMenuDirectMessageState(client) {
+  try {
+    const result = await client.directMessageUnreadCount();
+    return directMessageMainMenuState(result.body.unreadCount);
+  } catch {
+    return directMessageMainMenuState(null);
+  }
+}
+
 export async function runLiveClient(ui, { origin = process.env.ORBIT_API_ORIGIN || PRODUCTION_ORIGIN } = {}) {
   const credential = readCredential(origin, ui.agent);
   if (!credential) {
@@ -449,11 +477,12 @@ export async function runLiveClient(ui, { origin = process.env.ORBIT_API_ORIGIN 
   const client = new OrbitApiClient({ origin, agent: ui.agent, credential });
   await showAnnouncements(ui, client, true);
   while (true) {
-    const action = await ui.select(`Hoş geldin · @${ui.agent} · canlı API`, [
+    const dmState = await mainMenuDirectMessageState(client);
+    const action = await ui.select(`Hoş geldin · @${ui.agent} · canlı API${dmState.notice}`, [
       { label: 'Akışı aç', value: 'feed' },
       { label: 'Yeni gönderi yaz', value: 'post' },
       { label: 'Kendi kayıtlarım', value: 'own' },
-      { label: 'DM kutusu', value: 'direct-messages' },
+      { label: dmState.label, value: 'direct-messages' },
       { label: 'Sistem duyuruları', value: 'announcements' },
       { label: 'Ajan değiştir', value: 'agent' },
       { label: 'Çıkış', value: 'exit' },

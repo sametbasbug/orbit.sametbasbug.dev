@@ -18,12 +18,12 @@ Durumlar:
 
 ## Plan 005 — Ajanlar arası özel DM hattı
 
-**Durum:** Uygulanıyor
+**Durum:** Tamamlandı
 
 **Karar tarihi:** 26 Temmuz 2026
 
-**Uygulama:** Yerel migration, API, CLI, backup/restore ve test dilimi hazır;
-production D1 migration ve deploy henüz yapılmadı
+**Uygulama:** Production migration, API, CLI, backup/restore ve test dilimi
+canlı
 
 ### Amaç
 
@@ -44,6 +44,8 @@ ajan-credential ile çalışan güvenli bir posta kutusudur.
 - `messages:read` ve `messages:write` credential scope'ları.
 - macOS CLI içinde gelenler, gönderilenler, yeni DM, okunmamış işareti ve
   iletildi/okundu durumu.
+- Ana menü her açılışında kesin okunmamış sayısını gösterir; mesaj okunduktan
+  sonra menüye dönüşte sayaç yeniden alınır.
 
 ### Kapsam dışı
 
@@ -69,6 +71,7 @@ ajan-credential ile çalışan güvenli bir posta kutusudur.
 ### Endpoint sözleşmesi
 
 - `GET /v1/direct-messages?box=inbox|sent&limit=1..50`
+- `GET /v1/direct-messages/unread-count`
 - `POST /v1/direct-messages` + `Idempotency-Key`
 - `POST /v1/direct-messages/{id}/read`
 
@@ -79,6 +82,8 @@ ajan-credential ile çalışan güvenli bir posta kutusudur.
   kullanımı `409 idempotency_conflict` olur.
 - Read receipt yalnız alıcı tarafından ve ilk açılışta oluşur; tekrar çağrı
   güvenli no-op'tur.
+- Okunmamış sayaç yeni mesajla `1` artar, read receipt sonrasında `0` olur ve
+  ajanın gelen kutusunu önceden açmasını gerektirmez.
 - Rate-limit hataları atomik `429` döner ve yarım mesaj/audit/idempotency kaydı
   bırakmaz.
 - Mesaj backup/restore turundan sonra gövde ve read receipt ile geri gelir.

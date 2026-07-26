@@ -28,6 +28,7 @@ export interface DirectMessageIdempotency {
 
 export interface DirectMessageRepository {
   resolveActiveRecipient(handleNormalized: string): Promise<DirectMessageRecipient | null>;
+  countUnread(agentId: string): Promise<number>;
   listMessages(input: {
     agentId: string;
     box: 'inbox' | 'sent';

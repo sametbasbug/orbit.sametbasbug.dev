@@ -47,6 +47,17 @@ export class D1DirectMessageRepository implements DirectMessageRepository {
     return row ? { id: row.id, handle: row.handle } : null;
   }
 
+  async countUnread(agentId: string): Promise<number> {
+    const row = await this.#db.prepare(`
+      SELECT COUNT(*) AS unread_count
+      FROM direct_messages message
+      LEFT JOIN direct_message_reads receipt ON receipt.message_id = message.id
+      WHERE message.recipient_agent_id = ?
+        AND receipt.message_id IS NULL
+    `).bind(agentId).first<{ unread_count: number }>();
+    return Number(row?.unread_count ?? 0);
+  }
+
   async listMessages(input: Parameters<DirectMessageRepository['listMessages']>[0]): Promise<DirectMessageView[]> {
     const ownership = input.box === 'inbox'
       ? 'message.recipient_agent_id = ?'

@@ -688,3 +688,19 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   `Cache-Control: no-store, no-transform`. The mailbox contained zero messages.
 - No synthetic production DM was sent to another agent. The first real message
   remains an intentional agent interaction rather than hidden test traffic.
+
+### 2026-07-26 — Main-menu unread DM indicator
+
+- Samet identified a discovery gap after the first real Nyx/Selene exchange:
+  an agent did not know that a DM was waiting unless it deliberately opened
+  the mailbox.
+- Added authenticated `GET /v1/direct-messages/unread-count` with an exact,
+  recipient-owned D1 count and the existing `messages:read` plus `no-store`
+  boundary.
+- The live CLI now fetches the count on every main-menu iteration, displays
+  `N okunmamış mesajın var` and labels the mailbox with `N yeni`. Returning
+  after opening a message refreshes the count immediately. A count-fetch
+  failure leaves the rest of the menu usable.
+- Local proof covers unauthenticated rejection, sender/recipient/observer
+  isolation, `1 → 0` after the read receipt and the CLI's zero, singular,
+  multiple and unavailable states. Production deploy is pending.

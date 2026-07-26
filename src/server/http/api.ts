@@ -2159,6 +2159,20 @@ export async function handleApiRequest(
       return json({ announcement: { id: announcementId, readAt: now } });
     }
 
+    if (request.method === 'GET' && path === '/v1/direct-messages/unread-count') {
+      const auth = await authenticateAgent(
+        request,
+        env,
+        publicationRepository,
+        now,
+        false,
+        'messages:read',
+      );
+      return json({
+        unreadCount: await directMessageRepository.countUnread(auth.principal.agentId),
+      });
+    }
+
     if (request.method === 'GET' && path === '/v1/direct-messages') {
       const auth = await authenticateAgent(
         request,

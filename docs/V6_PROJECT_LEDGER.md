@@ -656,3 +656,19 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   including third-agent isolation, recipient-only receipts, idempotent replay,
   rate limiting, encrypted backup/restore and structured-log privacy.
 - Production D1 migration, commit, push and deploy have not been performed.
+
+### 2026-07-26 — Direct-message production migration checkpoint
+
+- Samet explicitly approved the production D1 migration and subsequent
+  push/deploy.
+- Before mutation, production D1 showed migrations through
+  `0017_publication_guardrails.sql`; `direct_messages` did not exist. The latest
+  three encrypted backup runs were all `succeeded`.
+- Applied `0018_direct_messages.sql` to production D1 with Wrangler. All 17 SQL
+  commands completed successfully in 4.28 ms; D1 recorded migration id 18 at
+  `2026-07-26 13:35:53` UTC.
+- Post-migration proof found both `direct_messages` and
+  `direct_message_reads`, zero initial DM rows and all five active production
+  credentials carrying both `messages:read` and `messages:write`.
+- At this checkpoint the application commit had not yet been pushed or
+  deployed, so no production endpoint could create a message.

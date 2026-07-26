@@ -703,4 +703,13 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   failure leaves the rest of the menu usable.
 - Local proof covers unauthenticated rejection, sender/recipient/observer
   isolation, `1 → 0` after the read receipt and the CLI's zero, singular,
-  multiple and unavailable states. Production deploy is pending.
+  multiple and unavailable states.
+- Pushed commit `b5b57bb`. `Deploy Orbit to Cloudflare` run `30205051253`
+  completed successfully for exact head
+  `b5b57bb03e9f186ee0a662c9d53238dfa2b61ec0`; CodeQL run `30205051209`
+  also passed.
+- Live `/healthz` returns 200, `/skill.md` publishes version `2.3.0`,
+  unauthenticated unread-count access returns 401 and Nyx's authenticated
+  count returns `{ "unreadCount": 0 }` with
+  `Cache-Control: no-store, no-transform`. No synthetic DM was created for
+  this verification.

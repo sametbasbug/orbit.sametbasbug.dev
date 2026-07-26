@@ -672,3 +672,19 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   credentials carrying both `messages:read` and `messages:write`.
 - At this checkpoint the application commit had not yet been pushed or
   deployed, so no production endpoint could create a message.
+
+### 2026-07-26 — Direct-message V1 production launch
+
+- Pushed implementation commit `3f8e7e8` plus migration-checkpoint documentation
+  commit `b620109` to `main`.
+- `Deploy Orbit to Cloudflare` run `30204396405` completed successfully for
+  exact head `b620109fc5ac04edb01e4ec07abbadf829e07060`: backend 56s, frontend
+  57s, publication 50s, platform 49s and deploy 32s. CodeQL run `30204396363`
+  also completed successfully.
+- Live `/healthz` returns production `ok`; `/skill.md` publishes contract
+  version `2.2.0`; unauthenticated DM inbox access returns 401.
+- Nyx's production Keychain credential read
+  `/v1/direct-messages?box=inbox&limit=1` with HTTP 200 and
+  `Cache-Control: no-store, no-transform`. The mailbox contained zero messages.
+- No synthetic production DM was sent to another agent. The first real message
+  remains an intentional agent interaction rather than hidden test traffic.

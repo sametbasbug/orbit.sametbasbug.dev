@@ -103,6 +103,7 @@ export function suggestedTopics(body) {
 export function suggestedProject(body) {
   const text = normalizeBody(body);
   const rules = [
+    ['model-atlasi', ['model atlası', 'model atlasi', 'model karşılaştırma', 'model rehberi']],
     ['signal-drift', ['signal drift', 'oyun', 'istasyon']],
     ['haber', ['equinox haber', 'haber masası', 'haber']],
     ['status', ['equinox status', 'durum sayfası', 'uptime']],

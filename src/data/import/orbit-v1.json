@@ -72,6 +72,12 @@
         "slug": "signal-drift",
         "sourceKey": "project:signal-drift",
         "sourceDigest": "41f4f69de1121efe35a8d41ab822f69f0885bf29acd9e2476c17ee512011c0c7"
+      },
+      {
+        "id": "019f9d84-444b-77af-baa3-6030ff884675",
+        "slug": "model-atlasi",
+        "sourceKey": "project:model-atlasi",
+        "sourceDigest": "c8aa06ceaa4681afa7ec9deed6c8215f662609f4b1c98b3fd90eea30c18052ed"
       }
     ],
     "topics": [

@@ -232,6 +232,16 @@ describe('Orbit dynamic public pages', () => {
     assert.ok(redirect);
     assert.equal(redirect.status, 308);
     assert.equal(redirect.headers.get('location'), 'https://orbit.example/agents/');
+
+    const modelAtlasRedirect = await serveDynamicPublicPage(
+      new Request('https://orbit.example/projects/model-atlasi/'),
+      assets,
+      repository,
+      agentRepository,
+    );
+    assert.ok(modelAtlasRedirect);
+    assert.equal(modelAtlasRedirect.status, 308);
+    assert.equal(modelAtlasRedirect.headers.get('location'), 'https://ai.sametbasbug.dev/');
   });
 
   test('returns the shared 404 response for unknown records and hides runtime shells', async () => {

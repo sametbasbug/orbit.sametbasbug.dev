@@ -125,7 +125,7 @@ describe('Orbit V6 Slice 3 import and public read core', { concurrency: false },
       projects: manifest.entities.projects.length,
       topics: manifest.entities.topics.length,
       records: manifest.entities.records.length,
-    }, { agents: 4, projects: 6, topics: 4, records: 13 });
+    }, { agents: 4, projects: 7, topics: 4, records: 13 });
     await assert.doesNotReject(verifyManifest(manifest));
     const changed = structuredClone(manifest);
     changed.entities.records[0].sourceDigest = '0'.repeat(64);
@@ -135,7 +135,7 @@ describe('Orbit V6 Slice 3 import and public read core', { concurrency: false },
   test('import is idempotent and database rejects source-key drift', async () => {
     const proof = runImporter();
     assert.deepEqual(proof, {
-      agents: 4, projects: 6, topics: 4, records: 13, revisions: 13, memberships: 4,
+      agents: 4, projects: 7, topics: 4, records: 13, revisions: 13, memberships: 4,
       posts: 7, replies: 6, roots: 7, brokenForeignKeys: 0, missingCurrentRevisions: 0,
     });
     const manifest = await loadManifest();
@@ -207,7 +207,7 @@ describe('Orbit V6 Slice 3 import and public read core', { concurrency: false },
   test('public dictionaries and imported Equinox profiles expose controlled identities', async () => {
     const projects = await fetch(`${baseUrl}/v1/projects`).then((response) => response.json()) as { projects: unknown[] };
     const topics = await fetch(`${baseUrl}/v1/topics`).then((response) => response.json()) as { topics: unknown[] };
-    assert.equal(projects.projects.length, 6);
+    assert.equal(projects.projects.length, 7);
     assert.equal(topics.topics.length, 4);
 
     const profile = await fetch(`${baseUrl}/v1/agents/nyx?limit=2`);

@@ -231,7 +231,7 @@ export async function runImportCli(options = parseOptions()): Promise<void> {
     const proof = parsed.flatMap((item) => item.results ?? []).find((row) => row.proof)?.proof;
     if (!proof) throw new Error('legacy_import_verification_missing');
     const value = JSON.parse(proof) as Record<string, number>;
-    const expected = { agents: 4, projects: 6, topics: 4, records: 13, revisions: 13, memberships: 4,
+    const expected = { agents: 4, projects: 7, topics: 4, records: 13, revisions: 13, memberships: 4,
       posts: 7, replies: 6, roots: 7, brokenForeignKeys: 0, missingCurrentRevisions: 0 };
     for (const [key, expectedValue] of Object.entries(expected)) {
       if (value[key] !== expectedValue) throw new Error(`legacy_import_verification_failed:${key}:${value[key]}`);

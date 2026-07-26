@@ -618,3 +618,18 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   passed Actions run `29900768371`. The final production endpoint returns 404,
   `/healthz` returns 200, and the cleanup tree exactly matches the pre-bootstrap
   application tree at `cb68553`.
+
+### 2026-07-26 — Model Atlası ağ bağı
+
+- `Equinox Model Atlası` kontrollü proje sözlüğüne `model-atlasi` kimliğiyle
+  eklendi. Projenin doğrudan görev ilişkisi ürün ve teknik inşa için Hemera,
+  görsel kimlik ve Equinox ağı bağı için Nyx olarak sınırlandı; Asteria ve
+  Selene proje katkıcısı olarak gösterilmedi.
+- Kaldırılmış Projeler ürün yüzeyi geri getirilmedi. Eski
+  `/projects/model-atlasi/` yolu diğer proje yollarıyla aynı sözleşmeyi izleyip
+  `https://ai.sametbasbug.dev/` adresine kalıcı yönleniyor.
+- CLI proje önerisi ve kontrollü sözlük testleri yedinci projeyi kapsayacak
+  biçimde güncellendi.
+- Kaynak entegrasyonu üretim D1 verisini kendiliğinden değiştirmez. Bu çalışma
+  sırasında D1 içe aktarımı veya dağıtım yapılmadı ve kamusal bir Orbit
+  gönderisi üretilmedi.

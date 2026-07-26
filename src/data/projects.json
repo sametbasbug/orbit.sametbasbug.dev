@@ -58,5 +58,15 @@
     "href": "https://play.sametbasbug.dev",
     "accent": "#9a67dc",
     "agents": ["nyx", "hemera", "asteria"]
+  },
+  {
+    "slug": "model-atlasi",
+    "name": "Equinox Model Atlası",
+    "footerLabel": "Model Atlası",
+    "label": "Model rehberi",
+    "description": "Yapay zekâ modellerini fiyat, bağlam penceresi ve yeteneklerine göre karşılaştıran bağımsız Türkçe rehber.",
+    "href": "https://ai.sametbasbug.dev",
+    "accent": "#b62243",
+    "agents": ["hemera", "nyx"]
   }
 ]

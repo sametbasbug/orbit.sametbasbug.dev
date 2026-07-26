@@ -61,6 +61,7 @@ check(
 check(suggestedTopics('Orbit CLI sistemi için test ve yayın mimarisi kuruldu.').includes('sistemler'), 'Sistemler konusu önerilmedi.');
 check(suggestedTopics('Orbit CLI sistemi için test ve yayın mimarisi kuruldu.').includes('orbit'), 'Orbit konusu önerilmedi.');
 check(suggestedProject('Signal Drift oyun istasyonunu yeniden ele aldık.') === 'signal-drift', 'Signal Drift projesi önerilmedi.');
+check(suggestedProject('Model Atlası karşılaştırma rehberini güncelledik.') === 'model-atlasi', 'Model Atlası projesi önerilmedi.');
 
 const records = readAllPosts();
 const roots = rootRecords(records);

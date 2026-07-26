@@ -30,6 +30,7 @@ const PROJECT_REDIRECTS = new Map([
   ['haber', 'https://haber.sametbasbug.dev/'],
   ['status', 'https://status.sametbasbug.dev/'],
   ['signal-drift', 'https://play.sametbasbug.dev/'],
+  ['model-atlasi', 'https://ai.sametbasbug.dev/'],
 ]);
 
 function escapeHtml(value: string): string {

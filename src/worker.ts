@@ -19,6 +19,7 @@ import { D1PublicRepository } from './server/repositories/d1/d1-public-repositor
 import type { AgentRepository } from './server/repositories/agent-repository';
 import type { PublicRepository } from './server/repositories/public-repository';
 import { serveDynamicPublicPage } from './server/public/response';
+import { machineAgentSkill } from './data/agentOnboarding';
 
 interface ExecutionContextLike {
   waitUntil(promise: Promise<unknown>): void;
@@ -45,11 +46,14 @@ function denyAllRobots(): Response {
   });
 }
 
-function preserveMachineGuideEncoding(request: Request, response: Response): Response {
-  if (new URL(request.url).pathname !== '/skill.md') return response;
-  const encodedResponse = new Response(response.body, response);
-  encodedResponse.headers.set('content-type', 'text/markdown; charset=utf-8');
-  return encodedResponse;
+function machineGuideResponse(method: string): Response {
+  return new Response(method === 'HEAD' ? null : machineAgentSkill, {
+    headers: {
+      'cache-control': 'no-store, no-transform',
+      'content-type': 'text/markdown; charset=utf-8',
+      'x-content-type-options': 'nosniff',
+    },
+  });
 }
 
 async function startStagingOAuth(request: Request, env: OrbitBindings): Promise<Response> {
@@ -89,6 +93,12 @@ export async function handleWorkerRequest(
     if (url.pathname === '/healthz') {
       return Response.json({ ok: true, service: 'orbit-v6', environment: env.ORBIT_ENVIRONMENT });
     }
+    if (
+      url.pathname === '/skill.md'
+      && (request.method === 'GET' || request.method === 'HEAD')
+    ) {
+      return machineGuideResponse(request.method);
+    }
     if (url.pathname.startsWith('/v1/')) {
       const response = await servePublicRead(request, env, async () => {
         const testNow = env.ORBIT_ENVIRONMENT === 'test'
@@ -125,7 +135,7 @@ export async function handleWorkerRequest(
       dependencies.agentRepository ?? new D1AgentRepository(env.DB),
     );
     if (publicPage) return publicPage;
-    return preserveMachineGuideEncoding(request, await env.ASSETS.fetch(request));
+    return await env.ASSETS.fetch(request);
   }, env.ORBIT_ENVIRONMENT);
   return protectFromIndexing(response, env);
 }

@@ -273,12 +273,17 @@ describe('Orbit V6 deployment-mode contract', () => {
     assert.match(await robots.text(), /Allow: \//u);
   });
 
-  test('serves the machine guide with an explicit UTF-8 charset', async () => {
+  test('serves the current machine guide directly without stale asset caching', async () => {
     const env = productionBindings('live');
     const response = await worker.fetch(new Request(`${LIVE_ORIGIN}/skill.md`), env);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('content-type'), 'text/markdown; charset=utf-8');
-    assert.match(await response.text(), /Türkçe karakterler: ğüşöçıİ/u);
+    assert.equal(response.headers.get('cache-control'), 'no-store, no-transform');
+    assert.match(await response.text(), /version: 2\.5\.0/u);
+    const head = await worker.fetch(new Request(`${LIVE_ORIGIN}/skill.md`, { method: 'HEAD' }), env);
+    assert.equal(head.status, 200);
+    assert.equal(head.headers.get('cache-control'), 'no-store, no-transform');
+    assert.equal(await head.text(), '');
   });
 
   test('applies dashboard privacy and frame protection to GET and HEAD', async () => {

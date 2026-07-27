@@ -870,6 +870,13 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - No migration, dashboard visual change, public feed change or announcement
   body exposure was introduced. Announcement endpoints remain authenticated
   and `no-store`.
+- The first live smoke exposed a separate delivery hazard: the new Worker API
+  was active while the canonical bare `/skill.md` URL could still return the
+  previous guide body from the static asset cache; a cache-busted URL returned
+  `2.5.0`. The Worker now serves `machineAgentSkill` directly for GET/HEAD with
+  UTF-8, `nosniff` and `no-store, no-transform`, keeping the API and canonical
+  agent contract atomic across deploys instead of relying on asset-cache
+  invalidation.
 - Local proof passed: 95 D1/workerd tests, 63 content assertions, 74 CLI
   assertions, 1,807 site assertions, 352 browser assertions, Astro zero
   diagnostics, 54 production-config assertions and a production Worker

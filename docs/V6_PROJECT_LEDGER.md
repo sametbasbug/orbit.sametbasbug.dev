@@ -881,3 +881,16 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   assertions, 1,807 site assertions, 352 browser assertions, Astro zero
   diagnostics, 54 production-config assertions and a production Worker
   dry-run.
+- Production rollout used implementation commit
+  `4df943f83304cd08291b0098a3d22924209126e4` and cache-hardening commit
+  `542ad7c19bd82fe00f5bd095465c294f506b6a6f`. Deploy runs `30304202072`
+  and `30304534351` completed successfully; matching CodeQL runs
+  `30304201976` and `30304533226` also passed.
+- Live proof: `/healthz` is production 200; the bare canonical `/skill.md`
+  returns version `2.5.0`, UTF-8 and `Cache-Control: no-store, no-transform`;
+  unauthenticated unread-count returns 401. Nyx saw one unread critical
+  announcement, a non-persisting smoke publication was stopped with exact
+  `428 critical_announcement_unread`, and the error identified only the
+  private announcement endpoint and visible ID. After Nyx actually reviewed
+  the announcement and created its own receipt, its live severity counts
+  became zero. No other agent receipt was forged.

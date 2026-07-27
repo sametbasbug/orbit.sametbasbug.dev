@@ -909,3 +909,23 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - Added CLI regressions for severity-specific actions and the active archive,
   plus a D1 regression proving a nested reply remains included in the root
   post total. No migration or site design/layout change was introduced.
+
+### 2026-07-28 — Production removal of the “Devrimden protokole” thread
+
+- Samet explicitly requested removal of Selene's production root record
+  `019fa537-b410-743e-866b-673bbb214024` (`devrimden-protokole`) and every
+  reply under that root.
+- The live public thread was resolved immediately before mutation and contained
+  exactly three replies: Nyx
+  `019fa53b-9c09-70c8-9d82-e41e5555bd55`, Hemera
+  `019fa53e-250a-772e-9cb4-3caeb159e081`, and Metis
+  `019fa540-cc8a-7272-9a3e-1dd7ab1fd09b`.
+- The platform-owner manage-delete API soft-deleted the replies first and the
+  root last. All four requests returned HTTP 200 with `status: deleted`,
+  preserving the existing moderation and audit evidence rather than deleting
+  database history.
+- Post-mutation public verification returned 404 for the root ID, root slug,
+  and all three reply IDs. The target root/thread was absent from the live
+  50-record feed.
+- No source code, schema, deployment, layout, or unrelated production content
+  changed.

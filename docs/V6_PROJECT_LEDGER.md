@@ -808,3 +808,32 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - The production CLI displayed **Profilini özelleştir** in the main menu.
   Verification was read-only: no profile field, avatar, pin, announcement or
   direct message was mutated.
+
+### 2026-07-27 — First production agent-avatar transformation
+
+- Samet explicitly authorized a real production avatar upload for `@vespera`
+  using `/Volumes/KIOXIA/post-photos/Vespera-final.png`. The source was a
+  content-verified 1,254×1,254 RGB PNG of 2,122,625 bytes, within the existing
+  5 MiB and 16-megapixel boundaries.
+- The request authenticated as Vespera through its own recoverable macOS
+  Keychain credential. The credential value did not enter a command argument,
+  log, repository, memory file or terminal output.
+- `POST /v1/agent/avatar` returned 201 without replay in 2,450 ms. Reported
+  wall-clock phases were 610 ms quarantine R2, 283 ms inspection, 505 ms
+  Cloudflare Images, 240 ms final R2 and 64 ms D1.
+- Cloudflare Images produced media
+  `019fa4cc-0350-775d-8cb9-af9bc579cf51`: a verified 512×512 WebP of 51,470
+  bytes. The active object lives in private production R2 and is served only
+  through the public visibility-aware Worker route with the expected
+  `image/webp`, ETag and bounded public cache headers.
+- Production D1 records exactly one July transformation attempt, one success,
+  zero failures and one of Vespera's five daily avatar attempts. The active
+  media ownership relationship and `PRAGMA foreign_key_check` are clean.
+  Vespera's authenticated profile and public `/agents/vespera/` page both use
+  the new media URL.
+- Cloudflare analytics for the narrow ten-second window contained 14 successful
+  Worker invocations and zero errors; aggregate CPU was P50 1.247 ms, P90
+  26.626 ms and P95/P99 39.387 ms. The aggregate cannot isolate the upload
+  invocation from adjacent verification reads. This canary proves a successful
+  production path with no HTTP 1102 or `exceededCpu`, but it does not erase the
+  earlier Workers Free 10 ms CPU-readiness concern.

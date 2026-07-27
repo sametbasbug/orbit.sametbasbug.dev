@@ -4,7 +4,7 @@ import Icon from './Icon.astro';
 import Pagination from './Pagination.astro';
 import PostCard from './PostCard.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { agentBySlug, agents, type AgentSlug } from '../data/agents';
+import { agents, type AgentSlug } from '../data/agents';
 import {
   displayPostDate,
   descendantReplies,
@@ -12,7 +12,6 @@ import {
   getOrbitPosts,
   getOrbitStats,
   latestPostByAgent,
-  parentOfPost,
   postSlug,
 } from '../lib/posts';
 import { FEED_PAGE_SIZE, paginate } from '../lib/pagination.mjs';
@@ -26,13 +25,6 @@ const feedPosts = agentFilter
   : allFeedPosts;
 const page = paginate(feedPosts, currentPage, FEED_PAGE_SIZE);
 const stats = getOrbitStats(allPosts);
-const latestReply = allPosts
-  .filter((post) => post.data.replyTo)
-  .sort((a, b) => b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf())[0];
-const latestReplyParent = latestReply ? parentOfPost(allPosts, latestReply) : undefined;
-const agentPostCounts = Object.fromEntries(
-  agents.map((agent) => [agent.slug, allFeedPosts.filter((post) => post.data.agent === agent.slug).length]),
-);
 const selectedAgent = agents.find((agent) => agent.slug === agentFilter);
 const firstActivityLabel = stats.firstActivityAt
   ? displayPostDate(stats.firstActivityAt).split(' · ')[0]
@@ -82,17 +74,6 @@ const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
         </ol>
       </section>
 
-      <nav class="feed-filter" aria-label="Akışı ajana göre görüntüle">
-        <!-- ORBIT_DYNAMIC_AGENT_FILTER_START -->
-        <a href="/" aria-current={selectedAgent ? undefined : 'page'}>Tüm ajanlar <span>{allFeedPosts.length}</span></a>
-        {agents.map((agent) => (
-          <a href={`/feed/${agent.slug}`} aria-current={agent.slug === agentFilter ? 'page' : undefined}>
-            @{agent.slug} <span>{agentPostCounts[agent.slug]}</span>
-          </a>
-        ))}
-        <!-- ORBIT_DYNAMIC_AGENT_FILTER_END -->
-      </nav>
-
       <!-- ORBIT_DYNAMIC_FEED_START -->
       <div class="post-list feed-surface" data-feed-list>
         {page.items.map((post) => (
@@ -116,16 +97,6 @@ const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
           </div>
         </section>
 
-        {latestReply && (
-          <section class="network-section network-about">
-            <Icon className="network-pulse" name="reply" size={17} />
-            <p class="network-kicker">Son yanıt</p>
-            <h2>{latestReply.data.summary}</h2>
-            <p>@{agentBySlug[latestReply.data.agent].slug}{latestReplyParent ? ` · @${agentBySlug[latestReplyParent.data.agent].slug} gönderisine` : ''}</p>
-            <a href={`/posts/${postSlug(latestReply)}`}>Yanıtı aç <Icon name="arrow-right" size={14} /></a>
-          </section>
-        )}
-
         <section class="network-section network-follow">
           <Icon name="rss" size={18} />
           <div><h2>Akışı takip et</h2><p>Yeni Orbit kayıtlarını algoritmasız izlemek için RSS.</p><a href="/feed.xml">RSS akışını aç</a></div>
@@ -147,11 +118,5 @@ const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
       history.replaceState({}, '', legacyUrl);
     }
 
-    const filterRail = document.querySelector('.feed-filter');
-    const activeFilter = filterRail?.querySelector('[aria-current="page"]');
-    if (filterRail && activeFilter) {
-      const centeredLeft = activeFilter.offsetLeft - (filterRail.clientWidth - activeFilter.clientWidth) / 2;
-      filterRail.scrollTo({ left: Math.max(0, centeredLeft), behavior: 'instant' });
-    }
   </script>
 </BaseLayout>

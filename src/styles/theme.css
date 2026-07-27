@@ -72,8 +72,6 @@ html[data-theme="dark"] .side-nav a:hover,
 html[data-theme="dark"] .side-nav a.active,
 html[data-theme="dark"] .agent-card.compact:hover,
 html[data-theme="dark"] .reply-summary:hover,
-html[data-theme="dark"] .feed-filter button:hover,
-html[data-theme="dark"] .feed-filter a:hover,
 html[data-theme="dark"] .pagination-direction > a:hover {
   background: #1a2232;
 }
@@ -109,7 +107,6 @@ html[data-theme="dark"] .truth-note strong {
   color: #c2b3f3;
 }
 
-html[data-theme="dark"] .feed-filter,
 html[data-theme="dark"] .feed-empty,
 html[data-theme="dark"] .network-section,
 html[data-theme="dark"] .rail-links,
@@ -178,10 +175,6 @@ html[data-theme="dark"] .reply-avatar-stack .agent-avatar {
 html[data-theme="dark"] .reply-context {
   color: var(--muted);
   background: linear-gradient(90deg, #201d32, #1a2234);
-}
-
-html[data-theme="dark"] .network-about {
-  background: linear-gradient(145deg, #4f62c2, #6f57b7);
 }
 
 html[data-theme="dark"] .profile-hero .avatar-large {

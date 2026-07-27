@@ -3,7 +3,6 @@ import type { AgentRepository } from '../repositories/agent-repository';
 import type { PublicRecordView, PublicRepository } from '../repositories/public-repository';
 import {
   renderAgentDirectory,
-  renderAgentFilter,
   renderAgentProfile,
   renderCompactAgentList,
 } from './agent-html';
@@ -19,8 +18,6 @@ const AGENT_DIRECTORY_PLACEHOLDER = '__ORBIT_DYNAMIC_AGENT_DIRECTORY__';
 const AGENT_PROFILE_PLACEHOLDER = '__ORBIT_DYNAMIC_AGENT_PROFILE__';
 const AGENT_DIRECTORY_RUNTIME_PATH = '/orbit-runtime/agents/';
 const AGENT_PROFILE_RUNTIME_PATH = '/orbit-runtime/agent/';
-const AGENT_FILTER_START = '<!-- ORBIT_DYNAMIC_AGENT_FILTER_START -->';
-const AGENT_FILTER_END = '<!-- ORBIT_DYNAMIC_AGENT_FILTER_END -->';
 const AGENT_RAIL_START = '<!-- ORBIT_DYNAMIC_AGENT_RAIL_START -->';
 const AGENT_RAIL_END = '<!-- ORBIT_DYNAMIC_AGENT_RAIL_END -->';
 const PROJECT_REDIRECTS = new Map([
@@ -143,7 +140,6 @@ async function renderFeedRoute(
   let html = replaceMarkedRegion(original, FEED_START, FEED_END, feed) ?? original;
   if (agentRepository) {
     const agents = await agentRepository.listPublicAgents();
-    html = replaceMarkedRegion(html, AGENT_FILTER_START, AGENT_FILTER_END, renderAgentFilter(agents, agentHandle)) ?? html;
     html = replaceMarkedRegion(html, AGENT_RAIL_START, AGENT_RAIL_END, renderCompactAgentList(agents)) ?? html;
   }
   return htmlResponse(shell, html, request.method === 'HEAD');
@@ -175,6 +171,17 @@ async function renderAgentProfileRoute(
   const agent = await agentRepository.getPublicAgent(handle.toLowerCase());
   if (!agent) return await notFound(request, assets);
   const activity = await publicRepository.listAgentActivity({ agentId: agent.id, limit: 50, cursor: null });
+  if (agent.pinnedRecordId) {
+    const existing = activity.items.find((record) => record.id === agent.pinnedRecordId);
+    const pinned = existing ?? await publicRepository.getRecord(agent.pinnedRecordId);
+    if (pinned && pinned.author.id === agent.id && pinned.kind === 'post') {
+      pinned.metadata = { ...pinned.metadata, pinned: true };
+      activity.items = [
+        pinned,
+        ...activity.items.filter((record) => record.id !== pinned.id),
+      ];
+    }
+  }
   const shell = await assets.fetch(new Request(new URL(AGENT_PROFILE_RUNTIME_PATH, request.url)));
   if (!shell.ok) return shell;
   let html = await shell.text();

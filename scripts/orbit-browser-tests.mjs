@@ -62,7 +62,7 @@ const normalizeSearchText = (value) => String(value)
   .normalize('NFD')
   .replace(/\p{Diacritic}/gu, '')
   .trim();
-const browserAgents = ['nyx', 'hemera', 'asteria', 'selene'].map((handle, index) => ({
+const browserAgents = ['nyx', 'hemera', 'selene', 'asteria'].map((handle, index) => ({
   id: `agent-${handle}`,
   handle,
   bio: `${handle} Orbit ajanı`,
@@ -151,7 +151,6 @@ if (errors.length === 0) {
           scrollWidth: document.documentElement.scrollWidth,
           bodyScrollWidth: document.body.scrollWidth,
           hero: rect('.orbit-welcome'),
-          filter: rect('.feed-filter'),
           firstPost: rect('[data-feed-post]'),
           feedPostCount: feedPosts.length,
           feedReplyCount: feedPosts.filter((post) => post.dataset.recordType === 'reply').length,
@@ -161,8 +160,8 @@ if (errors.length === 0) {
           noReplyStateCount: document.querySelectorAll('.reply-summary.no-replies').length,
           postAnchorCount: document.querySelectorAll('.post-anchor').length,
           feedViewFilterCount: document.querySelectorAll('[data-feed-view], .feed-view-filter').length,
-          feedFilterLinkCount: document.querySelectorAll('.feed-filter a').length,
-          activeFeedFilterText: document.querySelector('.feed-filter a[aria-current="page"]')?.textContent?.trim().replace(/\s+/g, ' '),
+          feedFilterCount: document.querySelectorAll('.feed-filter').length,
+          latestReplyCardCount: document.querySelectorAll('.network-about').length,
           paginationCount: document.querySelectorAll('[data-pagination]').length,
           heroExtraCount: document.querySelectorAll('.welcome-copy .section-label, .welcome-actions, .welcome-agents').length,
           feedHeadingCount: document.querySelectorAll('.feed-heading, #feed-title, [data-feed-result]').length,
@@ -189,20 +188,19 @@ if (errors.length === 0) {
 
       check(layout.scrollWidth <= layout.innerWidth, `${label}: document yatay taşıyor (${layout.scrollWidth}/${layout.innerWidth}).`);
       check(layout.bodyScrollWidth <= layout.innerWidth, `${label}: body yatay taşıyor (${layout.bodyScrollWidth}/${layout.innerWidth}).`);
-      for (const [name, box] of Object.entries({ hero: layout.hero, filter: layout.filter, firstPost: layout.firstPost })) {
+      for (const [name, box] of Object.entries({ hero: layout.hero, firstPost: layout.firstPost })) {
         check(box && box.x >= -0.5 && box.right <= layout.innerWidth + 0.5, `${label}: ${name} viewport dışına taşıyor.`);
       }
-      check(layout.hero.bottom <= layout.filter.y + 0.5, `${label}: hero ile ajan filtresi çakışıyor.`);
-      check(layout.filter.y - layout.hero.bottom <= 24, `${label}: hero ile ajan filtresi arasındaki boşluk fazla (${layout.filter.y - layout.hero.bottom}px).`);
-      check(layout.filter.bottom <= layout.firstPost.y + 0.5, `${label}: filtre ile ilk gönderi çakışıyor.`);
+      check(layout.hero.bottom <= layout.firstPost.y + 0.5, `${label}: hero ile ilk gönderi çakışıyor.`);
+      check(layout.firstPost.y - layout.hero.bottom <= 24, `${label}: hero ile ilk gönderi arasındaki boşluk fazla (${layout.firstPost.y - layout.hero.bottom}px).`);
       check(layout.feedPostCount > 0 && layout.feedReplyCount === 0, `${label}: ana akışta kök olmayan yanıt kaydı var.`);
       check(layout.feedRootTypeCount === layout.feedPostCount, `${label}: ana akışta Gönderi/Yanıt dışında kayıt türü var.`);
       check(layout.cardHitAreaCount === layout.feedPostCount, `${label}: bütün akış kartları tıklanabilir yüzey taşımıyor.`);
       check(layout.replySummaryCount + layout.noReplyStateCount === layout.feedPostCount, `${label}: gönderilerin yanıt özeti veya yanıtsız durumu eksik.`);
       check(layout.postAnchorCount === 0, `${label}: kaldırılan kalıcı bağlantı simgesi DOM'da kaldı.`);
       check(layout.feedViewFilterCount === 0, `${label}: kaldırılan kayıt türü filtresi DOM'da kaldı.`);
-      check(layout.feedFilterLinkCount === 5, `${label}: akış filtreleri gerçek rota bağlantılarına dönüşmedi.`);
-      check(layout.activeFeedFilterText?.startsWith('Tüm ajanlar'), `${label}: ana akış filtresi aktif görünmüyor.`);
+      check(layout.feedFilterCount === 0, `${label}: kaldırılan ajan filtresi DOM'da kaldı.`);
+      check(layout.latestReplyCardCount === 0, `${label}: kaldırılan Son Yanıt kartı DOM'da kaldı.`);
       check(layout.paginationCount === 0, `${label}: tek sayfalık mevcut akışta gereksiz pagination görünüyor.`);
       check(layout.heroExtraCount === 0, `${label}: kaldırılan hero öğeleri DOM'da kaldı.`);
       check(layout.feedHeadingCount === 0, `${label}: kaldırılan akış başlığı veya kayıt özeti DOM'da kaldı.`);
@@ -298,23 +296,16 @@ if (errors.length === 0) {
         }));
         check(!feedState.url.includes('view='), `${label}: kaldırılan görünüm filtresi URL'de kaldı.`);
         check(feedState.visible.length > 0 && feedState.visible.every((item) => item.type !== 'reply'), `${label}: ana akışta yanıt kaydı kaldı.`);
-        await page.locator('.feed-filter a[href="/feed/selene"]').click();
-        await page.waitForURL(/\/feed\/selene$/);
+        await page.goto(`${baseUrl}/feed/selene`, { waitUntil: 'networkidle' });
         feedState = await page.evaluate(() => ({
           url: location.href,
           visible: [...document.querySelectorAll('[data-feed-post]')]
             .filter((item) => !item.hidden)
             .map((item) => ({ agent: item.dataset.agent, type: item.dataset.recordType })),
         }));
-        check(new URL(feedState.url).pathname === '/feed/selene', `${label}: Selene filtresi kendi akış rotasını açmadı.`);
-        check(feedState.visible.length > 0 && feedState.visible.every((item) => item.agent === 'selene' && item.type !== 'reply'), `${label}: Selene filtresi ilgisiz veya yanıt kaydı gösterdi.`);
-        check(normalizeSearchText(await page.locator('.feed-filter a[aria-current="page"]').textContent() || '').includes('selene'), `${label}: Selene filtresi aktif görünmüyor.`);
-        const activeFilterVisibility = await page.evaluate(() => {
-          const rail = document.querySelector('.feed-filter').getBoundingClientRect();
-          const active = document.querySelector('.feed-filter a[aria-current="page"]').getBoundingClientRect();
-          return active.left >= rail.left - 0.5 && active.right <= rail.right + 0.5;
-        });
-        check(activeFilterVisibility, `${label}: aktif Selene filtresi yatay şeritte görünür değil.`);
+        check(new URL(feedState.url).pathname === '/feed/selene', `${label}: Selene akış rotası açılmadı.`);
+        check(feedState.visible.length > 0 && feedState.visible.every((item) => item.agent === 'selene' && item.type !== 'reply'), `${label}: Selene akışı ilgisiz veya yanıt kaydı gösterdi.`);
+        check(await page.locator('.feed-filter').count() === 0, `${label}: ajan filtresi Selene akışında kaldı.`);
 
         await page.goto(`${baseUrl}/?agent=selene`, { waitUntil: 'networkidle' });
         await page.waitForURL(/\/feed\/selene$/);

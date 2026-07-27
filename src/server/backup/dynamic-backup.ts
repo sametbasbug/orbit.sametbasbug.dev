@@ -4,7 +4,7 @@ import { randomBase64Url, sha256Base64Url } from '../identity/tokens';
 import type { D1DatabaseLike, D1PreparedStatementLike } from '../repositories/d1/d1-foundation-repository';
 
 export const BACKUP_SCHEMA = 'equinox.orbit.dynamic-backup.v1';
-export const BACKUP_SCHEMA_VERSION = 7;
+export const BACKUP_SCHEMA_VERSION = 8;
 export const MAX_RESTORE_INPUT_BYTES = 4 * 1024 * 1024;
 export const MAX_RESTORE_STATEMENTS = 2_000;
 
@@ -38,7 +38,7 @@ const SPECS: TableSpec[] = [
   { exportName: 'accountRoles', table: 'account_roles', columns: ['id','account_id','role','granted_by_account_id','granted_at','revoked_at'], orderBy: 'id' },
   { exportName: 'accountQuotas', table: 'account_quotas', columns: ['account_id','quota_key','limit_value','updated_by_account_id','updated_at'], orderBy: 'account_id, quota_key' },
   { exportName: 'invitations', table: 'invitations', columns: ['id','secret_digest','hash_version','expected_github_user_id','expected_github_login_snapshot','agent_quota','created_by_account_id','created_at','expires_at','redeemed_at','redeemed_by_account_id','revoked_at','revoked_by_account_id'], orderBy: 'id' },
-  { exportName: 'agents', table: 'agents', columns: ['id','handle','handle_normalized','display_name','bio','avatar_asset','publication_mode','status','created_at','updated_at','version','role','short_bio','motto','accent','responsibility','links_json','avatar_media_id','onboarding_state','onboarding_completed_at'], orderBy: 'id' },
+  { exportName: 'agents', table: 'agents', columns: ['id','handle','handle_normalized','display_name','bio','avatar_asset','publication_mode','status','created_at','updated_at','version','role','short_bio','motto','accent','responsibility','links_json','avatar_media_id','onboarding_state','onboarding_completed_at','pinned_record_id'], orderBy: 'id' },
   { exportName: 'agentMemberships', table: 'agent_memberships', columns: ['id','agent_id','account_id','role','created_by_account_id','created_at','revoked_at'], orderBy: 'id' },
   { exportName: 'agentCredentials', table: 'agent_credentials', columns: ['id','agent_id','secret_digest','hash_version','scopes','created_by_account_id','created_at','last_used_at','expires_at','revoked_at','revoked_reason','replaced_by_credential_id'], orderBy: 'created_at, id' },
   { exportName: 'sessions', table: 'sessions', columns: ['id','account_id','secret_digest','hash_version','csrf_digest','created_at','last_seen_at','idle_expires_at','absolute_expires_at','revoked_at','revoked_reason'], orderBy: 'created_at, id', optional: true },
@@ -145,6 +145,7 @@ export async function verifyDynamicBackup(value: unknown): Promise<DynamicBackup
 
 function validateRelationships(backup: DynamicBackup): void {
   const recordIds = new Set(backup.tables.records.map((row) => String(row.id)));
+  const recordById = new Map(backup.tables.records.map((row) => [String(row.id), row]));
   const revisionsByRecord = new Set(
     backup.tables.recordRevisions.map((row) => `${String(row.record_id)}:${String(row.id)}`),
   );
@@ -160,6 +161,20 @@ function validateRelationships(backup: DynamicBackup): void {
     if (row.pending_revision_id && !revisionsByRecord.has(`${id}:${String(row.pending_revision_id)}`)) {
       throw new Error('backup_pending_revision_missing');
     }
+  }
+  for (const agent of backup.tables.agents) {
+    if (!agent.pinned_record_id) continue;
+    const pinned = recordById.get(String(agent.pinned_record_id));
+    if (
+      !pinned
+      || pinned.author_agent_id !== agent.id
+      || pinned.kind !== 'post'
+      || pinned.lifecycle_state !== 'published'
+      || pinned.current_revision_id === null
+      || pinned.pending_revision_id !== null
+      || pinned.deleted_at !== null
+      || pinned.moderation_state !== 'visible'
+    ) throw new Error('backup_pinned_record_invalid');
   }
   const claims = new Set(backup.tables.mediaTransformClaims.map((row) => String(row.id)));
   for (const row of backup.tables.mediaTransformResults) {
@@ -476,13 +491,30 @@ export async function restoreDynamicBackup(
     )
   `).first<{ violations: number }>();
   const relationships = await db.prepare(`
-    SELECT COUNT(*) AS violations
-    FROM records record
-    LEFT JOIN records root ON root.id = record.root_id
-    LEFT JOIN records parent ON parent.id = record.parent_id
-    WHERE root.id IS NULL
-       OR (record.kind = 'reply' AND parent.id IS NULL)
-       OR (record.kind = 'post' AND (record.parent_id IS NOT NULL OR record.root_id != record.id))
+    SELECT (
+      SELECT COUNT(*)
+      FROM records record
+      LEFT JOIN records root ON root.id = record.root_id
+      LEFT JOIN records parent ON parent.id = record.parent_id
+      WHERE root.id IS NULL
+         OR (record.kind = 'reply' AND parent.id IS NULL)
+         OR (record.kind = 'post' AND (record.parent_id IS NOT NULL OR record.root_id != record.id))
+    ) + (
+      SELECT COUNT(*)
+      FROM agents agent
+      LEFT JOIN records pinned ON pinned.id = agent.pinned_record_id
+      WHERE agent.pinned_record_id IS NOT NULL
+        AND (
+          pinned.id IS NULL
+          OR pinned.author_agent_id != agent.id
+          OR pinned.kind != 'post'
+          OR pinned.lifecycle_state != 'published'
+          OR pinned.current_revision_id IS NULL
+          OR pinned.pending_revision_id IS NOT NULL
+          OR pinned.deleted_at IS NOT NULL
+          OR pinned.moderation_state != 'visible'
+        )
+    ) AS violations
   `).first<{ violations: number }>();
   if ((unique?.violations ?? 0) > 0) throw new Error('backup_restore_unique_failure');
   if ((relationships?.violations ?? 0) > 0) throw new Error('backup_restore_relationship_failure');

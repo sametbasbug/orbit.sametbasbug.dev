@@ -51,6 +51,7 @@ function agent(overrides: Partial<PublicAgentProfileView> = {}): PublicAgentProf
     accent: '#6f63e8',
     responsibility: '',
     links: [],
+    pinnedRecordId: null,
     publicationMode: 'direct_publish',
     status: 'active',
     onboardingState: 'active',
@@ -104,7 +105,7 @@ class FakePublicRepository implements PublicRepository {
   }
 
   async listAgentActivity(): Promise<PublicPage> {
-    return { items: [], hasMore: false };
+    return { items: this.records, hasMore: false };
   }
 
   async listProjects(): Promise<PublicDictionaryItem[]> {
@@ -145,7 +146,6 @@ const assets = {
       });
     }
     return new Response(`<!doctype html><body>
-      <!-- ORBIT_DYNAMIC_AGENT_FILTER_START -->ESKİ AJAN FİLTRESİ<!-- ORBIT_DYNAMIC_AGENT_FILTER_END -->
       <!-- ORBIT_DYNAMIC_FEED_START -->
       <div class="post-list feed-surface" data-feed-list>ESKİ STATİK İÇERİK</div>
       <!-- ORBIT_DYNAMIC_FEED_END -->
@@ -186,7 +186,7 @@ describe('Orbit dynamic public pages', () => {
     assert.doesNotMatch(html, /ESKİ STATİK İÇERİK/u);
   });
 
-  test('applies the agent filter to dynamic feed routes', async () => {
+  test('applies the agent handle to dynamic feed routes', async () => {
     const response = await serveDynamicPublicPage(
       new Request('https://orbit.example/feed/hemera/'),
       assets,
@@ -197,7 +197,7 @@ describe('Orbit dynamic public pages', () => {
   });
 
   test('renders D1-backed guest directory and profile with bounded GitHub attribution', async () => {
-    const guest = agent();
+    const guest = agent({ pinnedRecordId: 'record-1' });
     const agentRepository = new FakeAgentRepository([guest]);
     const publicRepository = new FakePublicRepository([record({ author: { ...record().author, id: guest.id, handle: guest.handle } })]);
     const directory = await serveDynamicPublicPage(new Request('https://orbit.example/agents/'), assets, publicRepository, agentRepository);
@@ -214,7 +214,47 @@ describe('Orbit dynamic public pages', () => {
     assert.match(profileHtml, /İnsanı/u);
     assert.match(profileHtml, /https:\/\/github\.com\/guest-dev/u);
     assert.match(profileHtml, /@guest-dev/u);
+    assert.match(profileHtml, /class="post-card standalone pinned"/u);
+    assert.match(profileHtml, /✦ Sabit/u);
     assert.doesNotMatch(profileHtml, /accountId|providerSubject|numeric/u);
+  });
+
+  test('pins the Equinox agents and orders later agents by oldest registration', async () => {
+    const agents = [
+      agent({ id: 'agent-newer', handle: 'newer-agent', createdAt: 600 }),
+      agent({ id: 'agent-asteria', handle: 'asteria', createdAt: 100 }),
+      agent({ id: 'agent-selene', handle: 'selene', createdAt: 400 }),
+      agent({ id: 'agent-older', handle: 'older-agent', createdAt: 500 }),
+      agent({ id: 'agent-hemera', handle: 'hemera', createdAt: 300 }),
+      agent({ id: 'agent-nyx', handle: 'nyx', createdAt: 200 }),
+    ];
+    const expectedHandles = ['nyx', 'hemera', 'selene', 'asteria', 'older-agent', 'newer-agent'];
+    const agentRepository = new FakeAgentRepository(agents);
+    const publicRepository = new FakePublicRepository([record()]);
+
+    const directory = await serveDynamicPublicPage(
+      new Request('https://orbit.example/agents/'),
+      assets,
+      publicRepository,
+      agentRepository,
+    );
+    assert.ok(directory);
+    const directoryHtml = await directory.text();
+
+    const homepage = await serveDynamicPublicPage(
+      new Request('https://orbit.example/'),
+      assets,
+      publicRepository,
+      agentRepository,
+    );
+    assert.ok(homepage);
+    const homepageHtml = await homepage.text();
+
+    for (const html of [directoryHtml, homepageHtml]) {
+      const positions = expectedHandles.map((handle) => html.indexOf(`@${handle}`));
+      assert.ok(positions.every((position) => position >= 0));
+      assert.deepEqual([...positions].sort((left, right) => left - right), positions);
+    }
   });
 
   test('escapes public agent identity and redirects retired project routes', async () => {

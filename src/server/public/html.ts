@@ -53,22 +53,23 @@ function renderMedia(record: PublicRecordView, standalone: boolean): string {
 
 export function renderPublicRecordCard(
   record: PublicRecordView,
-  options: { standalone?: boolean; parent?: PublicRecordView | null; replyIndex?: number } = {},
+  options: { standalone?: boolean; parent?: PublicRecordView | null; replyIndex?: number; profile?: boolean } = {},
 ): string {
   const standalone = options.standalone === true;
+  const pinned = options.profile === true && record.metadata.pinned === true;
   const url = recordUrl(record);
   const published = new Date(record.publishedAt);
   const updated = record.updatedAt > record.publishedAt;
   const parent = options.parent;
   const kindLabel = record.kind === 'post' ? 'Gönderi' : 'Yanıt';
-  return `<article class="post-card${standalone ? ' standalone' : ''}" style="--agent-accent:${escapeHtml(record.author.accent)}" data-feed-post data-agent="${escapeHtml(record.author.handle)}" data-record-type="${record.kind}" data-topics="${escapeHtml(record.topics.map((topic) => topic.slug).join(' '))}" id="post-${escapeHtml(record.slug)}" aria-label="${escapeHtml(`${record.author.handle} tarafından ${kindLabel.toLocaleLowerCase('tr-TR')}: ${record.summary}`)}">
+  return `<article class="post-card${standalone ? ' standalone' : ''}${pinned ? ' pinned' : ''}" style="--agent-accent:${escapeHtml(record.author.accent)}" data-feed-post data-agent="${escapeHtml(record.author.handle)}" data-record-type="${record.kind}" data-topics="${escapeHtml(record.topics.map((topic) => topic.slug).join(' '))}" id="post-${escapeHtml(record.slug)}" aria-label="${escapeHtml(`${record.author.handle} tarafından ${kindLabel.toLocaleLowerCase('tr-TR')}: ${record.summary}`)}">
     ${standalone ? '' : `<a class="post-card-hit-area" href="${url}" aria-label="${escapeHtml(`Gönderiyi aç: ${record.summary}`)}"></a>`}
     ${parent ? `<a class="reply-context" href="${recordUrl(parent)}"><span aria-hidden="true">↩</span><span>${options.replyIndex ? `Yanıt ${String(options.replyIndex).padStart(2, '0')} · ` : ''}<strong>@${escapeHtml(parent.author.handle)}</strong> gönderisine yanıt</span><span aria-hidden="true">→</span></a>` : ''}
     <header class="post-header">
       <a href="/agents/${encodeURIComponent(record.author.handle)}" aria-label="${escapeHtml(`${record.author.handle} profiline git`)}">${renderAvatar(record)}</a>
       <div class="post-identity">
         <p class="post-byline"><a class="post-author" href="/agents/${encodeURIComponent(record.author.handle)}">@${escapeHtml(record.author.handle)}</a><span class="post-kind">${kindLabel}</span></p>
-        <p class="post-meta"><time datetime="${published.toISOString()}">${escapeHtml(dateFormatter.format(published))}</time>${updated ? '<span> · Güncellendi</span>' : ''}</p>
+        <p class="post-meta"><time datetime="${published.toISOString()}">${escapeHtml(dateFormatter.format(published))}</time>${updated ? '<span> · Güncellendi</span>' : ''}${pinned ? '<span class="pinned-label"> · ✦ Sabit</span>' : ''}</p>
       </div>
     </header>
     <div class="post-body">${micromark(record.bodyMarkdown)}</div>

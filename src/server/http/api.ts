@@ -586,6 +586,7 @@ function publicAgent(agent: AgentProfileView | PublicAgentProfileView) {
     accent: agent.accent,
     responsibility: agent.responsibility,
     links: agent.links,
+    pinnedRecordId: agent.pinnedRecordId,
     publicationMode: agent.publicationMode,
     status: agent.status,
     onboardingState: agent.onboardingState,
@@ -809,6 +810,7 @@ async function handleRedeemRegistrationCode(
     accent: '#6f63e8',
     responsibility: '',
     links: [],
+    pinnedRecordId: null,
     publicationMode: 'approval_required',
     status: 'active',
     onboardingState: 'active',
@@ -855,8 +857,10 @@ async function handlePatchOwnAgent(
   const current = await repository.getManagedAgent(auth.principal.agentId);
   if (!current) throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
   const body = await readJson(request);
-  requireExactFields(body, ['bio'], 'invalid_agent_fields');
-  if (Object.keys(body).length !== 1) throw new ApiError(400, 'invalid_agent_profile', 'bio is required.');
+  requireExactFields(body, ['bio', 'role', 'accent', 'pinnedRecordId'], 'invalid_agent_fields');
+  if (Object.keys(body).length === 0) {
+    throw new ApiError(400, 'invalid_agent_profile', 'At least one editable profile field is required.');
+  }
   const ifMatch = request.headers.get('if-match');
   if (!ifMatch) {
     throw new ApiError(428, 'precondition_required', 'If-Match is required for agent profile updates.');
@@ -864,12 +868,49 @@ async function handlePatchOwnAgent(
   if (ifMatch !== agentEtag(current)) {
     throw new ApiError(409, 'version_conflict', 'Agent profile changed. Refresh and retry.');
   }
-  const bio = requiredString(body.bio, 'bio', 500);
+  const bio = body.bio === undefined ? current.bio : requiredString(body.bio, 'bio', 500);
+  const role = body.role === undefined ? current.role : requiredString(body.role, 'role', 80);
+  let accent = current.accent;
+  if (body.accent !== undefined) {
+    if (typeof body.accent !== 'string' || !/^#[0-9a-f]{6}$/iu.test(body.accent.trim())) {
+      throw new ApiError(400, 'invalid_agent_profile', 'accent must be a six-digit hexadecimal color.');
+    }
+    accent = body.accent.trim().toLowerCase();
+  }
+  let pinnedRecordId = current.pinnedRecordId;
+  if (body.pinnedRecordId !== undefined) {
+    if (
+      body.pinnedRecordId !== null
+      && (typeof body.pinnedRecordId !== 'string' || body.pinnedRecordId.length > 80)
+    ) {
+      throw new ApiError(400, 'invalid_agent_profile', 'pinnedRecordId must be a record ID or null.');
+    }
+    pinnedRecordId = body.pinnedRecordId === null ? null : body.pinnedRecordId;
+    if (pinnedRecordId !== null) {
+      const record = await publicationRepository.getRecord(pinnedRecordId);
+      if (
+        !record
+        || record.authorAgentId !== current.id
+        || record.kind !== 'post'
+        || record.lifecycleState !== 'published'
+        || record.currentRevisionId === null
+        || record.pendingRevisionId !== null
+        || record.deletedAt !== null
+        || record.moderationState !== 'visible'
+      ) {
+        throw new ApiError(400, 'invalid_pinned_record', 'Only your own visible published post can be pinned.');
+      }
+    }
+  }
   await repository.updateOwnProfile({
     agentId: current.id,
     credentialId: auth.principal.credentialId,
     displayName: current.handle,
     bio,
+    role,
+    accent,
+    pinnedRecordId,
+    changedFields: Object.keys(body) as Array<'bio' | 'role' | 'accent' | 'pinnedRecordId'>,
     expectedVersion: current.version,
     transitionId: createEntityId(),
     auditEventId: createEntityId(),
@@ -2593,7 +2634,26 @@ export async function handleApiRequest(
       const cursor = await parsePublicCursor(url, filters, env.ORBIT_CURSOR_PEPPER_V1);
       const activity = await publicRepository.listAgentActivity({ agentId: agent.id, limit, cursor });
       const response = await pageResponse(activity, filters, env.ORBIT_CURSOR_PEPPER_V1);
-      const page = await response.json() as { records: unknown[]; nextCursor: string | null };
+      const page = await response.json() as {
+        records: Array<{ id: string; kind: string; metadata: Record<string, unknown> }>;
+        nextCursor: string | null;
+      };
+      if (!cursor && agent.pinnedRecordId) {
+        let serialized = page.records.find((record) => record.id === agent.pinnedRecordId);
+        if (!serialized) {
+          const pinned = await publicRepository.getRecord(agent.pinnedRecordId);
+          if (pinned && pinned.author.id === agent.id && pinned.kind === 'post') {
+            serialized = publicRecord(pinned);
+          }
+        }
+        if (serialized && serialized.kind === 'post') {
+          serialized.metadata = { ...serialized.metadata, pinned: true };
+          page.records = [
+            serialized,
+            ...page.records.filter((record) => record.id !== serialized.id),
+          ];
+        }
+      }
       return jsonAgent({ agent: publicAgent(agent), activity: page.records, nextCursor: page.nextCursor }, agent);
     }
 

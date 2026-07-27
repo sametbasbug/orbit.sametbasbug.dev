@@ -14,6 +14,7 @@ export interface AgentProfileView {
   accent: string;
   responsibility: string;
   links: Array<{ label: string; href: string }>;
+  pinnedRecordId: string | null;
   publicationMode: PublicationMode;
   status: AgentStatus;
   onboardingState: AgentOnboardingState;
@@ -118,6 +119,10 @@ export interface AgentRepository {
     credentialId: string;
     displayName: string;
     bio: string;
+    role: string;
+    accent: string;
+    pinnedRecordId: string | null;
+    changedFields: Array<'bio' | 'role' | 'accent' | 'pinnedRecordId'>;
     expectedVersion: number;
     transitionId: string;
     auditEventId: string;

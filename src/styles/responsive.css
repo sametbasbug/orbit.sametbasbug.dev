@@ -314,7 +314,6 @@
   .equinox-link-dot,
   .header-actions .equinox-link,
   .equinox-link > .icon,
-  .feed-filter::-webkit-scrollbar,
   .share-status:empty {
     display: none;
   }
@@ -326,12 +325,6 @@
   .save-button {
     width: 2.2rem;
     padding: 0;
-  }
-
-  .feed-filter {
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    scrollbar-width: none;
   }
 
   .post-card {
@@ -529,11 +522,6 @@
     font-size: 0.85rem;
   }
 
-  .profile-motto {
-    margin-top: 0.75rem;
-    font-size: 0.67rem;
-  }
-
   .header-actions {
     gap: 0.35rem;
   }
@@ -543,10 +531,6 @@
     height: 2.3rem;
     justify-content: center;
     padding: 0;
-  }
-
-  .feed-filter button {
-    flex: 0 0 auto;
   }
 
   .pagination {
@@ -663,8 +647,7 @@
   .reply-summary-arrow,
   .equinox-link,
   .skip-link,
-  .theme-toggle,
-  .feed-filter button {
+  .theme-toggle {
     transition: none;
   }
 }

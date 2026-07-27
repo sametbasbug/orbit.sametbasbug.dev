@@ -539,15 +539,36 @@ let firstCredentialToken = '';
 
     const updated = await patchJson('/v1/agent/profile', {
       bio: 'Profile fields are owned by the agent.',
+      role: 'Bağımsız araştırma ajanı',
+      accent: '#4C9C88',
     }, { authorization: `Bearer ${firstCredentialToken}`, 'if-match': sponsoredAgentEtag }, NOW + 49);
     assert.equal(updated.status, 200);
-    const updatedBody = await updated.json() as { agent: { handle: string; bio: string; version: number; onboardingState: string } };
+    const updatedBody = await updated.json() as {
+      agent: {
+        handle: string;
+        bio: string;
+        role: string;
+        accent: string;
+        pinnedRecordId: string | null;
+        version: number;
+        onboardingState: string;
+      };
+    };
     assert.equal(updatedBody.agent.handle, 'selene-test-agent');
     assert.equal(updatedBody.agent.bio, 'Profile fields are owned by the agent.');
+    assert.equal(updatedBody.agent.role, 'Bağımsız araştırma ajanı');
+    assert.equal(updatedBody.agent.accent, '#4c9c88');
+    assert.equal(updatedBody.agent.pinnedRecordId, null);
     assert.equal(updatedBody.agent.version, 2);
     assert.equal(updatedBody.agent.onboardingState, 'active');
     const nextEtag = updated.headers.get('etag') ?? '';
     assert.match(nextEtag, /^"agent-.+-v2"$/u);
+
+    const invalidPin = await patchJson('/v1/agent/profile', {
+      pinnedRecordId: 'missing-or-foreign-record',
+    }, { authorization: `Bearer ${firstCredentialToken}`, 'if-match': nextEtag }, NOW + 49);
+    assert.equal(invalidPin.status, 400);
+    assert.equal((await invalidPin.json() as { error: { code: string } }).error.code, 'invalid_pinned_record');
 
     const stale = await patchJson('/v1/agent/profile', {
       bio: 'Stale profile update.',

@@ -22,6 +22,8 @@ import {
   directMessageMainMenuState,
   OrbitApiClient,
   OrbitApiError,
+  PROFILE_COLORS,
+  profileMenu,
   STAGING_ORIGIN,
 } from './orbit-live-client.mjs';
 
@@ -169,6 +171,68 @@ check(liveResult.status === 202, 'CLI pending approval yanıtını korumadı.');
 check(capturedRequest.init.headers['idempotency-key'] === 'stable-retry-key', 'CLI Idempotency-Key göndermedi.');
 check(capturedRequest.init.headers.authorization.startsWith('Bearer '), 'CLI Bearer credential göndermedi.');
 
+const profileRequests = [];
+const profileApi = new OrbitApiClient({
+  origin: STAGING_ORIGIN,
+  agent: 'selene',
+  credential: 'test-profile-credential',
+  fetchImpl: async (url, init) => {
+    profileRequests.push({ url, init });
+    return Response.json({
+      agent: {
+        handle: 'selene',
+        bio: 'Ay ışığında çalışan ajan.',
+        role: 'Araştırma ajanı',
+        accent: '#ef55ce',
+        pinnedRecordId: null,
+      },
+    }, { headers: { etag: '"agent-selene-v3"' } });
+  },
+});
+const profileResult = await profileApi.profile();
+check(profileResult.etag === '"agent-selene-v3"', 'CLI profil ETag değerini korumadı.');
+await profileApi.updateProfile({ role: 'Editör', accent: '#4c9c88' }, profileResult.etag);
+check(profileRequests[1].url.endsWith('/v1/agent/profile'), 'CLI profil endpointine gitmedi.');
+check(profileRequests[1].init.method === 'PATCH', 'CLI profil güncellemesini PATCH ile göndermedi.');
+check(profileRequests[1].init.headers['if-match'] === '"agent-selene-v3"', 'CLI profil ETag önkoşulunu göndermedi.');
+check(
+  profileRequests[1].init.body === JSON.stringify({ role: 'Editör', accent: '#4c9c88' }),
+  'CLI profil yamasını dar sözleşmeyle göndermedi.',
+);
+check(
+  PROFILE_COLORS.length >= 6
+    && PROFILE_COLORS.every((item) => /^#[0-9a-f]{6}$/u.test(item.value))
+    && new Set(PROFILE_COLORS.map((item) => item.value)).size === PROFILE_COLORS.length,
+  'CLI profil renk paleti güvenli ve benzersiz değil.',
+);
+
+const profileMenuActions = ['role', 'back'];
+const profileMenuUpdates = [];
+await profileMenu({
+  agent: 'selene',
+  select: async () => profileMenuActions.shift(),
+  question: async () => 'Teknik editör',
+  compose: async () => null,
+  clear: () => {},
+  header: () => {},
+  pause: async () => {},
+}, {
+  profile: async () => ({
+    etag: '"agent-selene-v4"',
+    body: { agent: { role: 'Editör', bio: 'Hakkında', accent: '#ff4fd8', pinnedRecordId: null } },
+  }),
+  updateProfile: async (fields, etag) => {
+    profileMenuUpdates.push({ fields, etag });
+    return { body: { agent: { ...fields } } };
+  },
+});
+check(
+  profileMenuUpdates.length === 1
+    && profileMenuUpdates[0].fields.role === 'Teknik editör'
+    && profileMenuUpdates[0].etag === '"agent-selene-v4"',
+  'CLI profil menüsü rol güncellemesini güncel ETag ile göndermedi.',
+);
+
 const directMessageRequests = [];
 const directMessageApi = new OrbitApiClient({
   origin: STAGING_ORIGIN,
@@ -265,6 +329,14 @@ check(Buffer.isBuffer(capturedUpload.init.body), 'CLI görseli bounded raw body 
 check(capturedUpload.init.headers['idempotency-key'] === 'stable-media-retry-key', 'CLI medya Idempotency-Key göndermedi.');
 check(capturedUpload.init.headers['content-type'] === 'image/webp', 'CLI gerçek medya MIME türünü göndermedi.');
 check(typeof capturedUpload.init.headers['x-orbit-content-sha256'] === 'string', 'CLI medya checksum göndermedi.');
+
+await mediaApi.uploadAvatar(
+  path.join(ROOT, 'public/agents/selene.webp'),
+  'stable-avatar-retry-key',
+);
+check(capturedUpload.url.endsWith('/v1/agent/avatar'), 'CLI avatar endpointine gitmedi.');
+check(capturedUpload.init.headers['idempotency-key'] === 'stable-avatar-retry-key', 'CLI avatar Idempotency-Key göndermedi.');
+check(Buffer.isBuffer(capturedUpload.init.body), 'CLI avatarı bounded raw body olarak göndermedi.');
 
 const revoked = new OrbitApiClient({
   origin: STAGING_ORIGIN,

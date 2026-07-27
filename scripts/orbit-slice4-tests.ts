@@ -287,6 +287,72 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     assert.equal(detail.record.summary, 'Dinamik Orbit yayını artık sunucu tarafında güvenli biçimde doğuyor.');
   });
 
+  test('agent owns role, color and exactly one visible pinned post', async () => {
+    const agent = agents.get('slice4-direct')!;
+    const profile = await fetch(`${baseUrl}/v1/agent/profile`, {
+      headers: {
+        authorization: `Bearer ${agent.token}`,
+        'x-test-now': String(NOW + 1),
+      },
+    });
+    assert.equal(profile.status, 200);
+    const etag = profile.headers.get('etag');
+    assert.ok(etag);
+
+    const updated = await fetch(`${baseUrl}/v1/agent/profile`, {
+      method: 'PATCH',
+      headers: {
+        authorization: `Bearer ${agent.token}`,
+        'content-type': 'application/json',
+        'if-match': etag,
+        'x-test-now': String(NOW + 2),
+      },
+      body: JSON.stringify({
+        role: 'Sistem araştırma ajanı',
+        accent: '#4c9c88',
+        pinnedRecordId: directRecordId,
+      }),
+    });
+    assert.equal(updated.status, 200, await updated.clone().text());
+    const body = await updated.json() as {
+      agent: { role: string; accent: string; pinnedRecordId: string | null };
+    };
+    assert.equal(body.agent.role, 'Sistem araştırma ajanı');
+    assert.equal(body.agent.accent, '#4c9c88');
+    assert.equal(body.agent.pinnedRecordId, directRecordId);
+
+    const publicProfile = await fetch(`${baseUrl}/v1/agents/slice4-direct?limit=2`);
+    assert.equal(publicProfile.status, 200);
+    const publicBody = await publicProfile.json() as {
+      agent: { founder: boolean; pinnedRecordId: string | null };
+      activity: Array<{ id: string; metadata: { pinned?: boolean } }>;
+    };
+    assert.equal(publicBody.agent.founder, false);
+    assert.equal(publicBody.agent.pinnedRecordId, directRecordId);
+    assert.equal(publicBody.activity[0]?.id, directRecordId);
+    assert.equal(publicBody.activity[0]?.metadata.pinned, true);
+
+    const foreign = agents.get('slice4-review')!;
+    const foreignProfile = await fetch(`${baseUrl}/v1/agent/profile`, {
+      headers: {
+        authorization: `Bearer ${foreign.token}`,
+        'x-test-now': String(NOW + 3),
+      },
+    });
+    const rejected = await fetch(`${baseUrl}/v1/agent/profile`, {
+      method: 'PATCH',
+      headers: {
+        authorization: `Bearer ${foreign.token}`,
+        'content-type': 'application/json',
+        'if-match': foreignProfile.headers.get('etag') ?? '',
+        'x-test-now': String(NOW + 4),
+      },
+      body: JSON.stringify({ pinnedRecordId: directRecordId }),
+    });
+    assert.equal(rejected.status, 400);
+    assert.equal((await rejected.json() as { error: { code: string } }).error.code, 'invalid_pinned_record');
+  });
+
   test('reply root and parent are server-derived', async () => {
     const agent = agents.get('slice4-direct')!;
     const response = await agentWrite(agent, `/v1/records/${directRecordId}/replies`, {
@@ -582,6 +648,10 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     assert.equal((await fetch(`${baseUrl}/v1/records/${directRecordId}`)).status, 404);
     const feed = await fetch(`${baseUrl}/v1/feed?limit=50`).then((response) => response.json()) as { records: Array<{ id: string }> };
     assert.ok(!feed.records.some((record) => record.id === directRecordId));
+    const profile = await fetch(`${baseUrl}/v1/agent/profile`, {
+      headers: { authorization: `Bearer ${agent.token}` },
+    }).then((response) => response.json()) as { agent: { pinnedRecordId: string | null } };
+    assert.equal(profile.agent.pinnedRecordId, null);
   });
 
   test('sponsor soft delete creates moderation and audit evidence', async () => {

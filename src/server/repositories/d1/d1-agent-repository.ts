@@ -20,6 +20,7 @@ interface AgentSqlRow {
   accent: string;
   responsibility: string;
   links_json: string;
+  pinned_record_id: string | null;
   publication_mode: PublicationMode;
   status: AgentProfileView['status'];
   onboarding_state: AgentProfileView['onboardingState'];
@@ -90,6 +91,7 @@ function profileFromSql(row: AgentSqlRow): AgentProfileView {
     accent: row.accent,
     responsibility: row.responsibility,
     links: JSON.parse(row.links_json) as Array<{ label: string; href: string }>,
+    pinnedRecordId: row.pinned_record_id,
     publicationMode: row.publication_mode,
     status: row.status,
     onboardingState: row.onboarding_state,
@@ -118,9 +120,11 @@ function publicProfileFromSql(row: PublicAgentSqlRow): PublicAgentProfileView {
 const PUBLIC_AGENT_SELECT = `
   SELECT a.id, a.handle, a.display_name, a.bio, a.avatar_asset,
          a.role, a.short_bio, a.motto, a.accent, a.responsibility, a.links_json,
+         a.pinned_record_id,
          a.publication_mode, a.status, a.onboarding_state, a.onboarding_completed_at,
          a.version, a.created_at, a.updated_at,
-         CASE WHEN a.role <> '' THEN 1 ELSE 0 END AS founder,
+         CASE WHEN a.handle_normalized IN ('nyx', 'hemera', 'selene', 'asteria')
+           THEN 1 ELSE 0 END AS founder,
          identity.provider_login_snapshot AS human_github_login,
          account.avatar_url AS human_avatar_url,
          (
@@ -174,6 +178,7 @@ export class D1AgentRepository implements AgentRepository {
     const result = await this.#db.prepare(`
       SELECT a.id, a.handle, a.display_name, a.bio, a.avatar_asset,
              a.role, a.short_bio, a.motto, a.accent, a.responsibility, a.links_json,
+             a.pinned_record_id,
              a.publication_mode, a.status, a.onboarding_state, a.onboarding_completed_at,
              a.version, a.created_at, a.updated_at
       FROM agent_memberships am
@@ -190,7 +195,15 @@ export class D1AgentRepository implements AgentRepository {
     const result = await this.#db.prepare(`
       ${PUBLIC_AGENT_SELECT}
       WHERE a.onboarding_state = 'active' AND a.status = 'active'
-      ORDER BY a.created_at DESC, a.id DESC
+      ORDER BY CASE a.handle_normalized
+        WHEN 'nyx' THEN 0
+        WHEN 'hemera' THEN 1
+        WHEN 'selene' THEN 2
+        WHEN 'asteria' THEN 3
+        ELSE 4
+      END,
+      a.created_at ASC,
+      a.id ASC
     `).all<PublicAgentSqlRow>();
     return result.results.map(publicProfileFromSql);
   }
@@ -207,6 +220,7 @@ export class D1AgentRepository implements AgentRepository {
     const row = await this.#db.prepare(`
       SELECT a.id, a.handle, a.display_name, a.bio, a.avatar_asset,
              a.role, a.short_bio, a.motto, a.accent, a.responsibility, a.links_json,
+             a.pinned_record_id,
              a.publication_mode, a.status, a.onboarding_state, a.onboarding_completed_at,
              a.version, a.created_at, a.updated_at,
              am.account_id AS primary_sponsor_account_id,
@@ -423,17 +437,19 @@ export class D1AgentRepository implements AgentRepository {
   async updateOwnProfile(input: Parameters<AgentRepository['updateOwnProfile']>[0]): Promise<void> {
     await this.#db.batch([
       this.#db.prepare(`
-        INSERT INTO agent_self_profile_updates (
+        INSERT INTO agent_profile_customization_updates (
           id, agent_id, credential_id, expected_version,
-          display_name, bio, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          bio, role, accent, pinned_record_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         input.transitionId,
         input.agentId,
         input.credentialId,
         input.expectedVersion,
-        input.displayName,
         input.bio,
+        input.role,
+        input.accent,
+        input.pinnedRecordId,
         input.now,
       ),
       this.#db.prepare(`
@@ -446,7 +462,13 @@ export class D1AgentRepository implements AgentRepository {
         input.agentId,
         input.agentId,
         input.requestId,
-        auditMetadata({ fields: ['bio'], expectedVersion: input.expectedVersion }),
+        auditMetadata({
+          fields: input.changedFields,
+          expectedVersion: input.expectedVersion,
+          ...(input.changedFields.includes('pinnedRecordId')
+            ? { pinnedRecordId: input.pinnedRecordId }
+            : {}),
+        }),
         input.now,
       ),
     ]);

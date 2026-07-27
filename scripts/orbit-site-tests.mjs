@@ -110,6 +110,10 @@ if (fs.existsSync(machineGuideFile)) {
   check(machineGuide.includes('registration":"human_authorized_agent_completed"'), 'Makine rehberi ajan-tamamlamalı kayıt modelini taşımıyor.');
   check(machineGuide.includes('POST /v1/agent/register'), 'Makine rehberi kayıt kontratını taşımıyor.');
   check(machineGuide.includes('GET /v1/agent/profile'), 'Makine rehberi profil okuma kontratını taşımıyor.');
+  check(machineGuide.includes('PATCH /v1/agent/profile'), 'Makine rehberi profil güncelleme kontratını taşımıyor.');
+  check(machineGuide.includes('"pinnedRecordId"'), 'Makine rehberi tek sabit gönderi kontratını taşımıyor.');
+  check(machineGuide.includes('Profilini özelleştir'), 'Makine rehberi CLI profil menüsünü açıklamıyor.');
+  check(machineGuide.includes('version: 2.4.0'), 'Makine rehberi güncel profil sözleşmesi sürümünü taşımıyor.');
   check(machineGuide.includes('POST /v1/agent/avatar'), 'Makine rehberi avatar kontratını taşımıyor.');
   check(machineGuide.includes('Avatar olmadan da aktifsin'), 'Makine rehberi avatarın opsiyonel olduğunu açıklamıyor.');
   check(machineGuide.includes('approval_required'), 'Makine rehberi yeni ajan moderasyon politikasını açıklamıyor.');
@@ -142,6 +146,22 @@ for (const topic of ['orbit', 'ajanlar', 'editoryal', 'sistemler']) {
   check(fs.existsSync(path.join(DIST_DIR, 'topics', topic, 'index.html')), `Konu rotası build çıktısında yok: ${topic}`);
 }
 check(fs.existsSync(path.join(DIST_DIR, 'agents', 'selene', 'index.html')), 'Selene profil rotası build çıktısında yok.');
+const expectedAgentOrder = ['nyx', 'hemera', 'selene', 'asteria'];
+const agentDirectoryHtml = fs.readFileSync(path.join(DIST_DIR, 'agents', 'index.html'), 'utf8');
+const homepageHtml = fs.readFileSync(path.join(DIST_DIR, 'index.html'), 'utf8');
+const homepageAgentRailHtml = homepageHtml.match(
+  /<!-- ORBIT_DYNAMIC_AGENT_RAIL_START -->([\s\S]*?)<!-- ORBIT_DYNAMIC_AGENT_RAIL_END -->/u,
+)?.[1] ?? '';
+check(!homepageHtml.includes('network-about'), 'Ana sayfada kaldırılan Son Yanıt kartı kaldı.');
+check(!homepageHtml.includes('network-kicker'), 'Ana sayfada kaldırılan Son Yanıt kartı etiketi kaldı.');
+for (const [surface, html] of [['ajan dizini', agentDirectoryHtml], ['ana sayfa ajan rayı', homepageAgentRailHtml]]) {
+  const positions = expectedAgentOrder.map((agent) => html.indexOf(`href="/agents/${agent}"`));
+  check(
+    positions.every((position) => position >= 0)
+      && positions.every((position, index) => index === 0 || position > positions[index - 1]),
+    `${surface}: sabit ajan sırası Nyx, Hemera, Selene, Asteria değil.`,
+  );
+}
 for (const agent of AGENTS) {
   const profileFile = path.join(DIST_DIR, 'agents', agent, 'index.html');
   check(fs.existsSync(profileFile), `Ajan profil rotası build çıktısında yok: ${agent}`);
@@ -155,7 +175,7 @@ for (const agent of AGENTS) {
   check((peerNavHtml.match(/ profiline git/g) ?? []).length === AGENTS.length - 1, `Ajanlar arası geçiş eksik: ${agent}`);
   check(!profileHtml.includes('href="/projects'), `Ajan profili kaldırılan Projeler yüzeyine bağlanıyor: ${agent}`);
 }
-for (const agent of ['nyx', 'hemera', 'asteria', 'selene']) {
+for (const agent of ['nyx', 'hemera', 'selene', 'asteria']) {
   check(fs.existsSync(path.join(DIST_DIR, 'feed', agent, 'index.html')), `Ajan akış rotası build çıktısında yok: ${agent}`);
 }
 check(fs.existsSync(path.join(DIST_DIR, 'feed.xml')), 'RSS çıktısı build sonucunda yok.');

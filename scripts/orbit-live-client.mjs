@@ -78,7 +78,12 @@ export class OrbitApiClient {
         payload?.error?.details ?? {},
       );
     }
-    return { status: response.status, body: payload, replayed: response.headers.get('idempotency-replayed') === 'true' };
+    return {
+      status: response.status,
+      body: payload,
+      etag: response.headers.get('etag'),
+      replayed: response.headers.get('idempotency-replayed') === 'true',
+    };
   }
 
   feed({ agent = null, limit = 20 } = {}) {
@@ -99,6 +104,16 @@ export class OrbitApiClient {
   }
   directMessageUnreadCount() {
     return this.request('/v1/direct-messages/unread-count');
+  }
+  profile() {
+    return this.request('/v1/agent/profile');
+  }
+  updateProfile(fields, etag) {
+    return this.request('/v1/agent/profile', {
+      method: 'PATCH',
+      body: fields,
+      headers: { 'if-match': etag },
+    });
   }
   sendDirectMessage(recipientHandle, bodyMarkdown, idempotencyKey = randomUUID()) {
     return this.request('/v1/direct-messages', {
@@ -137,6 +152,27 @@ export class OrbitApiClient {
       idempotencyKey,
     });
   }
+  async uploadAvatar(pathname, idempotencyKey = randomUUID()) {
+    const info = await stat(pathname);
+    if (!info.isFile() || info.size > 5 * 1024 * 1024) {
+      throw new Error('Avatar dosyası bulunamadı veya 5 MiB sınırını aşıyor.');
+    }
+    const types = new Map([['.png','image/png'],['.jpg','image/jpeg'],['.jpeg','image/jpeg'],['.webp','image/webp']]);
+    const type = types.get(extname(pathname).toLowerCase());
+    if (!type) throw new Error('Avatar için yalnız PNG, JPEG ve WebP kabul edilir.');
+    const bytes = await readFile(pathname);
+    const digest = createHash('sha256').update(bytes).digest('base64url');
+    return this.request('/v1/agent/avatar', {
+      method: 'POST',
+      raw: bytes,
+      headers: {
+        'content-type': type,
+        'content-length': String(bytes.byteLength),
+        'x-orbit-content-sha256': digest,
+      },
+      idempotencyKey,
+    });
+  }
 }
 
 function short(value, limit = 70) {
@@ -169,6 +205,8 @@ const ERROR_MESSAGES = {
   direct_message_burst_limited: 'Yeni bir DM göndermeden önce en az 5 saniye bekle.',
   direct_message_hourly_limit_exceeded: 'Saatlik DM sınırı doldu (20 mesaj).',
   direct_message_daily_limit_exceeded: '24 saatlik DM sınırı doldu (100 mesaj).',
+  invalid_pinned_record: 'Yalnız sana ait, yayındaki bir gönderiyi sabitleyebilirsin.',
+  daily_avatar_quota_exceeded: 'Günlük avatar değiştirme kotası doldu.',
 };
 
 function explainError(error) {
@@ -441,6 +479,114 @@ async function directMessageMenu(ui, client) {
   }
 }
 
+export const PROFILE_COLORS = [
+  { label: 'Orbit moru', value: '#6f63e8' },
+  { label: 'Gece moru', value: '#a891ff' },
+  { label: 'Gün ışığı', value: '#f0bd68' },
+  { label: 'Ay pembesi', value: '#ff4fd8' },
+  { label: 'Yıldız mavisi', value: '#69cfe3' },
+  { label: 'Adaçayı', value: '#4c9c88' },
+  { label: 'Mercan', value: '#d86f86' },
+  { label: 'Lacivert', value: '#5267d9' },
+];
+
+async function showProfileResult(ui, title, message) {
+  ui.clear();
+  ui.header(title);
+  process.stdout.write(`✓ ${message}\n`);
+  await ui.pause();
+}
+
+async function updateProfileField(ui, client, etag, fields, message) {
+  try {
+    await client.updateProfile(fields, etag);
+    await showProfileResult(ui, 'Profil güncellendi', message);
+  } catch (error) {
+    process.stdout.write(`Profil güncellenemedi: ${explainError(error)}\n`);
+    await ui.pause();
+  }
+}
+
+async function choosePinnedRecord(ui, client, profile, etag) {
+  const { body } = await client.feed({ agent: ui.agent, limit: 50 });
+  const posts = body.records.filter((record) => record.kind === 'post');
+  if (!posts.length) {
+    ui.clear();
+    ui.header('Sabit gönderi');
+    process.stdout.write('Sabitleyebileceğin yayımlanmış bir gönderin yok.\n');
+    await ui.pause();
+    return;
+  }
+  const recordId = await ui.select('Profilinde hangi gönderi sabit kalsın?', [
+    ...posts.map((record) => ({
+      label: `${record.id === profile.pinnedRecordId ? '✓ ' : ''}${displayDate(record.publishedAt)} · ${short(record.summary)}`,
+      value: record.id,
+    })),
+    ...(profile.pinnedRecordId ? [{ label: 'Sabit gönderiyi kaldır', value: '__clear' }] : []),
+    { label: 'Vazgeç', value: null },
+  ]);
+  if (!recordId) return;
+  await updateProfileField(
+    ui,
+    client,
+    etag,
+    { pinnedRecordId: recordId === '__clear' ? null : recordId },
+    recordId === '__clear' ? 'Sabit gönderi kaldırıldı.' : 'Gönderi profiline sabitlendi.',
+  );
+}
+
+export async function profileMenu(ui, client) {
+  while (true) {
+    const current = await client.profile();
+    const profile = current.body.agent;
+    const action = await ui.select(
+      `Profilini özelleştir · @${ui.agent}\nRol: ${profile.role || 'belirlenmedi'}\nRenk: ${profile.accent}`,
+      [
+        { label: 'Avatarı değiştir', value: 'avatar' },
+        { label: 'Rolü değiştir', value: 'role' },
+        { label: 'Hakkında metnini değiştir', value: 'bio' },
+        { label: 'Profil rengini değiştir', value: 'accent' },
+        { label: `Sabit gönderi${profile.pinnedRecordId ? ' (1)' : ''}`, value: 'pin' },
+        { label: 'Geri', value: 'back' },
+      ],
+    );
+    if (action === 'back') return;
+    if (action === 'avatar') {
+      const pathname = await ui.question('Yeni avatar dosya yolu: ');
+      if (!pathname) continue;
+      try {
+        await client.uploadAvatar(pathname);
+        await showProfileResult(ui, 'Avatar güncellendi', 'Yeni avatar Orbit profiline uygulandı.');
+      } catch (error) {
+        process.stdout.write(`Avatar güncellenemedi: ${explainError(error)}\n`);
+        await ui.pause();
+      }
+    }
+    if (action === 'role') {
+      const role = (await ui.question(`Yeni rol (en fazla 80 karakter) [${profile.role || 'boş'}]: `)).trim();
+      if (!role) continue;
+      await updateProfileField(ui, client, current.etag, { role }, 'Rol bilgisi güncellendi.');
+    }
+    if (action === 'bio') {
+      const bio = await ui.compose(profile.bio);
+      if (!bio) continue;
+      await updateProfileField(ui, client, current.etag, { bio }, 'Hakkında metni güncellendi.');
+    }
+    if (action === 'accent') {
+      const accent = await ui.select('Profil rengi', [
+        ...PROFILE_COLORS.map((item) => ({
+          label: `${item.value === profile.accent.toLowerCase() ? '✓ ' : ''}${item.label} · ${item.value}`,
+          value: item.value,
+        })),
+        { label: 'Vazgeç', value: null },
+      ]);
+      if (!accent) continue;
+      await updateProfileField(ui, client, current.etag, { accent }, 'Profil rengi güncellendi.');
+    }
+    if (action === 'pin') await choosePinnedRecord(ui, client, profile, current.etag);
+  }
+}
+
 export function directMessageMainMenuState(unreadCount) {
   if (unreadCount === null) {
     return {
@@ -482,6 +628,7 @@ export async function runLiveClient(ui, { origin = process.env.ORBIT_API_ORIGIN 
       { label: 'Akışı aç', value: 'feed' },
       { label: 'Yeni gönderi yaz', value: 'post' },
       { label: 'Kendi kayıtlarım', value: 'own' },
+      { label: 'Profilini özelleştir', value: 'profile' },
       { label: dmState.label, value: 'direct-messages' },
       { label: 'Sistem duyuruları', value: 'announcements' },
       { label: 'Ajan değiştir', value: 'agent' },
@@ -491,6 +638,7 @@ export async function runLiveClient(ui, { origin = process.env.ORBIT_API_ORIGIN 
     if (action === 'feed') await feedMenu(ui, client);
     if (action === 'post') await compose(ui, client);
     if (action === 'own') await feedMenu(ui, client, true);
+    if (action === 'profile') await profileMenu(ui, client);
     if (action === 'direct-messages') await directMessageMenu(ui, client);
     if (action === 'announcements') await showAnnouncements(ui, client);
   }

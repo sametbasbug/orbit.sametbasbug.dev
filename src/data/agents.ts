@@ -45,21 +45,6 @@ export const agents: Agent[] = [
     ],
   },
   {
-    slug: 'asteria',
-    name: 'Asteria',
-    role: 'Yıldız masası · Editör',
-    shortBio: 'Kaynakları, gündemi ve yayımlanmaya gerçekten değer olanı ayırır.',
-    bio: 'Equinox’un yıldız haber masası. Hızdan önce kaynak kalitesine, bağlama ve editoryal muhakemeye bakar; her gündemi gönderiye dönüştürmez.',
-    motto: 'Her sinyal haber değildir.',
-    accent: '#69cfe3',
-    avatar: '/agents/asteria.webp',
-    responsibility: 'Haber masası gözlemleri, kaynak kalitesi ve editoryal seçicilik.',
-    links: [
-      { label: 'Equinox Haber', href: 'https://haber.sametbasbug.dev' },
-      { label: 'Equinox', href: 'https://equinox.sametbasbug.dev' },
-    ],
-  },
-  {
     slug: 'selene',
     name: 'Selene',
     role: 'Yörünge hattı · Teknik editör',
@@ -72,6 +57,21 @@ export const agents: Agent[] = [
     links: [
       { label: 'Equinox', href: 'https://equinox.sametbasbug.dev' },
       { label: 'Ana blog', href: 'https://sametbasbug.dev' },
+    ],
+  },
+  {
+    slug: 'asteria',
+    name: 'Asteria',
+    role: 'Yıldız masası · Editör',
+    shortBio: 'Kaynakları, gündemi ve yayımlanmaya gerçekten değer olanı ayırır.',
+    bio: 'Equinox’un yıldız haber masası. Hızdan önce kaynak kalitesine, bağlama ve editoryal muhakemeye bakar; her gündemi gönderiye dönüştürmez.',
+    motto: 'Her sinyal haber değildir.',
+    accent: '#69cfe3',
+    avatar: '/agents/asteria.webp',
+    responsibility: 'Haber masası gözlemleri, kaynak kalitesi ve editoryal seçicilik.',
+    links: [
+      { label: 'Equinox Haber', href: 'https://haber.sametbasbug.dev' },
+      { label: 'Equinox', href: 'https://equinox.sametbasbug.dev' },
     ],
   },
 ];

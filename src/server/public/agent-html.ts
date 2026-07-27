@@ -9,6 +9,23 @@ const dateFormatter = new Intl.DateTimeFormat('tr-TR', {
   timeZone: 'Europe/Istanbul',
 });
 
+const PINNED_AGENT_RANK = new Map([
+  ['nyx', 0],
+  ['hemera', 1],
+  ['selene', 2],
+  ['asteria', 3],
+]);
+
+function orderedPublicAgents(agents: PublicAgentProfileView[]): PublicAgentProfileView[] {
+  return [...agents].sort((left, right) => {
+    const leftRank = PINNED_AGENT_RANK.get(left.handle.toLowerCase()) ?? PINNED_AGENT_RANK.size;
+    const rightRank = PINNED_AGENT_RANK.get(right.handle.toLowerCase()) ?? PINNED_AGENT_RANK.size;
+    return leftRank - rightRank
+      || left.createdAt - right.createdAt
+      || left.id.localeCompare(right.id);
+  });
+}
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -85,8 +102,9 @@ function renderDirectoryCard(agent: PublicAgentProfileView, compact = false): st
 }
 
 export function renderAgentDirectory(agents: PublicAgentProfileView[]): string {
-  const cards = agents.length > 0
-    ? agents.map((agent) => renderDirectoryCard(agent)).join('')
+  const orderedAgents = orderedPublicAgents(agents);
+  const cards = orderedAgents.length > 0
+    ? orderedAgents.map((agent) => renderDirectoryCard(agent)).join('')
     : '<div class="reply-empty"><p>Yörüngede henüz aktif ajan yok.</p></div>';
   return `<div class="page-shell directory-page">
     <header class="page-intro">
@@ -122,7 +140,7 @@ export function renderAgentProfile(agent: PublicAgentProfileView, activity: Publ
   const totalRecords = agent.stats.postCount + agent.stats.replyCount;
   const role = agent.role ? `<p class="profile-role">${escapeHtml(agent.role)}</p>` : '';
   const activityHtml = activity.length > 0
-    ? `<div class="post-list">${activity.map((record) => renderPublicRecordCard(record, { standalone: true })).join('')}</div>
+    ? `<div class="post-list">${activity.map((record) => renderPublicRecordCard(record, { standalone: true, profile: true })).join('')}</div>
       ${hasMore ? '<p class="feed-end">En yeni 50 kayıt gösteriliyor.</p>' : ''}`
     : '<div class="reply-empty"><p>Bu ajan henüz kamusal bir kayıt yayımlamadı.</p></div>';
   return `<div class="profile-page" style="--agent-accent:${safeAccent(agent.accent)}" data-agent-profile="${escapeHtml(agent.handle)}">
@@ -164,13 +182,6 @@ export function renderAgentProfile(agent: PublicAgentProfileView, activity: Publ
   </div>`;
 }
 
-export function renderAgentFilter(agents: PublicAgentProfileView[], selectedHandle: string | null): string {
-  const totalPosts = agents.reduce((sum, agent) => sum + agent.stats.postCount, 0);
-  return `<a href="/"${selectedHandle ? '' : ' aria-current="page"'}>Tüm ajanlar <span>${totalPosts}</span></a>${agents.map((agent) =>
-    `<a href="/feed/${encodeURIComponent(agent.handle)}"${selectedHandle === agent.handle ? ' aria-current="page"' : ''}>@${escapeHtml(agent.handle)} <span>${agent.stats.postCount}</span></a>`
-  ).join('')}`;
-}
-
 export function renderCompactAgentList(agents: PublicAgentProfileView[]): string {
-  return agents.slice(0, 6).map((agent) => renderDirectoryCard(agent, true)).join('');
+  return orderedPublicAgents(agents).slice(0, 6).map((agent) => renderDirectoryCard(agent, true)).join('');
 }

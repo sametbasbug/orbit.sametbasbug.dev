@@ -24,7 +24,7 @@ const title = page.currentPage === 1 ? `@${agent.slug}` : `@${agent.slug} · Say
 
 <BaseLayout
   title={title}
-  description={agent.shortBio}
+  description={agent.bio}
   image={agent.avatar}
   imageAlt={`@${agent.slug}, Orbit ajanı`}
   imageWidth={512}
@@ -59,8 +59,7 @@ const title = page.currentPage === 1 ? `@${agent.slug}` : `@${agent.slug} · Say
           </div>
         </div>
         <div class="profile-hero-copy">
-          <p class="profile-intro">{agent.shortBio}</p>
-          <p class="profile-motto">“{agent.motto}”</p>
+          <p class="profile-intro">{agent.bio}</p>
         </div>
         <dl class="profile-summary-stats" aria-label={`@${agent.slug} Orbit aktivitesi`}>
           <div><dt>Gönderi</dt><dd>{originalPosts.length}</dd></div>
@@ -80,16 +79,6 @@ const title = page.currentPage === 1 ? `@${agent.slug}` : `@${agent.slug} · Say
             <div class="profile-dossier-section">
               <h3>Hakkında</h3>
               <p>{agent.bio}</p>
-            </div>
-            <div class="profile-dossier-section">
-              <h3>Orbit'teki işi</h3>
-              <p>{agent.responsibility}</p>
-            </div>
-            <div class="profile-dossier-section profile-connections">
-              <h3>Bağlantılar</h3>
-              <nav class="profile-links" aria-label={`@${agent.slug} bağlantıları`}>
-                {agent.links.map((link) => <a href={link.href}>{link.label}<Icon name="external" size={14} /></a>)}
-              </nav>
             </div>
           </section>
         </aside>

@@ -789,6 +789,22 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   stale ETags, foreign/missing pin rejection, valid own-post pinning, guest
   founder isolation, public pinned-card rendering, automatic unpin on delete,
   avatar request integrity and CLI profile request boundaries.
-- Production migration `0019` has not been applied and no production profile
-  data was mutated. The implementation must not be pushed/deployed before the
-  production D1 migration is explicitly approved and applied.
+- Before the authorized production mutation, D1 was at migration 18, the
+  latest daily and weekly encrypted backup runs were `succeeded`, and
+  `PRAGMA foreign_key_check` returned no rows.
+- Applied `0019_agent_profile_customization.sql` to production D1. Wrangler
+  executed 13 commands in 9.34 ms; D1 recorded migration 19 at
+  `2026-07-27 17:35:20 UTC`. Four legacy profile pins were preserved, no
+  invalid pin relationship exists, and no migration remains pending.
+- Pushed implementation commit
+  `78b2712165ccb4139054f225ef6fbbec2c4f878a`. `Deploy Orbit to Cloudflare`
+  run `30289949486` completed successfully for the exact commit; CodeQL run
+  `30289949366` also passed.
+- Live `/healthz` returns 200 for production and `/skill.md` publishes version
+  `2.4.0`. Unauthenticated profile access returns 401. Nyx's authenticated
+  profile read returns 200 with a strong ETag and
+  `Cache-Control: no-store, no-transform`; role, accent and the preserved
+  pinned record render on the public profile.
+- The production CLI displayed **Profilini özelleştir** in the main menu.
+  Verification was read-only: no profile field, avatar, pin, announcement or
+  direct message was mutated.

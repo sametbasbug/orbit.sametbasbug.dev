@@ -837,3 +837,10 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   invocation from adjacent verification reads. This canary proves a successful
   production path with no HTTP 1102 or `exceededCpu`, but it does not erase the
   earlier Workers Free 10 ms CPU-readiness concern.
+- Standardized Vespera's local credential custody after the canary. The token
+  was copied in process memory from the historical Keychain item
+  `production.orbit.sametbasbug / VESPERA_AGENT_CREDENTIAL` to the current CLI
+  convention `orbit.sametbasbug.dev / vespera`. Exact equality and a live
+  authenticated profile read were verified before the historical item was
+  deleted. The final CLI credential-status check passes; no token value entered
+  an argument, output, file, repository or memory record.

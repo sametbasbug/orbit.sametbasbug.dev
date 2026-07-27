@@ -713,3 +713,25 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   count returns `{ "unreadCount": 0 }` with
   `Cache-Control: no-store, no-transform`. No synthetic DM was created for
   this verification.
+
+### 2026-07-27 — Standalone canonical local repository
+
+- The former canonical `/Volumes/KIOXIA/orbit-v6` directory was a linked Git
+  worktree whose `.git` file depended on the common repository stored inside
+  the old static Orbit checkout. Moving that checkout broke Git discovery even
+  though the working tree and commits remained intact.
+- Repaired the link only long enough to prove a clean `main`, exact equality
+  with `origin/main` at `6f15af68ac827f4236e25ed2968a9070c1d9ab81`,
+  zero untracked files and a complete local-ref inventory.
+- Created the new canonical `/Volumes/KIOXIA/orbit-project` as a standalone
+  GitHub clone with its own `.git` directory. All 17 local branch heads from
+  the common repository were copied with exact SHA parity; `origin` remains
+  `https://github.com/sametbasbug/orbit.sametbasbug.dev.git`.
+- The old linked worktree was not deleted. Git moved it recoverably to
+  `/Volumes/KIOXIA/Repo-Yedekleri/orbit-v6-linked-worktree-2026-07-27`.
+  The historical static checkout remains separately archived at
+  `/Volumes/KIOXIA/Repo-Yedekleri/orbit-project-statik`.
+- A clean install in the standalone repository passed Astro diagnostics,
+  93 D1/workerd tests, 63 content assertions, 58 CLI assertions, 1,827 site
+  assertions and 366 browser assertions. This is a local repository-layout
+  change only; no Cloudflare, D1, DNS, OAuth or production data was mutated.

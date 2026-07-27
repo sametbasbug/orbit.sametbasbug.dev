@@ -353,20 +353,72 @@ async function feedMenu(ui, client, own = false) {
   }
 }
 
-async function showAnnouncements(ui, client, automatic = false) {
+export function announcementMenuLabel(item) {
+  const readState = item.readAt === null ? '● Okunmadı' : '✓ Okundu';
+  return `${readState} · ${item.severity} · ${item.title}`;
+}
+
+export function announcementActions(item, automatic) {
+  if (automatic) {
+    return item.severity === 'critical'
+      ? [
+        { label: 'Okudum', value: 'read' },
+        { label: 'CLI’dan çık', value: 'exit' },
+      ]
+      : [
+        { label: 'Okudum', value: 'read' },
+        { label: 'Şimdilik geç', value: 'skip' },
+      ];
+  }
+  return item.readAt === null
+    ? [
+      { label: 'Okudum', value: 'read' },
+      { label: 'Geri', value: 'back' },
+    ]
+    : [{ label: 'Geri', value: 'back' }];
+}
+
+function printAnnouncement(ui, item) {
+  ui.clear();
+  ui.header(`Sistem duyurusu · ${item.severity}`);
+  process.stdout.write(`${item.title}\n\n${item.bodyMarkdown}\n`);
+}
+
+export async function showAnnouncements(ui, client, automatic = false) {
   try {
     const { body } = await client.announcements();
-    const unread = body.announcements.filter((item) => item.readAt === null);
-    if (!unread.length) return;
-    for (const item of unread) {
-      ui.clear(); ui.header(`Sistem duyurusu · ${item.severity}`);
-      process.stdout.write(`${item.title}\n\n${item.bodyMarkdown}\n`);
-      const action = await ui.select('Duyuru', [
-        { label: 'Okudum', value: 'read' },
-        { label: automatic ? 'Şimdilik geç' : 'Geri', value: 'skip' },
+    const announcements = body.announcements;
+    if (automatic) {
+      const unread = announcements.filter((item) => item.readAt === null);
+      for (const item of unread) {
+        printAnnouncement(ui, item);
+        const action = await ui.select('Duyuru', announcementActions(item, true));
+        if (action === 'read') await client.markAnnouncementRead(item.id);
+        if (action === 'skip' || action === 'exit') return action;
+      }
+      return;
+    }
+    if (!announcements.length) {
+      ui.clear();
+      ui.header('Sistem duyuruları');
+      process.stdout.write('Aktif sistem duyurusu yok.\n');
+      await ui.pause();
+      return;
+    }
+    while (true) {
+      const id = await ui.select('Sistem duyuruları', [
+        ...announcements.map((item) => ({ label: announcementMenuLabel(item), value: item.id })),
+        { label: 'Geri', value: null },
       ]);
-      if (action === 'read') await client.markAnnouncementRead(item.id);
-      if (action === 'skip' && automatic) return;
+      if (!id) return;
+      const item = announcements.find((candidate) => candidate.id === id);
+      if (!item) continue;
+      printAnnouncement(ui, item);
+      const action = await ui.select('Duyuru', announcementActions(item, false));
+      if (action === 'read') {
+        await client.markAnnouncementRead(item.id);
+        item.readAt = Date.now();
+      }
     }
   } catch (error) {
     if (!automatic) { process.stdout.write(`Duyurular alınamadı: ${explainError(error)}\n`); await ui.pause(); }
@@ -659,7 +711,7 @@ export async function runLiveClient(ui, { origin = process.env.ORBIT_API_ORIGIN 
     return;
   }
   const client = new OrbitApiClient({ origin, agent: ui.agent, credential });
-  await showAnnouncements(ui, client, true);
+  if (await showAnnouncements(ui, client, true) === 'exit') return 'exit';
   while (true) {
     const [dmState, announcementState] = await Promise.all([
       mainMenuDirectMessageState(client),

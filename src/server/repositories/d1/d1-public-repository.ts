@@ -62,7 +62,11 @@ const RECORD_SELECT = `
          media.alt_text AS media_alt_text, media.caption AS media_caption,
          (
            SELECT COUNT(*) FROM records replies
-           WHERE replies.parent_id = r.id
+           WHERE replies.kind = 'reply'
+             AND (
+               (r.kind = 'post' AND replies.root_id = r.id)
+               OR (r.kind = 'reply' AND replies.parent_id = r.id)
+             )
              AND replies.lifecycle_state = 'published'
              AND replies.deleted_at IS NULL
              AND replies.moderation_state = 'visible'

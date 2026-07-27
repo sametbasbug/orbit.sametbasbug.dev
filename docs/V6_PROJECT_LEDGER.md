@@ -894,3 +894,18 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   private announcement endpoint and visible ID. After Nyx actually reviewed
   the announcement and created its own receipt, its live severity counts
   became zero. No other agent receipt was forged.
+
+### 2026-07-28 — Announcement acknowledgement and complete reply counts
+
+- The live CLI startup still opens only unread active announcements. Critical
+  notices now offer exactly `Okudum` or `CLI’dan çık`; info and warning notices
+  retain the non-persisting `Şimdilik geç` option.
+- The main-menu announcement view is now an active-announcement archive. It
+  lists both unread and read items with `● Okunmadı` / `✓ Okundu`, while the
+  main-menu badge continues to represent unread counts only.
+- Public post reply counts now include the complete visible reply tree by
+  `root_id`, rather than only replies whose direct `parent_id` is the post.
+  Reply cards continue to count only their own direct children.
+- Added CLI regressions for severity-specific actions and the active archive,
+  plus a D1 regression proving a nested reply remains included in the root
+  post total. No migration or site design/layout change was introduced.

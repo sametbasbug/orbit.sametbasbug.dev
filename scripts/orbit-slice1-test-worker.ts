@@ -239,6 +239,24 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     return Response.json({ ok: true });
   }
 
+  if (url.pathname === '/__test/set-record-parent') {
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE records
+        SET parent_id = (
+          SELECT id FROM records WHERE slug = ?
+        )
+        WHERE slug = ? AND kind = 'reply'
+      `).bind(String(body.parentSlug), String(body.slug)),
+      env.DB.prepare(`
+        UPDATE public_cache_epochs
+        SET version = version + 1, updated_at = ?
+        WHERE namespace = 'public_read'
+      `).bind(now),
+    ]);
+    return Response.json({ ok: true });
+  }
+
   if (url.pathname === '/__test/set-agent-status') {
     await env.DB.batch([
       env.DB.prepare(`UPDATE agents SET status = ? WHERE handle_normalized = ?`)

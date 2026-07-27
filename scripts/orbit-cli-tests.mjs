@@ -19,12 +19,15 @@ import {
 } from './orbit-cli-core.mjs';
 import { buildPublicationPreview, chooseTopics, numericShortcutDecision } from './orbit-cli.mjs';
 import {
+  announcementActions,
   announcementMainMenuState,
+  announcementMenuLabel,
   directMessageMainMenuState,
   OrbitApiClient,
   OrbitApiError,
   PROFILE_COLORS,
   profileMenu,
+  showAnnouncements,
   STAGING_ORIGIN,
 } from './orbit-live-client.mjs';
 
@@ -370,6 +373,90 @@ check(
 check(
   announcementMainMenuState(null).notice.includes('Duyuru sayacı şu anda alınamadı.'),
   'CLI duyuru sayacı hatasında ana menüyü kullanılabilir bırakmadı.',
+);
+
+const criticalAnnouncement = {
+  id: 'announcement-critical',
+  title: 'Kritik duyuru',
+  bodyMarkdown: 'Bu duyuru okunmalı.',
+  severity: 'critical',
+  readAt: null,
+};
+const infoAnnouncement = {
+  id: 'announcement-info',
+  title: 'Bilgi duyurusu',
+  bodyMarkdown: 'Bu duyuru ertelenebilir.',
+  severity: 'info',
+  readAt: null,
+};
+check(
+  announcementActions(criticalAnnouncement, true).map((item) => item.label).join('|')
+    === 'Okudum|CLI’dan çık',
+  'CLI kritik duyuruya geçiş seçeneği sundu.',
+);
+check(
+  announcementActions(infoAnnouncement, true).map((item) => item.label).join('|')
+    === 'Okudum|Şimdilik geç',
+  'CLI bilgi duyurusunun ertelenmesini korumadı.',
+);
+check(
+  announcementMenuLabel({ ...infoAnnouncement, readAt: Date.now() }).startsWith('✓ Okundu'),
+  'CLI aktif duyuru arşivinde okundu durumunu göstermedi.',
+);
+
+const menuSelections = ['announcement-info', 'read', null];
+const menuOptionSnapshots = [];
+const markedAnnouncements = [];
+await showAnnouncements({
+  clear() {},
+  header() {},
+  pause: async () => {},
+  select: async (_title, options) => {
+    menuOptionSnapshots.push(options.map((item) => item.label));
+    return menuSelections.shift();
+  },
+}, {
+  announcements: async () => ({
+    body: {
+      announcements: [
+        { ...criticalAnnouncement, readAt: Date.now() },
+        { ...infoAnnouncement },
+      ],
+    },
+  }),
+  markAnnouncementRead: async (id) => {
+    markedAnnouncements.push(id);
+  },
+});
+check(
+  menuOptionSnapshots[0].some((label) => label.startsWith('✓ Okundu'))
+    && menuOptionSnapshots[0].some((label) => label.startsWith('● Okunmadı')),
+  'CLI sistem duyuruları menüsü bütün aktif duyuruları okundu durumlarıyla listelemedi.',
+);
+check(
+  menuOptionSnapshots.at(-1).some((label) => label.startsWith('✓ Okundu'))
+    && markedAnnouncements.join('|') === 'announcement-info',
+  'CLI duyuruyu okuduktan sonra aktif arşivde okundu durumunu yenilemedi.',
+);
+
+let criticalMarked = false;
+const automaticCriticalActions = [];
+const automaticCriticalResult = await showAnnouncements({
+  clear() {},
+  header() {},
+  select: async (_title, options) => {
+    automaticCriticalActions.push(...options.map((item) => item.label));
+    return 'exit';
+  },
+}, {
+  announcements: async () => ({ body: { announcements: [criticalAnnouncement] } }),
+  markAnnouncementRead: async () => { criticalMarked = true; },
+}, true);
+check(
+  automaticCriticalResult === 'exit'
+    && automaticCriticalActions.join('|') === 'Okudum|CLI’dan çık'
+    && criticalMarked === false,
+  'CLI kritik başlangıç duyurusundan okumadan geçilmesine izin verdi.',
 );
 
 let capturedUpload = null;

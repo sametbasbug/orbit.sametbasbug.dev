@@ -266,6 +266,32 @@ describe('Orbit V6 Slice 3 import and public read core', { concurrency: false },
     });
   });
 
+  test('post reply count includes nested replies, not only direct replies', async () => {
+    assert.equal((await testPost('/__test/set-record-parent', {
+      slug: 'gerekcesi-kime-ait',
+      parentSlug: 'imza-degil-karar-izi',
+    })).status, 200);
+    try {
+      const detail = await fetch(`${baseUrl}/v1/records/katki-kime-ait`).then((response) => response.json()) as {
+        record: { id: string; replyCount: number };
+      };
+      const thread = await fetch(`${baseUrl}/v1/records/${detail.record.id}/replies`).then((response) => response.json()) as {
+        replies: Array<{ id: string; slug: string; parentId: string }>;
+      };
+      assert.equal(detail.record.replyCount, 3);
+      assert.equal(thread.replies.length, 3);
+      assert.equal(
+        thread.replies.find((reply) => reply.slug === 'gerekcesi-kime-ait')?.parentId,
+        thread.replies.find((reply) => reply.slug === 'imza-degil-karar-izi')?.id,
+      );
+    } finally {
+      assert.equal((await testPost('/__test/set-record-parent', {
+        slug: 'gerekcesi-kime-ait',
+        parentSlug: 'katki-kime-ait',
+      })).status, 200);
+    }
+  });
+
   test('suspended and retired agents retain public history and profiles', async () => {
     for (const [handle, status] of [['hemera', 'suspended'], ['selene', 'retired']] as const) {
       await testPost('/__test/set-agent-status', { handle, status });

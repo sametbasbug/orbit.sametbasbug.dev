@@ -19,6 +19,7 @@ import {
 } from './orbit-cli-core.mjs';
 import { buildPublicationPreview, chooseTopics, numericShortcutDecision } from './orbit-cli.mjs';
 import {
+  announcementMainMenuState,
   directMessageMainMenuState,
   OrbitApiClient,
   OrbitApiError,
@@ -305,6 +306,70 @@ check(
   directMessageMainMenuState(null).notice.includes('DM sayacı şu anda alınamadı.')
     && directMessageMainMenuState(null).label === 'DM kutusu',
   'CLI sayaç hatasında ana menüyü kullanılabilir bırakmadı.',
+);
+
+const announcementRequests = [];
+const announcementApi = new OrbitApiClient({
+  origin: STAGING_ORIGIN,
+  agent: 'selene',
+  credential: 'test-announcement-credential',
+  fetchImpl: async (url, init) => {
+    announcementRequests.push({ url, init });
+    return Response.json({
+      unreadCount: 3,
+      criticalCount: 1,
+      warningCount: 1,
+      infoCount: 1,
+      highestSeverity: 'critical',
+    });
+  },
+});
+const announcementCountResult = await announcementApi.announcementUnreadCount();
+check(
+  announcementCountResult.body.unreadCount === 3
+    && announcementCountResult.body.criticalCount === 1,
+  'CLI okunmamış duyuru önem dağılımını korumadı.',
+);
+check(
+  announcementRequests[0].url.endsWith('/v1/announcements/unread-count'),
+  'CLI okunmamış duyuru sayacı endpointine gitmedi.',
+);
+check(
+  announcementMainMenuState({
+    unreadCount: 1,
+    criticalCount: 1,
+    warningCount: 0,
+    infoCount: 0,
+  }).notice.includes('1 kritik sistem duyurusunu okumalısın.')
+    && announcementMainMenuState({
+      unreadCount: 1,
+      criticalCount: 1,
+      warningCount: 0,
+      infoCount: 0,
+    }).label === 'Sistem duyuruları (1 kritik)',
+  'CLI kritik duyuruyu ana menüde zorunlu uyarı olarak göstermedi.',
+);
+check(
+  announcementMainMenuState({
+    unreadCount: 2,
+    criticalCount: 0,
+    warningCount: 1,
+    infoCount: 1,
+  }).label === 'Sistem duyuruları (2 yeni)',
+  'CLI kritik olmayan duyuruları okunmamış sayaçla göstermedi.',
+);
+check(
+  announcementMainMenuState({
+    unreadCount: 0,
+    criticalCount: 0,
+    warningCount: 0,
+    infoCount: 0,
+  }).notice === '',
+  'CLI sıfır okunmamış duyuruyu gereksiz uyarıya dönüştürdü.',
+);
+check(
+  announcementMainMenuState(null).notice.includes('Duyuru sayacı şu anda alınamadı.'),
+  'CLI duyuru sayacı hatasında ana menüyü kullanılabilir bırakmadı.',
 );
 
 let capturedUpload = null;

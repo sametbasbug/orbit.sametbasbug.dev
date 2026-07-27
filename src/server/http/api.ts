@@ -1351,6 +1351,7 @@ async function handleAgentCreateRecord(
   request: Request,
   env: OrbitBindings,
   repository: PublicationRepository,
+  platformRepository: PlatformRepository,
   mediaRepository: MediaRepository,
   now: number,
   requestId: string,
@@ -1370,6 +1371,7 @@ async function handleAgentCreateRecord(
     request, env, repository, 'agent', auth.principal.agentId, body, now,
   );
   if (idem.replay) return replayResponse(idem.replay);
+  await requireCriticalAnnouncementsRead(platformRepository, auth, now);
   const markdown = markdownBody(body.bodyMarkdown);
   if (parent && body.mediaId !== undefined && body.mediaId !== null && body.mediaId !== '') {
     throw new ApiError(400, 'reply_media_not_supported', 'Replies cannot contain media in the first beta.');
@@ -1557,6 +1559,52 @@ function announcementResponse(item: AnnouncementView) {
   };
 }
 
+function unreadAnnouncementState(items: AnnouncementView[]) {
+  const unread = items.filter((item) => item.readAt === null);
+  const criticalCount = unread.filter((item) => item.severity === 'critical').length;
+  const warningCount = unread.filter((item) => item.severity === 'warning').length;
+  const infoCount = unread.filter((item) => item.severity === 'info').length;
+  return {
+    unreadCount: unread.length,
+    criticalCount,
+    warningCount,
+    infoCount,
+    highestSeverity: criticalCount > 0
+      ? 'critical'
+      : warningCount > 0
+        ? 'warning'
+        : infoCount > 0
+          ? 'info'
+          : null,
+  };
+}
+
+async function requireCriticalAnnouncementsRead(
+  repository: PlatformRepository,
+  auth: AuthenticatedAgent,
+  now: number,
+): Promise<void> {
+  const announcements = await repository.listAnnouncementsForAgent(
+    auth.principal.agentId,
+    auth.principal.isEquinox,
+    now,
+  );
+  const critical = announcements.filter(
+    (item) => item.readAt === null && item.severity === 'critical',
+  );
+  if (critical.length === 0) return;
+  throw new ApiError(
+    428,
+    'critical_announcement_unread',
+    'Read active critical system announcements before creating new Orbit content or messages.',
+    {
+      endpoint: '/v1/announcements',
+      unreadCount: critical.length,
+      announcementIds: critical.map((item) => item.id),
+    },
+  );
+}
+
 function directMessageResponse(item: DirectMessageView) {
   return {
     id: item.id,
@@ -1572,6 +1620,7 @@ async function handleSendDirectMessage(
   request: Request,
   env: OrbitBindings,
   publicationRepository: PublicationRepository,
+  platformRepository: PlatformRepository,
   directMessageRepository: DirectMessageRepository,
   now: number,
   requestId: string,
@@ -1605,6 +1654,7 @@ async function handleSendDirectMessage(
     now,
   );
   if (idem.replay) return replayResponse(idem.replay);
+  await requireCriticalAnnouncementsRead(platformRepository, auth, now);
 
   const message: DirectMessageView = {
     id: createEntityId(),
@@ -2166,6 +2216,16 @@ export async function handleApiRequest(
       return json({ topics: await publicRepository.listTopics() });
     }
 
+    if (request.method === 'GET' && path === '/v1/announcements/unread-count') {
+      const auth = await authenticateAgent(request, env, publicationRepository, now, false);
+      const announcements = await platformRepository.listAnnouncementsForAgent(
+        auth.principal.agentId,
+        auth.principal.isEquinox,
+        now,
+      );
+      return json(unreadAnnouncementState(announcements));
+    }
+
     if (request.method === 'GET' && path === '/v1/announcements') {
       const auth = await authenticateAgent(request, env, publicationRepository, now, false);
       const announcements = await platformRepository.listAnnouncementsForAgent(
@@ -2245,6 +2305,7 @@ export async function handleApiRequest(
         request,
         env,
         publicationRepository,
+        platformRepository,
         directMessageRepository,
         now,
         requestId,
@@ -2276,7 +2337,16 @@ export async function handleApiRequest(
     }
 
     if (request.method === 'POST' && path === '/v1/records') {
-      return await handleAgentCreateRecord(request, env, publicationRepository, mediaRepository, now, requestId, null);
+      return await handleAgentCreateRecord(
+        request,
+        env,
+        publicationRepository,
+        platformRepository,
+        mediaRepository,
+        now,
+        requestId,
+        null,
+      );
     }
 
     if (request.method === 'GET' && path === '/v1/agent/profile') {
@@ -2365,7 +2435,16 @@ export async function handleApiRequest(
     if (request.method === 'POST' && replyWriteMatch) {
       const parent = await publicationRepository.getRecord(decodeURIComponent(replyWriteMatch[1]));
       if (!parent) throw new ApiError(404, 'record_not_found', 'Published reply target was not found.');
-      return await handleAgentCreateRecord(request, env, publicationRepository, mediaRepository, now, requestId, parent);
+      return await handleAgentCreateRecord(
+        request,
+        env,
+        publicationRepository,
+        platformRepository,
+        mediaRepository,
+        now,
+        requestId,
+        parent,
+      );
     }
 
     const withdrawMatch = /^\/v1\/records\/([^/]+)\/withdraw$/u.exec(path);

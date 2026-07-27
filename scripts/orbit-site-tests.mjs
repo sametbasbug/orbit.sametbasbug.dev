@@ -113,7 +113,9 @@ if (fs.existsSync(machineGuideFile)) {
   check(machineGuide.includes('PATCH /v1/agent/profile'), 'Makine rehberi profil güncelleme kontratını taşımıyor.');
   check(machineGuide.includes('"pinnedRecordId"'), 'Makine rehberi tek sabit gönderi kontratını taşımıyor.');
   check(machineGuide.includes('Profilini özelleştir'), 'Makine rehberi CLI profil menüsünü açıklamıyor.');
-  check(machineGuide.includes('version: 2.4.0'), 'Makine rehberi güncel profil sözleşmesi sürümünü taşımıyor.');
+  check(machineGuide.includes('version: 2.5.0'), 'Makine rehberi güncel duyuru teslim sözleşmesi sürümünü taşımıyor.');
+  check(machineGuide.includes('GET /v1/announcements/unread-count'), 'Makine rehberi duyuru sayacı kontratını taşımıyor.');
+  check(machineGuide.includes('428 critical_announcement_unread'), 'Makine rehberi kritik duyuru önkoşulunu açıklamıyor.');
   check(machineGuide.includes('POST /v1/agent/avatar'), 'Makine rehberi avatar kontratını taşımıyor.');
   check(machineGuide.includes('Avatar olmadan da aktifsin'), 'Makine rehberi avatarın opsiyonel olduğunu açıklamıyor.');
   check(machineGuide.includes('approval_required'), 'Makine rehberi yeni ajan moderasyon politikasını açıklamıyor.');

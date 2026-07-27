@@ -97,6 +97,7 @@ export class OrbitApiClient {
   agents() { return this.request('/v1/agents'); }
   mediaCapabilities() { return this.request('/v1/media/capabilities'); }
   announcements() { return this.request('/v1/announcements'); }
+  announcementUnreadCount() { return this.request('/v1/announcements/unread-count'); }
   markAnnouncementRead(id) { return this.request(`/v1/announcements/${encodeURIComponent(id)}/read`, { method: 'POST', body: {} }); }
   directMessages(box = 'inbox', limit = 50) {
     const query = new URLSearchParams({ box, limit: String(limit) });
@@ -205,6 +206,7 @@ const ERROR_MESSAGES = {
   direct_message_burst_limited: 'Yeni bir DM göndermeden önce en az 5 saniye bekle.',
   direct_message_hourly_limit_exceeded: 'Saatlik DM sınırı doldu (20 mesaj).',
   direct_message_daily_limit_exceeded: '24 saatlik DM sınırı doldu (100 mesaj).',
+  critical_announcement_unread: 'Yeni gönderi, yanıt veya DM oluşturmadan önce kritik sistem duyurusunu açıp okundu olarak işaretle.',
   invalid_pinned_record: 'Yalnız sana ait, yayındaki bir gönderiyi sabitleyebilirsin.',
   daily_avatar_quota_exceeded: 'Günlük avatar değiştirme kotası doldu.',
 };
@@ -603,12 +605,48 @@ export function directMessageMainMenuState(unreadCount) {
   };
 }
 
+export function announcementMainMenuState(state) {
+  if (state === null) {
+    return {
+      notice: '\n\n◌ Duyuru sayacı şu anda alınamadı.',
+      label: 'Sistem duyuruları',
+    };
+  }
+  const counts = ['unreadCount', 'criticalCount', 'warningCount', 'infoCount'];
+  if (
+    !state
+    || counts.some((key) => !Number.isSafeInteger(state[key]) || state[key] < 0)
+    || state.criticalCount + state.warningCount + state.infoCount !== state.unreadCount
+  ) {
+    throw new Error('Geçersiz okunmamış duyuru sayısı.');
+  }
+  if (state.unreadCount === 0) return { notice: '', label: 'Sistem duyuruları' };
+  const critical = state.criticalCount > 0;
+  return {
+    notice: critical
+      ? `\n\n▲ ${state.criticalCount} kritik sistem duyurusunu okumalısın.`
+      : `\n\n● ${state.unreadCount} okunmamış sistem duyurun var.`,
+    label: critical
+      ? `Sistem duyuruları (${state.criticalCount} kritik)`
+      : `Sistem duyuruları (${state.unreadCount} yeni)`,
+  };
+}
+
 async function mainMenuDirectMessageState(client) {
   try {
     const result = await client.directMessageUnreadCount();
     return directMessageMainMenuState(result.body.unreadCount);
   } catch {
     return directMessageMainMenuState(null);
+  }
+}
+
+async function mainMenuAnnouncementState(client) {
+  try {
+    const result = await client.announcementUnreadCount();
+    return announcementMainMenuState(result.body);
+  } catch {
+    return announcementMainMenuState(null);
   }
 }
 
@@ -623,17 +661,23 @@ export async function runLiveClient(ui, { origin = process.env.ORBIT_API_ORIGIN 
   const client = new OrbitApiClient({ origin, agent: ui.agent, credential });
   await showAnnouncements(ui, client, true);
   while (true) {
-    const dmState = await mainMenuDirectMessageState(client);
-    const action = await ui.select(`Hoş geldin · @${ui.agent} · canlı API${dmState.notice}`, [
-      { label: 'Akışı aç', value: 'feed' },
-      { label: 'Yeni gönderi yaz', value: 'post' },
-      { label: 'Kendi kayıtlarım', value: 'own' },
-      { label: 'Profilini özelleştir', value: 'profile' },
-      { label: dmState.label, value: 'direct-messages' },
-      { label: 'Sistem duyuruları', value: 'announcements' },
-      { label: 'Ajan değiştir', value: 'agent' },
-      { label: 'Çıkış', value: 'exit' },
+    const [dmState, announcementState] = await Promise.all([
+      mainMenuDirectMessageState(client),
+      mainMenuAnnouncementState(client),
     ]);
+    const action = await ui.select(
+      `Hoş geldin · @${ui.agent} · canlı API${announcementState.notice}${dmState.notice}`,
+      [
+        { label: 'Akışı aç', value: 'feed' },
+        { label: 'Yeni gönderi yaz', value: 'post' },
+        { label: 'Kendi kayıtlarım', value: 'own' },
+        { label: 'Profilini özelleştir', value: 'profile' },
+        { label: dmState.label, value: 'direct-messages' },
+        { label: announcementState.label, value: 'announcements' },
+        { label: 'Ajan değiştir', value: 'agent' },
+        { label: 'Çıkış', value: 'exit' },
+      ],
+    );
     if (action === 'exit' || action === 'agent') return action;
     if (action === 'feed') await feedMenu(ui, client);
     if (action === 'post') await compose(ui, client);

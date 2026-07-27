@@ -605,6 +605,7 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
   });
 
   let allAnnouncementId = '';
+  let targetedAnnouncementId = '';
   test('owner publishes private announcements and agent audiences do not leak', async () => {
     const created = await ownerRequest('/v1/admin/announcements', 'POST', {
       title: 'Bakım penceresi', bodyMarkdown: 'Orbit istemcileri kısa süreli yeniden bağlanabilir.',
@@ -629,25 +630,90 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
       severity: 'critical', audienceType: 'agent', targetAgentId: externalAgent.id,
       startsAt: NOW, expiresAt: null,
     });
-    const targetedId = (await targeted.json() as { announcement: { id: string } }).announcement.id;
-    assert.equal((await ownerRequest(`/v1/admin/announcements/${targetedId}/publish`, 'POST', {})).status, 200);
+    targetedAnnouncementId = (await targeted.json() as { announcement: { id: string } }).announcement.id;
+    assert.equal((await ownerRequest(`/v1/admin/announcements/${targetedAnnouncementId}/publish`, 'POST', {})).status, 200);
 
     const equinoxRows = (await (await agentRequest(agents.get('slice5-equinox')!, '/v1/announcements')).json() as { announcements: Array<{ id: string }> }).announcements;
     const externalRows = (await (await agentRequest(externalAgent, '/v1/announcements')).json() as { announcements: Array<{ id: string }> }).announcements;
     assert.deepEqual(new Set(equinoxRows.map((item) => item.id)), new Set([allAnnouncementId, equinoxOnlyId]));
-    assert.deepEqual(new Set(externalRows.map((item) => item.id)), new Set([allAnnouncementId, targetedId]));
+    assert.deepEqual(new Set(externalRows.map((item) => item.id)), new Set([allAnnouncementId, targetedAnnouncementId]));
+
+    const equinoxUnread = await agentRequest(agents.get('slice5-equinox')!, '/v1/announcements/unread-count');
+    assert.equal(equinoxUnread.status, 200);
+    assert.deepEqual(await equinoxUnread.json(), {
+      unreadCount: 2,
+      criticalCount: 0,
+      warningCount: 1,
+      infoCount: 1,
+      highestSeverity: 'warning',
+    });
+    const externalUnread = await agentRequest(externalAgent, '/v1/announcements/unread-count');
+    assert.equal(externalUnread.status, 200);
+    assert.deepEqual(await externalUnread.json(), {
+      unreadCount: 2,
+      criticalCount: 1,
+      warningCount: 1,
+      infoCount: 0,
+      highestSeverity: 'critical',
+    });
+
+    const blocked = await agentRequest(externalAgent, '/v1/records', 'POST', {
+      bodyMarkdown: 'Kritik duyuru okunmadan yayımlanmaması gereken kayıt.',
+      projectSlug: null,
+      topicSlugs: [],
+    }, 'slice5-critical-announcement-block');
+    assert.equal(blocked.status, 428);
+    const blockedBody = await blocked.json() as {
+      error: { code: string; details: { endpoint: string; announcementIds: string[] } };
+    };
+    assert.equal(blockedBody.error.code, 'critical_announcement_unread');
+    assert.equal(blockedBody.error.details.endpoint, '/v1/announcements');
+    assert.deepEqual(blockedBody.error.details.announcementIds, [targetedAnnouncementId]);
+    const blockedDm = await agentRequest(externalAgent, '/v1/direct-messages', 'POST', {
+      recipientHandle: agents.get('slice5-equinox')!.handle,
+      bodyMarkdown: 'Kritik duyuru okunmadan gönderilmemesi gereken DM.',
+    }, 'slice5-critical-announcement-dm-block');
+    assert.equal(blockedDm.status, 428);
+    assert.equal(
+      (await blockedDm.json() as { error: { code: string } }).error.code,
+      'critical_announcement_unread',
+    );
 
     const publicFeed = await fetch(`${baseUrl}/v1/feed`).then((response) => response.text());
     assert.doesNotMatch(publicFeed, /Bakım penceresi|Equinox iç notu|Tek ajan notu/u);
     assert.equal((await fetch(`${baseUrl}/v1/announcements`)).status, 401);
+    assert.equal((await fetch(`${baseUrl}/v1/announcements/unread-count`)).status, 401);
   });
 
   test('agent read receipt is private and idempotent', async () => {
     const agent = agents.get('slice5-external')!;
     assert.equal((await agentRequest(agent, `/v1/announcements/${allAnnouncementId}/read`, 'POST', {})).status, 200);
     assert.equal((await agentRequest(agent, `/v1/announcements/${allAnnouncementId}/read`, 'POST', {})).status, 200);
+    assert.equal((await agentRequest(agent, `/v1/announcements/${targetedAnnouncementId}/read`, 'POST', {})).status, 200);
     const rows = (await (await agentRequest(agent, '/v1/announcements')).json() as { announcements: Array<{ id: string; readAt: number | null }> }).announcements;
     assert.equal(rows.find((item) => item.id === allAnnouncementId)?.readAt, NOW);
+    assert.equal(rows.find((item) => item.id === targetedAnnouncementId)?.readAt, NOW);
+    assert.deepEqual(
+      await (await agentRequest(agent, '/v1/announcements/unread-count')).json(),
+      {
+        unreadCount: 0,
+        criticalCount: 0,
+        warningCount: 0,
+        infoCount: 0,
+        highestSeverity: null,
+      },
+    );
+    const unblocked = await agentRequest(agent, '/v1/records', 'POST', {
+      bodyMarkdown: 'Kritik duyuru okunduktan sonra yayımlanabilen kayıt.',
+      projectSlug: null,
+      topicSlugs: [],
+    }, 'slice5-critical-announcement-unblocked');
+    assert.ok(unblocked.status === 201 || unblocked.status === 202);
+    const unblockedDm = await agentRequest(agent, '/v1/direct-messages', 'POST', {
+      recipientHandle: agents.get('slice5-equinox')!.handle,
+      bodyMarkdown: 'Kritik duyuru okunduktan sonra gönderilebilen DM.',
+    }, 'slice5-critical-announcement-dm-unblocked');
+    assert.equal(unblockedDm.status, 201);
     const authenticated = await agentRequest(agent, '/v1/announcements');
     assert.match(authenticated.headers.get('cache-control') ?? '', /^no-store/u);
   });

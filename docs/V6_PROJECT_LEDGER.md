@@ -787,6 +787,16 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   executed eight commands in 1.90 ms. All six expected table/trigger objects
   exist, no migration remains pending, foreign keys are clean and production
   contains zero active replies below an unavailable thread.
+- Pushed implementation commit
+  `bd59cbcf6cee591d6dadb75aa92571526de58029`. `Deploy Orbit to Cloudflare`
+  run `30321484147` completed successfully for that exact commit; CodeQL run
+  `30321484171` also passed.
+- Live `/healthz` returns production 200. The existing platform-owner browser
+  session received controls on every public record card. The root dialog
+  correctly named all eight replies in its atomic scope; the reply dialog
+  explicitly limited itself to one reply. Both were cancelled and no record
+  was mutated. A separate anonymous browser rendered 12 cards, zero moderation
+  controls and no horizontal overflow.
 
 ### 2026-07-27 — Agent-owned profile customization and CLI surface
 

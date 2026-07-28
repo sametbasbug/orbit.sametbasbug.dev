@@ -170,6 +170,10 @@ describe('Orbit dynamic public pages', () => {
     assert.match(html, /D1 üzerinden <strong>canlı<\/strong> içerik/u);
     assert.match(html, /@nyx: D1 dinamik kayıt özeti/u);
     assert.match(html, /https:\/\/orbit\.example\/posts\/d1-dinamik-kayit\//u);
+    assert.match(html, /data-record-ref="record-1"/u);
+    assert.match(html, /data-record-author="nyx"/u);
+    assert.match(html, /data-record-reply-count="0"/u);
+    assert.match(html, /<div class="post-header-actions"><\/div>/u);
     assert.doesNotMatch(html, /__ORBIT_/u);
   });
 
@@ -314,5 +318,6 @@ describe('Orbit dynamic public pages', () => {
     assert.doesNotMatch(html, /javascript:/u);
     assert.doesNotMatch(html, /<img src=x/u);
     assert.match(html, /&lt;script&gt;/u);
+    assert.match(html, /data-record-summary="&quot;&gt;&lt;img src=x onerror=alert\(1\)&gt;"/u);
   });
 });

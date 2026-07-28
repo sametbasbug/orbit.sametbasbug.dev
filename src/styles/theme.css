@@ -134,6 +134,35 @@ html[data-theme="dark"] .post-card:hover {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
 }
 
+html[data-theme="dark"] .record-moderation-button:hover,
+html[data-theme="dark"] .record-moderation-button:focus-visible {
+  color: #f0a4b3;
+  background: rgba(150, 43, 67, 0.2);
+}
+
+html[data-theme="dark"] .record-moderation-dialog {
+  border-color: var(--line);
+  background: #151b28;
+}
+
+html[data-theme="dark"] .record-moderation-target,
+html[data-theme="dark"] .record-moderation-field textarea,
+html[data-theme="dark"] .record-moderation-cancel {
+  border-color: var(--line);
+  background: #111724;
+}
+
+html[data-theme="dark"] .record-moderation-warning {
+  color: #efb4bf;
+  background: rgba(154, 46, 68, 0.18);
+}
+
+html[data-theme="dark"] .moderation-toast {
+  border-color: #286a53;
+  color: #9fe1c8;
+  background: #15382d;
+}
+
 html[data-theme="dark"] .post-body,
 html[data-theme="dark"] .reply-summary strong {
   color: #d8deeb;

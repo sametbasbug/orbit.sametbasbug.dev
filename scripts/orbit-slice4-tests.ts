@@ -670,6 +670,83 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     assert.deepEqual(evidence.moderation.map((item) => item.action), ['record.soft_deleted']);
   });
 
+  test('platform owner deletes a root post and its complete reply tree atomically', async () => {
+    const author = await seedAgent('slice4-thread-owner', 'direct_publish');
+    const participant = await seedAgent('slice4-thread-participant', 'direct_publish');
+    const root = await agentWrite(author, '/v1/records', {
+      bodyMarkdown: 'Yönetici arayüzünden bütün yanıtlarıyla kaldırılacak kök gönderi.',
+      topicSlugs: ['sistemler'],
+    }, 'thread-delete-root').then((response) => response.json()) as {
+      record: { id: string; slug: string };
+    };
+    const directReply = await agentWrite(participant, `/v1/records/${root.record.id}/replies`, {
+      bodyMarkdown: 'Kök gönderinin doğrudan yanıtı.',
+    }, 'thread-delete-direct-reply').then((response) => response.json()) as {
+      record: { id: string };
+    };
+    const nestedReply = await agentWrite(author, `/v1/records/${directReply.record.id}/replies`, {
+      bodyMarkdown: 'Doğrudan yanıta bağlı iç içe yanıt.',
+    }, 'thread-delete-nested-reply').then((response) => response.json()) as {
+      record: { id: string };
+    };
+
+    const deleted = await ownerRequest(
+      `/v1/manage/records/${root.record.id}/delete`,
+      'POST',
+      { reason: 'Yönetici görsel arayüz thread silme testi.' },
+      'managed-thread-delete',
+    );
+    assert.equal(deleted.status, 200);
+    const body = await deleted.json() as {
+      record: {
+        id: string;
+        kind: string;
+        status: string;
+        scope: string;
+        deletedCount: number;
+        deletedReplyCount: number;
+      };
+    };
+    assert.deepEqual(body.record, {
+      id: root.record.id,
+      kind: 'post',
+      status: 'deleted',
+      scope: 'thread',
+      deletedCount: 3,
+      deletedReplyCount: 2,
+    });
+
+    for (const recordId of [root.record.id, directReply.record.id, nestedReply.record.id]) {
+      assert.equal((await fetch(`${baseUrl}/v1/records/${recordId}`)).status, 404);
+      const evidence = await testPost('/__test/publication-evidence', { recordId })
+        .then((response) => response.json()) as {
+          audits: Array<{ event_type: string; metadata_json: string }>;
+          moderation: Array<{ action: string }>;
+        };
+      assert.deepEqual(evidence.moderation.map((item) => item.action), ['record.soft_deleted']);
+      assert.ok(evidence.audits.some((item) => (
+        item.event_type === 'record.soft_deleted'
+        && JSON.parse(item.metadata_json).scope === 'thread'
+      )));
+    }
+    assert.equal((await fetch(`${baseUrl}/v1/records/${root.record.slug}`)).status, 404);
+
+    const lateReply = await agentWrite(participant, `/v1/records/${root.record.id}/replies`, {
+      bodyMarkdown: 'Silinmiş thread altında yeni yanıt oluşmamalı.',
+    }, 'thread-delete-late-reply');
+    assert.equal(lateReply.status, 404);
+
+    const replay = await ownerRequest(
+      `/v1/manage/records/${root.record.id}/delete`,
+      'POST',
+      { reason: 'Yönetici görsel arayüz thread silme testi.' },
+      'managed-thread-delete',
+    );
+    assert.equal(replay.status, 200);
+    assert.equal(replay.headers.get('idempotency-replayed'), 'true');
+    assert.deepEqual(await replay.json(), body);
+  });
+
   test('versioned application backup rejects corruption atomically and restores in two phases', async () => {
     const exported = await testPost('/__test/backup-export', { includeSessions: true }).then((response) => response.json()) as {
       schema: string; checksum: { value: string }; counts: Record<string, number>;
@@ -707,7 +784,7 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
       assert.equal(empty.counts.validations, 0);
 
       const restored = await testPost('/__test/backup-restore', { backup: exported, revokeSecurity: true }, started.url);
-      assert.equal(restored.status, 200);
+      assert.equal(restored.status, 200, await restored.clone().text());
       const proof = await restored.json() as { proof: { foreignKeyViolations: number; counts: Record<string, number> } };
       assert.equal(proof.proof.foreignKeyViolations, 0);
       assert.equal(proof.proof.counts.records, exported.counts.records);

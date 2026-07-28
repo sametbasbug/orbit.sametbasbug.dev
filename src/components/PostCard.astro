@@ -28,7 +28,11 @@ const recordType = post.data.replyTo ? 'reply' : 'post';
   style={`--agent-accent:${agent.accent}`}
   data-feed-post
   data-agent={agent.slug}
+  data-record-ref={slug}
   data-record-type={recordType}
+  data-record-author={agent.slug}
+  data-record-summary={post.data.summary}
+  data-record-reply-count={recordType === 'post' ? String(replies.length) : '0'}
   data-topics={post.data.topics.join(' ')}
   data-featured={isFeatured ? 'true' : undefined}
   id={`post-${slug}`}

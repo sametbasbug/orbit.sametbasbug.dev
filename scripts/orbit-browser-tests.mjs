@@ -7,6 +7,11 @@ import { DIST_DIR } from './orbit-content-utils.mjs';
 
 const errors = [];
 let assertions = 0;
+const visualDir = process.env.ORBIT_VISUAL_DIR;
+
+if (visualDir) {
+  fs.mkdirSync(visualDir, { recursive: true });
+}
 
 function check(condition, message) {
   assertions += 1;
@@ -100,6 +105,29 @@ if (errors.length === 0) {
       response.end(JSON.stringify({ records: browserFeedRecords }));
       return;
     }
+    if (pathname === '/v1/me') {
+      const owner = request.headers.cookie?.includes('orbit-owner-test=1');
+      response.writeHead(owner ? 200 : 401, {
+        'cache-control': 'no-store',
+        'content-type': 'application/json; charset=utf-8',
+      });
+      response.end(JSON.stringify(owner
+        ? { account: { roles: ['platform_owner'] } }
+        : { error: { code: 'authentication_required', message: 'A valid session is required.' } }));
+      return;
+    }
+    if (request.method === 'POST' && /^\/v1\/manage\/records\/[^/]+\/delete$/u.test(pathname)) {
+      response.writeHead(200, { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({
+        record: {
+          status: 'deleted',
+          scope: 'thread',
+          deletedCount: 1,
+          deletedReplyCount: 0,
+        },
+      }));
+      return;
+    }
     const file = staticFileFor(request.url ?? '/');
     if (!file) {
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
@@ -133,7 +161,7 @@ if (errors.length === 0) {
       const page = await context.newPage();
       const pageErrors = [];
       page.on('pageerror', (error) => pageErrors.push(error.message));
-      await page.goto(baseUrl, { waitUntil: 'networkidle' });
+      await page.goto(baseUrl, { waitUntil: 'load' });
 
       const layout = await page.evaluate(() => {
         const rect = (selector) => {
@@ -166,6 +194,7 @@ if (errors.length === 0) {
           heroExtraCount: document.querySelectorAll('.welcome-copy .section-label, .welcome-actions, .welcome-agents').length,
           feedHeadingCount: document.querySelectorAll('.feed-heading, #feed-title, [data-feed-result]').length,
           featuredCount: featuredPosts.length,
+          moderationControlCount: document.querySelectorAll('[data-record-moderation]').length,
           nav: rect('.primary-nav'),
           navDisplay: getComputedStyle(navigation).display,
           headerSearch: rect('.header-search-form'),
@@ -206,6 +235,7 @@ if (errors.length === 0) {
       check(layout.feedHeadingCount === 0, `${label}: kaldırılan akış başlığı veya kayıt özeti DOM'da kaldı.`);
       check(layout.featuredCount <= 1, `${label}: ana akışta birden fazla featured gönderi var (${layout.featuredCount}).`);
       check(layout.featuredCount === 0, `${label}: kuruluş dönemi sonrası ana akışta featured kayıt kaldı.`);
+      check(layout.moderationControlCount === 0, `${label}: anonim ziyaretçiye yönetici silme kontrolü göründü.`);
       check(await page.locator('.header-search-form').count() === 1, `${label}: header arama formu eksik.`);
       check(layout.headerTopicCount === 0, `${label}: üst barda yinelenen Konular düğmesi kaldı.`);
       check(layout.sideTopicVisible === (viewport.width > 1260), `${label}: masaüstü sol rayındaki Konular bağlantısı yanlış.`);
@@ -254,14 +284,14 @@ if (errors.length === 0) {
       await page.locator('[data-theme-toggle]').click();
       check(await page.locator('html').getAttribute('data-theme') === 'dark', `${label}: tema dark durumuna geçmedi.`);
       check(await page.evaluate(() => localStorage.getItem('orbit-theme')) === 'dark', `${label}: dark tema localStorage'a yazılmadı.`);
-      await page.reload({ waitUntil: 'networkidle' });
+      await page.reload({ waitUntil: 'load' });
       check(await page.locator('html').getAttribute('data-theme') === 'dark', `${label}: dark tema reload sonrasında korunmadı.`);
       await page.locator('[data-theme-toggle]').click();
       check(await page.locator('html').getAttribute('data-theme') === 'light', `${label}: tema light durumuna geri dönmedi.`);
       check(await page.evaluate(() => localStorage.getItem('orbit-theme')) === 'light', `${label}: light tema localStorage'a yazılmadı.`);
 
       if (viewport.width === 1440) {
-        await page.goto(baseUrl, { waitUntil: 'networkidle' });
+        await page.goto(baseUrl, { waitUntil: 'load' });
         await page.locator('#header-search-input').fill('Selene');
         await page.locator('#header-search-input').press('Enter');
         await page.waitForURL(/\/search\?q=Selene$/);
@@ -270,7 +300,7 @@ if (errors.length === 0) {
       }
 
       if (viewport.width === 390 || viewport.width === 1440) {
-        await page.goto(baseUrl, { waitUntil: 'networkidle' });
+        await page.goto(baseUrl, { waitUntil: 'load' });
         const inviteState = await page.evaluate(() => {
           const prompt = document.querySelector('.agent-invite-prompt')?.getBoundingClientRect();
           return {
@@ -287,7 +317,7 @@ if (errors.length === 0) {
         check(inviteState.stepCount === 3, `${label}: ajan katılım çağrısı üç adım taşımıyor.`);
         check(inviteState.scrollWidth <= inviteState.innerWidth && inviteState.promptRight <= inviteState.innerWidth + 0.5, `${label}: ajan katılım çağrısı yatay taşıyor.`);
 
-        await page.goto(`${baseUrl}/?view=replies`, { waitUntil: 'networkidle' });
+        await page.goto(`${baseUrl}/?view=replies`, { waitUntil: 'load' });
         let feedState = await page.evaluate(() => ({
           url: location.href,
           visible: [...document.querySelectorAll('[data-feed-post]')]
@@ -296,7 +326,7 @@ if (errors.length === 0) {
         }));
         check(!feedState.url.includes('view='), `${label}: kaldırılan görünüm filtresi URL'de kaldı.`);
         check(feedState.visible.length > 0 && feedState.visible.every((item) => item.type !== 'reply'), `${label}: ana akışta yanıt kaydı kaldı.`);
-        await page.goto(`${baseUrl}/feed/selene`, { waitUntil: 'networkidle' });
+        await page.goto(`${baseUrl}/feed/selene`, { waitUntil: 'load' });
         feedState = await page.evaluate(() => ({
           url: location.href,
           visible: [...document.querySelectorAll('[data-feed-post]')]
@@ -307,20 +337,20 @@ if (errors.length === 0) {
         check(feedState.visible.length > 0 && feedState.visible.every((item) => item.agent === 'selene' && item.type !== 'reply'), `${label}: Selene akışı ilgisiz veya yanıt kaydı gösterdi.`);
         check(await page.locator('.feed-filter').count() === 0, `${label}: ajan filtresi Selene akışında kaldı.`);
 
-        await page.goto(`${baseUrl}/?agent=selene`, { waitUntil: 'networkidle' });
+        await page.goto(`${baseUrl}/?agent=selene`, { waitUntil: 'load' });
         await page.waitForURL(/\/feed\/selene$/);
         check(new URL(page.url()).pathname === '/feed/selene', `${label}: eski agent sorgusu filtrelenmiş akışa yönlenmedi.`);
 
-        await page.goto(baseUrl, { waitUntil: 'networkidle' });
+        await page.goto(baseUrl, { waitUntil: 'load' });
         await page.evaluate(() => {
           window.scrollTo(0, document.documentElement.scrollHeight);
           sessionStorage.setItem('orbit-pagination-scroll-top', 'true');
         });
-        await page.reload({ waitUntil: 'networkidle' });
+        await page.reload({ waitUntil: 'load' });
         await page.waitForFunction(() => window.scrollY === 0);
         check(await page.evaluate(() => window.scrollY === 0), `${label}: pagination geçiş işareti sayfayı en üste taşımadı.`);
 
-        await page.goto(`${baseUrl}/search?q=Selene`, { waitUntil: 'networkidle' });
+        await page.goto(`${baseUrl}/search?q=Selene`, { waitUntil: 'load' });
         await page.waitForSelector('[data-search-item]:not([hidden])');
         const searchState = await page.evaluate(() => ({
           innerWidth,
@@ -346,7 +376,7 @@ if (errors.length === 0) {
         check(topicFiltered.url.includes('topic=editoryal'), `${label}: arama konu filtresi URL state yazmadı.`);
         check(topicFiltered.visible.length === seleneEditorialCount && topicFiltered.visible.every((item) => normalizeSearchText(item).includes('selene')), `${label}: Selene + Editoryal arama filtresi yanlış.`);
 
-        await page.goto(`${baseUrl}/search?q=katki`, { waitUntil: 'networkidle' });
+        await page.goto(`${baseUrl}/search?q=katki`, { waitUntil: 'load' });
         await page.waitForSelector('[data-search-item]:not([hidden])');
         const asciiTurkishSearch = await page.evaluate(() => ({
           summary: document.querySelector('[data-search-summary]')?.textContent?.trim(),
@@ -357,7 +387,7 @@ if (errors.length === 0) {
         check(!asciiTurkishSearch.summary?.startsWith('0 '), `${label}: ASCII katki sorgusu Türkçe katkı metnini bulmadı.`);
         check(asciiTurkishSearch.visibleHrefs.includes('/posts/katki-kime-ait'), `${label}: katki sorgusunda ana katkı gönderisi yok.`);
 
-        await page.goto(`${baseUrl}/search`, { waitUntil: 'networkidle' });
+        await page.goto(`${baseUrl}/search`, { waitUntil: 'load' });
         await page.waitForSelector('[data-search-item]:not([hidden])');
         await page.locator('[data-search-agent-filter]').selectOption('nyx');
         const filteredWithoutQuery = await page.evaluate(() => {
@@ -371,12 +401,12 @@ if (errors.length === 0) {
         check(await page.locator('[data-search-empty]').isVisible(), `${label}: sonuçsuz aramada boş durum görünmüyor.`);
         check(await page.evaluate(() => [...document.querySelectorAll('[data-search-item]')].every((item) => getComputedStyle(item).display === 'none')), `${label}: sonuçsuz aramada kayıtlar gizlenmedi.`);
 
-        await page.goto(`${baseUrl}/search?project=orbit`, { waitUntil: 'networkidle' });
+        await page.goto(`${baseUrl}/search?project=orbit`, { waitUntil: 'load' });
         await page.waitForSelector('[data-search-item]:not([hidden])');
         check(await page.locator('[data-search-project-filter]').count() === 0, `${label}: kaldırılan proje filtresi aramada kaldı.`);
         check(await page.locator('a[href^="/projects"]').count() === 0, `${label}: arama kaldırılan proje rotasına bağlanıyor.`);
 
-        await page.goto(`${baseUrl}/agents/nyx`, { waitUntil: 'networkidle' });
+        await page.goto(`${baseUrl}/agents/nyx`, { waitUntil: 'load' });
         const profileState = await page.evaluate(() => {
           const rect = (selector) => {
             const element = document.querySelector(selector);
@@ -423,12 +453,12 @@ if (errors.length === 0) {
         }
         check(pageErrors.length === 0, `${label}: profil turunda sayfa hatası: ${pageErrors.join(' | ')}`);
 
-        await page.goto(baseUrl, { waitUntil: 'networkidle' });
+        await page.goto(baseUrl, { waitUntil: 'load' });
         const firstSave = page.locator('[data-feed-post]:not([hidden]) [data-save-button]').first();
         const savedSlug = await firstSave.getAttribute('data-save-slug');
         await firstSave.click();
         check(await page.evaluate((slug) => JSON.parse(localStorage.getItem('orbit-saved-posts') || '[]').includes(slug), savedSlug), `${label}: kaydetme localStorage'a yazılmadı.`);
-        await page.goto(`${baseUrl}/saved`, { waitUntil: 'networkidle' });
+        await page.goto(`${baseUrl}/saved`, { waitUntil: 'load' });
         await page.waitForSelector('[data-saved-card]');
         check(await page.locator('[data-saved-card]:visible').count() === 1, `${label}: Kaydedilenler tek kaydı göstermedi.`);
         check((await page.locator('[data-saved-summary]').textContent())?.includes('1 kayıt'), `${label}: Kaydedilenler özeti yanlış.`);
@@ -436,7 +466,7 @@ if (errors.length === 0) {
         check(await page.locator('[data-saved-empty]').isVisible(), `${label}: kayıt kaldırılınca boş durum görünmedi.`);
 
         if (viewport.width === 1440) {
-          await page.goto(baseUrl, { waitUntil: 'networkidle' });
+          await page.goto(baseUrl, { waitUntil: 'load' });
           const firstCard = page.locator('[data-feed-post]').first();
           const hitArea = firstCard.locator('.post-card-hit-area');
           const hitAreaBox = await hitArea.boundingBox();
@@ -449,13 +479,74 @@ if (errors.length === 0) {
           }
         }
 
-        await page.goto(`${baseUrl}/topics/ajanlar`, { waitUntil: 'networkidle' });
+        await page.goto(`${baseUrl}/topics/ajanlar`, { waitUntil: 'load' });
         check(await page.locator('.topic-feed [data-feed-post]').count() === agentTopicRecordCount, `${label}: Ajan muhakemesi konusu indeksle aynı sayıda kayıt göstermedi.`);
         check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: konu sayfası yatay taşıyor.`);
 
       }
       await context.close();
     }));
+
+    for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+      const label = `${viewport.width}x${viewport.height} owner`;
+      const context = await browser.newContext({ viewport, colorScheme: 'light' });
+      await context.addCookies([{
+        name: 'orbit-owner-test',
+        value: '1',
+        url: baseUrl,
+      }]);
+      const page = await context.newPage();
+      const pageErrors = [];
+      page.on('pageerror', (error) => pageErrors.push(error.message));
+      await page.goto(baseUrl, { waitUntil: 'load' });
+      await page.waitForSelector('[data-record-moderation]');
+
+      const ownerState = await page.evaluate(() => ({
+        innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        cards: document.querySelectorAll('[data-record-ref]').length,
+        controls: document.querySelectorAll('[data-record-moderation]').length,
+        firstButtonLabel: document.querySelector('[data-record-moderation]')?.getAttribute('aria-label'),
+      }));
+      check(ownerState.cards > 0 && ownerState.controls === ownerState.cards, `${label}: her kayıt kartında owner silme kontrolü yok.`);
+      check(ownerState.firstButtonLabel === 'Bu gönderiyi sil', `${label}: gönderi silme düğmesinin erişilebilir etiketi yanlış.`);
+      check(ownerState.scrollWidth <= ownerState.innerWidth, `${label}: owner kontrolleri sayfayı yatay taşırdı.`);
+
+      const firstCard = page.locator('[data-record-ref]').first();
+      const initialCardCount = await page.locator('[data-record-ref]').count();
+      await firstCard.locator('[data-record-moderation]').click();
+      const dialog = page.locator('.record-moderation-dialog');
+      check(await dialog.isVisible(), `${label}: silme onay penceresi açılmadı.`);
+      check((await dialog.locator('[data-moderation-title]').textContent())?.trim() === 'Gönderiyi sil?', `${label}: gönderi onay başlığı yanlış.`);
+      check((await dialog.locator('[data-moderation-reason]').inputValue()).length > 0, `${label}: audit nedeni varsayılan olarak doldurulmadı.`);
+      if (visualDir) {
+        await page.screenshot({
+          path: path.join(visualDir, `owner-delete-post-${viewport.width}x${viewport.height}.png`),
+          fullPage: true,
+        });
+      }
+      await dialog.locator('[data-moderation-confirm]').click();
+      await page.waitForSelector('.moderation-toast:not([hidden])');
+      check(await page.locator('[data-record-ref]').count() === initialCardCount - 1, `${label}: başarılı silme sonrasında kart arayüzden kalkmadı.`);
+
+      await page.goto(`${baseUrl}/posts/katki-kime-ait`, { waitUntil: 'load' });
+      await page.waitForSelector('.reply-list [data-record-moderation]');
+      const replyCard = page.locator('.reply-list [data-record-type="reply"]').first();
+      await replyCard.locator('[data-record-moderation]').click();
+      check((await dialog.locator('[data-moderation-title]').textContent())?.trim() === 'Yanıtı sil?', `${label}: yanıt onay başlığı yanlış.`);
+      check((await dialog.locator('[data-moderation-copy]').textContent())?.includes('Yalnız bu yanıt kaldırılacak'), `${label}: yanıt silme kapsamı açık anlatılmıyor.`);
+      check((await dialog.locator('[data-moderation-confirm]').textContent())?.trim() === 'Yanıtı sil', `${label}: yanıt silme eylemi yanlış etiketlendi.`);
+      if (visualDir) {
+        await page.screenshot({
+          path: path.join(visualDir, `owner-delete-reply-${viewport.width}x${viewport.height}.png`),
+          fullPage: true,
+        });
+      }
+      await dialog.locator('.record-moderation-cancel').click();
+      check(!(await dialog.isVisible()), `${label}: vazgeç düğmesi dialogu kapatmadı.`);
+      check(pageErrors.length === 0, `${label}: owner UI sayfa hatası: ${pageErrors.join(' | ')}`);
+      await context.close();
+    }
   } finally {
     await browser.close();
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

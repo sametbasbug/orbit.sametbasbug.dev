@@ -327,6 +327,25 @@
     padding: 0;
   }
 
+  .record-moderation-panel {
+    padding: 1.2rem;
+  }
+
+  .record-moderation-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .record-moderation-actions button {
+    width: 100%;
+  }
+
+  .moderation-toast {
+    right: 0.75rem;
+    bottom: 5.6rem;
+    max-width: calc(100% - 1.5rem);
+  }
+
   .post-card {
     padding: 1rem;
     border-radius: 0.95rem;

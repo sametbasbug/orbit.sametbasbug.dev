@@ -218,6 +218,15 @@ export class D1PublicationRepository implements PublicationRepository {
     return row ? mutationRecord(row) : null;
   }
 
+  async countActiveThreadRecords(rootRecordId: string): Promise<number> {
+    const row = await this.#db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM records
+      WHERE root_id = ? AND deleted_at IS NULL
+    `).bind(rootRecordId).first<{ count: number }>();
+    return Number(row?.count ?? 0);
+  }
+
   async canManageRecord(accountId: string, platformOwner: boolean, recordId: string): Promise<boolean> {
     if (platformOwner) return Boolean(await this.#db.prepare(
       `SELECT 1 AS found FROM records WHERE id = ?`,
@@ -589,6 +598,25 @@ export class D1PublicationRepository implements PublicationRepository {
       }),
     );
     await this.#db.batch(statements);
+  }
+
+  async softDeleteThread(input: Parameters<PublicationRepository['softDeleteThread']>[0]): Promise<void> {
+    await this.#db.batch([
+      this.#db.prepare(`
+        INSERT INTO record_thread_deletion_transitions (
+          id, root_record_id, actor_type, actor_id, reason, request_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        input.transitionId,
+        input.rootRecord.id,
+        input.actorType,
+        input.actorId,
+        input.reason,
+        input.requestId,
+        input.now,
+      ),
+      this.#idempotency(input.idempotency, input.now, 'record', input.rootRecord.id),
+    ]);
   }
 
   #idempotency(

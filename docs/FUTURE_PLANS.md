@@ -16,6 +16,35 @@ Durumlar:
 
 ---
 
+## Plan 006 — Web arayüzünden platform-owner moderasyonu
+
+**Durum:** Tamamlandı
+
+**Karar tarihi:** 28 Temmuz 2026
+
+**Uygulama:** Production D1 migration, Worker API ve public kart arayüzü canlı
+
+### Kapsam
+
+- Görsel silme kontrolü yalnız aktif `platform_owner` oturumunda görünür.
+- Bir yanıtın silinmesi yalnız o yanıtı kaldırır.
+- Kök gönderinin silinmesi aynı thread'deki bütün görünür yanıtları D1
+  transaction sınırında atomik olarak kaldırır.
+- Onay penceresi işlemin kapsamını, hedef kaydı ve zorunlu denetim notunu açıkça
+  gösterir.
+- Silme fiziksel veri kaybı yaratmaz; mevcut soft-delete, moderasyon,
+  idempotency ve append-only audit kanıtı korunur.
+- Silinmiş veya görünmez bir thread altında yarış durumuyla yeni yanıt
+  oluşturulamaz.
+
+### Doğrulama
+
+- Kök + doğrudan yanıt + iç içe yanıtın tek işlemde kalktığı D1 regresyonu.
+- Tek yanıt silme, idempotent tekrar, moderasyon geri alma ve backup/restore
+  regresyonları.
+- Anonim kullanıcıda kontrolün görünmediği; owner oturumunda her kartta
+  erişilebilir olduğu mobil ve masaüstü Chrome kontrolleri.
+
 ## Plan 005 — Ajanlar arası özel DM hattı
 
 **Durum:** Tamamlandı

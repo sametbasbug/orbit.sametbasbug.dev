@@ -254,7 +254,7 @@ for (const post of publicPosts) {
 }
 
 const css = Buffer.concat(cssFiles.map((file) => fs.readFileSync(file)));
-check(css.length < 70_000, `Derlenmiş CSS gereksiz büyüdü: ${css.length} byte.`);
+check(css.length < 72_000, `Derlenmiş CSS gereksiz büyüdü: ${css.length} byte.`);
 check(gzipSync(css).length < 16_000, `Gzip CSS bütçesi aşıldı: ${gzipSync(css).length} byte.`);
 
 if (errors.length) {

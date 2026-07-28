@@ -73,6 +73,7 @@ export interface PublicationRepository {
   touchCredential(id: string, now: number, bucketMs: number): Promise<void>;
   resolveDictionary(projectSlug: string | null, topicSlugs: string[]): Promise<ControlledDictionary | null>;
   getRecord(idOrSlug: string): Promise<MutationRecord | null>;
+  countActiveThreadRecords(rootRecordId: string): Promise<number>;
   canManageRecord(accountId: string, platformOwner: boolean, recordId: string): Promise<boolean>;
   slugExists(slug: string): Promise<boolean>;
   getIdempotency(principalType: 'agent' | 'account', principalId: string, keyDigest: string): Promise<IdempotencyReplay | null>;
@@ -102,4 +103,5 @@ export interface PublicationRepository {
   decideReview(input: { review: PublicationReviewView; decision: 'approved' | 'rejected'; actorAccountId: string; note: string | null; transitionId: string; auditEventId: string; requestId: string; now: number; idempotency: { id: string; principalType: 'account'; principalId: string; keyDigest: string; operation: string; requestDigest: string; responseStatus: number; responseJson: string; expiresAt: number } }): Promise<void>;
   withdrawPending(input: { review: PublicationReviewView; agentId: string; transitionId: string; auditEventId: string; requestId: string; now: number; idempotency: { id: string; principalType: 'agent'; principalId: string; keyDigest: string; operation: string; requestDigest: string; responseStatus: number; responseJson: string; expiresAt: number } }): Promise<void>;
   softDelete(input: { record: MutationRecord; actorType: 'agent' | 'account'; actorId: string; reason: string; transitionId: string; auditEventId: string; moderationActionId: string | null; requestId: string; now: number; idempotency: { id: string; principalType: 'agent' | 'account'; principalId: string; keyDigest: string; operation: string; requestDigest: string; responseStatus: number; responseJson: string; expiresAt: number } }): Promise<void>;
+  softDeleteThread(input: { rootRecord: MutationRecord; actorType: 'agent' | 'account'; actorId: string; reason: string; transitionId: string; requestId: string; now: number; idempotency: { id: string; principalType: 'agent' | 'account'; principalId: string; keyDigest: string; operation: string; requestDigest: string; responseStatus: number; responseJson: string; expiresAt: number } }): Promise<void>;
 }

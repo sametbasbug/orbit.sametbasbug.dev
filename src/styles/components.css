@@ -416,6 +416,232 @@
   fill: currentColor;
 }
 
+.record-moderation-button {
+  width: 2.2rem;
+  height: 2.2rem;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0.65rem;
+  color: var(--faint);
+  background: transparent;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.record-moderation-button:hover,
+.record-moderation-button:focus-visible {
+  color: #b0334d;
+  background: #fff0f3;
+}
+
+.record-moderation-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, #b0334d 55%, white);
+  outline-offset: 1px;
+}
+
+.record-moderation-button svg {
+  width: 1.08rem;
+  height: 1.08rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.record-moderation-dialog {
+  width: min(31rem, calc(100% - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 1.15rem;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 28px 90px rgba(18, 24, 42, 0.28);
+}
+
+.record-moderation-dialog::backdrop {
+  background: rgba(15, 20, 34, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.record-moderation-panel {
+  position: relative;
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.5rem;
+}
+
+.record-moderation-close {
+  position: absolute;
+  top: 0.8rem;
+  right: 0.8rem;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 50%;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 1.3rem;
+  cursor: pointer;
+}
+
+.record-moderation-close:hover {
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.record-moderation-kicker {
+  margin: 0;
+  color: #a33249;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.record-moderation-dialog h2 {
+  margin: -0.25rem 2rem 0 0;
+  font-size: 1.45rem;
+  letter-spacing: -0.035em;
+}
+
+.record-moderation-copy,
+.record-moderation-warning,
+.record-moderation-error {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.record-moderation-copy {
+  color: var(--muted);
+}
+
+.record-moderation-target {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.85rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: var(--paper);
+}
+
+.record-moderation-target strong {
+  color: var(--ink);
+  font-size: 0.75rem;
+}
+
+.record-moderation-target span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record-moderation-field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.record-moderation-field span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.record-moderation-field textarea {
+  width: 100%;
+  min-height: 5.7rem;
+  padding: 0.72rem 0.78rem;
+  border: 1px solid var(--line-dark);
+  border-radius: 0.75rem;
+  color: var(--ink);
+  background: var(--paper);
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.record-moderation-field textarea:focus {
+  outline: 0;
+  border-color: color-mix(in srgb, var(--orbit-blue) 52%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--orbit-blue) 10%, transparent);
+}
+
+.record-moderation-warning {
+  padding: 0.72rem 0.8rem;
+  border-left: 3px solid #c7566b;
+  color: #7e3342;
+  background: #fff4f6;
+}
+
+.record-moderation-error {
+  min-height: 1.2rem;
+  color: #a42f46;
+  font-weight: 700;
+}
+
+.record-moderation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.record-moderation-actions button {
+  min-height: 2.65rem;
+  padding: 0.62rem 0.95rem;
+  border-radius: 0.72rem;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.record-moderation-cancel {
+  border: 1px solid var(--line-dark);
+  color: var(--muted);
+  background: var(--paper);
+}
+
+.record-moderation-confirm {
+  border: 1px solid #a92f49;
+  color: #fff;
+  background: #ad334d;
+  box-shadow: 0 5px 14px rgba(173, 51, 77, 0.18);
+}
+
+.record-moderation-confirm:hover {
+  background: #982a42;
+}
+
+.record-moderation-confirm:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.moderation-toast {
+  position: fixed;
+  z-index: 50;
+  right: 1rem;
+  bottom: 1rem;
+  max-width: min(24rem, calc(100% - 2rem));
+  padding: 0.78rem 0.9rem;
+  border: 1px solid #a9d9c6;
+  border-radius: 0.8rem;
+  color: #116947;
+  background: #edf9f4;
+  box-shadow: 0 14px 40px rgba(18, 36, 31, 0.16);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
 .post-footer {
   margin: 1.1rem 0 0 3.7rem;
   padding-top: 0.75rem;

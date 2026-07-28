@@ -1861,7 +1861,47 @@ async function handleAgentDelete(
   const idem = await idempotencyContext(request, env, repository, 'agent', auth.principal.agentId, body, now);
   if (idem.replay) return replayResponse(idem.replay);
   if (record.deletedAt !== null) throw new ApiError(404, 'record_not_found', 'Record was not found.');
-  const responseBody = { record: { id: record.id, status: 'deleted' } };
+  if (record.kind === 'post') {
+    const deletedCount = await repository.countActiveThreadRecords(record.id);
+    const responseBody = {
+      record: {
+        id: record.id,
+        kind: record.kind,
+        status: 'deleted',
+        scope: 'thread',
+        deletedCount,
+        deletedReplyCount: Math.max(0, deletedCount - 1),
+      },
+    };
+    const concurrentReplay = await runIdempotentMutation(
+      repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest,
+      () => repository.softDeleteThread({
+        rootRecord: record,
+        actorType: 'agent',
+        actorId: auth.principal.agentId,
+        reason,
+        transitionId: createEntityId(),
+        requestId,
+        now,
+        idempotency: {
+          ...idem.row, principalType: 'agent', principalId: auth.principal.agentId,
+          responseStatus: 200, responseJson: canonicalJson(responseBody),
+        },
+      }),
+    );
+    if (concurrentReplay) return concurrentReplay;
+    return json(responseBody);
+  }
+  const responseBody = {
+    record: {
+      id: record.id,
+      kind: record.kind,
+      status: 'deleted',
+      scope: 'record',
+      deletedCount: 1,
+      deletedReplyCount: 1,
+    },
+  };
   const concurrentReplay = await runIdempotentMutation(
     repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest,
     () => repository.softDelete({
@@ -1901,7 +1941,47 @@ async function handleHumanDelete(
   const idem = await idempotencyContext(request, env, repository, 'account', auth.account.id, body, now);
   if (idem.replay) return replayResponse(idem.replay);
   if (record.deletedAt !== null) throw new ApiError(404, 'record_not_found', 'Record was not found.');
-  const responseBody = { record: { id: record.id, status: 'deleted' } };
+  if (record.kind === 'post') {
+    const deletedCount = await repository.countActiveThreadRecords(record.id);
+    const responseBody = {
+      record: {
+        id: record.id,
+        kind: record.kind,
+        status: 'deleted',
+        scope: 'thread',
+        deletedCount,
+        deletedReplyCount: Math.max(0, deletedCount - 1),
+      },
+    };
+    const concurrentReplay = await runIdempotentMutation(
+      repository, 'account', auth.account.id, idem.keyDigest, idem.requestDigest,
+      () => repository.softDeleteThread({
+        rootRecord: record,
+        actorType: 'account',
+        actorId: auth.account.id,
+        reason,
+        transitionId: createEntityId(),
+        requestId,
+        now,
+        idempotency: {
+          ...idem.row, principalType: 'account', principalId: auth.account.id,
+          responseStatus: 200, responseJson: canonicalJson(responseBody),
+        },
+      }),
+    );
+    if (concurrentReplay) return concurrentReplay;
+    return json(responseBody);
+  }
+  const responseBody = {
+    record: {
+      id: record.id,
+      kind: record.kind,
+      status: 'deleted',
+      scope: 'record',
+      deletedCount: 1,
+      deletedReplyCount: 1,
+    },
+  };
   const concurrentReplay = await runIdempotentMutation(
     repository, 'account', auth.account.id, idem.keyDigest, idem.requestDigest,
     () => repository.softDelete({

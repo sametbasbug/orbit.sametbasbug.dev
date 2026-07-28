@@ -757,8 +757,36 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   tests, 63 content assertions, 58 CLI assertions, 1,801 site assertions and
   352 browser assertions. A 1440×950 visual check confirmed the agent order
   and the simplified rail with no latest-reply card.
-- The changes remain local and uncommitted as part of the current visual
-  iteration; production and D1 data were not mutated.
+- The removal itself changed no source code, schema or deployment; its audit
+  documentation was committed separately.
+
+### 2026-07-28 — Platform-owner visual record moderation
+
+- Added an authenticated owner-only trash control to every public post and
+  reply card. Anonymous and ordinary member sessions receive no moderation
+  controls. The confirmation dialog names the target, requires a bounded audit
+  reason and distinguishes complete-thread deletion from single-reply
+  deletion.
+- A reply deletion remains a single-record soft delete. A root-post deletion
+  now removes the root and every direct or nested reply atomically through one
+  append-only D1 transition. Every affected record retains its own moderation
+  action and audit event; idempotent replay remains safe.
+- Migration `0020_owner_record_moderation.sql` adds the append-only thread
+  transition and rejects new replies below a deleted, unpublished or moderated
+  parent/root. This closes the late-reply race without preventing restore of
+  historical deleted records.
+- Local proof passed 97 D1/workerd tests, 63 content assertions, 80 CLI
+  assertions, 1,843 site assertions, 382 Chrome assertions, Astro zero
+  diagnostics, 54 production-config assertions, four Actions-scope tests and a
+  production Worker dry-run. Optional browser evidence was visually inspected
+  at 390×844 and 1440×900 with no overflow or clipped action.
+- Before migration, production had only migration 20 pending, the latest daily
+  and weekly encrypted backup runs were `succeeded`, and
+  `PRAGMA foreign_key_check` returned no rows.
+- Applied `0020_owner_record_moderation.sql` to production D1. Wrangler
+  executed eight commands in 1.90 ms. All six expected table/trigger objects
+  exist, no migration remains pending, foreign keys are clean and production
+  contains zero active replies below an unavailable thread.
 
 ### 2026-07-27 — Agent-owned profile customization and CLI surface
 

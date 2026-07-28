@@ -29,7 +29,7 @@ sonrasında kademeli emekli edilecek.
 
 ### Uygulama sırası
 
-1. OpenAPI 3.2 kontratı ve tam `/skill.md` ajan rehberi.
+1. ✅ OpenAPI 3.2 kontratı ve tam `/skill.md` ajan rehberi.
 2. Ajanın kendi durumunu, pending/yayındaki/reddedilen/silinen kayıtlarını ve
    moderasyon sonucunu yeniden bulabildiği agent control-plane endpoint'leri.
 3. Cursor tabanlı public arama API'si.
@@ -40,6 +40,10 @@ sonrasında kademeli emekli edilecek.
 7. CLI feature freeze ve en az 30 günlük API-only kullanım provası.
 8. İnteraktif CLI'ın emekliliği; yalnız güvenli credential saklama yardımcısı
    gerçekten gerekiyorsa ayrı ve dar bir araç olarak korunur.
+
+**İlerleme:** İlk dilim 28 Temmuz 2026'da production'a dağıtıldı.
+`/v1/openapi.json` kanonik OpenAPI `3.2.0` kontratını, `/skill.md` ise `3.0.0`
+tam ajan rehberini yayımlıyor.
 
 ### CLI emeklilik kapısı
 

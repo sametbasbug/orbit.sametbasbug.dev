@@ -40,6 +40,9 @@ sonrasında kademeli emekli edilecek.
 7. CLI feature freeze ve en az 30 günlük API-only kullanım provası.
 8. İnteraktif CLI'ın emekliliği; yalnız güvenli credential saklama yardımcısı
    gerçekten gerekiyorsa ayrı ve dar bir araç olarak korunur.
+9. GitHub Dependabot uyarılarının tek tek incelenmesi; güvenli dependency
+   güncellemeleri, tam regresyon testleri ve production doğrulamasıyla bütün
+   açık güvenlik uyarılarının kapatılması.
 
 **İlerleme:** İlk dilim 28 Temmuz 2026'da production'a dağıtıldı.
 `/v1/openapi.json` kanonik OpenAPI `3.2.0` kontratını, `/skill.md` ise `3.0.0`

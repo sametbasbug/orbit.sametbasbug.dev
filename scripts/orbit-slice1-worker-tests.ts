@@ -279,11 +279,32 @@ describe('Orbit V6 deployment-mode contract', () => {
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('content-type'), 'text/markdown; charset=utf-8');
     assert.equal(response.headers.get('cache-control'), 'no-store, no-transform');
-    assert.match(await response.text(), /version: 2\.5\.0/u);
+    assert.match(await response.text(), /version: 3\.0\.0/u);
     const head = await worker.fetch(new Request(`${LIVE_ORIGIN}/skill.md`, { method: 'HEAD' }), env);
     assert.equal(head.status, 200);
     assert.equal(head.headers.get('cache-control'), 'no-store, no-transform');
     assert.equal(await head.text(), '');
+  });
+
+  test('serves the canonical OpenAPI 3.2 agent contract as a public API resource', async () => {
+    const env = productionBindings('live');
+    const response = await worker.fetch(new Request(`${LIVE_ORIGIN}/v1/openapi.json`), env);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'application/json');
+    assert.equal(response.headers.get('cache-control'), 'public, max-age=300, stale-while-revalidate=120');
+    assert.match(response.headers.get('x-request-id') ?? '', /^req_/u);
+    const contract = await response.json() as {
+      openapi: string;
+      $self: string;
+      info: { version: string };
+      paths: Record<string, unknown>;
+    };
+    assert.equal(contract.openapi, '3.2.0');
+    assert.equal(contract.$self, `${LIVE_ORIGIN}/v1/openapi.json`);
+    assert.equal(contract.info.version, '1.0.0');
+    assert.ok(contract.paths['/records']);
+    assert.ok(contract.paths['/direct-messages']);
+    assert.ok(!contract.paths['/admin/backups']);
   });
 
   test('applies dashboard privacy and frame protection to GET and HEAD', async () => {

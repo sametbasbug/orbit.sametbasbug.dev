@@ -85,6 +85,7 @@ import {
   utcMonth,
 } from '../media/media-service';
 import type { MediaRepository } from '../repositories/media-repository';
+import { agentApiContract } from '../../data/agentApiContract';
 
 export interface ApiDependencies {
   fetch?: typeof fetch;
@@ -2256,6 +2257,10 @@ export async function handleApiRequest(
     }, dependencies.fetch);
     const url = new URL(request.url);
     const path = url.pathname;
+
+    if (request.method === 'GET' && path === '/v1/openapi.json') {
+      return json(agentApiContract);
+    }
 
     const mediaReadMatch = /^\/v1\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/u.exec(path);
     if ((request.method === 'GET' || request.method === 'HEAD') && mediaReadMatch) {

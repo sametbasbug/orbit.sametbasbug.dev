@@ -2,6 +2,8 @@ import {
   D1FoundationRepository,
   type D1DatabaseLike,
 } from '../src/server/repositories/d1/d1-foundation-repository';
+import { createDynamicBackup } from '../src/server/backup/dynamic-backup';
+import { D1McpAuthorizationRepository } from '../src/server/repositories/d1/d1-mcp-authorization-repository';
 
 interface TestStatement {
   bind(...values: unknown[]): TestStatement;
@@ -66,6 +68,31 @@ async function seedOwner(db: TestDatabase, accountId: string, now: number): Prom
       id, handle, handle_normalized, display_name, status, created_at, updated_at
     ) VALUES (?, ?, ?, ?, 'active', ?, ?)
   `).bind(accountId, accountId, accountId, accountId, now, now).run();
+  await db.prepare(`
+    INSERT OR IGNORE INTO account_quotas (
+      account_id, quota_key, limit_value, updated_by_account_id, updated_at
+    ) VALUES (?, 'agents.max_active', -1, ?, ?)
+  `).bind(accountId, accountId, now).run();
+}
+
+async function seedMcpAgent(
+  db: TestDatabase,
+  accountId: string,
+  agentId: string,
+  now: number,
+): Promise<void> {
+  await seedOwner(db, accountId, now);
+  await db.prepare(`
+    INSERT OR IGNORE INTO agents (
+      id, handle, handle_normalized, display_name, bio, avatar_asset,
+      publication_mode, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, '', 'test.svg', 'direct_publish', 'active', ?, ?)
+  `).bind(agentId, agentId, agentId, agentId, now, now).run();
+  await db.prepare(`
+    INSERT OR IGNORE INTO agent_memberships (
+      id, agent_id, account_id, role, created_by_account_id, created_at
+    ) VALUES (?, ?, ?, 'primary_sponsor', ?, ?)
+  `).bind(`${agentId}:${accountId}:primary`, agentId, accountId, accountId, now).run();
 }
 
 async function seedAgent(
@@ -94,6 +121,7 @@ async function seedAgent(
 async function handleAction(body: ActionRequest, env: Environment): Promise<Response> {
   const data = body.data ?? {};
   const repository = new D1FoundationRepository(env.DB);
+  const mcpRepository = new D1McpAuthorizationRepository(env.DB);
 
   switch (body.action) {
     case 'health':
@@ -169,6 +197,161 @@ async function handleAction(body: ActionRequest, env: Environment): Promise<Resp
         redemptionCount: await count(env.DB, 'invitation_redemptions', 'invitation_id', invitationId),
         auditCount: await count(env.DB, 'audit_events', 'id', auditEventId),
       });
+    }
+
+    case 'seedMcpAgent': {
+      await seedMcpAgent(
+        env.DB,
+        stringValue(data, 'accountId'),
+        stringValue(data, 'agentId'),
+        numberValue(data, 'now'),
+      );
+      return json({ ok: true });
+    }
+
+    case 'seedAccount': {
+      await seedOwner(
+        env.DB,
+        stringValue(data, 'accountId'),
+        numberValue(data, 'now'),
+      );
+      return json({ ok: true });
+    }
+
+    case 'grantPlatformOwner': {
+      const accountId = stringValue(data, 'accountId');
+      const now = numberValue(data, 'now');
+      await seedOwner(env.DB, accountId, now);
+      await env.DB.prepare(`
+        INSERT OR IGNORE INTO account_roles (
+          id, account_id, role, granted_by_account_id, granted_at
+        ) VALUES (?, ?, 'platform_owner', ?, ?)
+      `).bind(`${accountId}:platform_owner`, accountId, accountId, now).run();
+      return json({ ok: true });
+    }
+
+    case 'createMcpGrant': {
+      const now = numberValue(data, 'now');
+      const grantExpiresAt = data.grantExpiresAt;
+      const scope = stringValue(data, 'scope') as 'feed:read';
+      await mcpRepository.createGrantWithCode({
+        grant: {
+          id: stringValue(data, 'grantId'),
+          accountId: stringValue(data, 'accountId'),
+          agentId: stringValue(data, 'agentId'),
+          scopes: [scope],
+          oauthClientId: stringValue(data, 'oauthClientId'),
+          oauthClientLabel: stringValue(data, 'oauthClientLabel'),
+          createdAt: now,
+          expiresAt: typeof grantExpiresAt === 'number' ? grantExpiresAt : null,
+        },
+        code: {
+          id: stringValue(data, 'codeId'),
+          secretDigest: stringValue(data, 'codeDigest'),
+          hashVersion: 1,
+          grantId: stringValue(data, 'grantId'),
+          authorizationRequestId: stringValue(data, 'authorizationRequestId'),
+          createdAt: now,
+          expiresAt: numberValue(data, 'codeExpiresAt'),
+          consumedAt: null,
+        },
+        auditEventId: stringValue(data, 'auditEventId'),
+        requestId: stringValue(data, 'requestId'),
+      });
+      return json({
+        grant: await mcpRepository.getGrant(stringValue(data, 'grantId')),
+        code: await mcpRepository.getDelegationCode(stringValue(data, 'codeId')),
+      }, 201);
+    }
+
+    case 'getMcpGrant': {
+      return json({
+        grant: await mcpRepository.getGrant(stringValue(data, 'grantId')),
+      });
+    }
+
+    case 'listMcpGrants': {
+      return json({
+        grants: await mcpRepository.listAccountGrants(stringValue(data, 'accountId')),
+      });
+    }
+
+    case 'getMcpCode': {
+      return json({
+        code: await mcpRepository.getDelegationCode(stringValue(data, 'codeId')),
+      });
+    }
+
+    case 'redeemMcpCode': {
+      const grant = await mcpRepository.redeemDelegationCode({
+        codeId: stringValue(data, 'codeId'),
+        grantId: stringValue(data, 'grantId'),
+        authorizationRequestId: stringValue(data, 'authorizationRequestId'),
+        redemptionAuditEventId: stringValue(data, 'auditEventId'),
+        requestId: stringValue(data, 'requestId'),
+        redeemedAt: numberValue(data, 'now'),
+      });
+      return json({
+        grant,
+        code: await mcpRepository.getDelegationCode(stringValue(data, 'codeId')),
+      });
+    }
+
+    case 'touchMcpGrant': {
+      const touched = await mcpRepository.touchGrant({
+        grantId: stringValue(data, 'grantId'),
+        usedAt: numberValue(data, 'now'),
+      });
+      return json({
+        touched,
+        grant: await mcpRepository.getGrant(stringValue(data, 'grantId')),
+      });
+    }
+
+    case 'revokeMcpGrant': {
+      await mcpRepository.revokeGrant({
+        grantId: stringValue(data, 'grantId'),
+        actorAccountId: stringValue(data, 'actorAccountId'),
+        reason: stringValue(data, 'reason'),
+        auditEventId: stringValue(data, 'auditEventId'),
+        requestId: stringValue(data, 'requestId'),
+        revokedAt: numberValue(data, 'now'),
+      });
+      return json({
+        grant: await mcpRepository.getGrant(stringValue(data, 'grantId')),
+      });
+    }
+
+    case 'mcpAuthorizationState': {
+      const grantId = stringValue(data, 'grantId');
+      const codeId = stringValue(data, 'codeId');
+      const redemption = await env.DB.prepare(`
+        SELECT code_id, grant_id, authorization_request_id, redeemed_at
+        FROM mcp_delegation_redemptions
+        WHERE code_id = ?
+      `).bind(codeId).first();
+      const revocation = await env.DB.prepare(`
+        SELECT grant_id, actor_account_id, reason, revoked_at
+        FROM mcp_authorization_revocations
+        WHERE grant_id = ?
+      `).bind(grantId).first();
+      const audits = await env.DB.prepare(`
+        SELECT event_type, actor_type, actor_id, subject_type, subject_id,
+               request_id, metadata_json, created_at
+        FROM audit_events
+        WHERE subject_type = 'mcp_authorization_grant'
+          AND subject_id = ?
+        ORDER BY sequence
+      `).bind(grantId).all();
+      return json({ redemption, revocation, audits: audits.results });
+    }
+
+    case 'exportBackup': {
+      return json(await createDynamicBackup(
+        env.DB,
+        numberValue(data, 'now'),
+        Boolean(data.includeSessions),
+      ));
     }
 
     case 'seedAgent': {

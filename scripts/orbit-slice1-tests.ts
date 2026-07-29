@@ -23,6 +23,7 @@ const CONFIG = 'wrangler.slice1-test.jsonc';
 const ORIGIN = 'http://localhost:4321';
 const NOW = 1_784_103_600_000;
 const INVITATION_PEPPER = 'test-invitation-pepper-at-least-32-bytes-long';
+const MCP_SERVICE_SECRET = 'test-mcp-service-secret-at-least-32-bytes-long';
 
 let persistDirectory = '';
 let baseUrl = '';
@@ -222,9 +223,12 @@ let firstCredentialToken = '';
   let replacementCredentialId = '';
   let recoveredCredentialId = '';
   let sponsoredAgentEtag = '';
+  let mcpGrantId = '';
+  let mcpDelegationCode = '';
+  const mcpAuthorizationRequestId = 'chatgpt-authorization-request-001';
 
   test('token families use a 128-bit selector and 256-bit secret', async () => {
-    for (const family of ['invitation', 'session', 'agent', 'registration'] as const) {
+    for (const family of ['invitation', 'session', 'agent', 'registration', 'delegation'] as const) {
       const generated = await createOpaqueToken(family, `${family}-pepper-at-least-32-random-bytes`);
       const parsed = parseOpaqueToken(generated.token);
       assert.equal(parsed?.family, family);
@@ -457,6 +461,256 @@ let firstCredentialToken = '';
     assert.deepEqual(meBody.sponsoredAgents.map((agent) => agent.id), [sponsoredAgentId]);
   });
 
+  test('MCP authorization uses CSRF, least privilege, one-time exchange and revocation', async () => {
+    const ticketRequest = {
+      authorizationRequestId: mcpAuthorizationRequestId,
+      oauthClientId: 'chatgpt-dynamic-client-001',
+      oauthClientLabel: 'ChatGPT',
+      scopes: ['feed:read'],
+    };
+
+    const unauthenticatedList = await request('/v1/mcp/authorizations', {}, NOW + 47);
+    assert.equal(unauthenticatedList.status, 401);
+
+    const noServiceTicket = await postJson(
+      '/v1/mcp/authorization-tickets',
+      ticketRequest,
+      {},
+      NOW + 47,
+    );
+    assert.equal(noServiceTicket.status, 401);
+
+    const elevated = await postJson(
+      '/v1/mcp/authorization-tickets',
+      { ...ticketRequest, scopes: ['feed:read', 'records:write'] },
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 48,
+    );
+    assert.equal(elevated.status, 400);
+    const elevatedBody = await elevated.json() as { error: { code: string } };
+    assert.equal(elevatedBody.error.code, 'invalid_mcp_authorization_scope');
+
+    const ticketResponse = await postJson(
+      '/v1/mcp/authorization-tickets',
+      ticketRequest,
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 49,
+    );
+    assert.equal(ticketResponse.status, 201, await ticketResponse.clone().text());
+    const ticketBody = await ticketResponse.json() as {
+      ticket: string;
+      authorizationRequest: {
+        id: string;
+        oauthClient: { id: string; label: string };
+        scopes: string[];
+        issuedAt: number;
+        expiresAt: number;
+      };
+    };
+    assert.ok(ticketBody.ticket.startsWith('orb_mcp_auth_v1.'));
+    assert.equal(ticketBody.authorizationRequest.id, mcpAuthorizationRequestId);
+    assert.equal(ticketBody.authorizationRequest.oauthClient.label, 'ChatGPT');
+    assert.deepEqual(ticketBody.authorizationRequest.scopes, ['feed:read']);
+    assert.equal(ticketBody.authorizationRequest.issuedAt, NOW + 49);
+    assert.equal(ticketBody.authorizationRequest.expiresAt, NOW + 49 + 10 * 60 * 1000);
+
+    const unauthenticatedInspect = await postJson(
+      '/v1/mcp/authorization-tickets/inspect',
+      { ticket: ticketBody.ticket },
+      {},
+      NOW + 49,
+    );
+    assert.equal(unauthenticatedInspect.status, 401);
+
+    const inspected = await postJson(
+      '/v1/mcp/authorization-tickets/inspect',
+      { ticket: ticketBody.ticket },
+      { cookie: cookieHeader(sponsorCookies) },
+      NOW + 49,
+    );
+    assert.equal(inspected.status, 200, await inspected.clone().text());
+    const inspectedBody = await inspected.json() as {
+      authorizationRequest: { id: string; oauthClient: { label: string }; scopes: string[] };
+    };
+    assert.equal(inspectedBody.authorizationRequest.id, mcpAuthorizationRequestId);
+    assert.equal(inspectedBody.authorizationRequest.oauthClient.label, 'ChatGPT');
+    assert.deepEqual(inspectedBody.authorizationRequest.scopes, ['feed:read']);
+
+    const tamperedTicket = `${ticketBody.ticket.slice(0, -1)}${ticketBody.ticket.endsWith('A') ? 'B' : 'A'}`;
+    const tamperedInspect = await postJson(
+      '/v1/mcp/authorization-tickets/inspect',
+      { ticket: tamperedTicket },
+      { cookie: cookieHeader(sponsorCookies) },
+      NOW + 49,
+    );
+    assert.equal(tamperedInspect.status, 400);
+
+    const authorizationBody = {
+      agentId: sponsoredAgentId,
+      ticket: ticketBody.ticket,
+    };
+    const noCsrf = await postJson(
+      '/v1/mcp/authorizations',
+      authorizationBody,
+      { cookie: cookieHeader(sponsorCookies), origin: ORIGIN },
+      NOW + 50,
+    );
+    assert.equal(noCsrf.status, 403);
+
+    const tamperedCreate = await postJson(
+      '/v1/mcp/authorizations',
+      { agentId: sponsoredAgentId, ticket: tamperedTicket },
+      authenticatedHeaders(sponsorCookies, true),
+      NOW + 50,
+    );
+    assert.equal(tamperedCreate.status, 400);
+
+    const created = await postJson(
+      '/v1/mcp/authorizations',
+      authorizationBody,
+      authenticatedHeaders(sponsorCookies, true),
+      NOW + 50,
+    );
+    assert.equal(created.status, 201, await created.clone().text());
+    const createdBody = await created.json() as {
+      authorization: {
+        id: string;
+        accountId: string;
+        agent: { id: string; handle: string };
+        scopes: string[];
+        oauthClient: { id: string; label: string };
+        status: string;
+        createdAt: number;
+        expiresAt: number;
+      };
+      delegation: {
+        code: string;
+        authorizationRequestId: string;
+        expiresAt: number;
+      };
+    };
+    mcpGrantId = createdBody.authorization.id;
+    mcpDelegationCode = createdBody.delegation.code;
+    assert.ok(mcpGrantId);
+    assert.ok(mcpDelegationCode.startsWith('orb_mcp_v1_'));
+    assert.deepEqual(createdBody.authorization.scopes, ['feed:read']);
+    assert.equal(createdBody.authorization.agent.id, sponsoredAgentId);
+    assert.equal(createdBody.authorization.oauthClient.label, 'ChatGPT');
+    assert.equal(createdBody.authorization.status, 'active');
+    assert.equal(createdBody.delegation.authorizationRequestId, mcpAuthorizationRequestId);
+    assert.equal(createdBody.delegation.expiresAt, NOW + 50 + 5 * 60 * 1000);
+    assert.equal(createdBody.authorization.expiresAt, NOW + 50 + 90 * 24 * 60 * 60 * 1000);
+
+    const listed = await request('/v1/mcp/authorizations', {
+      headers: authenticatedHeaders(sponsorCookies),
+    }, NOW + 51);
+    assert.equal(listed.status, 200, await listed.clone().text());
+    const listedText = await listed.text();
+    assert.ok(!listedText.includes(mcpDelegationCode));
+    assert.ok(!listedText.includes('secretDigest'));
+    const listedBody = JSON.parse(listedText) as {
+      authorizations: Array<{ id: string; scopes: string[] }>;
+    };
+    assert.deepEqual(
+      listedBody.authorizations.map((authorization) => authorization.id),
+      [mcpGrantId],
+    );
+
+    const noServiceCredential = await postJson('/v1/mcp/delegations/redeem', {
+      code: mcpDelegationCode,
+      authorizationRequestId: mcpAuthorizationRequestId,
+    }, {}, NOW + 52);
+    assert.equal(noServiceCredential.status, 401);
+
+    const wrongRequest = await postJson('/v1/mcp/delegations/redeem', {
+      code: mcpDelegationCode,
+      authorizationRequestId: 'different-authorization-request',
+    }, { authorization: `Bearer ${MCP_SERVICE_SECRET}` }, NOW + 53);
+    assert.equal(wrongRequest.status, 400);
+
+    const redeemed = await postJson('/v1/mcp/delegations/redeem', {
+      code: mcpDelegationCode,
+      authorizationRequestId: mcpAuthorizationRequestId,
+    }, { authorization: `Bearer ${MCP_SERVICE_SECRET}` }, NOW + 54);
+    assert.equal(redeemed.status, 200, await redeemed.clone().text());
+    const redeemedBody = await redeemed.json() as {
+      authorization: { id: string; scopes: string[]; status: string };
+    };
+    assert.equal(redeemedBody.authorization.id, mcpGrantId);
+    assert.deepEqual(redeemedBody.authorization.scopes, ['feed:read']);
+    assert.equal(redeemedBody.authorization.status, 'active');
+
+    const replay = await postJson('/v1/mcp/delegations/redeem', {
+      code: mcpDelegationCode,
+      authorizationRequestId: mcpAuthorizationRequestId,
+    }, { authorization: `Bearer ${MCP_SERVICE_SECRET}` }, NOW + 55);
+    assert.equal(replay.status, 400);
+
+    const resolved = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(mcpGrantId)}/resolve`,
+      {},
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 56,
+    );
+    assert.equal(resolved.status, 200, await resolved.clone().text());
+    const resolvedBody = await resolved.json() as {
+      authorization: { id: string; lastUsedAt: number };
+      account: { handle: string };
+      agent: { id: string; handle: string; status: string };
+    };
+    assert.equal(resolvedBody.authorization.id, mcpGrantId);
+    assert.equal(resolvedBody.authorization.lastUsedAt, NOW + 56);
+    assert.equal(resolvedBody.agent.id, sponsoredAgentId);
+    assert.equal(resolvedBody.agent.handle, 'selene-test-agent');
+    assert.equal(resolvedBody.agent.status, 'active');
+
+    const revokeNoCsrf = await postJson(
+      `/v1/mcp/authorizations/${encodeURIComponent(mcpGrantId)}/revoke`,
+      {},
+      { cookie: cookieHeader(sponsorCookies), origin: ORIGIN },
+      NOW + 57,
+    );
+    assert.equal(revokeNoCsrf.status, 403);
+
+    const revoked = await postJson(
+      `/v1/mcp/authorizations/${encodeURIComponent(mcpGrantId)}/revoke`,
+      {},
+      authenticatedHeaders(sponsorCookies, true),
+      NOW + 58,
+    );
+    assert.equal(revoked.status, 200, await revoked.clone().text());
+    const revokedBody = await revoked.json() as {
+      authorization: { status: string; revokedAt: number; revokedReason: string };
+    };
+    assert.equal(revokedBody.authorization.status, 'revoked');
+    assert.equal(revokedBody.authorization.revokedAt, NOW + 58);
+    assert.equal(revokedBody.authorization.revokedReason, 'user_revoked');
+
+    const resolvedAfterRevoke = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(mcpGrantId)}/resolve`,
+      {},
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 59,
+    );
+    assert.equal(resolvedAfterRevoke.status, 401);
+
+    const secondRevoke = await postJson(
+      `/v1/mcp/authorizations/${encodeURIComponent(mcpGrantId)}/revoke`,
+      {},
+      authenticatedHeaders(sponsorCookies, true),
+      NOW + 60,
+    );
+    assert.equal(secondRevoke.status, 409);
+
+    const expiredTicket = await postJson(
+      '/v1/mcp/authorization-tickets/inspect',
+      { ticket: ticketBody.ticket },
+      { cookie: cookieHeader(sponsorCookies) },
+      NOW + 49 + 10 * 60 * 1000,
+    );
+    assert.equal(expiredTicket.status, 400);
+  });
+
   test('public and management profiles expose bounded fields without credential secrets', async () => {
     const publicResponse = await request('/v1/agents/selene-test-agent', {}, NOW + 45);
     assert.equal(publicResponse.status, 200);
@@ -625,6 +879,21 @@ let firstCredentialToken = '';
     },
       authenticatedHeaders(otherSponsorCookies, true), NOW + 53);
     assert.equal(rotated.status, 404);
+
+    const foreignTicketResponse = await postJson('/v1/mcp/authorization-tickets', {
+      authorizationRequestId: 'foreign-authorization-request',
+      oauthClientId: 'foreign-client',
+      oauthClientLabel: 'Foreign client',
+      scopes: ['feed:read'],
+    }, { authorization: `Bearer ${MCP_SERVICE_SECRET}` }, NOW + 54);
+    assert.equal(foreignTicketResponse.status, 201);
+    const foreignTicket = (await foreignTicketResponse.json() as { ticket: string }).ticket;
+
+    const delegated = await postJson('/v1/mcp/authorizations', {
+      agentId: sponsoredAgentId,
+      ticket: foreignTicket,
+    }, authenticatedHeaders(otherSponsorCookies, true), NOW + 54);
+    assert.equal(delegated.status, 404);
   });
 
   test('only platform owner can apply all three publication policies', async () => {

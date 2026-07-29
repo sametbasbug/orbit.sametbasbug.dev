@@ -401,6 +401,36 @@ describe('Orbit MCP authorization foundation', { concurrency: false }, () => {
     );
   });
 
+  test('losing current agent management invalidates touch and redemption', async () => {
+    const now = Date.now();
+    const accountId = 'mcp-source-truth-sponsor';
+    const agentId = 'mcp-source-truth-agent';
+    await callAction('seedMcpAgent', { accountId, agentId, now });
+    const input = grantData('mcp-source-truth', accountId, agentId, now + 1);
+    await callAction('createMcpGrant', input, 201);
+    await callAction('revokeMcpMembership', {
+      accountId,
+      agentId,
+      now: now + 2,
+    });
+
+    const touched = await callAction<{ touched: boolean }>(
+      'touchMcpGrant',
+      { grantId: input.grantId, now: now + 3 },
+    );
+    assert.equal(touched.touched, false);
+
+    const redemption = await callAction<{ error: string }>('redeemMcpCode', {
+      codeId: input.codeId,
+      grantId: input.grantId,
+      authorizationRequestId: input.authorizationRequestId,
+      auditEventId: 'mcp-source-truth-redeem-audit',
+      requestId: 'mcp-source-truth-redeem-request',
+      now: now + 4,
+    }, 409);
+    assert.match(redemption.error, /invalid_mcp_delegation_code/u);
+  });
+
   test('durable grants and revocations enter backups without transient codes', async () => {
     const backup = await callAction<{
       schemaVersion: number;

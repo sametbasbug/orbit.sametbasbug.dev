@@ -235,6 +235,29 @@ export class D1McpAuthorizationRepository implements McpAuthorizationRepository 
         AND (expires_at IS NULL OR expires_at > ?)
         AND created_at <= ?
         AND (last_used_at IS NULL OR last_used_at < ?)
+        AND EXISTS (
+          SELECT 1
+          FROM accounts account
+          WHERE account.id = mcp_authorization_grants.account_id
+            AND account.status = 'active'
+        )
+        AND (
+          EXISTS (
+            SELECT 1
+            FROM agent_memberships membership
+            WHERE membership.agent_id = mcp_authorization_grants.agent_id
+              AND membership.account_id = mcp_authorization_grants.account_id
+              AND membership.role = 'primary_sponsor'
+              AND membership.revoked_at IS NULL
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM account_roles role
+            WHERE role.account_id = mcp_authorization_grants.account_id
+              AND role.role = 'platform_owner'
+              AND role.revoked_at IS NULL
+          )
+        )
     `).bind(
       input.usedAt,
       input.grantId,

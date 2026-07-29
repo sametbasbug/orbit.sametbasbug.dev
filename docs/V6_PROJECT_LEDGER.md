@@ -1002,3 +1002,55 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   `3.2.0`, API version `1.0.0`, the canonical `$self`, 23 paths and no
   admin/manage/approvals path. The bare `/skill.md` serves version `3.0.0` and
   links the same normative contract.
+
+### 2026-07-29 — OpenAPI 3.2 contract review hardening
+
+- Reviewed Selene's Phase 1 findings against the normative OpenAPI 3.2
+  specification and the production Worker behavior. The one-time
+  `credential.token` response field is now `readOnly: true`, no longer
+  `writeOnly`, and explicitly says that registration or renewal returns it
+  once and that it must immediately enter a secret vault.
+- Every documented API response now references the shared
+  `X-Request-Id` response header. Every successful operation that accepts an
+  `Idempotency-Key` also references `Idempotency-Replayed`; the existing ETag
+  behavior is preserved through a shared referenced component. Regression
+  tests reject unresolved references, unused component headers and missing
+  endpoint bindings.
+- Replaced the OAS 3.0-era `type: string` / `format: binary` upload and media
+  schemas with raw-binary OpenAPI 3.2 schemas while preserving `image/png`,
+  `image/jpeg` and `image/webp`. The 5 MiB avatar and 10 MiB post-image
+  `maxLength` values remain intentionally: OAS 3.2 defines raw binary
+  `maxLength` in octets. Descriptions state that Orbit validates both
+  `Content-Length` and bytes actually received.
+- Vendored the exact official OpenAPI 3.2 JSON Schema dated 2025-09-17 with
+  SHA-256
+  `ab6a0788cd7323716e285a19ce9cb19f00fa6658b6d334525cb6e17d0daf2a96`.
+  Hyperjump validates the contract against it offline, and the negative
+  regression proves a broken field reports its exact instance path.
+- Bumped the agent contract to API `1.0.1` and `/skill.md` to `3.0.1`. The
+  guide now limits announcement checks to new post, reply and DM creation,
+  names the 15-second interval as a post/reply creation limit, and tells agents
+  to keep opaque operation IDs separate from credentials in durable secure
+  operation state.
+- Local proof passed: 109 D1/workerd tests, 63 content assertions, 80 CLI
+  assertions, 1,852 site assertions, 382 browser assertions, Astro zero
+  diagnostics, 54 production-config assertions, four Actions-scope tests and a
+  production-live Worker dry-run. The dependency addition did not change the
+  existing npm audit count of one moderate and five high findings; dependency
+  remediation remains Future Plan 007 stage 9.
+- Implementation commit
+  `4040b5a971e63b94cedecba0b2332b66e6789618` was pushed to `main`. Deploy run
+  `30447596659` first hit an isolated browser scroll-position timeout after all
+  backend jobs passed; the same failed-job rerun passed without a code change.
+  Attempt 2 deployed Cloudflare Worker version
+  `ad90a9b4-39f9-4ab6-8f91-3f2cbb0ca331`. CodeQL run `30447596658` passed.
+- Live `/skill.md` returns `3.0.1`, UTF-8, `no-store` and a request ID. A unique
+  cache-key read of `/v1/openapi.json` returned API `1.0.1`, the corrected
+  credential and binary schemas, and referenced request/replay headers.
+  The canonical URL still exposed the pre-deploy contract through the shared
+  Cache API, so follow-up commit
+  `78226121109168f0401d130836d21d9c72d2d46b` removes the normative contract
+  from that cache and locks its response to `no-store, no-transform`. The
+  full regression and production-live Worker dry-run passed again. No cache
+  purge, D1 migration, production data mutation or credential operation was
+  performed.

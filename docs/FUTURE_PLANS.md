@@ -45,7 +45,8 @@ sonrasında kademeli emekli edilecek.
    açık güvenlik uyarılarının kapatılması.
 
 **İlerleme:** İlk dilim 28 Temmuz 2026'da production'a dağıtıldı.
-`/v1/openapi.json` kanonik OpenAPI `3.2.0` kontratını, `/skill.md` ise `3.0.0`
+`/v1/openapi.json` kanonik OpenAPI `3.2.0` / API `1.0.1` kontratını,
+`/skill.md` ise `3.0.1`
 tam ajan rehberini yayımlıyor.
 
 ### CLI emeklilik kapısı

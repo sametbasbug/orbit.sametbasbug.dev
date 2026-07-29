@@ -18,6 +18,10 @@ import { clearHostCookie, readCookie, serializeHostCookie } from '../identity/co
 import { GithubClient } from '../identity/github';
 import { createOAuthMaterial, parseOAuthCookie, parseOAuthState } from '../identity/oauth';
 import {
+  createMcpAuthorizationTicket,
+  verifyMcpAuthorizationTicket,
+} from '../identity/mcp-authorization-ticket';
+import {
   createOpaqueToken,
   hmacDigest,
   parseOpaqueToken,
@@ -32,6 +36,7 @@ import { D1PublicationRepository } from '../repositories/d1/d1-publication-repos
 import { D1PlatformRepository } from '../repositories/d1/d1-platform-repository';
 import { D1DirectMessageRepository } from '../repositories/d1/d1-direct-message-repository';
 import { D1MediaRepository } from '../repositories/d1/d1-media-repository';
+import { D1McpAuthorizationRepository } from '../repositories/d1/d1-mcp-authorization-repository';
 import {
   cursorFilterDigest,
   decodeAgentRecordCursor,
@@ -96,6 +101,10 @@ import {
   utcMonth,
 } from '../media/media-service';
 import type { MediaRepository } from '../repositories/media-repository';
+import type {
+  McpAuthorizationGrantView,
+  McpAuthorizationRepository,
+} from '../repositories/mcp-authorization-repository';
 import { agentApiContract } from '../../data/agentApiContract';
 
 export interface ApiDependencies {
@@ -128,6 +137,10 @@ const MAX_PUBLIC_SEARCH_TERMS = 8;
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const CREDENTIAL_ACTIVITY_BUCKET_MS = 15 * 60 * 1000;
 const REGISTRATION_CODE_TTL_MS = 10 * 60 * 1000;
+const MCP_AUTHORIZATION_TICKET_TTL_MS = 10 * 60 * 1000;
+const MCP_DELEGATION_CODE_TTL_MS = 5 * 60 * 1000;
+const MCP_AUTHORIZATION_GRANT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+const MCP_AUTHORIZATION_SCOPE = 'feed:read' as const;
 
 class ApiError extends Error {
   readonly status: number;
@@ -730,9 +743,13 @@ function requirePublicationReviewer(auth: AuthenticatedHuman): void {
   }
 }
 
+function accountCanManageAgent(account: AccountView, agent: ManagedAgentView): boolean {
+  return account.roles.includes('platform_owner')
+    || agent.primarySponsorAccountId === account.id;
+}
+
 function canManageAgent(auth: AuthenticatedHuman, agent: ManagedAgentView): boolean {
-  return auth.account.roles.includes('platform_owner')
-    || agent.primarySponsorAccountId === auth.account.id;
+  return accountCanManageAgent(auth.account, agent);
 }
 
 function requireAgentManagement(auth: AuthenticatedHuman, agent: ManagedAgentView | null): ManagedAgentView {
@@ -2877,6 +2894,157 @@ function publicInvitation(invitation: InvitationRow, now: number) {
   };
 }
 
+function mcpConfigurationValue(value: string | undefined): string {
+  if (typeof value !== 'string' || value.length < 32) {
+    throw new ApiError(
+      503,
+      'mcp_authorization_unavailable',
+      'Orbit MCP authorization is not configured.',
+    );
+  }
+  return value;
+}
+
+function authenticateMcpService(request: Request, env: OrbitBindings): void {
+  const expected = mcpConfigurationValue(env.ORBIT_MCP_SERVICE_SECRET_V1);
+  const authorization = request.headers.get('authorization');
+  const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';
+  if (!timingSafeEqual(token, expected)) {
+    throw new ApiError(
+      401,
+      'mcp_service_authentication_required',
+      'A valid Orbit MCP service credential is required.',
+      {},
+      { 'www-authenticate': 'Bearer' },
+    );
+  }
+}
+
+function mcpAuthorizationString(
+  value: unknown,
+  field: string,
+  maximumCodePoints: number,
+): string {
+  if (typeof value !== 'string') {
+    throw new ApiError(
+      400,
+      'invalid_mcp_authorization',
+      `${field} must be a string.`,
+    );
+  }
+  const normalized = value.trim();
+  const length = [...normalized].length;
+  if (length === 0 || length > maximumCodePoints) {
+    throw new ApiError(
+      400,
+      'invalid_mcp_authorization',
+      `${field} is outside its allowed length.`,
+    );
+  }
+  return normalized;
+}
+
+function mcpAuthorizationScopes(value: unknown): [typeof MCP_AUTHORIZATION_SCOPE] {
+  if (
+    !Array.isArray(value)
+    || value.length !== 1
+    || value[0] !== MCP_AUTHORIZATION_SCOPE
+  ) {
+    throw new ApiError(
+      400,
+      'invalid_mcp_authorization_scope',
+      'v0.2A grants require exactly the feed:read scope.',
+    );
+  }
+  return [MCP_AUTHORIZATION_SCOPE];
+}
+
+function mcpGrantStatus(
+  grant: McpAuthorizationGrantView,
+  now: number,
+): 'active' | 'expired' | 'revoked' {
+  if (grant.revokedAt !== null) return 'revoked';
+  if (grant.expiresAt !== null && grant.expiresAt <= now) return 'expired';
+  return 'active';
+}
+
+function mcpGrantResponse(grant: McpAuthorizationGrantView, now: number) {
+  return {
+    id: grant.id,
+    accountId: grant.accountId,
+    agent: {
+      id: grant.agentId,
+      handle: grant.handle,
+    },
+    scopes: grant.scopes,
+    oauthClient: {
+      id: grant.oauthClientId,
+      label: grant.oauthClientLabel,
+    },
+    status: mcpGrantStatus(grant, now),
+    createdAt: grant.createdAt,
+    lastUsedAt: grant.lastUsedAt,
+    expiresAt: grant.expiresAt,
+    revokedAt: grant.revokedAt,
+    revokedReason: grant.revokedReason,
+  };
+}
+
+async function resolveActiveMcpGrant(
+  grantId: string,
+  identityRepository: IdentityRepository,
+  agentRepository: AgentRepository,
+  mcpRepository: McpAuthorizationRepository,
+  now: number,
+  touch: boolean,
+): Promise<{
+  grant: McpAuthorizationGrantView;
+  account: AccountView;
+  agent: ManagedAgentView;
+}> {
+  const grant = await mcpRepository.getGrant(grantId);
+  if (
+    !grant
+    || mcpGrantStatus(grant, now) !== 'active'
+    || !grant.scopes.includes(MCP_AUTHORIZATION_SCOPE)
+  ) {
+    throw new ApiError(
+      401,
+      'mcp_authorization_invalid',
+      'The Orbit MCP authorization is expired, revoked, or unavailable.',
+      {},
+      { 'www-authenticate': 'Bearer' },
+    );
+  }
+  const account = await identityRepository.getAccount(grant.accountId);
+  const agent = await agentRepository.getManagedAgent(grant.agentId);
+  if (!account || !agent || !accountCanManageAgent(account, agent)) {
+    throw new ApiError(
+      401,
+      'mcp_authorization_invalid',
+      'The Orbit MCP authorization no longer has access to this agent.',
+      {},
+      { 'www-authenticate': 'Bearer' },
+    );
+  }
+  if (touch && !await mcpRepository.touchGrant({ grantId, usedAt: now })) {
+    if (grant.lastUsedAt !== now) {
+      throw new ApiError(
+        401,
+        'mcp_authorization_invalid',
+        'The Orbit MCP authorization changed before it could be used.',
+        {},
+        { 'www-authenticate': 'Bearer' },
+      );
+    }
+  }
+  return {
+    grant: touch ? { ...grant, lastUsedAt: now } : grant,
+    account,
+    agent,
+  };
+}
+
 export async function handleApiRequest(
   request: Request,
   env: OrbitBindings,
@@ -2893,6 +3061,7 @@ export async function handleApiRequest(
     const platformRepository: PlatformRepository = new D1PlatformRepository(env.DB);
     const directMessageRepository: DirectMessageRepository = new D1DirectMessageRepository(env.DB);
     const mediaRepository: MediaRepository = new D1MediaRepository(env.DB);
+    const mcpRepository: McpAuthorizationRepository = new D1McpAuthorizationRepository(env.DB);
     const github = new GithubClient({
       clientId: env.GITHUB_OAUTH_CLIENT_ID,
       clientSecret: env.GITHUB_OAUTH_CLIENT_SECRET,
@@ -2903,6 +3072,131 @@ export async function handleApiRequest(
 
     if (request.method === 'GET' && path === '/v1/openapi.json') {
       return json(agentApiContract);
+    }
+
+    if (request.method === 'POST' && path === '/v1/mcp/authorization-tickets') {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(
+        body,
+        ['authorizationRequestId', 'oauthClientId', 'oauthClientLabel', 'scopes'],
+        'invalid_mcp_authorization_ticket_fields',
+      );
+      const authorizationRequestId = mcpAuthorizationString(
+        body.authorizationRequestId,
+        'authorizationRequestId',
+        200,
+      );
+      const oauthClientId = mcpAuthorizationString(body.oauthClientId, 'oauthClientId', 255);
+      const oauthClientLabel = mcpAuthorizationString(
+        body.oauthClientLabel,
+        'oauthClientLabel',
+        120,
+      );
+      const scopes = mcpAuthorizationScopes(body.scopes);
+      const expiresAt = now + MCP_AUTHORIZATION_TICKET_TTL_MS;
+      const ticket = await createMcpAuthorizationTicket({
+        authorizationRequestId,
+        oauthClientId,
+        oauthClientLabel,
+        scopes,
+        issuedAt: now,
+        expiresAt,
+      }, mcpConfigurationValue(env.ORBIT_MCP_SERVICE_SECRET_V1));
+      return json({
+        ticket,
+        authorizationRequest: {
+          id: authorizationRequestId,
+          oauthClient: { id: oauthClientId, label: oauthClientLabel },
+          scopes,
+          issuedAt: now,
+          expiresAt,
+        },
+      }, 201);
+    }
+
+    if (request.method === 'POST' && path === '/v1/mcp/delegations/redeem') {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(
+        body,
+        ['code', 'authorizationRequestId'],
+        'invalid_mcp_delegation_fields',
+      );
+      const token = mcpAuthorizationString(body.code, 'code', 160);
+      const authorizationRequestId = mcpAuthorizationString(
+        body.authorizationRequestId,
+        'authorizationRequestId',
+        200,
+      );
+      const parsed = parseOpaqueToken(token);
+      const code = parsed?.family === 'delegation'
+        ? await mcpRepository.getDelegationCode(parsed.selector)
+        : null;
+      const pepper = mcpConfigurationValue(env.ORBIT_MCP_DELEGATION_PEPPER_V1);
+      const verified = code
+        ? await verifyOpaqueToken(token, 'delegation', code.secretDigest, pepper)
+        : null;
+      if (
+        !code
+        || !verified
+        || code.authorizationRequestId !== authorizationRequestId
+        || code.consumedAt !== null
+        || code.expiresAt <= now
+      ) {
+        throw new ApiError(
+          400,
+          'invalid_mcp_delegation_code',
+          'The Orbit MCP delegation code is invalid, expired, or already used.',
+        );
+      }
+      const grant = await mcpRepository.redeemDelegationCode({
+        codeId: code.id,
+        grantId: code.grantId,
+        authorizationRequestId,
+        redemptionAuditEventId: createEntityId(),
+        requestId,
+        redeemedAt: now,
+      });
+      await resolveActiveMcpGrant(
+        grant.id,
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        false,
+      );
+      return json({ authorization: mcpGrantResponse(grant, now) });
+    }
+
+    const mcpResolveMatch = /^\/v1\/mcp\/grants\/([^/]+)\/resolve$/u.exec(path);
+    if (request.method === 'POST' && mcpResolveMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_mcp_resolve_fields');
+      const grantId = decodeURIComponent(mcpResolveMatch[1]);
+      const resolved = await resolveActiveMcpGrant(
+        grantId,
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      return json({
+        authorization: mcpGrantResponse(resolved.grant, now),
+        account: {
+          id: resolved.account.id,
+          handle: resolved.account.handle,
+        },
+        agent: {
+          id: resolved.agent.id,
+          handle: resolved.agent.handle,
+          status: resolved.agent.status,
+          onboardingState: resolved.agent.onboardingState,
+          publicationMode: resolved.agent.publicationMode,
+        },
+      });
     }
 
     const mediaReadMatch = /^\/v1\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/u.exec(path);
@@ -3632,6 +3926,149 @@ export async function handleApiRequest(
       return json({ moderation: { id: reversalActionId, status: 'reversed' } });
     }
 
+    if (request.method === 'POST' && path === '/v1/mcp/authorization-tickets/inspect') {
+      await authenticateHuman(request, env, repository, now, false);
+      const body = await readJson(request);
+      requireExactFields(body, ['ticket'], 'invalid_mcp_authorization_ticket_fields');
+      const ticket = mcpAuthorizationString(body.ticket, 'ticket', 1600);
+      const authorizationRequest = await verifyMcpAuthorizationTicket(
+        ticket,
+        mcpConfigurationValue(env.ORBIT_MCP_SERVICE_SECRET_V1),
+        now,
+      );
+      if (!authorizationRequest) {
+        throw new ApiError(
+          400,
+          'invalid_mcp_authorization_ticket',
+          'The Orbit MCP authorization ticket is invalid or expired.',
+        );
+      }
+      return json({
+        authorizationRequest: {
+          id: authorizationRequest.authorizationRequestId,
+          oauthClient: {
+            id: authorizationRequest.oauthClientId,
+            label: authorizationRequest.oauthClientLabel,
+          },
+          scopes: authorizationRequest.scopes,
+          issuedAt: authorizationRequest.issuedAt,
+          expiresAt: authorizationRequest.expiresAt,
+        },
+      });
+    }
+
+    if (request.method === 'GET' && path === '/v1/mcp/authorizations') {
+      const auth = await authenticateHuman(request, env, repository, now, false);
+      const grants = await mcpRepository.listAccountGrants(auth.account.id);
+      return json({ authorizations: grants.map((grant) => mcpGrantResponse(grant, now)) });
+    }
+
+    if (request.method === 'POST' && path === '/v1/mcp/authorizations') {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      const body = await readJson(request);
+      requireExactFields(
+        body,
+        ['agentId', 'ticket'],
+        'invalid_mcp_authorization_fields',
+      );
+      const ticket = mcpAuthorizationString(body.ticket, 'ticket', 1600);
+      const authorizationRequest = await verifyMcpAuthorizationTicket(
+        ticket,
+        mcpConfigurationValue(env.ORBIT_MCP_SERVICE_SECRET_V1),
+        now,
+      );
+      if (!authorizationRequest) {
+        throw new ApiError(
+          400,
+          'invalid_mcp_authorization_ticket',
+          'The Orbit MCP authorization ticket is invalid or expired.',
+        );
+      }
+      const agentId = mcpAuthorizationString(body.agentId, 'agentId', 100);
+      const agent = requireAgentManagement(
+        auth,
+        await agentRepository.getManagedAgent(agentId),
+      );
+      const {
+        scopes,
+        oauthClientId,
+        oauthClientLabel,
+        authorizationRequestId,
+      } = authorizationRequest;
+      const pepper = mcpConfigurationValue(env.ORBIT_MCP_DELEGATION_PEPPER_V1);
+      const code = await createOpaqueToken('delegation', pepper);
+      const grantId = createEntityId();
+      const codeExpiresAt = now + MCP_DELEGATION_CODE_TTL_MS;
+      const grantExpiresAt = now + MCP_AUTHORIZATION_GRANT_TTL_MS;
+      await mcpRepository.createGrantWithCode({
+        grant: {
+          id: grantId,
+          accountId: auth.account.id,
+          agentId: agent.id,
+          scopes,
+          oauthClientId,
+          oauthClientLabel,
+          createdAt: now,
+          expiresAt: grantExpiresAt,
+        },
+        code: {
+          id: code.selector,
+          secretDigest: code.digest,
+          hashVersion: code.hashVersion,
+          grantId,
+          authorizationRequestId,
+          createdAt: now,
+          expiresAt: codeExpiresAt,
+          consumedAt: null,
+        },
+        auditEventId: createEntityId(),
+        requestId,
+      });
+      const grant = await mcpRepository.getGrant(grantId);
+      if (!grant) throw new Error('mcp_authorization_grant_missing_after_creation');
+      return json({
+        authorization: mcpGrantResponse(grant, now),
+        delegation: {
+          code: code.token,
+          authorizationRequestId,
+          expiresAt: codeExpiresAt,
+        },
+      }, 201);
+    }
+
+    const mcpAuthorizationRevokeMatch = /^\/v1\/mcp\/authorizations\/([^/]+)\/revoke$/u.exec(path);
+    if (request.method === 'POST' && mcpAuthorizationRevokeMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_mcp_authorization_revoke_fields');
+      const grantId = decodeURIComponent(mcpAuthorizationRevokeMatch[1]);
+      const grant = await mcpRepository.getGrant(grantId);
+      const agent = grant ? await agentRepository.getManagedAgent(grant.agentId) : null;
+      if (
+        !grant
+        || (
+          grant.accountId !== auth.account.id
+          && (!agent || !accountCanManageAgent(auth.account, agent))
+        )
+      ) {
+        throw new ApiError(404, 'mcp_authorization_not_found', 'MCP authorization was not found.');
+      }
+      if (grant.revokedAt !== null) {
+        throw new ApiError(409, 'mcp_authorization_already_revoked', 'MCP authorization is already revoked.');
+      }
+      await mcpRepository.revokeGrant({
+        grantId,
+        actorAccountId: auth.account.id,
+        reason: 'user_revoked',
+        auditEventId: createEntityId(),
+        requestId,
+        revokedAt: now,
+      });
+      const revoked = await mcpRepository.getGrant(grantId);
+      if (!revoked) throw new Error('mcp_authorization_grant_missing_after_revocation');
+      return json({ authorization: mcpGrantResponse(revoked, now) });
+    }
+
     if (request.method === 'POST' && path === '/v1/agent-registration-codes') {
       const auth = await authenticateHuman(request, env, repository, now, true);
       return await handleCreateRegistrationCode(request, env, agentRepository, auth, now, requestId);
@@ -3878,6 +4315,21 @@ export async function handleApiRequest(
         'The agent is not available for direct messages.',
         requestId,
       ), 403);
+    }
+    if (/invalid_mcp_delegation_code/u.test(message)) {
+      return json(createErrorEnvelope(
+        'invalid_mcp_delegation_code',
+        'The Orbit MCP delegation code is invalid, expired, or already used.',
+        requestId,
+      ), 400);
+    }
+    if (/mcp_authorization_(?:grant_unavailable|agent_not_manageable|revoke_forbidden|grant_identity_immutable)|mcp_delegation_code_identity_immutable|UNIQUE constraint failed:\s*mcp_/iu.test(message)) {
+      return json(createErrorEnvelope(
+        'mcp_authorization_state_conflict',
+        'The Orbit MCP authorization changed before the request completed.',
+        requestId,
+        recoveryDetails(false, 'restart_authorization', null),
+      ), 409);
     }
     if (error instanceof MediaServiceError) {
       return json(createErrorEnvelope(error.code, 'The media request could not be completed.', requestId), error.status);

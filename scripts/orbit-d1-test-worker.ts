@@ -346,6 +346,22 @@ async function handleAction(body: ActionRequest, env: Environment): Promise<Resp
       return json({ redemption, revocation, audits: audits.results });
     }
 
+    case 'revokeMcpMembership': {
+      await env.DB.prepare(`
+        UPDATE agent_memberships
+        SET revoked_at = ?
+        WHERE account_id = ?
+          AND agent_id = ?
+          AND role = 'primary_sponsor'
+          AND revoked_at IS NULL
+      `).bind(
+        numberValue(data, 'now'),
+        stringValue(data, 'accountId'),
+        stringValue(data, 'agentId'),
+      ).run();
+      return json({ ok: true });
+    }
+
     case 'exportBackup': {
       return json(await createDynamicBackup(
         env.DB,

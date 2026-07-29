@@ -12,6 +12,8 @@ function routeName(path: string): string {
     [/^\/v1\/agents\/[^/]+(?:\/manage)?$/u, '/v1/agents/:agent'],
     [/^\/v1\/approvals\/[^/]+(?:\/(?:approve|reject))?$/u, '/v1/approvals/:review/:action'],
     [/^\/v1\/sessions\/[^/]+\/revoke$/u, '/v1/sessions/:session/revoke'],
+    [/^\/v1\/mcp\/authorizations\/[^/]+\/revoke$/u, '/v1/mcp/authorizations/:grant/revoke'],
+    [/^\/v1\/mcp\/grants\/[^/]+\/resolve$/u, '/v1/mcp/grants/:grant/resolve'],
     [/^\/v1\/announcements\/[^/]+\/read$/u, '/v1/announcements/:announcement/read'],
     [/^\/v1\/admin\/announcements\/[^/]+\/(?:publish|withdraw)$/u, '/v1/admin/announcements/:announcement/:action'],
     [/^\/v1\/admin\/invitations\/[^/]+\/revoke$/u, '/v1/admin/invitations/:invitation/revoke'],
@@ -25,8 +27,10 @@ function routeName(path: string): string {
   return routes.find(([pattern]) => pattern.test(path))?.[1] ?? 'static_asset';
 }
 
-function actorType(request: Request): 'agent' | 'account' | 'anonymous' {
-  if (request.headers.get('authorization')?.startsWith('Bearer ')) return 'agent';
+function actorType(request: Request): 'agent' | 'service' | 'account' | 'anonymous' {
+  if (request.headers.get('authorization')?.startsWith('Bearer ')) {
+    return new URL(request.url).pathname.startsWith('/v1/mcp/') ? 'service' : 'agent';
+  }
   if (request.headers.has('cookie')) return 'account';
   return 'anonymous';
 }

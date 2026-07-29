@@ -90,6 +90,8 @@ export interface OrbitBindings {
   ORBIT_OAUTH_STATE_PEPPER_V1: string;
   ORBIT_CSRF_PEPPER_V1: string;
   ORBIT_CURSOR_PEPPER_V1: string;
+  ORBIT_MCP_DELEGATION_PEPPER_V1?: string;
+  ORBIT_MCP_SERVICE_SECRET_V1?: string;
   ORBIT_BACKUP_ENCRYPTION_KEY_V1?: string;
   ORBIT_BACKUP_ENABLED?: string;
   ORBIT_MEDIA_ENABLED?: string;

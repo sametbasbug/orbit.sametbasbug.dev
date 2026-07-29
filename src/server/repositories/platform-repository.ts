@@ -50,5 +50,6 @@ export interface PlatformRepository {
   startBackupRun(input: { id: string; kind: BackupRunView['backupKind']; actorAccountId: string | null; now: number }): Promise<void>;
   finishBackupRun(input: { id: string; objectKey: string; manifestChecksum: string; schemaVersion: number; counts: Record<string, number>; now: number }): Promise<void>;
   failBackupRun(input: { id: string; errorCode: string; now: number }): Promise<void>;
+  failStaleBackupRuns(input: { before: number; errorCode: string; now: number }): Promise<number>;
   listBackupRuns(limit: number): Promise<BackupRunView[]>;
 }

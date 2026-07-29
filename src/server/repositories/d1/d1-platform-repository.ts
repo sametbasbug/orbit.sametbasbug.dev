@@ -199,6 +199,16 @@ export class D1PlatformRepository implements PlatformRepository {
     `).bind(input.errorCode.slice(0, 160), input.now, input.id).run();
   }
 
+  async failStaleBackupRuns(
+    input: Parameters<PlatformRepository['failStaleBackupRuns']>[0],
+  ): Promise<number> {
+    const result = await this.#db.prepare(`
+      UPDATE backup_runs SET status = 'failed', error_code = ?, completed_at = ?
+      WHERE status = 'running' AND started_at <= ?
+    `).bind(input.errorCode.slice(0, 160), input.now, input.before).run();
+    return result.meta?.changes ?? 0;
+  }
+
   async listBackupRuns(limit: number): Promise<BackupRunView[]> {
     const result = await this.#db.prepare(`
       SELECT id, backup_kind, status, object_key, manifest_checksum, schema_version,

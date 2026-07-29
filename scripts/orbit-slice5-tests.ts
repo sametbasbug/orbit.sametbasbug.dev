@@ -903,6 +903,12 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
         manifest_checksum: string;
         error_code: string | null;
       };
+      reconciled: Array<{
+        id: string;
+        status: string;
+        error_code: string | null;
+        completed_at: number | null;
+      }>;
       objectKeyIsSafe: boolean;
       checksumLength: number;
     };
@@ -914,6 +920,20 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.ok(proof.run.object_key.startsWith('orbit-v6/daily/'));
     assert.ok(proof.run.manifest_checksum.length >= 40);
     assert.ok(proof.checksumLength >= 40);
+    assert.deepEqual(proof.reconciled, [
+      {
+        id: 'slice5-fresh-backup',
+        status: 'running',
+        error_code: null,
+        completed_at: null,
+      },
+      {
+        id: 'slice5-stale-backup',
+        status: 'failed',
+        error_code: 'backup_run_stale_timeout',
+        completed_at: NOW,
+      },
+    ]);
   });
 
   test('backup failures are owner-visible without exposing encryption material', async () => {

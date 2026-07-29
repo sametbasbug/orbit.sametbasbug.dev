@@ -489,6 +489,16 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     const bucket = new MemoryR2();
     const testKey = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)))
       .replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '');
+    await env.DB.batch([
+      env.DB.prepare(`
+        INSERT INTO backup_runs (id, backup_kind, status, started_at)
+        VALUES ('slice5-stale-backup', 'daily', 'running', ?)
+      `).bind(now - 31 * 60 * 1000),
+      env.DB.prepare(`
+        INSERT INTO backup_runs (id, backup_kind, status, started_at)
+        VALUES ('slice5-fresh-backup', 'daily', 'running', ?)
+      `).bind(now - 60 * 1000),
+    ]);
     const result = await runR2Backup({
       ...env,
       BACKUPS: bucket,
@@ -503,10 +513,17 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
       SELECT status, object_key, manifest_checksum, error_code
       FROM backup_runs WHERE id = ?
     `).bind(result.runId).first();
+    const reconciled = await env.DB.prepare(`
+      SELECT id, status, error_code, completed_at
+      FROM backup_runs
+      WHERE id IN ('slice5-stale-backup', 'slice5-fresh-backup')
+      ORDER BY id
+    `).all();
     return Response.json({
       objectCount: bucket.objects.size,
       retention,
       run: runs,
+      reconciled: reconciled.results,
       objectKeyIsSafe: !result.objectKey.includes('nyx') && !result.objectKey.includes('samet'),
       checksumLength: result.objectChecksum.length,
     });

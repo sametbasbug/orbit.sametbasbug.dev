@@ -18,6 +18,8 @@ const RETENTION: Record<Exclude<BackupKind, 'manual'>, number> = {
   weekly: 8,
   monthly: 6,
 };
+const STALE_BACKUP_RUN_MS = 30 * 60 * 1000;
+const STALE_BACKUP_ERROR_CODE = 'backup_run_stale_timeout';
 
 function requireBackupBindings(env: OrbitBindings): { bucket: R2BucketLike; encryptionKey: string } {
   if (env.ORBIT_BACKUP_ENABLED !== 'true') {
@@ -68,6 +70,18 @@ export async function runR2Backup(
   actorAccountId: string | null = null,
 ): Promise<{ runId: string; objectKey: string; manifestChecksum: string; objectChecksum: string }> {
   const repository = new D1PlatformRepository(env.DB);
+  const reconciledRuns = await repository.failStaleBackupRuns({
+    before: now - STALE_BACKUP_RUN_MS,
+    errorCode: STALE_BACKUP_ERROR_CODE,
+    now,
+  });
+  if (reconciledRuns > 0) {
+    console.log(JSON.stringify({
+      event: 'backup.reconciliation',
+      status: 'failed_stale_runs',
+      count: reconciledRuns,
+    }));
+  }
   const runId = createEntityId();
   const startedAt = Date.now();
   await repository.startBackupRun({ id: runId, kind, actorAccountId, now });

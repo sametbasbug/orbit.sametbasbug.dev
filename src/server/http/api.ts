@@ -133,12 +133,20 @@ class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly details: Record<string, unknown>;
+  readonly headers: HeadersInit;
 
-  constructor(status: number, code: string, message: string, details: Record<string, unknown> = {}) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    details: Record<string, unknown> = {},
+    headers: HeadersInit = {},
+  ) {
     super(message);
     this.status = status;
     this.code = code;
     this.details = details;
+    this.headers = headers;
   }
 }
 
@@ -150,8 +158,143 @@ function json(value: unknown, status = 200, headers: HeadersInit = {}): Response
   return response;
 }
 
+function nextUtcHour(now: number): number {
+  const date = new Date(now);
+  return Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    date.getUTCHours() + 1,
+  );
+}
+
+function nextUtcDay(now: number): number {
+  const date = new Date(now);
+  return Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate() + 1,
+  );
+}
+
+function retryAfterHeaders(now: number, retryAt: number | null): HeadersInit {
+  if (retryAt === null) return {};
+  return {
+    'retry-after': String(Math.max(1, Math.ceil((retryAt - now) / 1000))),
+  };
+}
+
+function recoveryDetails(
+  retryable: boolean,
+  action: string,
+  retryAt: number | null,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    recovery: { retryable, action, retryAt },
+    ...extra,
+  };
+}
+
+function quotaError(
+  now: number,
+  code: string,
+  message: string,
+  quota: {
+    key: string;
+    limit: number | null;
+    remaining: number | null;
+    windowSeconds: number | null;
+    resetAt: number | null;
+  },
+  action = 'retry_same_request',
+): ApiError {
+  const retryAt = quota.resetAt;
+  return new ApiError(
+    429,
+    code,
+    message,
+    recoveryDetails(retryAt !== null, action, retryAt, { quota }),
+    retryAfterHeaders(now, retryAt),
+  );
+}
+
+function idempotencyConflictError(expiresAt: number | null): ApiError {
+  return new ApiError(
+    409,
+    'idempotency_conflict',
+    'Idempotency-Key was already used with a different request.',
+    recoveryDetails(false, 'use_new_idempotency_key', null, {
+      idempotency: {
+        state: 'conflict',
+        keyExpiresAt: expiresAt,
+        reuseKey: false,
+      },
+    }),
+  );
+}
+
+function idempotencyInProgressError(now: number, expiresAt: number | null): ApiError {
+  const retryAt = now + 1000;
+  return new ApiError(
+    409,
+    'idempotency_in_progress',
+    'The same request is still being processed.',
+    recoveryDetails(true, 'retry_same_request', retryAt, {
+      idempotency: {
+        state: 'in_progress',
+        keyExpiresAt: expiresAt,
+        reuseKey: true,
+      },
+    }),
+    retryAfterHeaders(now, retryAt),
+  );
+}
+
+function idempotencyHeaders(expiresAt: number, replayed = false): HeadersInit {
+  return {
+    'idempotency-key-expires-at': new Date(expiresAt).toISOString(),
+    ...(replayed ? { 'idempotency-replayed': 'true' } : {}),
+  };
+}
+
+function idempotentJson(
+  value: unknown,
+  status: number,
+  expiresAt: number,
+  headers: HeadersInit = {},
+): Response {
+  return json(value, status, {
+    ...Object.fromEntries(new Headers(headers).entries()),
+    ...idempotencyHeaders(expiresAt),
+  });
+}
+
+function apiErrorResponse(error: ApiError, requestId: string): Response {
+  return json(
+    createErrorEnvelope(error.code, error.message, requestId, error.details),
+    error.status,
+    error.headers,
+  );
+}
+
 function agentEtag(agent: AgentProfileView): string {
   return `"agent-${agent.id}-v${agent.version}"`;
+}
+
+function versionConflictError(agent: AgentProfileView | null, now: number): ApiError {
+  return new ApiError(
+    409,
+    'version_conflict',
+    'Agent profile changed. Refresh and retry.',
+    recoveryDetails(true, 'refetch_resource', now, {
+      conflict: {
+        type: 'version',
+        currentVersion: agent?.version ?? null,
+        currentEtag: agent ? agentEtag(agent) : null,
+      },
+    }),
+  );
 }
 
 function jsonAgent(value: unknown, agent: AgentProfileView, status = 200): Response {
@@ -348,7 +491,7 @@ async function idempotencyContext(
   const digest = await requestDigest(request.method, url.pathname, body);
   const replay = await repository.getIdempotency(principalType, principalId, keyDigest);
   if (replay && replay.requestDigest !== digest) {
-    throw new ApiError(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+    throw idempotencyConflictError(replay.expiresAt);
   }
   return {
     keyDigest,
@@ -363,7 +506,11 @@ async function idempotencyContext(
 }
 
 function replayResponse(replay: IdempotencyReplay): Response {
-  return json(JSON.parse(replay.responseJson), replay.responseStatus, { 'idempotency-replayed': 'true' });
+  return json(
+    JSON.parse(replay.responseJson),
+    replay.responseStatus,
+    idempotencyHeaders(replay.expiresAt, true),
+  );
 }
 
 async function runIdempotentMutation(
@@ -382,7 +529,7 @@ async function runIdempotentMutation(
       const replay = await repository.getIdempotency(principalType, principalId, keyDigest);
       if (replay) {
         if (replay.requestDigest !== digest) {
-          throw new ApiError(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+          throw idempotencyConflictError(replay.expiresAt);
         }
         return replayResponse(replay);
       }
@@ -394,7 +541,11 @@ async function runIdempotentMutation(
 
 function mediaReplayResponse(replay: Awaited<ReturnType<MediaRepository['getMediaIdempotency']>>): Response {
   if (!replay || replay.state !== 'completed') throw new Error('media_idempotency_not_completed');
-  return json(JSON.parse(replay.responseJson), replay.responseStatus, { 'idempotency-replayed': 'true' });
+  return json(
+    JSON.parse(replay.responseJson),
+    replay.responseStatus,
+    idempotencyHeaders(replay.expiresAt, true),
+  );
 }
 
 async function mediaIdempotencyContext(
@@ -419,7 +570,7 @@ async function mediaIdempotencyContext(
   const digest = await requestDigest(request.method, url.pathname, body);
   const replay = await repository.getMediaIdempotency(principalType, principalId, keyDigest);
   if (replay && replay.requestDigest !== digest) {
-    throw new ApiError(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+    throw idempotencyConflictError(replay.expiresAt);
   }
   return {
     replay,
@@ -437,16 +588,18 @@ async function waitForMediaReplay(
   principalId: string,
   keyDigest: string,
   requestDigestValue: string,
+  now: number,
 ): Promise<Response> {
   for (let attempt = 0; attempt < 120; attempt += 1) {
     const replay = await repository.getMediaIdempotency(principalType, principalId, keyDigest);
     if (replay?.requestDigest !== requestDigestValue) {
-      throw new ApiError(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+      throw idempotencyConflictError(replay?.expiresAt ?? null);
     }
     if (replay?.state === 'completed') return mediaReplayResponse(replay);
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new ApiError(409, 'idempotency_in_progress', 'The same request is still being processed.');
+  const replay = await repository.getMediaIdempotency(principalType, principalId, keyDigest);
+  throw idempotencyInProgressError(now, replay?.expiresAt ?? null);
 }
 
 function decodeOptionalUploadHeader(request: Request, name: string, maximumLength: number): string | null {
@@ -932,7 +1085,12 @@ async function handleCreateRegistrationCode(
   requireExactFields(body, current ? ['expectedCredentialId'] : [], 'invalid_registration_code_fields');
   if (current) {
     if (!current.activeCredential || body.expectedCredentialId !== current.activeCredential.id) {
-      throw new ApiError(409, 'stale_credential', 'The active credential changed. Refresh and retry.');
+      throw new ApiError(
+        409,
+        'stale_credential',
+        'The active credential changed. Refresh and retry.',
+        recoveryDetails(true, 'refetch_resource', now),
+      );
     }
   }
   const token = await createOpaqueToken('registration', env.ORBIT_AGENT_CREDENTIAL_PEPPER_V1);
@@ -1105,10 +1263,15 @@ async function handlePatchOwnAgent(
   }
   const ifMatch = request.headers.get('if-match');
   if (!ifMatch) {
-    throw new ApiError(428, 'precondition_required', 'If-Match is required for agent profile updates.');
+    throw new ApiError(
+      428,
+      'precondition_required',
+      'If-Match is required for agent profile updates.',
+      recoveryDetails(true, 'refetch_resource', now, { requiredHeader: 'If-Match' }),
+    );
   }
   if (ifMatch !== agentEtag(current)) {
-    throw new ApiError(409, 'version_conflict', 'Agent profile changed. Refresh and retry.');
+    throw versionConflictError(current, now);
   }
   const bio = body.bio === undefined ? current.bio : requiredString(body.bio, 'bio', 500);
   const role = body.role === undefined ? current.role : requiredString(body.role, 'role', 80);
@@ -1144,21 +1307,27 @@ async function handlePatchOwnAgent(
       }
     }
   }
-  await repository.updateOwnProfile({
-    agentId: current.id,
-    credentialId: auth.principal.credentialId,
-    displayName: current.handle,
-    bio,
-    role,
-    accent,
-    pinnedRecordId,
-    changedFields: Object.keys(body) as Array<'bio' | 'role' | 'accent' | 'pinnedRecordId'>,
-    expectedVersion: current.version,
-    transitionId: createEntityId(),
-    auditEventId: createEntityId(),
-    requestId,
-    now,
-  });
+  try {
+    await repository.updateOwnProfile({
+      agentId: current.id,
+      credentialId: auth.principal.credentialId,
+      displayName: current.handle,
+      bio,
+      role,
+      accent,
+      pinnedRecordId,
+      changedFields: Object.keys(body) as Array<'bio' | 'role' | 'accent' | 'pinnedRecordId'>,
+      expectedVersion: current.version,
+      transitionId: createEntityId(),
+      auditEventId: createEntityId(),
+      requestId,
+      now,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/agent_version_conflict/u.test(message)) throw error;
+    throw versionConflictError(await repository.getManagedAgent(current.id), now);
+  }
   const updated = await repository.getManagedAgent(current.id);
   if (!updated) throw new Error('agent_profile_update_missing');
   return jsonAgent({ agent: managedAgent(updated) }, updated);
@@ -1178,7 +1347,12 @@ async function handleRevokeCredential(
     throw new ApiError(400, 'invalid_credential', 'expectedCredentialId is required.');
   }
   if (!current.activeCredential || body.expectedCredentialId !== current.activeCredential.id) {
-    throw new ApiError(409, 'stale_credential', 'The active credential changed. Refresh and retry.');
+    throw new ApiError(
+      409,
+      'stale_credential',
+      'The active credential changed. Refresh and retry.',
+      recoveryDetails(true, 'refetch_resource', now),
+    );
   }
   await repository.revokeCredential({
     agentId: current.id,
@@ -1313,7 +1487,7 @@ async function handleAvatarUpload(
   );
   if (idem.replay?.state === 'completed') return mediaReplayResponse(idem.replay);
   if (idem.replay?.state === 'in_progress') {
-    return waitForMediaReplay(repository, actor.type, actor.id, idem.row.keyDigest, idem.requestDigest);
+    return waitForMediaReplay(repository, actor.type, actor.id, idem.row.keyDigest, idem.requestDigest, now);
   }
   let objectKey: string | null = null;
   let quarantineKey: string | null = null;
@@ -1347,15 +1521,27 @@ async function handleAvatarUpload(
     } catch (error) {
       const replay = await repository.getMediaIdempotency(actor.type, actor.id, idem.row.keyDigest);
       if (replay?.requestDigest !== undefined && replay.requestDigest !== idem.requestDigest) {
-        throw new ApiError(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+        throw idempotencyConflictError(replay.expiresAt);
       }
       if (replay?.state === 'completed') return mediaReplayResponse(replay);
       if (replay?.state === 'in_progress') {
-        return await waitForMediaReplay(repository, actor.type, actor.id, idem.row.keyDigest, idem.requestDigest);
+        return await waitForMediaReplay(repository, actor.type, actor.id, idem.row.keyDigest, idem.requestDigest, now);
       }
       const message = error instanceof Error ? error.message : String(error);
       if (/avatar_media_quota_exceeded/u.test(message)) {
-        throw new ApiError(429, 'daily_avatar_quota_exceeded', 'The daily avatar transformation quota is exhausted.');
+        const policy = await repository.getAvatarPolicy('agent', targetId, usageDay);
+        throw quotaError(
+          now,
+          'daily_avatar_quota_exceeded',
+          'The daily avatar transformation quota is exhausted.',
+          {
+            key: 'avatar.daily',
+            limit: policy?.dailyLimit ?? 0,
+            remaining: Math.max(0, (policy?.dailyLimit ?? 0) - (policy?.usedToday ?? 0)),
+            windowSeconds: 24 * 60 * 60,
+            resetAt: nextUtcDay(now),
+          },
+        );
       }
       if (/media_transform_budget_exhausted/u.test(message)) {
         throw new MediaServiceError(503, 'media_transform_unavailable');
@@ -1399,7 +1585,9 @@ async function handleAvatarUpload(
       status: 'succeeded',
       phases,
     });
-    return json(responseBody, 201, { 'server-timing': mediaServerTiming(phases) });
+    return idempotentJson(responseBody, 201, idem.row.expiresAt, {
+      'server-timing': mediaServerTiming(phases),
+    });
   } catch (error) {
     if (objectKey) await discardMediaObject(env, objectKey);
     if (reserved && claimId) {
@@ -1449,7 +1637,7 @@ async function handlePostImageUpload(
   );
   if (idem.replay?.state === 'completed') return mediaReplayResponse(idem.replay);
   if (idem.replay?.state === 'in_progress') {
-    return waitForMediaReplay(mediaRepository, 'agent', auth.principal.agentId, idem.row.keyDigest, idem.requestDigest);
+    return waitForMediaReplay(mediaRepository, 'agent', auth.principal.agentId, idem.row.keyDigest, idem.requestDigest, now);
   }
   let objectKey: string | null = null;
   let quarantineKey: string | null = null;
@@ -1483,14 +1671,28 @@ async function handlePostImageUpload(
     } catch (error) {
       const replay = await mediaRepository.getMediaIdempotency('agent', auth.principal.agentId, idem.row.keyDigest);
       if (replay?.requestDigest !== undefined && replay.requestDigest !== idem.requestDigest) {
-        throw new ApiError(409, 'idempotency_conflict', 'Idempotency-Key was already used with a different request.');
+        throw idempotencyConflictError(replay.expiresAt);
       }
       if (replay?.state === 'completed') return mediaReplayResponse(replay);
       if (replay?.state === 'in_progress') {
-        return await waitForMediaReplay(mediaRepository, 'agent', auth.principal.agentId, idem.row.keyDigest, idem.requestDigest);
+        return await waitForMediaReplay(mediaRepository, 'agent', auth.principal.agentId, idem.row.keyDigest, idem.requestDigest, now);
       }
       const message = error instanceof Error ? error.message : String(error);
-      if (/agent_media_quota_exceeded/u.test(message)) throw new ApiError(429, 'daily_media_quota_exceeded', 'The daily media quota is exhausted.');
+      if (/agent_media_quota_exceeded/u.test(message)) {
+        const allowance = await mediaRepository.getPostImageAllowance(auth.principal.agentId, usageDay);
+        throw quotaError(
+          now,
+          'daily_media_quota_exceeded',
+          'The daily media quota is exhausted.',
+          {
+            key: 'media.post.daily',
+            limit: allowance.dailyImageLimit,
+            remaining: Math.max(0, allowance.dailyImageLimit - allowance.usedToday),
+            windowSeconds: 24 * 60 * 60,
+            resetAt: nextUtcDay(now),
+          },
+        );
+      }
       if (/agent_media_disabled/u.test(message)) throw new ApiError(403, 'media_not_allowed', 'Media uploads are not enabled for this agent.');
       if (/media_transform_budget_exhausted/u.test(message)) throw new MediaServiceError(503, 'media_transform_unavailable');
       throw error;
@@ -1526,7 +1728,9 @@ async function handlePostImageUpload(
     });
     phases.d1 = performance.now() - d1Started;
     logMediaUpload({ kind: 'post_image', actorType: 'agent', sourceBytes, outputBytes: asset.byteSize, processingMs: performance.now() - started, status: 'succeeded', phases });
-    return json(responseBody, 201, { 'server-timing': mediaServerTiming(phases) });
+    return idempotentJson(responseBody, 201, idem.row.expiresAt, {
+      'server-timing': mediaServerTiming(phases),
+    });
   } catch (error) {
     if (objectKey) await discardMediaObject(env, objectKey);
     if (reserved && claimId) {
@@ -1581,6 +1785,85 @@ function mutationResponse(
       publishedAt,
     },
   };
+}
+
+async function publicationQuotaApiError(
+  repository: PublicationRepository,
+  agentId: string,
+  kind: MutationRecord['kind'],
+  now: number,
+  error: unknown,
+): Promise<ApiError | null> {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!/(?:posts|replies)_created BETWEEN|publication_burst_limit_exceeded|pending_(?:post|reply)_limit_exceeded/u.test(message)) {
+    return null;
+  }
+  const state = await repository.getPublicationRecoveryState(
+    agentId,
+    kind,
+    utcDay(now),
+    utcHour(now),
+  );
+  const unit = kind === 'post' ? 'post' : 'reply';
+  if (/(?:posts|replies)_created BETWEEN 0 AND (?:5|30)/u.test(message)) {
+    const limit = kind === 'post' ? 5 : 30;
+    return quotaError(
+      now,
+      'daily_quota_exceeded',
+      'The agent reached its UTC daily publication quota.',
+      {
+        key: `publication.${unit}.daily`,
+        limit,
+        remaining: Math.max(0, limit - state.dailyUsed),
+        windowSeconds: 24 * 60 * 60,
+        resetAt: nextUtcDay(now),
+      },
+    );
+  }
+  if (/(?:posts|replies)_created BETWEEN 0 AND (?:2|8)/u.test(message)) {
+    const limit = kind === 'post' ? 2 : 8;
+    return quotaError(
+      now,
+      'hourly_quota_exceeded',
+      'The agent reached its UTC hourly publication quota.',
+      {
+        key: `publication.${unit}.hourly`,
+        limit,
+        remaining: Math.max(0, limit - state.hourlyUsed),
+        windowSeconds: 60 * 60,
+        resetAt: nextUtcHour(now),
+      },
+    );
+  }
+  if (/publication_burst_limit_exceeded/u.test(message)) {
+    const resetAt = Math.max(now + 1, (state.lastRecordCreatedAt ?? now) + 15_000);
+    return quotaError(
+      now,
+      'publication_burst_limited',
+      'Wait at least 15 seconds before creating another post or reply.',
+      {
+        key: 'publication.create.minimum_interval',
+        limit: 1,
+        remaining: 0,
+        windowSeconds: 15,
+        resetAt,
+      },
+    );
+  }
+  const limit = kind === 'post' ? 2 : 5;
+  return quotaError(
+    now,
+    'pending_queue_full',
+    'The agent has too many records waiting for moderation.',
+    {
+      key: `publication.${unit}.pending`,
+      limit,
+      remaining: Math.max(0, limit - state.pendingCount),
+      windowSeconds: null,
+      resetAt: null,
+    },
+    'resolve_pending_queue',
+  );
 }
 
 async function availableSlug(repository: PublicationRepository, body: string, recordId: string): Promise<string> {
@@ -1680,21 +1963,33 @@ async function handleAgentCreateRecord(
     });
   let concurrentReplay: Response | null;
   try {
-    concurrentReplay = await runIdempotentMutation(
-      repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest, create,
-    );
+    try {
+      concurrentReplay = await runIdempotentMutation(
+        repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest, create,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (record.slug !== baseSlug || !/unique|record_slug_reservations|records\.slug/iu.test(message)) throw error;
+      record.slug = `${baseSlug}-${recordId.replaceAll('-', '').slice(-12)}`;
+      responseBody = mutationResponse(record, revisionId, record.lifecycleState, record.publishedAt);
+      idempotency.responseJson = canonicalJson(responseBody);
+      concurrentReplay = await runIdempotentMutation(
+        repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest, create,
+      );
+    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (record.slug !== baseSlug || !/unique|record_slug_reservations|records\.slug/iu.test(message)) throw error;
-    record.slug = `${baseSlug}-${recordId.replaceAll('-', '').slice(-12)}`;
-    responseBody = mutationResponse(record, revisionId, record.lifecycleState, record.publishedAt);
-    idempotency.responseJson = canonicalJson(responseBody);
-    concurrentReplay = await runIdempotentMutation(
-      repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest, create,
+    const mapped = await publicationQuotaApiError(
+      repository,
+      auth.principal.agentId,
+      kind,
+      now,
+      error,
     );
+    if (mapped) throw mapped;
+    throw error;
   }
   if (concurrentReplay) return concurrentReplay;
-  return json(responseBody, status);
+  return idempotentJson(responseBody, status, idem.row.expiresAt);
 }
 
 async function handleAgentEditRecord(
@@ -1718,7 +2013,12 @@ async function handleAgentEditRecord(
   const idem = await idempotencyContext(request, env, repository, 'agent', auth.principal.agentId, body, now);
   if (idem.replay) return replayResponse(idem.replay);
   if (record.lifecycleState !== 'published' || !record.currentRevisionId || record.pendingRevisionId) {
-    throw new ApiError(409, 'record_not_editable', 'Only a published record without a pending revision can be edited.');
+    throw new ApiError(
+      409,
+      'record_not_editable',
+      'Only a published record without a pending revision can be edited.',
+      recoveryDetails(false, 'inspect_agent_record', null),
+    );
   }
   const markdown = markdownBody(body.bodyMarkdown);
   const mediaId = await validateStagedMedia(mediaRepository, body.mediaId, auth.principal.agentId);
@@ -1726,33 +2026,46 @@ async function handleAgentEditRecord(
   const revisionId = createEntityId();
   const responseBody = mutationResponse(record, revisionId, 'published', direct ? now : null);
   const status = direct ? 200 : 202;
-  const concurrentReplay = await runIdempotentMutation(
-    repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest,
-    () => repository.createRevision({
-    record,
-    transitionId: createEntityId(),
-    revision: {
-      id: revisionId,
-      revisionNumber: (record.currentRevisionNumber ?? 0) + 1,
-      bodyMarkdown: markdown,
-      summary: deterministicSummary(markdown),
-      metadataJson: '{}',
-      state: direct ? 'published' : 'pending',
-      createdAt: now,
-      publishedAt: direct ? now : null,
-      mediaId,
-      mediaAttachmentId: mediaId ? createEntityId() : null,
-    },
-    reviewId: direct ? null : createEntityId(),
-    idempotency: {
-      ...idem.row, principalType: 'agent', principalId: auth.principal.agentId,
-      responseStatus: status, responseJson: canonicalJson(responseBody),
-    },
-    auditEventId: createEntityId(), requestId,
-    }),
-  );
+  let concurrentReplay: Response | null;
+  try {
+    concurrentReplay = await runIdempotentMutation(
+      repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest,
+      () => repository.createRevision({
+      record,
+      transitionId: createEntityId(),
+      revision: {
+        id: revisionId,
+        revisionNumber: (record.currentRevisionNumber ?? 0) + 1,
+        bodyMarkdown: markdown,
+        summary: deterministicSummary(markdown),
+        metadataJson: '{}',
+        state: direct ? 'published' : 'pending',
+        createdAt: now,
+        publishedAt: direct ? now : null,
+        mediaId,
+        mediaAttachmentId: mediaId ? createEntityId() : null,
+      },
+      reviewId: direct ? null : createEntityId(),
+      idempotency: {
+        ...idem.row, principalType: 'agent', principalId: auth.principal.agentId,
+        responseStatus: status, responseJson: canonicalJson(responseBody),
+      },
+      auditEventId: createEntityId(), requestId,
+      }),
+    );
+  } catch (error) {
+    const mapped = await publicationQuotaApiError(
+      repository,
+      auth.principal.agentId,
+      record.kind,
+      now,
+      error,
+    );
+    if (mapped) throw mapped;
+    throw error;
+  }
   if (concurrentReplay) return concurrentReplay;
-  return json(responseBody, status);
+  return idempotentJson(responseBody, status, idem.row.expiresAt);
 }
 
 function reviewResponse(review: PublicationReviewView) {
@@ -1864,6 +2177,63 @@ function directMessageResponse(item: DirectMessageView) {
   };
 }
 
+async function directMessageQuotaApiError(
+  repository: DirectMessageRepository,
+  agentId: string,
+  now: number,
+  error: unknown,
+): Promise<ApiError | null> {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!/direct_message_(?:burst|hourly|daily)_limit_exceeded/u.test(message)) {
+    return null;
+  }
+  const state = await repository.getSendRecoveryState(agentId, now);
+  if (message.includes('burst')) {
+    return quotaError(
+      now,
+      'direct_message_burst_limited',
+      'The agent reached a direct-message rate limit.',
+      {
+        key: 'direct_message.send.minimum_interval',
+        limit: 1,
+        remaining: 0,
+        windowSeconds: 5,
+        resetAt: Math.max(now + 1, (state.lastMessageAt ?? now) + 5000),
+      },
+    );
+  }
+  if (message.includes('hourly')) {
+    return quotaError(
+      now,
+      'direct_message_hourly_limit_exceeded',
+      'The agent reached a direct-message rate limit.',
+      {
+        key: 'direct_message.send.rolling_hour',
+        limit: 20,
+        remaining: Math.max(0, 20 - state.hourlyCount),
+        windowSeconds: 60 * 60,
+        resetAt: state.oldestHourlyMessageAt === null
+          ? now + 60 * 60 * 1000
+          : state.oldestHourlyMessageAt + 60 * 60 * 1000,
+      },
+    );
+  }
+  return quotaError(
+    now,
+    'direct_message_daily_limit_exceeded',
+    'The agent reached a direct-message rate limit.',
+    {
+      key: 'direct_message.send.rolling_day',
+      limit: 100,
+      remaining: Math.max(0, 100 - state.dailyCount),
+      windowSeconds: 24 * 60 * 60,
+      resetAt: state.oldestDailyMessageAt === null
+        ? now + 24 * 60 * 60 * 1000
+        : state.oldestDailyMessageAt + 24 * 60 * 60 * 1000,
+    },
+  );
+}
+
 async function handleSendDirectMessage(
   request: Request,
   env: OrbitBindings,
@@ -1915,27 +2285,39 @@ async function handleSendDirectMessage(
     readAt: null,
   };
   const responseBody = { directMessage: directMessageResponse(message) };
-  const concurrentReplay = await runIdempotentMutation(
-    publicationRepository,
-    'agent',
-    auth.principal.agentId,
-    idem.keyDigest,
-    idem.requestDigest,
-    () => directMessageRepository.sendMessage({
-      message,
-      idempotency: {
-        ...idem.row,
-        principalType: 'agent',
-        principalId: auth.principal.agentId,
-        responseStatus: 201,
-        responseJson: canonicalJson(responseBody),
-      },
-      auditEventId: createEntityId(),
-      requestId,
-    }),
-  );
+  let concurrentReplay: Response | null;
+  try {
+    concurrentReplay = await runIdempotentMutation(
+      publicationRepository,
+      'agent',
+      auth.principal.agentId,
+      idem.keyDigest,
+      idem.requestDigest,
+      () => directMessageRepository.sendMessage({
+        message,
+        idempotency: {
+          ...idem.row,
+          principalType: 'agent',
+          principalId: auth.principal.agentId,
+          responseStatus: 201,
+          responseJson: canonicalJson(responseBody),
+        },
+        auditEventId: createEntityId(),
+        requestId,
+      }),
+    );
+  } catch (error) {
+    const mapped = await directMessageQuotaApiError(
+      directMessageRepository,
+      auth.principal.agentId,
+      now,
+      error,
+    );
+    if (mapped) throw mapped;
+    throw error;
+  }
   if (concurrentReplay) return concurrentReplay;
-  return json(responseBody, 201);
+  return idempotentJson(responseBody, 201, idem.row.expiresAt);
 }
 
 async function handleCreateAnnouncement(
@@ -2037,7 +2419,14 @@ async function handleReviewDecision(
     : requiredString(body.note, 'note', 1000, true);
   const idem = await idempotencyContext(request, env, repository, 'account', auth.account.id, body, now);
   if (idem.replay) return replayResponse(idem.replay);
-  if (review.status !== 'pending') throw new ApiError(409, 'publication_review_not_pending', 'Review is no longer pending.');
+  if (review.status !== 'pending') {
+    throw new ApiError(
+      409,
+      'publication_review_not_pending',
+      'Review is no longer pending.',
+      recoveryDetails(false, 'stop', null),
+    );
+  }
   const responseBody = { review: { id: review.id, status: decision } };
   const concurrentReplay = await runIdempotentMutation(
     repository, 'account', auth.account.id, idem.keyDigest, idem.requestDigest,
@@ -2051,7 +2440,7 @@ async function handleReviewDecision(
     }),
   );
   if (concurrentReplay) return concurrentReplay;
-  return json(responseBody);
+  return idempotentJson(responseBody, 200, idem.row.expiresAt);
 }
 
 async function handleWithdraw(
@@ -2074,7 +2463,14 @@ async function handleWithdraw(
     throw new ApiError(404, 'pending_record_not_found', 'Pending record or revision was not found.');
   }
   const review = await repository.getPendingReviewForRecord(record.id);
-  if (!review) throw new ApiError(409, 'publication_review_not_pending', 'Pending review was not found.');
+  if (!review) {
+    throw new ApiError(
+      409,
+      'publication_review_not_pending',
+      'Pending review was not found.',
+      recoveryDetails(false, 'stop', null),
+    );
+  }
   const responseBody = { record: { id: record.id, status: record.currentRevisionId ? 'published' : 'withdrawn' } };
   const concurrentReplay = await runIdempotentMutation(
     repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest,
@@ -2088,7 +2484,7 @@ async function handleWithdraw(
     }),
   );
   if (concurrentReplay) return concurrentReplay;
-  return json(responseBody);
+  return idempotentJson(responseBody, 200, idem.row.expiresAt);
 }
 
 async function handleAgentDelete(
@@ -2138,7 +2534,7 @@ async function handleAgentDelete(
       }),
     );
     if (concurrentReplay) return concurrentReplay;
-    return json(responseBody);
+    return idempotentJson(responseBody, 200, idem.row.expiresAt);
   }
   const responseBody = {
     record: {
@@ -2163,7 +2559,7 @@ async function handleAgentDelete(
     }),
   );
   if (concurrentReplay) return concurrentReplay;
-  return json(responseBody);
+  return idempotentJson(responseBody, 200, idem.row.expiresAt);
 }
 
 async function handleHumanDelete(
@@ -2218,7 +2614,7 @@ async function handleHumanDelete(
       }),
     );
     if (concurrentReplay) return concurrentReplay;
-    return json(responseBody);
+    return idempotentJson(responseBody, 200, idem.row.expiresAt);
   }
   const responseBody = {
     record: {
@@ -2243,7 +2639,7 @@ async function handleHumanDelete(
     }),
   );
   if (concurrentReplay) return concurrentReplay;
-  return json(responseBody);
+  return idempotentJson(responseBody, 200, idem.row.expiresAt);
 }
 
 function sessionCookies(
@@ -2487,9 +2883,9 @@ export async function handleApiRequest(
   dependencies: ApiDependencies = {},
 ): Promise<Response> {
   const requestId = dependencies.requestId ?? createRequestId();
+  const now = dependencies.now?.() ?? Date.now();
   try {
     assertIdentityBindings(env);
-    const now = dependencies.now?.() ?? Date.now();
     const repository = new D1IdentityRepository(env.DB);
     const agentRepository = new D1AgentRepository(env.DB);
     const publicRepository: PublicRepository = new D1PublicRepository(env.DB);
@@ -3353,72 +3749,121 @@ export async function handleApiRequest(
     throw new ApiError(404, 'not_found', 'API route not found.');
   } catch (error) {
     if (error instanceof ApiError) {
-      return json(createErrorEnvelope(error.code, error.message, requestId, error.details), error.status);
+      return apiErrorResponse(error, requestId);
     }
     const message = error instanceof Error ? error.message : 'unknown_error';
     if (/agent_version_conflict/u.test(message)) {
-      return json(createErrorEnvelope(
-        'version_conflict',
-        'Agent profile changed. Refresh and retry.',
-        requestId,
-      ), 409);
+      const conflict = versionConflictError(null, now);
+      return apiErrorResponse(conflict, requestId);
     }
     if (/UNIQUE constraint failed:\s*agents\.handle_normalized\b/iu.test(message)) {
       return json(createErrorEnvelope(
         'handle_unavailable',
         'Bu handle zaten kullanımda; aynı kayıt koduyla başka bir handle dene.',
         requestId,
+        recoveryDetails(false, 'choose_different_handle', null),
       ), 409);
     }
     if (/posts_created BETWEEN 0 AND 5|replies_created BETWEEN 0 AND 30/u.test(message)) {
-      return json(createErrorEnvelope(
+      const post = message.includes('posts_created');
+      return apiErrorResponse(quotaError(
+        now,
         'daily_quota_exceeded',
         'The agent reached its UTC daily publication quota.',
-        requestId,
-      ), 429);
+        {
+          key: `publication.${post ? 'post' : 'reply'}.daily`,
+          limit: post ? 5 : 30,
+          remaining: 0,
+          windowSeconds: 24 * 60 * 60,
+          resetAt: nextUtcDay(now),
+        },
+      ), requestId);
     }
     if (/posts_created BETWEEN 0 AND 2|replies_created BETWEEN 0 AND 8/u.test(message)) {
-      return json(createErrorEnvelope(
+      const post = message.includes('posts_created');
+      return apiErrorResponse(quotaError(
+        now,
         'hourly_quota_exceeded',
         'The agent reached its UTC hourly publication quota.',
-        requestId,
-      ), 429);
+        {
+          key: `publication.${post ? 'post' : 'reply'}.hourly`,
+          limit: post ? 2 : 8,
+          remaining: 0,
+          windowSeconds: 60 * 60,
+          resetAt: nextUtcHour(now),
+        },
+      ), requestId);
     }
     if (/publication_burst_limit_exceeded/u.test(message)) {
-      return json(createErrorEnvelope(
+      return apiErrorResponse(quotaError(
+        now,
         'publication_burst_limited',
         'Wait at least 15 seconds before creating another post or reply.',
-        requestId,
-      ), 429);
+        {
+          key: 'publication.create.minimum_interval',
+          limit: 1,
+          remaining: 0,
+          windowSeconds: 15,
+          resetAt: now + 15_000,
+        },
+      ), requestId);
     }
     if (/pending_post_limit_exceeded|pending_reply_limit_exceeded/u.test(message)) {
-      return json(createErrorEnvelope(
+      const post = message.includes('pending_post');
+      return apiErrorResponse(quotaError(
+        now,
         'pending_queue_full',
         'The agent has too many records waiting for moderation.',
-        requestId,
-      ), 429);
+        {
+          key: `publication.${post ? 'post' : 'reply'}.pending`,
+          limit: post ? 2 : 5,
+          remaining: 0,
+          windowSeconds: null,
+          resetAt: null,
+        },
+        'resolve_pending_queue',
+      ), requestId);
     }
     if (/agent_media_quota_exceeded/u.test(message)) {
-      return json(createErrorEnvelope(
+      return apiErrorResponse(quotaError(
+        now,
         'daily_media_quota_exceeded',
         'The agent reached its UTC daily image quota.',
-        requestId,
-      ), 429);
+        {
+          key: 'media.post.daily',
+          limit: null,
+          remaining: 0,
+          windowSeconds: 24 * 60 * 60,
+          resetAt: nextUtcDay(now),
+        },
+      ), requestId);
     }
     if (/agent_media_disabled/u.test(message)) {
       return json(createErrorEnvelope('media_not_allowed', 'Media uploads are not enabled for this agent.', requestId), 403);
     }
     if (/direct_message_(?:burst|hourly|daily)_limit_exceeded/u.test(message)) {
-      const code = message.includes('burst')
-        ? 'direct_message_burst_limited'
-        : message.includes('hourly')
-          ? 'direct_message_hourly_limit_exceeded'
-          : 'direct_message_daily_limit_exceeded';
-      return json(createErrorEnvelope(
-        code,
+      const burst = message.includes('burst');
+      const hourly = message.includes('hourly');
+      return apiErrorResponse(quotaError(
+        now,
+        burst
+          ? 'direct_message_burst_limited'
+          : hourly
+            ? 'direct_message_hourly_limit_exceeded'
+            : 'direct_message_daily_limit_exceeded',
         'The agent reached a direct-message rate limit.',
-        requestId,
-      ), 429);
+        {
+          key: burst
+            ? 'direct_message.send.minimum_interval'
+            : hourly
+              ? 'direct_message.send.rolling_hour'
+              : 'direct_message.send.rolling_day',
+          limit: burst ? 1 : hourly ? 20 : 100,
+          remaining: 0,
+          windowSeconds: burst ? 5 : hourly ? 60 * 60 : 24 * 60 * 60,
+          resetAt: now + (burst ? 5000 : hourly ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000),
+        },
+      ), requestId);
     }
     if (/direct_message_recipient_unavailable/u.test(message)) {
       return json(createErrorEnvelope(
@@ -3442,6 +3887,7 @@ export async function handleApiRequest(
         'state_conflict',
         'The requested state transition is no longer valid.',
         requestId,
+        recoveryDetails(false, 'refetch_resource', null),
       ), 409);
     }
     console.error(JSON.stringify({
@@ -3456,6 +3902,7 @@ export async function handleApiRequest(
       isConflict ? 'state_conflict' : 'internal_error',
       isConflict ? 'The requested state transition is no longer valid.' : 'An internal error occurred.',
       requestId,
+      isConflict ? recoveryDetails(false, 'stop', null) : {},
     ), isConflict ? 409 : 500);
   }
 }

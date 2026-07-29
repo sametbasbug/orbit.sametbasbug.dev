@@ -416,7 +416,17 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal(agentAvatarResponses.filter((response) => response.headers.get('idempotency-replayed') === 'true').length, 1);
     const avatarQuota = await agentAvatarRequest(agent, png, 'image/png', 'parallel-agent-avatar-new-key');
     assert.equal(avatarQuota.status, 429);
-    assert.equal((await avatarQuota.json() as { error: { code: string } }).error.code, 'daily_avatar_quota_exceeded');
+    const dailyResetAt = Date.parse('2026-07-17T00:00:00Z');
+    assert.equal(avatarQuota.headers.get('retry-after'), String((dailyResetAt - NOW) / 1000));
+    const avatarQuotaError = (await avatarQuota.json() as { error: { code: string; details: Record<string, any> } }).error;
+    assert.equal(avatarQuotaError.code, 'daily_avatar_quota_exceeded');
+    assert.deepEqual(avatarQuotaError.details.quota, {
+      key: 'avatar.daily',
+      limit: 1,
+      remaining: 0,
+      windowSeconds: 86400,
+      resetAt: dailyResetAt,
+    });
 
     assert.equal((await ownerRequest(`/v1/admin/agents/${agent.id}/media-policy`, 'PATCH', {
       mediaEnabled: true, dailyImageLimit: 10,
@@ -427,6 +437,9 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     ]);
     assert.deepEqual(postResponses.map((response) => response.status), [201, 201]);
     assert.equal(postResponses.filter((response) => response.headers.get('idempotency-replayed') === 'true').length, 1);
+    const expiryHeaders = postResponses.map((response) => response.headers.get('idempotency-key-expires-at'));
+    assert.ok(expiryHeaders[0]);
+    assert.equal(expiryHeaders[0], expiryHeaders[1]);
     const postBodies = await Promise.all(postResponses.map((response) => response.json()));
     assert.deepEqual(postBodies[0], postBodies[1]);
 
@@ -436,7 +449,13 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal(Number(after.counts.media_assets), Number(before.counts.media_assets) + 2);
     const conflict = await agentImageRequest(agent, png, 'image/png', 'Farklı alt metin', 'parallel-post-media-key');
     assert.equal(conflict.status, 409);
-    assert.equal((await conflict.json() as { error: { code: string } }).error.code, 'idempotency_conflict');
+    const conflictError = (await conflict.json() as { error: { code: string; details: Record<string, any> } }).error;
+    assert.equal(conflictError.code, 'idempotency_conflict');
+    assert.deepEqual(conflictError.details.recovery, {
+      retryable: false,
+      action: 'use_new_idempotency_key',
+      retryAt: null,
+    });
   });
 
   test('decode failure is fail-closed and Images quota errors stay safely categorized', async () => {
@@ -548,6 +567,8 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     const replay = await agentRequest(sender, '/v1/direct-messages', 'POST', requestBody, 'slice5-dm-send');
     assert.equal(replay.status, 201);
     assert.equal(replay.headers.get('idempotency-replayed'), 'true');
+    assert.ok(sent.headers.get('idempotency-key-expires-at'));
+    assert.equal(replay.headers.get('idempotency-key-expires-at'), sent.headers.get('idempotency-key-expires-at'));
     assert.deepEqual(await replay.json(), sentBody);
     const conflict = await agentRequest(sender, '/v1/direct-messages', 'POST', {
       ...requestBody,
@@ -642,10 +663,23 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
       bodyMarkdown: 'İkinci mesaj burst sınırına takılmalı.',
     }, 'slice5-dm-burst');
     assert.equal(rateLimited.status, 429);
-    assert.equal(
-      (await rateLimited.json() as { error: { code: string } }).error.code,
-      'direct_message_burst_limited',
-    );
+    assert.equal(rateLimited.headers.get('retry-after'), '5');
+    const rateLimitedError = (await rateLimited.json() as {
+      error: { code: string; details: Record<string, any> };
+    }).error;
+    assert.equal(rateLimitedError.code, 'direct_message_burst_limited');
+    assert.deepEqual(rateLimitedError.details.recovery, {
+      retryable: true,
+      action: 'retry_same_request',
+      retryAt: NOW + 5_000,
+    });
+    assert.deepEqual(rateLimitedError.details.quota, {
+      key: 'direct_message.send.minimum_interval',
+      limit: 1,
+      remaining: 0,
+      windowSeconds: 5,
+      resetAt: NOW + 5_000,
+    });
   });
 
   let allAnnouncementId = '';

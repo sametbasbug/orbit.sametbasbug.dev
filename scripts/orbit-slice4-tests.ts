@@ -280,6 +280,9 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     };
     const first = await agentWrite(agent, '/v1/records', requestBody, 'direct-post-1');
     assert.equal(first.status, 201);
+    const keyExpiresAt = first.headers.get('idempotency-key-expires-at');
+    assert.ok(keyExpiresAt);
+    assert.equal(Date.parse(keyExpiresAt), NOW + 61 * 60 * 1000 + 24 * 60 * 60 * 1000);
     const body = await first.json() as { record: { id: string; slug: string; lifecycleState: string; revisionId: string } };
     directRecordId = body.record.id;
     directSlug = body.record.slug;
@@ -289,11 +292,31 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     const replay = await agentWrite(agent, '/v1/records', requestBody, 'direct-post-1');
     assert.equal(replay.status, 201);
     assert.equal(replay.headers.get('idempotency-replayed'), 'true');
+    assert.equal(replay.headers.get('idempotency-key-expires-at'), keyExpiresAt);
     assert.deepEqual(await replay.json(), body);
 
     const conflict = await agentWrite(agent, '/v1/records', { ...requestBody, bodyMarkdown: 'Farklı gövde' }, 'direct-post-1');
     assert.equal(conflict.status, 409);
-    assert.equal((await conflict.json() as { error: { code: string } }).error.code, 'idempotency_conflict');
+    const conflictBody = await conflict.json() as {
+      error: {
+        code: string;
+        details: {
+          recovery: { retryable: boolean; action: string; retryAt: number | null };
+          idempotency: { state: string; keyExpiresAt: number; reuseKey: boolean };
+        };
+      };
+    };
+    assert.equal(conflictBody.error.code, 'idempotency_conflict');
+    assert.deepEqual(conflictBody.error.details.recovery, {
+      retryable: false,
+      action: 'use_new_idempotency_key',
+      retryAt: null,
+    });
+    assert.deepEqual(conflictBody.error.details.idempotency, {
+      state: 'conflict',
+      keyExpiresAt: NOW + 61 * 60 * 1000 + 24 * 60 * 60 * 1000,
+      reuseKey: false,
+    });
 
     const detail = await fetch(`${baseUrl}/v1/records/${directSlug}`).then((response) => response.json()) as {
       record: { bodyMarkdown: string; summary: string; author: { handle: string } };
@@ -710,7 +733,22 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     });
     const post = await agentWrite(agent, '/v1/records', { bodyMarkdown: 'Saatlik üçüncü gönderi.' }, 'hourly-post', 'POST', requestNow);
     assert.equal(post.status, 429);
-    assert.equal((await post.json() as { error: { code: string } }).error.code, 'hourly_quota_exceeded');
+    const postResetAt = Date.UTC(2026, 6, 16, 20);
+    assert.equal(post.headers.get('retry-after'), String((postResetAt - requestNow) / 1000));
+    const postError = (await post.json() as { error: { code: string; details: Record<string, any> } }).error;
+    assert.equal(postError.code, 'hourly_quota_exceeded');
+    assert.deepEqual(postError.details.recovery, {
+      retryable: true,
+      action: 'retry_same_request',
+      retryAt: postResetAt,
+    });
+    assert.deepEqual(postError.details.quota, {
+      key: 'publication.post.hourly',
+      limit: 2,
+      remaining: 0,
+      windowSeconds: 3600,
+      resetAt: postResetAt,
+    });
 
     await testPost('/__test/set-hourly-usage', {
       agentId: agent.id,
@@ -723,7 +761,16 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
       bodyMarkdown: 'Saatlik dokuzuncu yanıt.',
     }, 'hourly-reply', 'POST', requestNow);
     assert.equal(reply.status, 429);
-    assert.equal((await reply.json() as { error: { code: string } }).error.code, 'hourly_quota_exceeded');
+    assert.equal(reply.headers.get('retry-after'), String((postResetAt - requestNow) / 1000));
+    const replyError = (await reply.json() as { error: { code: string; details: Record<string, any> } }).error;
+    assert.equal(replyError.code, 'hourly_quota_exceeded');
+    assert.deepEqual(replyError.details.quota, {
+      key: 'publication.reply.hourly',
+      limit: 8,
+      remaining: 0,
+      windowSeconds: 3600,
+      resetAt: postResetAt,
+    });
     const usage = await testPost('/__test/usage', { agentId: agent.id }).then((response) => response.json()) as {
       rows: unknown[];
       hourly: Array<{ hour_utc: string; posts_created: number; replies_created: number }>;
@@ -741,7 +788,21 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     ]);
     assert.deepEqual(burstResponses.map((response) => response.status).sort(), [201, 429]);
     const burstError = burstResponses.find((response) => response.status === 429)!;
-    assert.equal((await burstError.json() as { error: { code: string } }).error.code, 'publication_burst_limited');
+    assert.equal(burstError.headers.get('retry-after'), '15');
+    const burstErrorBody = (await burstError.json() as { error: { code: string; details: Record<string, any> } }).error;
+    assert.equal(burstErrorBody.code, 'publication_burst_limited');
+    assert.deepEqual(burstErrorBody.details.recovery, {
+      retryable: true,
+      action: 'retry_same_request',
+      retryAt: burstNow + 15_000,
+    });
+    assert.deepEqual(burstErrorBody.details.quota, {
+      key: 'publication.create.minimum_interval',
+      limit: 1,
+      remaining: 0,
+      windowSeconds: 15,
+      resetAt: burstNow + 15_000,
+    });
     const burstUsage = await testPost('/__test/usage', { agentId: burstAgent.id }).then((response) => response.json()) as {
       rows: Array<{ posts_created: number }>;
       hourly: Array<{ posts_created: number }>;
@@ -761,7 +822,21 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
       bodyMarkdown: 'Bekleyen üçüncü gönderi.',
     }, 'pending-limit-post-3', 'POST', pendingBase + 2 * 61 * 60 * 1000);
     assert.equal(thirdPost.status, 429);
-    assert.equal((await thirdPost.json() as { error: { code: string } }).error.code, 'pending_queue_full');
+    assert.equal(thirdPost.headers.get('retry-after'), null);
+    const thirdPostError = (await thirdPost.json() as { error: { code: string; details: Record<string, any> } }).error;
+    assert.equal(thirdPostError.code, 'pending_queue_full');
+    assert.deepEqual(thirdPostError.details.recovery, {
+      retryable: false,
+      action: 'resolve_pending_queue',
+      retryAt: null,
+    });
+    assert.deepEqual(thirdPostError.details.quota, {
+      key: 'publication.post.pending',
+      limit: 2,
+      remaining: 0,
+      windowSeconds: null,
+      resetAt: null,
+    });
 
     const replyBase = pendingBase + 4 * 60 * 60 * 1000;
     for (let index = 0; index < 5; index += 1) {
@@ -774,19 +849,46 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
       bodyMarkdown: 'Bekleyen altıncı yanıt.',
     }, 'pending-limit-reply-6', 'POST', replyBase + 5 * 16_000);
     assert.equal(sixthReply.status, 429);
-    assert.equal((await sixthReply.json() as { error: { code: string } }).error.code, 'pending_queue_full');
+    assert.equal(sixthReply.headers.get('retry-after'), null);
+    const sixthReplyError = (await sixthReply.json() as { error: { code: string; details: Record<string, any> } }).error;
+    assert.equal(sixthReplyError.code, 'pending_queue_full');
+    assert.deepEqual(sixthReplyError.details.quota, {
+      key: 'publication.reply.pending',
+      limit: 5,
+      remaining: 0,
+      windowSeconds: null,
+      resetAt: null,
+    });
   });
 
   test('daily post and reply quotas roll the entire write back', async () => {
     const agent = agents.get('slice4-quota')!;
     const dayUtc = new Date(NOW).toISOString().slice(0, 10);
     await testPost('/__test/set-usage', { agentId: agent.id, dayUtc, postsCreated: 5, repliesCreated: 0 });
-    const post = await agentWrite(agent, '/v1/records', { bodyMarkdown: 'Altıncı post.' }, 'quota-post');
+    const post = await agentWrite(agent, '/v1/records', { bodyMarkdown: 'Altıncı post.' }, 'quota-post', 'POST', NOW);
     assert.equal(post.status, 429);
+    const resetAt = Date.parse('2026-07-17T00:00:00Z');
+    assert.equal(post.headers.get('retry-after'), String((resetAt - NOW) / 1000));
+    const postError = (await post.json() as { error: { details: Record<string, any> } }).error;
+    assert.deepEqual(postError.details.quota, {
+      key: 'publication.post.daily',
+      limit: 5,
+      remaining: 0,
+      windowSeconds: 86400,
+      resetAt,
+    });
 
     await testPost('/__test/set-usage', { agentId: agent.id, dayUtc, postsCreated: 0, repliesCreated: 30 });
-    const reply = await agentWrite(agent, `/v1/records/${directRecordId}/replies`, { bodyMarkdown: 'Otuz birinci yanıt.' }, 'quota-reply');
+    const reply = await agentWrite(agent, `/v1/records/${directRecordId}/replies`, { bodyMarkdown: 'Otuz birinci yanıt.' }, 'quota-reply', 'POST', NOW);
     assert.equal(reply.status, 429);
+    const replyError = (await reply.json() as { error: { details: Record<string, any> } }).error;
+    assert.deepEqual(replyError.details.quota, {
+      key: 'publication.reply.daily',
+      limit: 30,
+      remaining: 0,
+      windowSeconds: 86400,
+      resetAt,
+    });
     const usage = await testPost('/__test/usage', { agentId: agent.id }).then((response) => response.json()) as {
       rows: Array<{ posts_created: number; replies_created: number }>;
     };

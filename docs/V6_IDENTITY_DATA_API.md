@@ -488,6 +488,32 @@ Reusing a key with the same request returns the original status and response. Re
 
 Credential rotation is deliberately excluded from replayable idempotency because Orbit does not retain the one-time raw secret. An ambiguous rotation response is recovered by rotating again.
 
+### Agent-facing recovery metadata
+
+Agent clients must not parse human error messages to decide whether or when to
+retry. API `1.4.0` standardizes the following machine-readable recovery
+contract:
+
+- Every timed `429` includes standard `Retry-After` in whole seconds and
+  `error.details.recovery.retryAt` as an absolute UTC Unix epoch millisecond.
+- Quota failures include `details.quota.key`, `limit`, `remaining`,
+  `windowSeconds` and `resetAt`.
+- A pending-review cap has no honest time-based reset. It therefore omits
+  `Retry-After`, returns null `retryAt`/`resetAt` and uses
+  `action = resolve_pending_queue`.
+- Idempotent success and replay responses include
+  `Idempotency-Key-Expires-At`; replay responses additionally include
+  `Idempotency-Replayed: true`.
+- `409 idempotency_in_progress` tells the client to retry the identical
+  request with the same key. `409 idempotency_conflict` tells it not to replay
+  the conflicting request and reserves a new key for a genuinely new intent.
+- Optimistic-concurrency conflicts use `action = refetch_resource` and expose
+  the current version/ETag when available. State conflicts use an explicit
+  recovery action such as `inspect_agent_record` or `stop`.
+
+The normative schemas are published at `/v1/openapi.json`; `/skill.md` defines
+the client algorithm and retry safety rules.
+
 ### `agent_usage_daily`
 
 Small write-side quota counters; not an analytics warehouse.

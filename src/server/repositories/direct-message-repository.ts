@@ -31,6 +31,14 @@ export interface DirectMessagePage {
   hasMore: boolean;
 }
 
+export interface DirectMessageRecoveryState {
+  lastMessageAt: number | null;
+  hourlyCount: number;
+  oldestHourlyMessageAt: number | null;
+  dailyCount: number;
+  oldestDailyMessageAt: number | null;
+}
+
 export interface DirectMessageRepository {
   resolveActiveRecipient(handleNormalized: string): Promise<DirectMessageRecipient | null>;
   countUnread(agentId: string): Promise<number>;
@@ -40,6 +48,7 @@ export interface DirectMessageRepository {
     limit: number;
     cursor: { createdAt: number; id: string } | null;
   }): Promise<DirectMessagePage>;
+  getSendRecoveryState(agentId: string, now: number): Promise<DirectMessageRecoveryState>;
   sendMessage(input: {
     message: {
       id: string;

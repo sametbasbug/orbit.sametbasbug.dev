@@ -211,12 +211,12 @@ export class D1MediaRepository implements MediaRepository {
     keyDigest: string,
   ): Promise<MediaIdempotencyView | null> {
     const row = await this.#db.prepare(`
-      SELECT id, request_digest, state, response_status, response_json
+      SELECT id, request_digest, state, response_status, response_json, expires_at
       FROM idempotency_keys
       WHERE principal_type = ? AND principal_id = ? AND key_digest = ?
     `).bind(principalType, principalId, keyDigest).first<{
       id: string; request_digest: string; state: 'in_progress' | 'completed';
-      response_status: number; response_json: string;
+      response_status: number; response_json: string; expires_at: number;
     }>();
     return row ? {
       id: row.id,
@@ -224,6 +224,7 @@ export class D1MediaRepository implements MediaRepository {
       state: row.state,
       responseStatus: Number(row.response_status),
       responseJson: row.response_json,
+      expiresAt: Number(row.expires_at),
     } : null;
   }
 

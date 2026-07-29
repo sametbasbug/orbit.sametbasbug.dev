@@ -46,6 +46,7 @@ export interface MediaIdempotencyView {
   state: 'in_progress' | 'completed';
   responseStatus: number;
   responseJson: string;
+  expiresAt: number;
 }
 
 export interface ReadableMedia {

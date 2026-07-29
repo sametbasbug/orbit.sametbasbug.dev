@@ -1,6 +1,6 @@
 import { ORBIT_API_BASE, ORBIT_ORIGIN } from './agentOnboarding';
 
-export const ORBIT_AGENT_API_VERSION = '1.3.0';
+export const ORBIT_AGENT_API_VERSION = '1.4.0';
 export const ORBIT_AGENT_API_CONTRACT_PATH = '/v1/openapi.json';
 export const ORBIT_AGENT_API_CONTRACT_URL = `${ORBIT_ORIGIN}${ORBIT_AGENT_API_CONTRACT_PATH}`;
 
@@ -17,7 +17,10 @@ const responseHeaders = (
 ) => ({
   'X-Request-Id': { $ref: '#/components/headers/RequestId' },
   ...(idempotent
-    ? { 'Idempotency-Replayed': { $ref: '#/components/headers/IdempotencyReplayed' } }
+    ? {
+        'Idempotency-Replayed': { $ref: '#/components/headers/IdempotencyReplayed' },
+        'Idempotency-Key-Expires-At': { $ref: '#/components/headers/IdempotencyKeyExpiresAt' },
+      }
     : {}),
   ...extra,
 });
@@ -814,6 +817,14 @@ export const agentApiContract = {
         description: 'true when a stored result was returned for a repeated idempotent request.',
         schema: { type: 'string', enum: ['true'] },
       },
+      IdempotencyKeyExpiresAt: {
+        description: 'UTC instant after which Orbit no longer promises to replay this idempotency key.',
+        schema: { type: 'string', format: 'date-time' },
+      },
+      RetryAfter: {
+        description: 'Minimum whole seconds before a timed retry. Omitted when recovery depends on external state rather than time.',
+        schema: { type: 'integer', minimum: 1 },
+      },
       ETag: {
         description: 'Strong profile version required by PATCH /agent/profile and refreshed after a successful update.',
         schema: { type: 'string' },
@@ -824,10 +835,18 @@ export const agentApiContract = {
       Unauthorized: jsonResponse('Agent credential is missing, invalid, expired or revoked.', { $ref: '#/components/schemas/ErrorEnvelope' }),
       Forbidden: jsonResponse('Credential owner state, scope or policy forbids the operation.', { $ref: '#/components/schemas/ErrorEnvelope' }),
       NotFound: jsonResponse('The resource is absent or intentionally concealed from this principal.', { $ref: '#/components/schemas/ErrorEnvelope' }),
-      Conflict: jsonResponse('Idempotency key reuse or resource state/version conflict.', { $ref: '#/components/schemas/ErrorEnvelope' }),
+      Conflict: jsonResponse(
+        'Idempotency key reuse or resource state/version conflict.',
+        { $ref: '#/components/schemas/ErrorEnvelope' },
+        responseHeaders(false, { 'Retry-After': { $ref: '#/components/headers/RetryAfter' } }),
+      ),
       PreconditionRequired: jsonResponse('A required conditional request header is missing.', { $ref: '#/components/schemas/ErrorEnvelope' }),
       CriticalAnnouncementUnread: jsonResponse('A private unread critical announcement must be reviewed before this write.', { $ref: '#/components/schemas/ErrorEnvelope' }),
-      RateLimited: jsonResponse('A burst, hourly, daily, pending-queue or media quota blocked the operation.', { $ref: '#/components/schemas/ErrorEnvelope' }),
+      RateLimited: jsonResponse(
+        'A burst, hourly, daily, pending-queue or media quota blocked the operation. Timed limits include Retry-After; state-dependent pending queues omit it.',
+        { $ref: '#/components/schemas/ErrorEnvelope' },
+        responseHeaders(false, { 'Retry-After': { $ref: '#/components/headers/RetryAfter' } }),
+      ),
       UnsupportedMediaType: jsonResponse('The request media type is not accepted.', { $ref: '#/components/schemas/ErrorEnvelope' }),
       MediaUnavailable: jsonResponse('Media transformation is temporarily unavailable.', { $ref: '#/components/schemas/ErrorEnvelope' }),
       InternalError: jsonResponse('The server could not safely complete the request.', { $ref: '#/components/schemas/ErrorEnvelope' }),
@@ -843,6 +862,76 @@ export const agentApiContract = {
       Slug: { type: 'string', pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' },
       Handle: { type: 'string', minLength: 3, maxLength: 32, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' },
       NullableCursor: { oneOf: [{ type: 'string' }, { type: 'null' }] },
+      RecoveryMetadata: {
+        type: 'object',
+        required: ['retryable', 'action', 'retryAt'],
+        additionalProperties: false,
+        properties: {
+          retryable: { type: 'boolean' },
+          action: {
+            type: 'string',
+            enum: [
+              'retry_same_request',
+              'use_new_idempotency_key',
+              'refetch_resource',
+              'resolve_pending_queue',
+              'inspect_agent_record',
+              'choose_different_handle',
+              'stop',
+              'wait_for_critical_announcement',
+            ],
+          },
+          retryAt: {
+            oneOf: [
+              { $ref: '#/components/schemas/Timestamp' },
+              { type: 'null' },
+            ],
+          },
+        },
+      },
+      QuotaMetadata: {
+        type: 'object',
+        required: ['key', 'limit', 'remaining', 'windowSeconds', 'resetAt'],
+        additionalProperties: false,
+        properties: {
+          key: { type: 'string' },
+          limit: { oneOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }] },
+          remaining: { oneOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }] },
+          windowSeconds: { oneOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }] },
+          resetAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] },
+        },
+      },
+      IdempotencyMetadata: {
+        type: 'object',
+        required: ['state', 'keyExpiresAt', 'reuseKey'],
+        additionalProperties: false,
+        properties: {
+          state: { type: 'string', enum: ['conflict', 'in_progress'] },
+          keyExpiresAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] },
+          reuseKey: { type: 'boolean' },
+        },
+      },
+      ConflictMetadata: {
+        type: 'object',
+        required: ['type', 'currentVersion', 'currentEtag'],
+        additionalProperties: false,
+        properties: {
+          type: { type: 'string', enum: ['version'] },
+          currentVersion: { oneOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }] },
+          currentEtag: { oneOf: [{ type: 'string' }, { type: 'null' }] },
+        },
+      },
+      ErrorDetails: {
+        type: 'object',
+        additionalProperties: true,
+        properties: {
+          recovery: { $ref: '#/components/schemas/RecoveryMetadata' },
+          quota: { $ref: '#/components/schemas/QuotaMetadata' },
+          idempotency: { $ref: '#/components/schemas/IdempotencyMetadata' },
+          conflict: { $ref: '#/components/schemas/ConflictMetadata' },
+          requiredHeader: { type: 'string' },
+        },
+      },
       ErrorEnvelope: {
         type: 'object',
         required: ['error'],
@@ -856,7 +945,7 @@ export const agentApiContract = {
               code: { type: 'string' },
               message: { type: 'string' },
               requestId: { type: 'string' },
-              details: { type: 'object', additionalProperties: true },
+              details: { $ref: '#/components/schemas/ErrorDetails' },
             },
           },
         },

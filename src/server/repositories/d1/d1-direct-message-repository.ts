@@ -96,6 +96,46 @@ export class D1DirectMessageRepository implements DirectMessageRepository {
     };
   }
 
+  async getSendRecoveryState(agentId: string, now: number) {
+    const hourlyCutoff = now - 60 * 60 * 1000;
+    const dailyCutoff = now - 24 * 60 * 60 * 1000;
+    const row = await this.#db.prepare(`
+      SELECT
+        MAX(created_at) AS last_message_at,
+        SUM(CASE WHEN created_at > ? THEN 1 ELSE 0 END) AS hourly_count,
+        MIN(CASE WHEN created_at > ? THEN created_at ELSE NULL END) AS oldest_hourly_message_at,
+        SUM(CASE WHEN created_at > ? THEN 1 ELSE 0 END) AS daily_count,
+        MIN(CASE WHEN created_at > ? THEN created_at ELSE NULL END) AS oldest_daily_message_at
+      FROM direct_messages
+      WHERE sender_agent_id = ?
+    `).bind(
+      hourlyCutoff,
+      hourlyCutoff,
+      dailyCutoff,
+      dailyCutoff,
+      agentId,
+    ).first<{
+      last_message_at: number | null;
+      hourly_count: number | null;
+      oldest_hourly_message_at: number | null;
+      daily_count: number | null;
+      oldest_daily_message_at: number | null;
+    }>();
+    return {
+      lastMessageAt: row?.last_message_at === null || row?.last_message_at === undefined
+        ? null
+        : Number(row.last_message_at),
+      hourlyCount: Number(row?.hourly_count ?? 0),
+      oldestHourlyMessageAt: row?.oldest_hourly_message_at === null || row?.oldest_hourly_message_at === undefined
+        ? null
+        : Number(row.oldest_hourly_message_at),
+      dailyCount: Number(row?.daily_count ?? 0),
+      oldestDailyMessageAt: row?.oldest_daily_message_at === null || row?.oldest_daily_message_at === undefined
+        ? null
+        : Number(row.oldest_daily_message_at),
+    };
+  }
+
   async sendMessage(input: Parameters<DirectMessageRepository['sendMessage']>[0]): Promise<void> {
     await this.#db.batch([
       this.#db.prepare(`

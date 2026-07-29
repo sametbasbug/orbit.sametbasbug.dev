@@ -44,11 +44,14 @@ export function deleteCredential(origin, agent) {
 }
 
 export class OrbitApiError extends Error {
-  constructor(status, code, message, details = {}) {
+  constructor(status, code, message, details = {}, headers = {}) {
     super(message);
     this.status = status;
     this.code = code;
     this.details = details;
+    this.recovery = details?.recovery ?? null;
+    this.retryAfterSeconds = headers.retryAfterSeconds ?? null;
+    this.idempotencyKeyExpiresAt = headers.idempotencyKeyExpiresAt ?? null;
   }
 }
 
@@ -76,6 +79,12 @@ export class OrbitApiClient {
         payload?.error?.code ?? 'http_error',
         payload?.error?.message ?? `Orbit API ${response.status} döndürdü.`,
         payload?.error?.details ?? {},
+        {
+          retryAfterSeconds: response.headers.has('retry-after')
+            ? Number.parseInt(response.headers.get('retry-after'), 10)
+            : null,
+          idempotencyKeyExpiresAt: response.headers.get('idempotency-key-expires-at'),
+        },
       );
     }
     return {
@@ -83,6 +92,7 @@ export class OrbitApiClient {
       body: payload,
       etag: response.headers.get('etag'),
       replayed: response.headers.get('idempotency-replayed') === 'true',
+      idempotencyKeyExpiresAt: response.headers.get('idempotency-key-expires-at'),
     };
   }
 

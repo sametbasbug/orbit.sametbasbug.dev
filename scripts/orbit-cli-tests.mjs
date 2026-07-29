@@ -167,11 +167,15 @@ const api = new OrbitApiClient({
   credential: 'test-credential-not-a-real-secret',
   fetchImpl: async (url, init) => {
     capturedRequest = { url, init };
-    return Response.json({ record: { id: 'record-1', lifecycleState: 'pending' } }, { status: 202 });
+    return Response.json(
+      { record: { id: 'record-1', lifecycleState: 'pending' } },
+      { status: 202, headers: { 'idempotency-key-expires-at': '2026-07-30T10:00:00.000Z' } },
+    );
   },
 });
 const liveResult = await api.publish({ bodyMarkdown: 'Canlı API testi.', projectSlug: null, topicSlugs: [] }, null, 'stable-retry-key');
 check(liveResult.status === 202, 'CLI pending approval yanıtını korumadı.');
+check(liveResult.idempotencyKeyExpiresAt === '2026-07-30T10:00:00.000Z', 'CLI idempotency expiry başlığını korumadı.');
 check(capturedRequest.init.headers['idempotency-key'] === 'stable-retry-key', 'CLI Idempotency-Key göndermedi.');
 check(capturedRequest.init.headers.authorization.startsWith('Bearer '), 'CLI Bearer credential göndermedi.');
 
@@ -500,6 +504,37 @@ await assert.rejects(
   revoked.feed(),
   (error) => error instanceof OrbitApiError && error.status === 401 && error.code === 'agent_authentication_required',
   'İptal edilmiş credential anlaşılır API hatasına dönüşmedi.',
+);
+assertions += 1;
+
+const limited = new OrbitApiClient({
+  origin: STAGING_ORIGIN,
+  agent: 'selene',
+  credential: 'test-rate-limit-credential',
+  fetchImpl: async () => Response.json({
+    error: {
+      code: 'publication_burst_limited',
+      message: 'wait',
+      details: {
+        recovery: { retryable: true, action: 'retry_same_request', retryAt: 1785322805000 },
+        quota: {
+          key: 'publication.create.minimum_interval',
+          limit: 1,
+          remaining: 0,
+          windowSeconds: 15,
+          resetAt: 1785322805000,
+        },
+      },
+    },
+  }, { status: 429, headers: { 'retry-after': '5' } }),
+});
+await assert.rejects(
+  limited.publish({ bodyMarkdown: 'Aynı niyet.' }, null, 'stable-limited-key'),
+  (error) => error instanceof OrbitApiError
+    && error.retryAfterSeconds === 5
+    && error.recovery?.action === 'retry_same_request'
+    && error.recovery?.retryAt === 1785322805000,
+  'CLI Retry-After ve recovery metadata değerlerini kaybetti.',
 );
 assertions += 1;
 

@@ -617,17 +617,72 @@ export class D1PublicationRepository implements PublicationRepository {
 
   async getIdempotency(principalType: 'agent' | 'account', principalId: string, keyDigest: string): Promise<IdempotencyReplay | null> {
     const row = await this.#db.prepare(`
-      SELECT request_digest, response_status, response_json
+      SELECT request_digest, response_status, response_json, expires_at
       FROM idempotency_keys
       WHERE principal_type = ? AND principal_id = ? AND key_digest = ?
     `).bind(principalType, principalId, keyDigest).first<{
-      request_digest: string; response_status: number; response_json: string;
+      request_digest: string; response_status: number; response_json: string; expires_at: number;
     }>();
     return row ? {
       requestDigest: row.request_digest,
       responseStatus: row.response_status,
       responseJson: row.response_json,
+      expiresAt: Number(row.expires_at),
     } : null;
+  }
+
+  async getPublicationRecoveryState(
+    agentId: string,
+    kind: 'post' | 'reply',
+    dayUtc: string,
+    hourUtc: string,
+  ) {
+    const usageColumn = kind === 'post' ? 'posts_created' : 'replies_created';
+    const row = await this.#db.prepare(`
+      SELECT
+        (SELECT last_record_created_at
+         FROM agent_publication_throttles
+         WHERE agent_id = ?) AS last_record_created_at,
+        COALESCE((
+          SELECT ${usageColumn}
+          FROM agent_usage_daily
+          WHERE agent_id = ? AND day_utc = ?
+        ), 0) AS daily_used,
+        COALESCE((
+          SELECT ${usageColumn}
+          FROM agent_usage_hourly
+          WHERE agent_id = ? AND hour_utc = ?
+        ), 0) AS hourly_used,
+        (
+          SELECT COUNT(*)
+          FROM publication_reviews review
+          JOIN records record ON record.id = review.record_id
+          WHERE review.status = 'pending'
+            AND record.author_agent_id = ?
+            AND record.kind = ?
+        ) AS pending_count
+    `).bind(
+      agentId,
+      agentId,
+      dayUtc,
+      agentId,
+      hourUtc,
+      agentId,
+      kind,
+    ).first<{
+      last_record_created_at: number | null;
+      daily_used: number;
+      hourly_used: number;
+      pending_count: number;
+    }>();
+    return {
+      lastRecordCreatedAt: row?.last_record_created_at === null || row?.last_record_created_at === undefined
+        ? null
+        : Number(row.last_record_created_at),
+      dailyUsed: Number(row?.daily_used ?? 0),
+      hourlyUsed: Number(row?.hourly_used ?? 0),
+      pendingCount: Number(row?.pending_count ?? 0),
+    };
   }
 
   async createRecord(input: Parameters<PublicationRepository['createRecord']>[0]): Promise<void> {

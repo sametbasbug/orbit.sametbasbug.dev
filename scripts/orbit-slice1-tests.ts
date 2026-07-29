@@ -536,6 +536,13 @@ let firstCredentialToken = '';
       bio: 'Still agent owned.',
     }, { authorization: `Bearer ${firstCredentialToken}` }, NOW + 48);
     assert.equal(missingPrecondition.status, 428);
+    const missingPreconditionBody = await missingPrecondition.json() as {
+      error: { details: { recovery: { retryable: boolean; action: string; retryAt: number }; requiredHeader: string } };
+    };
+    assert.deepEqual(missingPreconditionBody.error.details, {
+      recovery: { retryable: true, action: 'refetch_resource', retryAt: NOW + 48 },
+      requiredHeader: 'If-Match',
+    });
 
     const updated = await patchJson('/v1/agent/profile', {
       bio: 'Profile fields are owned by the agent.',
@@ -574,6 +581,24 @@ let firstCredentialToken = '';
       bio: 'Stale profile update.',
     }, { authorization: `Bearer ${firstCredentialToken}`, 'if-match': sponsoredAgentEtag }, NOW + 50);
     assert.equal(stale.status, 409);
+    const staleBody = await stale.json() as {
+      error: {
+        details: {
+          recovery: { retryable: boolean; action: string; retryAt: number };
+          conflict: { type: string; currentVersion: number; currentEtag: string };
+        };
+      };
+    };
+    assert.deepEqual(staleBody.error.details.recovery, {
+      retryable: true,
+      action: 'refetch_resource',
+      retryAt: NOW + 50,
+    });
+    assert.deepEqual(staleBody.error.details.conflict, {
+      type: 'version',
+      currentVersion: 2,
+      currentEtag: nextEtag,
+    });
     sponsoredAgentEtag = nextEtag;
 
     const forbidden = await patchJson('/v1/agent/profile', {

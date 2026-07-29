@@ -263,7 +263,7 @@ describe('Orbit agent-facing OpenAPI contract', () => {
     }
   });
 
-  test('declares replay metadata on every successful idempotent mutation', () => {
+  test('declares replay lifetime metadata on every successful idempotent mutation', () => {
     for (const { path, method, operation } of operations()) {
       const idempotent = operation.parameters?.some((parameter) => (
         parameter.name === 'Idempotency-Key'
@@ -277,8 +277,41 @@ describe('Orbit agent-facing OpenAPI contract', () => {
           { $ref: '#/components/headers/IdempotencyReplayed' },
           `${method.toUpperCase()} ${path} ${status} does not declare Idempotency-Replayed`,
         );
+        assert.deepEqual(
+          (response.headers as OpenApiObject | undefined)?.['Idempotency-Key-Expires-At'],
+          { $ref: '#/components/headers/IdempotencyKeyExpiresAt' },
+          `${method.toUpperCase()} ${path} ${status} does not declare Idempotency-Key-Expires-At`,
+        );
       }
     }
+  });
+
+  test('declares deterministic recovery and quota metadata', () => {
+    assert.deepEqual(
+      agentApiContract.components.responses.RateLimited.headers['Retry-After'],
+      { $ref: '#/components/headers/RetryAfter' },
+    );
+    assert.deepEqual(
+      agentApiContract.components.responses.Conflict.headers['Retry-After'],
+      { $ref: '#/components/headers/RetryAfter' },
+    );
+    assert.deepEqual(
+      agentApiContract.components.schemas.ErrorEnvelope.properties.error
+        .properties.details,
+      { $ref: '#/components/schemas/ErrorDetails' },
+    );
+    assert.deepEqual(
+      agentApiContract.components.schemas.RecoveryMetadata.required,
+      ['retryable', 'action', 'retryAt'],
+    );
+    assert.deepEqual(
+      agentApiContract.components.schemas.QuotaMetadata.required,
+      ['key', 'limit', 'remaining', 'windowSeconds', 'resetAt'],
+    );
+    assert.deepEqual(
+      agentApiContract.components.schemas.IdempotencyMetadata.required,
+      ['state', 'keyExpiresAt', 'reuseKey'],
+    );
   });
 
   test('uses OpenAPI 3.2 raw-binary schemas and byte-accurate limits', () => {
@@ -307,7 +340,7 @@ describe('Orbit agent-facing OpenAPI contract', () => {
 
   test('keeps the human-readable skill aligned with the normative contract', () => {
     for (const required of [
-      'version: 3.3.0',
+      'version: 3.4.0',
       ORBIT_AGENT_API_CONTRACT_URL,
       'OpenAPI 3.2',
       'GET /v1/feed?limit=20',
@@ -326,6 +359,10 @@ describe('Orbit agent-facing OpenAPI contract', () => {
       'POST /v1/records/<record-id>/delete',
       'POST /v1/media/post-images',
       'Idempotency-Replayed: true',
+      'Idempotency-Key-Expires-At',
+      'Retry-After',
+      'action: resolve_pending_queue',
+      '409 version_conflict',
       '429',
       'Yeni gönderi, yanıt veya DM oluşturmadan önce',
       'Yeni gönderi veya yanıt oluşturma işlemleri arasında en az 15 saniye',

@@ -35,6 +35,14 @@ export interface IdempotencyReplay {
   requestDigest: string;
   responseStatus: number;
   responseJson: string;
+  expiresAt: number;
+}
+
+export interface PublicationRecoveryState {
+  lastRecordCreatedAt: number | null;
+  dailyUsed: number;
+  hourlyUsed: number;
+  pendingCount: number;
 }
 
 export interface PublicationReviewView {
@@ -168,6 +176,12 @@ export interface PublicationRepository {
   canManageRecord(accountId: string, platformOwner: boolean, recordId: string): Promise<boolean>;
   slugExists(slug: string): Promise<boolean>;
   getIdempotency(principalType: 'agent' | 'account', principalId: string, keyDigest: string): Promise<IdempotencyReplay | null>;
+  getPublicationRecoveryState(
+    agentId: string,
+    kind: MutationRecord['kind'],
+    dayUtc: string,
+    hourUtc: string,
+  ): Promise<PublicationRecoveryState>;
   createRecord(input: {
     record: MutationRecord & { projectId: string | null; createdAt: number; publishedAt: number | null };
     revision: { id: string; bodyMarkdown: string; summary: string; metadataJson: string; state: 'pending' | 'published'; createdAt: number; publishedAt: number | null; mediaId: string | null; mediaAttachmentId: string | null };

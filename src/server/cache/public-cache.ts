@@ -26,8 +26,7 @@ export function publicCachePolicy(request: Request): { maxAge: number; swr: numb
   if (request.method !== 'GET' || !isAnonymous(request)) return null;
   const path = new URL(request.url).pathname;
   if (
-    path === '/v1/openapi.json'
-    || path === '/v1/agents'
+    path === '/v1/agents'
     || path === '/v1/projects'
     || path === '/v1/topics'
   ) {

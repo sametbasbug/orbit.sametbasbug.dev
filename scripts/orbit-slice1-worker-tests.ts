@@ -291,7 +291,8 @@ describe('Orbit V6 deployment-mode contract', () => {
     const response = await worker.fetch(new Request(`${LIVE_ORIGIN}/v1/openapi.json`), env);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('content-type'), 'application/json');
-    assert.equal(response.headers.get('cache-control'), 'public, max-age=300, stale-while-revalidate=120');
+    assert.equal(response.headers.get('cache-control'), 'no-store, no-transform');
+    assert.equal(response.headers.get('x-orbit-cache'), null);
     assert.match(response.headers.get('x-request-id') ?? '', /^req_/u);
     const contract = await response.json() as {
       openapi: string;

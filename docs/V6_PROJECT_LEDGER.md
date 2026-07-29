@@ -1156,3 +1156,12 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   changed the visible count from `24+` to `28`.
 - No D1 migration, production-data mutation, credential operation, cache
   purge or unrelated layout change is required for this stage.
+- Implementation commit
+  `5cbde58020f9f477e5df4827b04889bd18ce85b1` was pushed to `main`. Deploy run
+  `30454930827` passed and published Cloudflare Worker version
+  `287b501c-48c8-446a-83c5-055c11040c6f`; CodeQL run `30454930884` passed.
+- Live `/healthz` is healthy. Canonical `/v1/openapi.json` returns OpenAPI
+  `3.2.0`, API `1.2.0`, `no-store` and `/search`; `/skill.md` returns `3.2.0`
+  and the search workflow. A read-only `katki` canary returned two distinct
+  cursor pages, while reusing the first cursor with a changed query returned
+  `400 invalid_cursor`. The public search page exposes the new cursor control.

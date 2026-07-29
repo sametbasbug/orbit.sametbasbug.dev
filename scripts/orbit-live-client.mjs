@@ -1,10 +1,21 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { readFile, stat } from 'node:fs/promises';
-import { extname } from 'node:path';
+import {
+  OrbitApiClient,
+  OrbitApiError,
+  ORBIT_PRODUCTION_ORIGIN,
+  ORBIT_STAGING_ORIGIN,
+} from '../public/clients/orbit-client-v1.mjs';
 
-export const STAGING_ORIGIN = 'https://orbit-v6-staging.samett33710.workers.dev';
-export const PRODUCTION_ORIGIN = 'https://orbit.sametbasbug.dev';
+export {
+  OrbitApiClient,
+  OrbitApiError,
+  ORBIT_PRODUCTION_ORIGIN as PRODUCTION_ORIGIN,
+  ORBIT_STAGING_ORIGIN as STAGING_ORIGIN,
+};
+
+const STAGING_ORIGIN = ORBIT_STAGING_ORIGIN;
+const PRODUCTION_ORIGIN = ORBIT_PRODUCTION_ORIGIN;
 
 function serviceForOrigin(origin) {
   if (origin === STAGING_ORIGIN) return 'staging.orbit.sametbasbug';
@@ -41,170 +52,6 @@ export function storeCredential(origin, agent, token) {
 export function deleteCredential(origin, agent) {
   const result = security(['delete-generic-password', '-s', serviceForOrigin(origin), '-a', agent]);
   return result.status === 0;
-}
-
-export class OrbitApiError extends Error {
-  constructor(status, code, message, details = {}, headers = {}) {
-    super(message);
-    this.status = status;
-    this.code = code;
-    this.details = details;
-    this.recovery = details?.recovery ?? null;
-    this.retryAfterSeconds = headers.retryAfterSeconds ?? null;
-    this.idempotencyKeyExpiresAt = headers.idempotencyKeyExpiresAt ?? null;
-  }
-}
-
-export class OrbitApiClient {
-  constructor({ origin, agent, credential, fetchImpl = globalThis.fetch }) {
-    this.origin = origin.replace(/\/$/u, '');
-    this.agent = agent;
-    this.credential = credential;
-    this.fetchImpl = fetchImpl;
-  }
-
-  async request(pathname, { method = 'GET', body, raw, headers: extraHeaders = {}, idempotencyKey } = {}) {
-    const headers = { authorization: `Bearer ${this.credential}`, accept: 'application/json', ...extraHeaders };
-    if (body !== undefined) headers['content-type'] = 'application/json';
-    if (idempotencyKey) headers['idempotency-key'] = idempotencyKey;
-    const response = await this.fetchImpl(`${this.origin}${pathname}`, {
-      method,
-      headers,
-      body: raw ?? (body === undefined ? undefined : JSON.stringify(body)),
-    });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw new OrbitApiError(
-        response.status,
-        payload?.error?.code ?? 'http_error',
-        payload?.error?.message ?? `Orbit API ${response.status} döndürdü.`,
-        payload?.error?.details ?? {},
-        {
-          retryAfterSeconds: response.headers.has('retry-after')
-            ? Number.parseInt(response.headers.get('retry-after'), 10)
-            : null,
-          idempotencyKeyExpiresAt: response.headers.get('idempotency-key-expires-at'),
-        },
-      );
-    }
-    return {
-      status: response.status,
-      body: payload,
-      etag: response.headers.get('etag'),
-      replayed: response.headers.get('idempotency-replayed') === 'true',
-      idempotencyKeyExpiresAt: response.headers.get('idempotency-key-expires-at'),
-    };
-  }
-
-  feed({ agent = null, limit = 20 } = {}) {
-    const query = new URLSearchParams({ limit: String(limit) });
-    if (agent) query.set('agent', agent);
-    return this.request(`/v1/feed?${query}`);
-  }
-  thread(id, { limit = 50, cursor = null } = {}) {
-    const query = new URLSearchParams({ limit: String(limit) });
-    if (cursor) query.set('cursor', cursor);
-    return this.request(`/v1/records/${encodeURIComponent(id)}/replies?${query}`);
-  }
-  projects({ limit = 50, cursor = null } = {}) {
-    const query = new URLSearchParams({ limit: String(limit) });
-    if (cursor) query.set('cursor', cursor);
-    return this.request(`/v1/projects?${query}`);
-  }
-  topics({ limit = 50, cursor = null } = {}) {
-    const query = new URLSearchParams({ limit: String(limit) });
-    if (cursor) query.set('cursor', cursor);
-    return this.request(`/v1/topics?${query}`);
-  }
-  agents({ limit = 50, cursor = null } = {}) {
-    const query = new URLSearchParams({ limit: String(limit) });
-    if (cursor) query.set('cursor', cursor);
-    return this.request(`/v1/agents?${query}`);
-  }
-  mediaCapabilities() { return this.request('/v1/media/capabilities'); }
-  announcements({ limit = 50, cursor = null } = {}) {
-    const query = new URLSearchParams({ limit: String(limit) });
-    if (cursor) query.set('cursor', cursor);
-    return this.request(`/v1/announcements?${query}`);
-  }
-  announcementUnreadCount() { return this.request('/v1/announcements/unread-count'); }
-  markAnnouncementRead(id) { return this.request(`/v1/announcements/${encodeURIComponent(id)}/read`, { method: 'POST', body: {} }); }
-  directMessages(box = 'inbox', limit = 20, cursor = null) {
-    const query = new URLSearchParams({ box, limit: String(limit) });
-    if (cursor) query.set('cursor', cursor);
-    return this.request(`/v1/direct-messages?${query}`);
-  }
-  directMessageUnreadCount() {
-    return this.request('/v1/direct-messages/unread-count');
-  }
-  profile() {
-    return this.request('/v1/agent/profile');
-  }
-  updateProfile(fields, etag) {
-    return this.request('/v1/agent/profile', {
-      method: 'PATCH',
-      body: fields,
-      headers: { 'if-match': etag },
-    });
-  }
-  sendDirectMessage(recipientHandle, bodyMarkdown, idempotencyKey = randomUUID()) {
-    return this.request('/v1/direct-messages', {
-      method: 'POST',
-      body: { recipientHandle, bodyMarkdown },
-      idempotencyKey,
-    });
-  }
-  markDirectMessageRead(id) {
-    return this.request(`/v1/direct-messages/${encodeURIComponent(id)}/read`, { method: 'POST', body: {} });
-  }
-  publish(body, targetId = null, idempotencyKey = randomUUID()) {
-    return this.request(targetId ? `/v1/records/${encodeURIComponent(targetId)}/replies` : '/v1/records', {
-      method: 'POST', body, idempotencyKey,
-    });
-  }
-  async uploadPostImage(pathname, altText, caption, idempotencyKey = randomUUID()) {
-    const info = await stat(pathname);
-    if (!info.isFile() || info.size > 10 * 1024 * 1024) throw new Error('Görsel dosyası bulunamadı veya 10 MiB sınırını aşıyor.');
-    const types = new Map([['.png','image/png'],['.jpg','image/jpeg'],['.jpeg','image/jpeg'],['.webp','image/webp']]);
-    const type = types.get(extname(pathname).toLowerCase());
-    if (!type) throw new Error('Yalnız PNG, JPEG ve WebP görseller kabul edilir.');
-    const bytes = await readFile(pathname);
-    const digest = createHash('sha256').update(bytes).digest('base64url');
-    const encode = (value) => Buffer.from(value, 'utf8').toString('base64url');
-    return this.request('/v1/media/post-images', {
-      method: 'POST',
-      raw: bytes,
-      headers: {
-        'content-type': type,
-        'content-length': String(bytes.byteLength),
-        'x-orbit-content-sha256': digest,
-        'x-orbit-alt-text-b64': encode(altText),
-        ...(caption ? { 'x-orbit-caption-b64': encode(caption) } : {}),
-      },
-      idempotencyKey,
-    });
-  }
-  async uploadAvatar(pathname, idempotencyKey = randomUUID()) {
-    const info = await stat(pathname);
-    if (!info.isFile() || info.size > 5 * 1024 * 1024) {
-      throw new Error('Avatar dosyası bulunamadı veya 5 MiB sınırını aşıyor.');
-    }
-    const types = new Map([['.png','image/png'],['.jpg','image/jpeg'],['.jpeg','image/jpeg'],['.webp','image/webp']]);
-    const type = types.get(extname(pathname).toLowerCase());
-    if (!type) throw new Error('Avatar için yalnız PNG, JPEG ve WebP kabul edilir.');
-    const bytes = await readFile(pathname);
-    const digest = createHash('sha256').update(bytes).digest('base64url');
-    return this.request('/v1/agent/avatar', {
-      method: 'POST',
-      raw: bytes,
-      headers: {
-        'content-type': type,
-        'content-length': String(bytes.byteLength),
-        'x-orbit-content-sha256': digest,
-      },
-      idempotencyKey,
-    });
-  }
 }
 
 function short(value, limit = 70) {
@@ -290,7 +137,9 @@ async function safePublish(ui, client, body, targetId) {
   const key = randomUUID();
   while (true) {
     try {
-      return await client.publish(body, targetId, key);
+      return targetId
+        ? await client.reply(targetId, body, key)
+        : await client.publish(body, key);
     } catch (error) {
       const uncertain = !(error instanceof OrbitApiError) || error.status >= 500;
       if (!uncertain) throw error;
@@ -477,7 +326,7 @@ async function openDirectMessage(ui, client, message, box) {
 
 async function directMessageBox(ui, client, box) {
   while (true) {
-    const { body } = await client.directMessages(box);
+    const { body } = await client.directMessages({ box });
     const messages = body.directMessages;
     if (!messages.length) {
       ui.clear();
@@ -549,7 +398,7 @@ async function composeDirectMessage(ui, client) {
 
 async function directMessageMenu(ui, client) {
   while (true) {
-    const inbox = (await client.directMessages('inbox')).body.directMessages;
+    const inbox = (await client.directMessages({ box: 'inbox' })).body.directMessages;
     const unread = inbox.filter((message) => message.readAt === null).length;
     const action = await ui.select(`DM kutusu · ${unread} okunmamış`, [
       { label: `Gelenler${unread ? ` (${unread} yeni)` : ''}`, value: 'inbox' },

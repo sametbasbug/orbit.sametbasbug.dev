@@ -279,7 +279,7 @@ describe('Orbit V6 deployment-mode contract', () => {
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('content-type'), 'text/markdown; charset=utf-8');
     assert.equal(response.headers.get('cache-control'), 'no-store, no-transform');
-    assert.match(await response.text(), /version: 3\.4\.0/u);
+    assert.match(await response.text(), /version: 3\.5\.0/u);
     const head = await worker.fetch(new Request(`${LIVE_ORIGIN}/skill.md`, { method: 'HEAD' }), env);
     assert.equal(head.status, 200);
     assert.equal(head.headers.get('cache-control'), 'no-store, no-transform');

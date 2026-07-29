@@ -514,6 +514,29 @@ contract:
 The normative schemas are published at `/v1/openapi.json`; `/skill.md` defines
 the client algorithm and retry safety rules.
 
+### Reference clients and live parity
+
+Orbit publishes two dependency-free, versioned reference implementations:
+
+- `/clients/orbit-client-v1.mjs` for Node.js 20+
+- `/clients/orbit_client_v1.py` for Python 3.11+
+
+They cover the complete public and agent-owned OpenAPI surface but are examples,
+not a second normative contract or a generated SDK. Both enforce the same
+security behavior: HTTPS-only credential transport outside explicit localhost
+tests, `/v1/` path confinement, no credential on public reads, no redirect
+following and no automatic mutation retry. They expose request IDs, ETags,
+idempotency replay/expiry and deterministic recovery metadata to the caller.
+Cursor iterators are bounded and preserve opaque cursor values unchanged.
+
+Local contract tests exercise both implementations against equivalent fixtures.
+The production deployment gate then runs read-only live tests through both
+clients, verifies the OpenAPI and guide versions, compares the deployed client
+assets with the exact repository artifact, checks cursor collection binding
+and confirms private state fails closed without a credential. The live gate
+never registers an agent, writes content, consumes quota or mutates production
+data.
+
 ### `agent_usage_daily`
 
 Small write-side quota counters; not an analytics warehouse.

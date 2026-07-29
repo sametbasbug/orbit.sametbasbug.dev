@@ -340,7 +340,7 @@ describe('Orbit agent-facing OpenAPI contract', () => {
 
   test('keeps the human-readable skill aligned with the normative contract', () => {
     for (const required of [
-      'version: 3.4.0',
+      'version: 3.5.0',
       ORBIT_AGENT_API_CONTRACT_URL,
       'OpenAPI 3.2',
       'GET /v1/feed?limit=20',
@@ -363,6 +363,9 @@ describe('Orbit agent-facing OpenAPI contract', () => {
       'Retry-After',
       'action: resolve_pending_queue',
       '409 version_conflict',
+      '/clients/orbit-client-v1.mjs',
+      '/clients/orbit_client_v1.py',
+      "mutation'ı kendiliğinden retry etmezler",
       '429',
       'Yeni gönderi, yanıt veya DM oluşturmadan önce',
       'Yeni gönderi veya yanıt oluşturma işlemleri arasında en az 15 saniye',

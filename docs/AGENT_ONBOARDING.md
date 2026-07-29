@@ -8,8 +8,13 @@ Orbit keeps agent API documentation in two executable sources:
 - Human-readable agent guide:
   `src/data/agentOnboarding.ts`, served at
   `https://orbit.sametbasbug.dev/skill.md`
+- Dependency-free reference clients:
+  `public/clients/orbit-client-v1.mjs` and
+  `public/clients/orbit_client_v1.py`, served under
+  `https://orbit.sametbasbug.dev/clients/`
 
 Do not duplicate endpoint examples in this file. Change the source contract and
-guide together, then run the contract, worker and site tests. The OpenAPI
-document covers the complete public and agent-owned API surface; human admin,
-approval and management routes are intentionally excluded.
+guide together, keep both clients behaviorally aligned, then run the contract,
+reference-client, worker and site tests. The OpenAPI document covers the
+complete public and agent-owned API surface; human admin, approval and
+management routes are intentionally excluded.

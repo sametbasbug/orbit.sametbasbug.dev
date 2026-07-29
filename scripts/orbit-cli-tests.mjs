@@ -173,7 +173,7 @@ const api = new OrbitApiClient({
     );
   },
 });
-const liveResult = await api.publish({ bodyMarkdown: 'Canlı API testi.', projectSlug: null, topicSlugs: [] }, null, 'stable-retry-key');
+const liveResult = await api.publish({ bodyMarkdown: 'Canlı API testi.', projectSlug: null, topicSlugs: [] }, 'stable-retry-key');
 check(liveResult.status === 202, 'CLI pending approval yanıtını korumadı.');
 check(liveResult.idempotencyKeyExpiresAt === '2026-07-30T10:00:00.000Z', 'CLI idempotency expiry başlığını korumadı.');
 check(capturedRequest.init.headers['idempotency-key'] === 'stable-retry-key', 'CLI Idempotency-Key göndermedi.');
@@ -277,7 +277,7 @@ check(
   directMessageRequests[0].init.body === JSON.stringify({ recipientHandle: 'nyx', bodyMarkdown: 'Gece hattı açık.' }),
   'CLI DM gövdesini dar sözleşmeyle göndermedi.',
 );
-await directMessageApi.directMessages('inbox', 20);
+await directMessageApi.directMessages({ box: 'inbox', limit: 20 });
 check(
   directMessageRequests[1].url.endsWith('/v1/direct-messages?box=inbox&limit=20'),
   'CLI gelen DM kutusu sorgusunu doğru üretmedi.',
@@ -481,7 +481,7 @@ const mediaResult = await mediaApi.uploadPostImage(
 );
 check(mediaResult.status === 201, 'CLI medya yükleme sonucunu korumadı.');
 check(capturedUpload.url.endsWith('/v1/media/post-images'), 'CLI medya endpointine gitmedi.');
-check(Buffer.isBuffer(capturedUpload.init.body), 'CLI görseli bounded raw body olarak göndermedi.');
+check(capturedUpload.init.body instanceof Uint8Array, 'CLI görseli bounded raw body olarak göndermedi.');
 check(capturedUpload.init.headers['idempotency-key'] === 'stable-media-retry-key', 'CLI medya Idempotency-Key göndermedi.');
 check(capturedUpload.init.headers['content-type'] === 'image/webp', 'CLI gerçek medya MIME türünü göndermedi.');
 check(typeof capturedUpload.init.headers['x-orbit-content-sha256'] === 'string', 'CLI medya checksum göndermedi.');
@@ -492,7 +492,7 @@ await mediaApi.uploadAvatar(
 );
 check(capturedUpload.url.endsWith('/v1/agent/avatar'), 'CLI avatar endpointine gitmedi.');
 check(capturedUpload.init.headers['idempotency-key'] === 'stable-avatar-retry-key', 'CLI avatar Idempotency-Key göndermedi.');
-check(Buffer.isBuffer(capturedUpload.init.body), 'CLI avatarı bounded raw body olarak göndermedi.');
+check(capturedUpload.init.body instanceof Uint8Array, 'CLI avatarı bounded raw body olarak göndermedi.');
 
 const revoked = new OrbitApiClient({
   origin: STAGING_ORIGIN,
@@ -529,7 +529,7 @@ const limited = new OrbitApiClient({
   }, { status: 429, headers: { 'retry-after': '5' } }),
 });
 await assert.rejects(
-  limited.publish({ bodyMarkdown: 'Aynı niyet.' }, null, 'stable-limited-key'),
+  limited.publish({ bodyMarkdown: 'Aynı niyet.' }, 'stable-limited-key'),
   (error) => error instanceof OrbitApiError
     && error.retryAfterSeconds === 5
     && error.recovery?.action === 'retry_same_request'

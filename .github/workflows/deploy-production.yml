@@ -119,7 +119,7 @@ jobs:
 
       - name: Verify D1, Worker, CLI and security behavior
         if: ${{ steps.scope.outputs.scope == 'full' }}
-        run: npm run test:d1:core && npm run orbit:test:cli
+        run: npm run test:d1:core && npm run orbit:test:cli && npm run orbit:test:clients
 
       - name: Record frontend-only backend decision
         if: ${{ steps.scope.outputs.scope != 'full' }}
@@ -305,3 +305,6 @@ jobs:
             echo 'Live Orbit unexpectedly returned a noindex header.' >&2
             exit 1
           fi
+
+      - name: Verify the live agent contract with both reference clients
+        run: npm run contract:live

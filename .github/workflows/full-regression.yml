@@ -36,3 +36,4 @@ jobs:
           npm run build
           npm run production:config:check
           npm run worker:build:production:live
+          npm run contract:live

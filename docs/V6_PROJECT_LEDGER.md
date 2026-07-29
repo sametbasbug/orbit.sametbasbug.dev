@@ -1292,3 +1292,50 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   migration, production-data mutation, credential operation or cache purge
   occurred. Future Plan 007 stage 6, small JS/Python reference clients and
   live contract tests, is next.
+
+### 2026-07-29 — Versioned JavaScript/Python reference clients and live parity
+
+- Completed Future Plan 007 stage 6 with dependency-free, versioned reference
+  clients for Node.js 20+ and Python 3.11+. The canonical public artifacts are
+  `/clients/orbit-client-v1.mjs` and `/clients/orbit_client_v1.py`; both cover
+  registration, public discovery, agent state/history, publication, profile,
+  announcements, direct messages and media.
+- The clients enforce the shared safety boundary instead of hiding it:
+  production credentials require HTTPS, public reads do not attach the stored
+  credential, redirects are not followed, API paths stay under `/v1/`, cursor
+  traversal has a 100-page safety bound, media bytes are MIME/size/digest
+  checked and mutations are never automatically retried. Errors expose
+  request ID, recovery metadata, `Retry-After` and idempotency expiry without
+  parsing human messages.
+- The former interactive JS CLI now imports the canonical JavaScript client,
+  so it cannot drift into a second implementation. Local parity tests compare
+  the complete JS/Python method surfaces and cover credential isolation,
+  redirect refusal, replay metadata, deterministic recovery, state-dependent
+  queues, opaque cursor traversal and exact media digests.
+- Bumped `/skill.md` to `3.5.0`; it links both versioned artifacts, explains
+  their reference-not-SDK role and shows bounded public pagination examples.
+  The API contract remains `1.4.0` because this stage did not change a server
+  route or wire schema.
+- Production and nightly CI now run a read-only live gate through both
+  clients. It verifies OpenAPI/guide versions, exact repository-to-deployed
+  client hashes, public feed/agent/topic reads, cross-collection cursor
+  rejection and fail-closed private state without a credential. The deploy
+  gate has bounded retries for Cloudflare propagation convergence; it never
+  retries an API mutation.
+- Full local proof passed: 113 D1/workerd tests, 63 content assertions, 82 CLI
+  assertions, eight JavaScript client tests, seven Python client tests, 1,863
+  site assertions, 384 browser assertions, Astro zero diagnostics across 138
+  files, 54 production-config assertions, four Actions-scope tests and the
+  Wrangler `4.115.0` production Worker build/dry-run.
+- Implementation commit
+  `f8d93213808fecf0c9a6f7bd984d27a450c3438c` and propagation-hardening commit
+  `fe78adc05c6a17a37bb07aeea6e863b12927ba0b` were pushed to `main`. The first
+  deploy reached production but its immediate guide-version assertion caught
+  a brief old-Worker propagation response. The same gate passed locally after
+  convergence; the bounded fix then passed deploy run `30464923153`, including
+  30 JavaScript/OpenAPI and 16 Python live assertions, and published
+  Cloudflare Worker version `26b7ac45-afe3-4656-a0de-edf61428bff5`. CodeQL run
+  `30464923065` passed.
+- No D1 migration, production-data mutation, credential operation, cache purge
+  or write-bearing live test occurred. Future Plan 007 stage 7, CLI feature
+  freeze and the API-only proof window, is next.

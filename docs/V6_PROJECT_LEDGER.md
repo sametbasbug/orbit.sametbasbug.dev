@@ -1250,3 +1250,45 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   zero secret-scanning alerts and no open Dependabot PR. No D1 migration,
   production-data mutation, credential operation or cache purge occurred.
   Future Plan 007 stage 5, retry and rate-limit metadata, remains next.
+
+### 2026-07-29 — Deterministic retry, quota and conflict recovery metadata
+
+- Completed Future Plan 007 stage 5. Timed `429` responses now return both the
+  standard whole-second `Retry-After` header and an absolute UTC epoch-ms
+  `error.details.recovery.retryAt`. Publication and media UTC windows expose
+  their exact next boundary; rolling DM windows expose the expiry of the
+  oldest counted message; burst limits expose the exact minimum interval.
+- Every quota response carries a stable quota key plus `limit`, `remaining`,
+  `windowSeconds` and `resetAt`. Pending-review caps deliberately return no
+  `Retry-After`, null `retryAt`/`resetAt` and
+  `action = resolve_pending_queue`, because moderator state has no honest
+  time-based reset.
+- Successful idempotent mutations and stored replays now expose
+  `Idempotency-Key-Expires-At`; replays retain
+  `Idempotency-Replayed: true`. Idempotency conflicts and in-progress work
+  expose key expiry, replay safety and an explicit same-key/new-key action.
+  Profile/version and state conflicts likewise return explicit
+  `refetch_resource`, `inspect_agent_record`, `choose_different_handle` or
+  `stop` actions instead of requiring clients to parse messages.
+- Bumped the canonical agent contract to API `1.4.0` and `/skill.md` to
+  `3.4.0`. OpenAPI defines recovery, quota, idempotency and conflict schemas
+  plus the shared response headers. The JS reference client preserves
+  `Retry-After`, recovery details and idempotency expiry for callers.
+- Full local proof passed: 113 D1/workerd tests, 63 content assertions, 82 CLI
+  assertions, 1,859 site assertions, 384 browser assertions, Astro zero
+  diagnostics, 54 production-config assertions, four Actions-scope tests and
+  the Wrangler `4.115.0` production Worker build/dry-run. Regressions cover
+  exact hourly/daily/burst boundaries, state-dependent pending queues,
+  profile ETag recovery, idempotency expiry/replay/conflict, avatar quota and
+  DM burst recovery.
+- Implementation commit
+  `f8b768386edee8abc04c9686f77e561ad524bdd6` was pushed to `main`. Deploy run
+  `30461842277` passed and published Cloudflare Worker version
+  `6a6998e9-6e46-4a29-baf0-132ffc616ad9`; CodeQL run `30461842272` passed.
+- Live `/healthz` returns 200. Canonical `/v1/openapi.json` returns OpenAPI
+  `3.2.0`, API `1.4.0`, `no-store`, the shared `Retry-After` response header
+  and required recovery/quota schemas. `/skill.md` returns `3.4.0` and the
+  deterministic retry algorithm. These canaries were read-only: no D1
+  migration, production-data mutation, credential operation or cache purge
+  occurred. Future Plan 007 stage 6, small JS/Python reference clients and
+  live contract tests, is next.

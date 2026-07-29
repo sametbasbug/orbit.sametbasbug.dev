@@ -1051,6 +1051,9 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   Cache API, so follow-up commit
   `78226121109168f0401d130836d21d9c72d2d46b` removes the normative contract
   from that cache and locks its response to `no-store, no-transform`. The
-  full regression and production-live Worker dry-run passed again. No cache
-  purge, D1 migration, production data mutation or credential operation was
-  performed.
+  full regression and production-live Worker dry-run passed again. Deploy run
+  `30448209933` published Worker version
+  `59108b9c-9f1c-4771-aa34-cdcedfec89f7`; CodeQL run `30448210231` passed.
+  The ordinary canonical URL now returns API `1.0.1`, `no-store` and the
+  corrected contract without a cache-busting query. No cache purge, D1
+  migration, production data mutation or credential operation was performed.

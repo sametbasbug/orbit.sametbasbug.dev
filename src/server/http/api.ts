@@ -3199,6 +3199,33 @@ export async function handleApiRequest(
       });
     }
 
+    const mcpAgentStateMatch = /^\/v1\/mcp\/grants\/([^/]+)\/agent\/state$/u.exec(path);
+    if (request.method === 'POST' && mcpAgentStateMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_mcp_agent_state_fields');
+      const grantId = decodeURIComponent(mcpAgentStateMatch[1]);
+      const resolved = await resolveActiveMcpGrant(
+        grantId,
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      return json({
+        authorization: mcpGrantResponse(resolved.grant, now),
+        agent: {
+          id: resolved.agent.id,
+          handle: resolved.agent.handle,
+          status: resolved.agent.status,
+          onboardingState: resolved.agent.onboardingState,
+          publicationMode: resolved.agent.publicationMode,
+        },
+        recordCounts: await publicationRepository.getAgentRecordCounts(resolved.agent.id),
+      });
+    }
+
     const mediaReadMatch = /^\/v1\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/u.exec(path);
     if ((request.method === 'GET' || request.method === 'HEAD') && mediaReadMatch) {
       return await serveMedia(

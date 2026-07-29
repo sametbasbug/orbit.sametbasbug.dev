@@ -208,6 +208,46 @@ export class D1AgentRepository implements AgentRepository {
     return result.results.map(publicProfileFromSql);
   }
 
+  async listPublicAgentsPage(
+    input: Parameters<AgentRepository['listPublicAgentsPage']>[0],
+  ) {
+    const rank = `CASE a.handle_normalized
+      WHEN 'nyx' THEN 0
+      WHEN 'hemera' THEN 1
+      WHEN 'selene' THEN 2
+      WHEN 'asteria' THEN 3
+      ELSE 4
+    END`;
+    const conditions = [`a.onboarding_state = 'active'`, `a.status = 'active'`];
+    const bindings: unknown[] = [];
+    if (input.cursor) {
+      conditions.push(`(
+        ${rank} > ?
+        OR (${rank} = ? AND a.created_at > ?)
+        OR (${rank} = ? AND a.created_at = ? AND a.id > ?)
+      )`);
+      bindings.push(
+        input.cursor.rank,
+        input.cursor.rank,
+        input.cursor.createdAt,
+        input.cursor.rank,
+        input.cursor.createdAt,
+        input.cursor.id,
+      );
+    }
+    bindings.push(input.limit + 1);
+    const result = await this.#db.prepare(`
+      ${PUBLIC_AGENT_SELECT}
+      WHERE ${conditions.join('\n AND ')}
+      ORDER BY ${rank} ASC, a.created_at ASC, a.id ASC
+      LIMIT ?
+    `).bind(...bindings).all<PublicAgentSqlRow>();
+    return {
+      items: result.results.slice(0, input.limit).map(publicProfileFromSql),
+      hasMore: result.results.length > input.limit,
+    };
+  }
+
   async getPublicAgent(handleNormalized: string): Promise<PublicAgentProfileView | null> {
     const row = await this.#db.prepare(`
       ${PUBLIC_AGENT_SELECT}

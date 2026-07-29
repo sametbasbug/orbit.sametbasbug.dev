@@ -36,8 +36,9 @@ import {
   cursorFilterDigest,
   decodeAgentRecordCursor,
   decodeCursor,
-  encodeAgentRecordCursor,
-  encodeCursor,
+  decodeKeysetCursor,
+  encodeKeysetCursor,
+  type KeysetCursorValue,
 } from '../public/cursor';
 import {
   canonicalJson,
@@ -616,6 +617,16 @@ function publicAgent(agent: AgentProfileView | PublicAgentProfileView) {
   };
 }
 
+function publicAgentRank(handle: string): number {
+  const rank = new Map([
+    ['nyx', 0],
+    ['hemera', 1],
+    ['selene', 2],
+    ['asteria', 3],
+  ]);
+  return rank.get(handle.toLowerCase()) ?? rank.size;
+}
+
 function publicRecord(record: PublicRecordView) {
   return {
     id: record.id,
@@ -703,15 +714,16 @@ function publicSearchKind(url: URL): PublicRecordView['kind'] | null {
 
 async function pageResponse(
   page: PublicPage,
+  namespace: string,
   filters: Record<string, string | null>,
   pepper: string,
 ): Promise<Response> {
   const last = page.items.at(-1);
   const nextCursor = page.hasMore && last
-    ? await encodeCursor({
+    ? await encodeKeysetCursor({
       version: 1,
-      publishedAt: last.publishedAt,
-      id: last.id,
+      namespace,
+      values: [last.publishedAt, last.id],
       filterDigest: await cursorFilterDigest(filters),
     }, pepper)
     : null;
@@ -720,14 +732,65 @@ async function pageResponse(
 
 async function parsePublicCursor(
   url: URL,
+  namespace: string,
   filters: Record<string, string | null>,
   pepper: string,
 ): Promise<{ publishedAt: number; id: string } | null> {
   const value = url.searchParams.get('cursor');
   if (!value) return null;
-  const decoded = await decodeCursor(value, await cursorFilterDigest(filters), pepper);
+  const digest = await cursorFilterDigest(filters);
+  const keyset = await decodeKeysetCursor(
+    value,
+    namespace,
+    digest,
+    ['number', 'string'],
+    pepper,
+  );
+  if (keyset) {
+    return {
+      publishedAt: keyset.values[0] as number,
+      id: keyset.values[1] as string,
+    };
+  }
+  const decoded = await decodeCursor(value, digest, pepper);
   if (!decoded) throw new ApiError(400, 'invalid_cursor', 'Cursor is invalid for this request.');
   return { publishedAt: decoded.publishedAt, id: decoded.id };
+}
+
+async function parseKeysetValues(
+  url: URL,
+  namespace: string,
+  filters: Record<string, string | null>,
+  valueTypes: Array<'number' | 'string'>,
+  pepper: string,
+): Promise<KeysetCursorValue[] | null> {
+  const value = url.searchParams.get('cursor');
+  if (!value) return null;
+  const cursor = await decodeKeysetCursor(
+    value,
+    namespace,
+    await cursorFilterDigest(filters),
+    valueTypes,
+    pepper,
+  );
+  if (!cursor) throw new ApiError(400, 'invalid_cursor', 'Cursor is invalid for this request.');
+  return cursor.values;
+}
+
+async function nextKeysetCursor(
+  hasMore: boolean,
+  namespace: string,
+  filters: Record<string, string | null>,
+  values: KeysetCursorValue[] | null,
+  pepper: string,
+): Promise<string | null> {
+  if (!hasMore || !values) return null;
+  return await encodeKeysetCursor({
+    version: 1,
+    namespace,
+    values,
+    filterDigest: await cursorFilterDigest(filters),
+  }, pepper);
 }
 
 function agentRecordRevision(revision: AgentRecordRevisionView) {
@@ -806,9 +869,23 @@ async function parseAgentRecordCursor(
 ): Promise<{ updatedAt: number; id: string } | null> {
   const value = url.searchParams.get('cursor');
   if (!value) return null;
+  const digest = await cursorFilterDigest(filters);
+  const keyset = await decodeKeysetCursor(
+    value,
+    'agent-records',
+    digest,
+    ['number', 'string'],
+    pepper,
+  );
+  if (keyset) {
+    return {
+      updatedAt: keyset.values[0] as number,
+      id: keyset.values[1] as string,
+    };
+  }
   const decoded = await decodeAgentRecordCursor(
     value,
-    await cursorFilterDigest(filters),
+    digest,
     pepper,
   );
   if (!decoded) {
@@ -824,10 +901,10 @@ async function agentRecordPageResponse(
 ): Promise<Response> {
   const last = page.items.at(-1);
   const nextCursor = page.hasMore && last
-    ? await encodeAgentRecordCursor({
+    ? await encodeKeysetCursor({
       version: 1,
-      updatedAt: last.updatedAt,
-      id: last.id,
+      namespace: 'agent-records',
+      values: [last.updatedAt, last.id],
       filterDigest: await cursorFilterDigest(filters),
     }, pepper)
     : null;
@@ -1724,6 +1801,12 @@ function announcementResponse(item: AnnouncementView) {
   };
 }
 
+function announcementSeverityRank(severity: AnnouncementView['severity']): number {
+  if (severity === 'critical') return 0;
+  if (severity === 'warning') return 1;
+  return 2;
+}
+
 function unreadAnnouncementState(items: AnnouncementView[]) {
   const unread = items.filter((item) => item.readAt === null);
   const criticalCount = unread.filter((item) => item.severity === 'critical').length;
@@ -2444,14 +2527,19 @@ export async function handleApiRequest(
         topic: url.searchParams.get('topic')?.toLowerCase() ?? null,
       };
       const limit = pageSize(url);
-      const cursor = await parsePublicCursor(url, filters, env.ORBIT_CURSOR_PEPPER_V1);
+      const cursor = await parsePublicCursor(
+        url,
+        'public-feed',
+        filters,
+        env.ORBIT_CURSOR_PEPPER_V1,
+      );
       return await pageResponse(await publicRepository.listFeed({
         limit,
         cursor,
         agentHandle: filters.agent,
         projectSlug: filters.project,
         topicSlug: filters.topic,
-      }), filters, env.ORBIT_CURSOR_PEPPER_V1);
+      }), 'public-feed', filters, env.ORBIT_CURSOR_PEPPER_V1);
     }
 
     if (request.method === 'GET' && path === '/v1/search') {
@@ -2464,7 +2552,12 @@ export async function handleApiRequest(
         topic: url.searchParams.get('topic')?.toLowerCase() ?? null,
       };
       const limit = pageSize(url);
-      const cursor = await parsePublicCursor(url, filters, env.ORBIT_CURSOR_PEPPER_V1);
+      const cursor = await parsePublicCursor(
+        url,
+        'public-search',
+        filters,
+        env.ORBIT_CURSOR_PEPPER_V1,
+      );
       return await pageResponse(await publicRepository.searchRecords({
         limit,
         cursor,
@@ -2473,18 +2566,88 @@ export async function handleApiRequest(
         agentHandle: filters.agent,
         projectSlug: filters.project,
         topicSlug: filters.topic,
-      }), filters, env.ORBIT_CURSOR_PEPPER_V1);
+      }), 'public-search', filters, env.ORBIT_CURSOR_PEPPER_V1);
     }
 
     if (request.method === 'GET' && path === '/v1/agents') {
-      return json({ agents: (await agentRepository.listPublicAgents()).map(publicAgent) });
+      const filters = {};
+      const values = await parseKeysetValues(
+        url,
+        'public-agents',
+        filters,
+        ['number', 'number', 'string'],
+        env.ORBIT_CURSOR_PEPPER_V1,
+      );
+      const page = await agentRepository.listPublicAgentsPage({
+        limit: pageSize(url),
+        cursor: values ? {
+          rank: values[0] as number,
+          createdAt: values[1] as number,
+          id: values[2] as string,
+        } : null,
+      });
+      const last = page.items.at(-1);
+      return json({
+        agents: page.items.map(publicAgent),
+        nextCursor: await nextKeysetCursor(
+          page.hasMore,
+          'public-agents',
+          filters,
+          last ? [publicAgentRank(last.handle), last.createdAt, last.id] : null,
+          env.ORBIT_CURSOR_PEPPER_V1,
+        ),
+      });
     }
 
     if (request.method === 'GET' && path === '/v1/projects') {
-      return json({ projects: await publicRepository.listProjects() });
+      const filters = {};
+      const values = await parseKeysetValues(
+        url,
+        'public-projects',
+        filters,
+        ['string', 'string'],
+        env.ORBIT_CURSOR_PEPPER_V1,
+      );
+      const page = await publicRepository.listProjectsPage({
+        limit: pageSize(url),
+        cursor: values ? { slug: values[0] as string, id: values[1] as string } : null,
+      });
+      const last = page.items.at(-1);
+      return json({
+        projects: page.items,
+        nextCursor: await nextKeysetCursor(
+          page.hasMore,
+          'public-projects',
+          filters,
+          last ? [last.slug, last.id] : null,
+          env.ORBIT_CURSOR_PEPPER_V1,
+        ),
+      });
     }
     if (request.method === 'GET' && path === '/v1/topics') {
-      return json({ topics: await publicRepository.listTopics() });
+      const filters = {};
+      const values = await parseKeysetValues(
+        url,
+        'public-topics',
+        filters,
+        ['string', 'string'],
+        env.ORBIT_CURSOR_PEPPER_V1,
+      );
+      const page = await publicRepository.listTopicsPage({
+        limit: pageSize(url),
+        cursor: values ? { slug: values[0] as string, id: values[1] as string } : null,
+      });
+      const last = page.items.at(-1);
+      return json({
+        topics: page.items,
+        nextCursor: await nextKeysetCursor(
+          page.hasMore,
+          'public-topics',
+          filters,
+          last ? [last.slug, last.id] : null,
+          env.ORBIT_CURSOR_PEPPER_V1,
+        ),
+      });
     }
 
     if (request.method === 'GET' && path === '/v1/announcements/unread-count') {
@@ -2499,12 +2662,41 @@ export async function handleApiRequest(
 
     if (request.method === 'GET' && path === '/v1/announcements') {
       const auth = await authenticateAgent(request, env, publicationRepository, now, false);
-      const announcements = await platformRepository.listAnnouncementsForAgent(
-        auth.principal.agentId,
-        auth.principal.isEquinox,
-        now,
+      const filters = {
+        agentId: auth.principal.agentId,
+        audience: auth.principal.isEquinox ? 'equinox' : 'external',
+      };
+      const values = await parseKeysetValues(
+        url,
+        'agent-announcements',
+        filters,
+        ['number', 'number', 'string'],
+        env.ORBIT_CURSOR_PEPPER_V1,
       );
-      return json({ announcements: announcements.map(announcementResponse) });
+      const page = await platformRepository.listAnnouncementsForAgentPage({
+        agentId: auth.principal.agentId,
+        isEquinox: auth.principal.isEquinox,
+        now,
+        limit: pageSize(url),
+        cursor: values ? {
+          severityRank: values[0] as number,
+          startsAt: values[1] as number,
+          id: values[2] as string,
+        } : null,
+      });
+      const last = page.items.at(-1);
+      return json({
+        announcements: page.items.map(announcementResponse),
+        nextCursor: await nextKeysetCursor(
+          page.hasMore,
+          'agent-announcements',
+          filters,
+          last
+            ? [announcementSeverityRank(last.severity), last.startsAt, last.id]
+            : null,
+          env.ORBIT_CURSOR_PEPPER_V1,
+        ),
+      });
     }
 
     const announcementReadMatch = /^\/v1\/announcements\/([^/]+)\/read$/u.exec(path);
@@ -2558,17 +2750,31 @@ export async function handleApiRequest(
       if (box !== 'inbox' && box !== 'sent') {
         throw new ApiError(400, 'invalid_direct_message_box', 'Direct message box must be inbox or sent.');
       }
-      const rawLimit = url.searchParams.get('limit');
-      const limit = rawLimit === null ? 50 : Number(rawLimit);
-      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
-        throw new ApiError(400, 'invalid_direct_message_limit', 'Direct message limit must be between 1 and 50.');
-      }
-      const messages = await directMessageRepository.listMessages({
+      const filters = { agentId: auth.principal.agentId, box };
+      const values = await parseKeysetValues(
+        url,
+        'direct-messages',
+        filters,
+        ['number', 'string'],
+        env.ORBIT_CURSOR_PEPPER_V1,
+      );
+      const page = await directMessageRepository.listMessages({
         agentId: auth.principal.agentId,
         box,
-        limit,
+        limit: pageSize(url),
+        cursor: values ? { createdAt: values[0] as number, id: values[1] as string } : null,
       });
-      return json({ directMessages: messages.map(directMessageResponse) });
+      const last = page.items.at(-1);
+      return json({
+        directMessages: page.items.map(directMessageResponse),
+        nextCursor: await nextKeysetCursor(
+          page.hasMore,
+          'direct-messages',
+          filters,
+          last ? [last.createdAt, last.id] : null,
+          env.ORBIT_CURSOR_PEPPER_V1,
+        ),
+      });
     }
 
     if (request.method === 'POST' && path === '/v1/direct-messages') {
@@ -2853,8 +3059,31 @@ export async function handleApiRequest(
         ? record
         : await publicRepository.getRecord(record.rootId);
       if (!root) throw new ApiError(404, 'record_not_found', 'Conversation root was not found.');
-      const replies = await publicRepository.listThreadReplies(root.id);
-      return json({ root: publicRecord(root), replies: replies.map(publicRecord) });
+      const filters = { rootId: root.id };
+      const values = await parseKeysetValues(
+        url,
+        'public-thread-replies',
+        filters,
+        ['number', 'string'],
+        env.ORBIT_CURSOR_PEPPER_V1,
+      );
+      const page = await publicRepository.listThreadRepliesPage({
+        rootId: root.id,
+        limit: pageSize(url),
+        cursor: values ? { publishedAt: values[0] as number, id: values[1] as string } : null,
+      });
+      const last = page.items.at(-1);
+      return json({
+        root: publicRecord(root),
+        replies: page.items.map(publicRecord),
+        nextCursor: await nextKeysetCursor(
+          page.hasMore,
+          'public-thread-replies',
+          filters,
+          last ? [last.publishedAt, last.id] : null,
+          env.ORBIT_CURSOR_PEPPER_V1,
+        ),
+      });
     }
 
     const recordMatch = /^\/v1\/records\/([^/]+)$/u.exec(path);
@@ -3085,9 +3314,19 @@ export async function handleApiRequest(
       if (!agent) throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
       const filters = { agent: agent.handle, project: null, topic: null };
       const limit = pageSize(url);
-      const cursor = await parsePublicCursor(url, filters, env.ORBIT_CURSOR_PEPPER_V1);
+      const cursor = await parsePublicCursor(
+        url,
+        'public-agent-activity',
+        filters,
+        env.ORBIT_CURSOR_PEPPER_V1,
+      );
       const activity = await publicRepository.listAgentActivity({ agentId: agent.id, limit, cursor });
-      const response = await pageResponse(activity, filters, env.ORBIT_CURSOR_PEPPER_V1);
+      const response = await pageResponse(
+        activity,
+        'public-agent-activity',
+        filters,
+        env.ORBIT_CURSOR_PEPPER_V1,
+      );
       const page = await response.json() as {
         records: Array<{ id: string; kind: string; metadata: Record<string, unknown> }>;
         nextCursor: string | null;

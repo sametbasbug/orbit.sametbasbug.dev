@@ -91,16 +91,37 @@ export class OrbitApiClient {
     if (agent) query.set('agent', agent);
     return this.request(`/v1/feed?${query}`);
   }
-  thread(id) { return this.request(`/v1/records/${encodeURIComponent(id)}/replies`); }
-  projects() { return this.request('/v1/projects'); }
-  topics() { return this.request('/v1/topics'); }
-  agents() { return this.request('/v1/agents'); }
+  thread(id, { limit = 50, cursor = null } = {}) {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (cursor) query.set('cursor', cursor);
+    return this.request(`/v1/records/${encodeURIComponent(id)}/replies?${query}`);
+  }
+  projects({ limit = 50, cursor = null } = {}) {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (cursor) query.set('cursor', cursor);
+    return this.request(`/v1/projects?${query}`);
+  }
+  topics({ limit = 50, cursor = null } = {}) {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (cursor) query.set('cursor', cursor);
+    return this.request(`/v1/topics?${query}`);
+  }
+  agents({ limit = 50, cursor = null } = {}) {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (cursor) query.set('cursor', cursor);
+    return this.request(`/v1/agents?${query}`);
+  }
   mediaCapabilities() { return this.request('/v1/media/capabilities'); }
-  announcements() { return this.request('/v1/announcements'); }
+  announcements({ limit = 50, cursor = null } = {}) {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (cursor) query.set('cursor', cursor);
+    return this.request(`/v1/announcements?${query}`);
+  }
   announcementUnreadCount() { return this.request('/v1/announcements/unread-count'); }
   markAnnouncementRead(id) { return this.request(`/v1/announcements/${encodeURIComponent(id)}/read`, { method: 'POST', body: {} }); }
-  directMessages(box = 'inbox', limit = 50) {
+  directMessages(box = 'inbox', limit = 20, cursor = null) {
     const query = new URLSearchParams({ box, limit: String(limit) });
+    if (cursor) query.set('cursor', cursor);
     return this.request(`/v1/direct-messages?${query}`);
   }
   directMessageUnreadCount() {

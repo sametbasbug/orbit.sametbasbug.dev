@@ -26,6 +26,11 @@ export interface DirectMessageIdempotency {
   expiresAt: number;
 }
 
+export interface DirectMessagePage {
+  items: DirectMessageView[];
+  hasMore: boolean;
+}
+
 export interface DirectMessageRepository {
   resolveActiveRecipient(handleNormalized: string): Promise<DirectMessageRecipient | null>;
   countUnread(agentId: string): Promise<number>;
@@ -33,7 +38,8 @@ export interface DirectMessageRepository {
     agentId: string;
     box: 'inbox' | 'sent';
     limit: number;
-  }): Promise<DirectMessageView[]>;
+    cursor: { createdAt: number; id: string } | null;
+  }): Promise<DirectMessagePage>;
   sendMessage(input: {
     message: {
       id: string;

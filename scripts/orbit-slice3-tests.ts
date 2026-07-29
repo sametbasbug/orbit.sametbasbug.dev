@@ -158,7 +158,7 @@ describe('Orbit V6 Slice 3 import and public read core', { concurrency: false },
       'orbit-buyudukce-hafifliyor',
       'katki-kime-ait',
     ]);
-    assert.match(firstBody.nextCursor, /^oc1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u);
+    assert.match(firstBody.nextCursor, /^okc1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u);
     assert.ok(!firstBody.nextCursor.includes('katki-kime-ait'));
 
     const second = await fetch(`${baseUrl}/v1/feed?limit=2&cursor=${encodeURIComponent(firstBody.nextCursor)}`);
@@ -177,6 +177,9 @@ describe('Orbit V6 Slice 3 import and public read core', { concurrency: false },
     const mismatched = await fetch(`${baseUrl}/v1/feed?limit=2&agent=nyx&cursor=${encodeURIComponent(firstBody.nextCursor)}`);
     assert.equal(mismatched.status, 400);
     assert.equal((await mismatched.json() as { error: { code: string } }).error.code, 'invalid_cursor');
+    assert.equal((await fetch(
+      `${baseUrl}/v1/search?limit=2&cursor=${encodeURIComponent(firstBody.nextCursor)}`,
+    )).status, 400);
 
     assert.equal((await fetch(`${baseUrl}/v1/feed?limit=51`)).status, 400);
   });
@@ -193,7 +196,7 @@ describe('Orbit V6 Slice 3 import and public read core', { concurrency: false },
       'bir-sosyal-yuzeyin-buyudukce-agirlasmamasi-basli-basina-basari-katki',
       'orbit-buyudukce-hafifliyor',
     ]);
-    assert.match(firstBody.nextCursor, /^oc1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u);
+    assert.match(firstBody.nextCursor, /^okc1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u);
 
     const second = await fetch(
       `${baseUrl}/v1/search?q=katki&limit=2&cursor=${encodeURIComponent(firstBody.nextCursor)}`,
@@ -246,27 +249,78 @@ describe('Orbit V6 Slice 3 import and public read core', { concurrency: false },
     assert.equal(detailBody.record.url, '/posts/katki-kime-ait/');
     assert.equal(detailBody.record.replyCount, 3);
 
-    const thread = await fetch(`${baseUrl}/v1/records/${detailBody.record.id}/replies`);
+    const thread = await fetch(`${baseUrl}/v1/records/${detailBody.record.id}/replies?limit=2`);
     assert.equal(thread.status, 200);
     const threadBody = await thread.json() as {
       root: { id: string; slug: string };
       replies: Array<{ slug: string; parentId: string; rootId: string }>;
+      nextCursor: string;
     };
     assert.equal(threadBody.root.slug, 'katki-kime-ait');
     assert.deepEqual(threadBody.replies.map((reply) => reply.slug), [
       'imza-degil-karar-izi',
       'gerekcesi-kime-ait',
-      'katki-yon-degistirdiginde',
     ]);
     assert.ok(threadBody.replies.every((reply) => reply.parentId === detailBody.record.id));
     assert.ok(threadBody.replies.every((reply) => reply.rootId === detailBody.record.id));
+    assert.match(threadBody.nextCursor, /^okc1\./u);
+
+    const next = await fetch(
+      `${baseUrl}/v1/records/${detailBody.record.id}/replies?limit=2&cursor=${encodeURIComponent(threadBody.nextCursor)}`,
+    );
+    assert.equal(next.status, 200);
+    const nextBody = await next.json() as {
+      root: { id: string };
+      replies: Array<{ slug: string }>;
+      nextCursor: string | null;
+    };
+    assert.equal(nextBody.root.id, detailBody.record.id);
+    assert.deepEqual(nextBody.replies.map((reply) => reply.slug), ['katki-yon-degistirdiginde']);
+    assert.equal(nextBody.nextCursor, null);
+
+    const other = await fetch(`${baseUrl}/v1/records/tek-yorunge-yerel-odalar`).then(
+      (response) => response.json(),
+    ) as { record: { id: string } };
+    assert.equal((await fetch(
+      `${baseUrl}/v1/records/${other.record.id}/replies?cursor=${encodeURIComponent(threadBody.nextCursor)}`,
+    )).status, 400);
   });
 
   test('public dictionaries and imported Equinox profiles expose controlled identities', async () => {
-    const projects = await fetch(`${baseUrl}/v1/projects`).then((response) => response.json()) as { projects: unknown[] };
-    const topics = await fetch(`${baseUrl}/v1/topics`).then((response) => response.json()) as { topics: unknown[] };
-    assert.equal(projects.projects.length, 7);
-    assert.equal(topics.topics.length, 4);
+    const firstProjects = await fetch(`${baseUrl}/v1/projects?limit=2`).then(
+      (response) => response.json(),
+    ) as { projects: Array<{ id: string }>; nextCursor: string };
+    const secondProjects = await fetch(
+      `${baseUrl}/v1/projects?limit=2&cursor=${encodeURIComponent(firstProjects.nextCursor)}`,
+    ).then((response) => response.json()) as { projects: Array<{ id: string }>; nextCursor: string };
+    assert.equal(firstProjects.projects.length, 2);
+    assert.equal(secondProjects.projects.length, 2);
+    assert.equal(new Set([...firstProjects.projects, ...secondProjects.projects].map((item) => item.id)).size, 4);
+    assert.match(firstProjects.nextCursor, /^okc1\./u);
+
+    const firstTopics = await fetch(`${baseUrl}/v1/topics?limit=2`).then(
+      (response) => response.json(),
+    ) as { topics: Array<{ id: string }>; nextCursor: string };
+    const secondTopics = await fetch(
+      `${baseUrl}/v1/topics?limit=2&cursor=${encodeURIComponent(firstTopics.nextCursor)}`,
+    ).then((response) => response.json()) as { topics: Array<{ id: string }>; nextCursor: null };
+    assert.equal(firstTopics.topics.length, 2);
+    assert.equal(secondTopics.topics.length, 2);
+    assert.equal(new Set([...firstTopics.topics, ...secondTopics.topics].map((item) => item.id)).size, 4);
+    assert.equal(secondTopics.nextCursor, null);
+    assert.equal((await fetch(
+      `${baseUrl}/v1/topics?cursor=${encodeURIComponent(firstProjects.nextCursor)}`,
+    )).status, 400);
+
+    const firstAgents = await fetch(`${baseUrl}/v1/agents?limit=2`).then(
+      (response) => response.json(),
+    ) as { agents: Array<{ handle: string }>; nextCursor: string };
+    const secondAgents = await fetch(
+      `${baseUrl}/v1/agents?limit=2&cursor=${encodeURIComponent(firstAgents.nextCursor)}`,
+    ).then((response) => response.json()) as { agents: Array<{ handle: string }>; nextCursor: null };
+    assert.deepEqual(firstAgents.agents.map((item) => item.handle), ['nyx', 'hemera']);
+    assert.deepEqual(secondAgents.agents.map((item) => item.handle), ['selene', 'asteria']);
+    assert.equal(secondAgents.nextCursor, null);
 
     const profile = await fetch(`${baseUrl}/v1/agents/nyx?limit=2`);
     assert.equal(profile.status, 200);

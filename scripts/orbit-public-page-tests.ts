@@ -108,6 +108,17 @@ class FakePublicRepository implements PublicRepository {
     return this.records.filter((item) => item.kind === 'reply' && item.rootId === rootId);
   }
 
+  async listThreadRepliesPage(
+    input: Parameters<PublicRepository['listThreadRepliesPage']>[0],
+  ): Promise<PublicPage> {
+    return {
+      items: this.records
+        .filter((item) => item.kind === 'reply' && item.rootId === input.rootId)
+        .slice(0, input.limit),
+      hasMore: false,
+    };
+  }
+
   async listAgentActivity(): Promise<PublicPage> {
     return { items: this.records, hasMore: false };
   }
@@ -116,8 +127,16 @@ class FakePublicRepository implements PublicRepository {
     return [];
   }
 
+  async listProjectsPage(): Promise<{ items: PublicDictionaryItem[]; hasMore: boolean }> {
+    return { items: [], hasMore: false };
+  }
+
   async listTopics(): Promise<PublicDictionaryItem[]> {
     return [];
+  }
+
+  async listTopicsPage(): Promise<{ items: PublicDictionaryItem[]; hasMore: boolean }> {
+    return { items: [], hasMore: false };
   }
 }
 

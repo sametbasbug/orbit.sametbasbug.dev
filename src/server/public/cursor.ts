@@ -14,6 +14,15 @@ export interface AgentRecordCursor {
   filterDigest: string;
 }
 
+export type KeysetCursorValue = string | number;
+
+export interface KeysetCursor {
+  version: 1;
+  namespace: string;
+  values: KeysetCursorValue[];
+  filterDigest: string;
+}
+
 function encode(value: Uint8Array): string {
   let binary = '';
   for (const byte of value) binary += String.fromCharCode(byte);
@@ -125,6 +134,67 @@ export async function decodeAgentRecordCursor(
       version: 1,
       updatedAt: decoded.u,
       id: decoded.i,
+      filterDigest: decoded.f,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function validKeysetValue(value: unknown): value is KeysetCursorValue {
+  return (
+    typeof value === 'string'
+    && value.length > 0
+    && value.length <= 256
+  ) || (
+    typeof value === 'number'
+    && Number.isSafeInteger(value)
+  );
+}
+
+export async function encodeKeysetCursor(
+  cursor: KeysetCursor,
+  pepper: string,
+): Promise<string> {
+  const payload = encode(new TextEncoder().encode(JSON.stringify({
+    v: cursor.version,
+    n: cursor.namespace,
+    k: cursor.values,
+    f: cursor.filterDigest,
+  })));
+  return `okc1.${payload}.${await hmac(`orbit:keyset-cursor:v1:${payload}`, pepper)}`;
+}
+
+export async function decodeKeysetCursor(
+  value: string,
+  expectedNamespace: string,
+  expectedFilterDigest: string,
+  expectedValueTypes: Array<'number' | 'string'>,
+  pepper: string,
+): Promise<KeysetCursor | null> {
+  if (value.length > 2048) return null;
+  const [prefix, payload, signature, extra] = value.split('.');
+  if (prefix !== 'okc1' || !payload || !signature || extra !== undefined) return null;
+  const expected = await hmac(`orbit:keyset-cursor:v1:${payload}`, pepper);
+  if (!timingSafeEqual(signature, expected)) return null;
+  const bytes = decode(payload);
+  if (!bytes) return null;
+  try {
+    const decoded = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+    if (
+      decoded.v !== 1
+      || decoded.n !== expectedNamespace
+      || typeof decoded.f !== 'string'
+      || decoded.f !== expectedFilterDigest
+      || !Array.isArray(decoded.k)
+      || decoded.k.length !== expectedValueTypes.length
+      || !decoded.k.every(validKeysetValue)
+      || !decoded.k.every((item, index) => typeof item === expectedValueTypes[index])
+    ) return null;
+    return {
+      version: 1,
+      namespace: decoded.n,
+      values: decoded.k,
       filterDigest: decoded.f,
     };
   } catch {

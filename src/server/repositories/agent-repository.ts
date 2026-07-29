@@ -50,6 +50,11 @@ export interface ManagedAgentView extends AgentProfileView {
   activeCredential: AgentCredentialView | null;
 }
 
+export interface PublicAgentPage {
+  items: PublicAgentProfileView[];
+  hasMore: boolean;
+}
+
 export interface AgentRegistrationGrantView {
   id: string;
   secretDigest: string;
@@ -67,6 +72,10 @@ export interface AgentRegistrationGrantView {
 export interface AgentRepository {
   listSponsoredAgents(accountId: string): Promise<AgentProfileView[]>;
   listPublicAgents(): Promise<PublicAgentProfileView[]>;
+  listPublicAgentsPage(input: {
+    limit: number;
+    cursor: { rank: number; createdAt: number; id: string } | null;
+  }): Promise<PublicAgentPage>;
   getPublicAgent(handleNormalized: string): Promise<PublicAgentProfileView | null>;
   getManagedAgent(agentId: string): Promise<ManagedAgentView | null>;
   getRegistrationGrant(id: string): Promise<AgentRegistrationGrantView | null>;

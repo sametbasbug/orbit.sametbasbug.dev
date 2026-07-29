@@ -555,6 +555,50 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     }, 'slice5-dm-send');
     assert.equal(conflict.status, 409);
 
+    const auxiliaryMessageIds: string[] = [];
+    for (const [index, auxiliarySender] of [
+      observer,
+      agents.get('slice5-media-concurrent')!,
+    ].entries()) {
+      const auxiliary = await agentRequest(auxiliarySender, '/v1/direct-messages', 'POST', {
+        recipientHandle: sender.handle,
+        bodyMarkdown: `Cursor sayfası için özel mesaj ${index + 1}.`,
+      }, `slice5-dm-page-${index + 1}`);
+      assert.equal(auxiliary.status, 201);
+      auxiliaryMessageIds.push((await auxiliary.json() as {
+        directMessage: { id: string };
+      }).directMessage.id);
+    }
+    const firstInboxPage = await agentRequest(sender, '/v1/direct-messages?box=inbox&limit=1');
+    const firstInboxBody = await firstInboxPage.json() as {
+      directMessages: Array<{ id: string }>;
+      nextCursor: string;
+    };
+    assert.equal(firstInboxBody.directMessages.length, 1);
+    assert.match(firstInboxBody.nextCursor, /^okc1\./u);
+    const secondInboxPage = await agentRequest(
+      sender,
+      `/v1/direct-messages?box=inbox&limit=1&cursor=${encodeURIComponent(firstInboxBody.nextCursor)}`,
+    );
+    const secondInboxBody = await secondInboxPage.json() as {
+      directMessages: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    assert.equal(secondInboxBody.directMessages.length, 1);
+    assert.notEqual(secondInboxBody.directMessages[0]?.id, firstInboxBody.directMessages[0]?.id);
+    assert.equal(secondInboxBody.nextCursor, null);
+    assert.equal((await agentRequest(
+      sender,
+      `/v1/direct-messages?box=sent&cursor=${encodeURIComponent(firstInboxBody.nextCursor)}`,
+    )).status, 400);
+    assert.equal((await agentRequest(
+      recipient,
+      `/v1/direct-messages?box=inbox&cursor=${encodeURIComponent(firstInboxBody.nextCursor)}`,
+    )).status, 400);
+    for (const id of auxiliaryMessageIds) {
+      assert.equal((await agentRequest(sender, `/v1/direct-messages/${id}/read`, 'POST', {})).status, 200);
+    }
+
     const senderUnread = await agentRequest(sender, '/v1/direct-messages/unread-count');
     const recipientUnread = await agentRequest(recipient, '/v1/direct-messages/unread-count');
     const observerUnread = await agentRequest(observer, '/v1/direct-messages/unread-count');
@@ -632,6 +676,31 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     });
     targetedAnnouncementId = (await targeted.json() as { announcement: { id: string } }).announcement.id;
     assert.equal((await ownerRequest(`/v1/admin/announcements/${targetedAnnouncementId}/publish`, 'POST', {})).status, 200);
+
+    const firstAnnouncementPage = await agentRequest(
+      externalAgent,
+      '/v1/announcements?limit=1',
+    );
+    const firstAnnouncementBody = await firstAnnouncementPage.json() as {
+      announcements: Array<{ id: string }>;
+      nextCursor: string;
+    };
+    assert.deepEqual(firstAnnouncementBody.announcements.map((item) => item.id), [targetedAnnouncementId]);
+    assert.match(firstAnnouncementBody.nextCursor, /^okc1\./u);
+    const secondAnnouncementPage = await agentRequest(
+      externalAgent,
+      `/v1/announcements?limit=1&cursor=${encodeURIComponent(firstAnnouncementBody.nextCursor)}`,
+    );
+    const secondAnnouncementBody = await secondAnnouncementPage.json() as {
+      announcements: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    assert.deepEqual(secondAnnouncementBody.announcements.map((item) => item.id), [allAnnouncementId]);
+    assert.equal(secondAnnouncementBody.nextCursor, null);
+    assert.equal((await agentRequest(
+      agents.get('slice5-equinox')!,
+      `/v1/announcements?cursor=${encodeURIComponent(firstAnnouncementBody.nextCursor)}`,
+    )).status, 400);
 
     const equinoxRows = (await (await agentRequest(agents.get('slice5-equinox')!, '/v1/announcements')).json() as { announcements: Array<{ id: string }> }).announcements;
     const externalRows = (await (await agentRequest(externalAgent, '/v1/announcements')).json() as { announcements: Array<{ id: string }> }).announcements;

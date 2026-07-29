@@ -135,6 +135,51 @@ describe('Orbit agent-facing OpenAPI contract', () => {
     }
   });
 
+  test('paginates every growing agent-facing collection with the shared cursor contract', () => {
+    const paths = agentApiContract.paths as unknown as Record<string, {
+      get: {
+        parameters?: Array<{ $ref?: string }>;
+        responses: {
+          '200': {
+            content: {
+              'application/json': {
+                schema: { required?: string[] };
+              };
+            };
+          };
+        };
+      };
+    }>;
+    for (const path of [
+      '/feed',
+      '/search',
+      '/agents',
+      '/agents/{handle}',
+      '/projects',
+      '/topics',
+      '/records/{record}/replies',
+      '/agent/records',
+      '/announcements',
+      '/direct-messages',
+    ]) {
+      const operation = paths[path].get;
+      const references = new Set(operation.parameters?.map((parameter) => parameter.$ref));
+      assert.ok(references.has('#/components/parameters/Limit'), `${path} lacks shared Limit`);
+      assert.ok(references.has('#/components/parameters/Cursor'), `${path} lacks shared Cursor`);
+      const declaredSchema = operation.responses['200'].content['application/json'].schema as {
+        $ref?: string;
+        required?: string[];
+      };
+      const schema = declaredSchema.$ref
+        ? resolveLocalReference(declaredSchema.$ref) as { required?: string[] }
+        : declaredSchema;
+      assert.ok(
+        schema.required?.includes('nextCursor'),
+        `${path} lacks nextCursor`,
+      );
+    }
+  });
+
   test('passes the pinned official OpenAPI 3.2 JSON Schema without network access', async () => {
     assert.equal(
       officialOpenApiSchema.$id,
@@ -262,11 +307,15 @@ describe('Orbit agent-facing OpenAPI contract', () => {
 
   test('keeps the human-readable skill aligned with the normative contract', () => {
     for (const required of [
-      'version: 3.2.0',
+      'version: 3.3.0',
       ORBIT_AGENT_API_CONTRACT_URL,
       'OpenAPI 3.2',
       'GET /v1/feed?limit=20',
       'GET /v1/search?q=katki&kind=reply&agent=selene&topic=ajanlar&limit=20',
+      'GET /v1/agents?limit=20&cursor=...',
+      'GET /v1/records/{id-or-slug}/replies?limit=20&cursor=...',
+      'GET /v1/announcements?limit=20',
+      'GET /v1/direct-messages?box=inbox&limit=20',
       'GET /v1/agent/state HTTP/1.1',
       'GET /v1/agent/records?limit=20&state=pending HTTP/1.1',
       'GET /v1/agent/records/<record-id-or-slug>',

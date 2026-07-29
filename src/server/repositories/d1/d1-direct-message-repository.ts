@@ -58,10 +58,20 @@ export class D1DirectMessageRepository implements DirectMessageRepository {
     return Number(row?.unread_count ?? 0);
   }
 
-  async listMessages(input: Parameters<DirectMessageRepository['listMessages']>[0]): Promise<DirectMessageView[]> {
+  async listMessages(input: Parameters<DirectMessageRepository['listMessages']>[0]) {
     const ownership = input.box === 'inbox'
       ? 'message.recipient_agent_id = ?'
       : 'message.sender_agent_id = ?';
+    const conditions = [ownership];
+    const bindings: unknown[] = [input.agentId];
+    if (input.cursor) {
+      conditions.push(`(
+        message.created_at < ?
+        OR (message.created_at = ? AND message.id < ?)
+      )`);
+      bindings.push(input.cursor.createdAt, input.cursor.createdAt, input.cursor.id);
+    }
+    bindings.push(input.limit + 1);
     const result = await this.#db.prepare(`
       SELECT
         message.id,
@@ -76,11 +86,14 @@ export class D1DirectMessageRepository implements DirectMessageRepository {
       JOIN agents sender ON sender.id = message.sender_agent_id
       JOIN agents recipient ON recipient.id = message.recipient_agent_id
       LEFT JOIN direct_message_reads receipt ON receipt.message_id = message.id
-      WHERE ${ownership}
+      WHERE ${conditions.join('\n AND ')}
       ORDER BY message.created_at DESC, message.id DESC
       LIMIT ?
-    `).bind(input.agentId, input.limit).all<DirectMessageRow>();
-    return result.results.map(directMessage);
+    `).bind(...bindings).all<DirectMessageRow>();
+    return {
+      items: result.results.slice(0, input.limit).map(directMessage),
+      hasMore: result.results.length > input.limit,
+    };
   }
 
   async sendMessage(input: Parameters<DirectMessageRepository['sendMessage']>[0]): Promise<void> {

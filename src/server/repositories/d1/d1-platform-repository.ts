@@ -80,6 +80,62 @@ export class D1PlatformRepository implements PlatformRepository {
     return result.results.map(announcement);
   }
 
+  async listAnnouncementsForAgentPage(
+    input: Parameters<PlatformRepository['listAnnouncementsForAgentPage']>[0],
+  ) {
+    const severityRank = `CASE an.severity
+      WHEN 'critical' THEN 0
+      WHEN 'warning' THEN 1
+      ELSE 2
+    END`;
+    const conditions = [
+      `an.status = 'active'`,
+      `an.starts_at <= ?`,
+      `(an.expires_at IS NULL OR an.expires_at > ?)`,
+      `(
+        an.audience_type = 'all_agents'
+        OR (an.audience_type = 'equinox_agents' AND ? = 1)
+        OR (an.audience_type = 'agent' AND an.target_agent_id = ?)
+      )`,
+    ];
+    const bindings: unknown[] = [
+      input.agentId,
+      input.now,
+      input.now,
+      input.isEquinox ? 1 : 0,
+      input.agentId,
+    ];
+    if (input.cursor) {
+      conditions.push(`(
+        ${severityRank} > ?
+        OR (${severityRank} = ? AND an.starts_at < ?)
+        OR (${severityRank} = ? AND an.starts_at = ? AND an.id < ?)
+      )`);
+      bindings.push(
+        input.cursor.severityRank,
+        input.cursor.severityRank,
+        input.cursor.startsAt,
+        input.cursor.severityRank,
+        input.cursor.startsAt,
+        input.cursor.id,
+      );
+    }
+    bindings.push(input.limit + 1);
+    const result = await this.#db.prepare(`
+      SELECT an.*, ar.read_at
+      FROM announcements an
+      LEFT JOIN announcement_reads ar
+        ON ar.announcement_id = an.id AND ar.agent_id = ?
+      WHERE ${conditions.join('\n AND ')}
+      ORDER BY ${severityRank} ASC, an.starts_at DESC, an.id DESC
+      LIMIT ?
+    `).bind(...bindings).all<AnnouncementRow>();
+    return {
+      items: result.results.slice(0, input.limit).map(announcement),
+      hasMore: result.results.length > input.limit,
+    };
+  }
+
   async markAnnouncementRead(input: Parameters<PlatformRepository['markAnnouncementRead']>[0]): Promise<void> {
     await this.#db.batch([
       this.#db.prepare(`

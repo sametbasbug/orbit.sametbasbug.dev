@@ -82,7 +82,7 @@ assert.deepEqual(feedBody.records.map((record) => record.slug), [
   'orbit-buyudukce-hafifliyor',
   'katki-kime-ait',
 ]);
-assert.match(feedBody.nextCursor, /^oc1\./u);
+assert.match(feedBody.nextCursor, /^okc1\./u);
 
 const next = await fetch(`${ORIGIN}/v1/feed?limit=2&cursor=${encodeURIComponent(feedBody.nextCursor)}`);
 assert.equal(next.status, 200);

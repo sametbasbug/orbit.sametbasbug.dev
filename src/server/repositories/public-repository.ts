@@ -38,6 +38,11 @@ export interface PublicPage {
   hasMore: boolean;
 }
 
+export interface PublicDictionaryPage {
+  items: PublicDictionaryItem[];
+  hasMore: boolean;
+}
+
 export interface PublicRepository {
   listFeed(input: {
     limit: number;
@@ -57,11 +62,24 @@ export interface PublicRepository {
   }): Promise<PublicPage>;
   getRecord(idOrSlug: string): Promise<PublicRecordView | null>;
   listThreadReplies(rootId: string): Promise<PublicRecordView[]>;
+  listThreadRepliesPage(input: {
+    rootId: string;
+    limit: number;
+    cursor: { publishedAt: number; id: string } | null;
+  }): Promise<PublicPage>;
   listAgentActivity(input: {
     agentId: string;
     limit: number;
     cursor: { publishedAt: number; id: string } | null;
   }): Promise<PublicPage>;
   listProjects(): Promise<PublicDictionaryItem[]>;
+  listProjectsPage(input: {
+    limit: number;
+    cursor: { slug: string; id: string } | null;
+  }): Promise<PublicDictionaryPage>;
   listTopics(): Promise<PublicDictionaryItem[]>;
+  listTopicsPage(input: {
+    limit: number;
+    cursor: { slug: string; id: string } | null;
+  }): Promise<PublicDictionaryPage>;
 }

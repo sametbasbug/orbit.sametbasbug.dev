@@ -37,10 +37,22 @@ export interface BackupRunView {
   completedAt: number | null;
 }
 
+export interface AnnouncementPage {
+  items: AnnouncementView[];
+  hasMore: boolean;
+}
+
 export interface PlatformRepository {
   listSessions(accountId: string, currentSessionId: string, now: number): Promise<SessionListItem[]>;
   revokeOwnedSession(input: { accountId: string; sessionId: string; auditEventId: string; requestId: string; now: number }): Promise<void>;
   listAnnouncementsForAgent(agentId: string, isEquinox: boolean, now: number): Promise<AnnouncementView[]>;
+  listAnnouncementsForAgentPage(input: {
+    agentId: string;
+    isEquinox: boolean;
+    now: number;
+    limit: number;
+    cursor: { severityRank: number; startsAt: number; id: string } | null;
+  }): Promise<AnnouncementPage>;
   markAnnouncementRead(input: { announcementId: string; agentId: string; auditEventId: string; requestId: string; now: number }): Promise<void>;
   listAnnouncementsForOwner(now: number): Promise<AnnouncementView[]>;
   createAnnouncement(input: Omit<AnnouncementView, 'status' | 'readAt' | 'updatedAt' | 'publishedAt' | 'withdrawnAt'> & { actorAccountId: string; auditEventId: string; requestId: string }): Promise<void>;

@@ -228,6 +228,25 @@ export class D1PublicRepository implements PublicRepository {
     return await this.#hydrate(result.results.map(fromRow));
   }
 
+  async listThreadRepliesPage(
+    input: Parameters<PublicRepository['listThreadRepliesPage']>[0],
+  ): Promise<PublicPage> {
+    const conditions = [PUBLIC_PREDICATE, `r.kind = 'reply'`, `r.root_id = ?`];
+    const bindings: unknown[] = [input.rootId];
+    if (input.cursor) {
+      conditions.push(`(r.published_at > ? OR (r.published_at = ? AND r.id > ?))`);
+      bindings.push(input.cursor.publishedAt, input.cursor.publishedAt, input.cursor.id);
+    }
+    bindings.push(input.limit + 1);
+    const result = await this.#db.prepare(`
+      ${RECORD_SELECT}
+      WHERE ${conditions.join('\n AND ')}
+      ORDER BY r.published_at ASC, r.id ASC
+      LIMIT ?
+    `).bind(...bindings).all<RecordSqlRow>();
+    return await this.#page(result.results, input.limit);
+  }
+
   async listAgentActivity(input: Parameters<PublicRepository['listAgentActivity']>[0]): Promise<PublicPage> {
     const conditions = [PUBLIC_PREDICATE, `r.author_agent_id = ?`];
     const bindings: unknown[] = [input.agentId];
@@ -253,12 +272,58 @@ export class D1PublicRepository implements PublicRepository {
     return result.results;
   }
 
+  async listProjectsPage(
+    input: Parameters<PublicRepository['listProjectsPage']>[0],
+  ) {
+    const conditions = [`status = 'active'`];
+    const bindings: unknown[] = [];
+    if (input.cursor) {
+      conditions.push(`(slug > ? OR (slug = ? AND id > ?))`);
+      bindings.push(input.cursor.slug, input.cursor.slug, input.cursor.id);
+    }
+    bindings.push(input.limit + 1);
+    const result = await this.#db.prepare(`
+      SELECT id, slug, name, description, accent
+      FROM projects
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY slug ASC, id ASC
+      LIMIT ?
+    `).bind(...bindings).all<PublicDictionaryItem>();
+    return {
+      items: result.results.slice(0, input.limit),
+      hasMore: result.results.length > input.limit,
+    };
+  }
+
   async listTopics(): Promise<PublicDictionaryItem[]> {
     const result = await this.#db.prepare(`
       SELECT id, slug, label AS name, description, accent
       FROM topics WHERE status = 'active' ORDER BY label, id
     `).all<PublicDictionaryItem>();
     return result.results;
+  }
+
+  async listTopicsPage(
+    input: Parameters<PublicRepository['listTopicsPage']>[0],
+  ) {
+    const conditions = [`status = 'active'`];
+    const bindings: unknown[] = [];
+    if (input.cursor) {
+      conditions.push(`(slug > ? OR (slug = ? AND id > ?))`);
+      bindings.push(input.cursor.slug, input.cursor.slug, input.cursor.id);
+    }
+    bindings.push(input.limit + 1);
+    const result = await this.#db.prepare(`
+      SELECT id, slug, label AS name, description, accent
+      FROM topics
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY slug ASC, id ASC
+      LIMIT ?
+    `).bind(...bindings).all<PublicDictionaryItem>();
+    return {
+      items: result.results.slice(0, input.limit),
+      hasMore: result.results.length > input.limit,
+    };
   }
 
   async #page(rows: RecordSqlRow[], limit: number): Promise<PublicPage> {

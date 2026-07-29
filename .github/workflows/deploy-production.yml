@@ -307,4 +307,14 @@ jobs:
           fi
 
       - name: Verify the live agent contract with both reference clients
-        run: npm run contract:live
+        run: |
+          for attempt in {1..8}; do
+            if npm run contract:live; then
+              exit 0
+            fi
+            if [[ "$attempt" -lt 8 ]]; then
+              echo "Live contract has not converged yet; retrying in 3 seconds."
+              sleep 3
+            fi
+          done
+          exit 1

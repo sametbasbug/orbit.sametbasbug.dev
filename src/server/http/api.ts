@@ -3018,7 +3018,13 @@ async function resolveActiveMcpGrant(
   }
   const account = await identityRepository.getAccount(grant.accountId);
   const agent = await agentRepository.getManagedAgent(grant.agentId);
-  if (!account || !agent || !accountCanManageAgent(account, agent)) {
+  if (
+    !account
+    || !agent
+    || !accountCanManageAgent(account, agent)
+    || agent.status !== 'active'
+    || agent.onboardingState !== 'active'
+  ) {
     throw new ApiError(
       401,
       'mcp_authorization_invalid',
@@ -3954,7 +3960,7 @@ export async function handleApiRequest(
     }
 
     if (request.method === 'POST' && path === '/v1/mcp/authorization-tickets/inspect') {
-      await authenticateHuman(request, env, repository, now, false);
+      const auth = await authenticateHuman(request, env, repository, now, false);
       const body = await readJson(request);
       requireExactFields(body, ['ticket'], 'invalid_mcp_authorization_ticket_fields');
       const ticket = mcpAuthorizationString(body.ticket, 'ticket', 1600);
@@ -3970,6 +3976,11 @@ export async function handleApiRequest(
           'The Orbit MCP authorization ticket is invalid or expired.',
         );
       }
+      const manageableAgents = (
+        auth.account.roles.includes('platform_owner')
+          ? await agentRepository.listPublicAgents()
+          : await agentRepository.listSponsoredAgents(auth.account.id)
+      ).filter((agent) => agent.status === 'active' && agent.onboardingState === 'active');
       return json({
         authorizationRequest: {
           id: authorizationRequest.authorizationRequestId,
@@ -3981,6 +3992,15 @@ export async function handleApiRequest(
           issuedAt: authorizationRequest.issuedAt,
           expiresAt: authorizationRequest.expiresAt,
         },
+        manageableAgents: manageableAgents.map((agent) => ({
+          id: agent.id,
+          handle: agent.handle,
+          displayName: agent.displayName,
+          avatarAsset: agent.avatarAsset,
+          publicationMode: agent.publicationMode,
+          status: agent.status,
+          onboardingState: agent.onboardingState,
+        })),
       });
     }
 
@@ -4016,6 +4036,13 @@ export async function handleApiRequest(
         auth,
         await agentRepository.getManagedAgent(agentId),
       );
+      if (agent.status !== 'active' || agent.onboardingState !== 'active') {
+        throw new ApiError(
+          409,
+          'mcp_agent_unavailable',
+          'Only active, fully onboarded agents can be authorized for Orbit MCP.',
+        );
+      }
       const {
         scopes,
         oauthClientId,

@@ -531,10 +531,23 @@ let firstCredentialToken = '';
     assert.equal(inspected.status, 200, await inspected.clone().text());
     const inspectedBody = await inspected.json() as {
       authorizationRequest: { id: string; oauthClient: { label: string }; scopes: string[] };
+      manageableAgents: Array<{
+        id: string;
+        handle: string;
+        status: string;
+        onboardingState: string;
+      }>;
     };
     assert.equal(inspectedBody.authorizationRequest.id, mcpAuthorizationRequestId);
     assert.equal(inspectedBody.authorizationRequest.oauthClient.label, 'ChatGPT');
     assert.deepEqual(inspectedBody.authorizationRequest.scopes, ['feed:read']);
+    assert.deepEqual(
+      inspectedBody.manageableAgents.map((agent) => agent.id),
+      [sponsoredAgentId],
+    );
+    assert.equal(inspectedBody.manageableAgents[0]?.handle, 'selene-test-agent');
+    assert.equal(inspectedBody.manageableAgents[0]?.status, 'active');
+    assert.equal(inspectedBody.manageableAgents[0]?.onboardingState, 'active');
 
     const tamperedTicket = `${ticketBody.ticket.slice(0, -1)}${ticketBody.ticket.endsWith('A') ? 'B' : 'A'}`;
     const tamperedInspect = await postJson(
@@ -700,6 +713,22 @@ let firstCredentialToken = '';
     assert.equal(privateStateBody.agent.status, 'active');
     assert.equal(privateStateBody.recordCounts.total, 0);
     assert.equal(privateStateBody.recordCounts.pendingReview, 0);
+
+    await postJson('/__test/set-agent-status', {
+      handle: 'selene-test-agent',
+      status: 'suspended',
+    }, {}, NOW + 56);
+    const stateWhileSuspended = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(mcpGrantId)}/agent/state`,
+      {},
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 56,
+    );
+    assert.equal(stateWhileSuspended.status, 401);
+    await postJson('/__test/set-agent-status', {
+      handle: 'selene-test-agent',
+      status: 'active',
+    }, {}, NOW + 56);
 
     const revokeNoCsrf = await postJson(
       `/v1/mcp/authorizations/${encodeURIComponent(mcpGrantId)}/revoke`,

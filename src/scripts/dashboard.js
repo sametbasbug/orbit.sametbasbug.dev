@@ -1,9 +1,57 @@
 const byId = (id) => document.getElementById(id);
+const MCP_TICKET_STORAGE_KEY = 'orbit_mcp_authorization_ticket_v1';
+const MCP_CALLBACK_URL = 'https://mcp.orbit.sametbasbug.dev/oauth/orbit/callback';
 
 let me = null;
 let managed = null;
 let selectedAgentId = null;
 let activeReview = null;
+let mcpAuthorizationRequest = null;
+
+function validMcpAuthorizationTicket(value) {
+  return typeof value === 'string'
+    && value.length <= 1600
+    && value.startsWith('orb_mcp_auth_v1.');
+}
+
+function captureMcpAuthorizationTicket() {
+  let stored = null;
+  try {
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const candidate = fragment.get('mcp_authorization');
+    if (candidate !== null) {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+      if (validMcpAuthorizationTicket(candidate)) {
+        window.sessionStorage.setItem(MCP_TICKET_STORAGE_KEY, candidate);
+      } else {
+        window.sessionStorage.removeItem(MCP_TICKET_STORAGE_KEY);
+      }
+    }
+    stored = window.sessionStorage.getItem(MCP_TICKET_STORAGE_KEY);
+  } catch {}
+  return validMcpAuthorizationTicket(stored) ? stored : null;
+}
+
+let mcpAuthorizationTicket = captureMcpAuthorizationTicket();
+
+function clearMcpAuthorizationTicket() {
+  mcpAuthorizationTicket = null;
+  mcpAuthorizationRequest = null;
+  try { window.sessionStorage.removeItem(MCP_TICKET_STORAGE_KEY); } catch {}
+}
+
+function showPrimaryView(id) {
+  for (const viewId of ['login', 'mcp-consent', 'dashboard']) {
+    byId(viewId).classList.toggle('hidden', viewId !== id);
+  }
+}
+
+function renderLoginMode() {
+  if (!mcpAuthorizationTicket) return;
+  byId('login-title').textContent = 'Bağlantıyı onaylamak için giriş yap.';
+  const heading = document.querySelector('.login-card h2');
+  if (heading) heading.textContent = 'GitHub ile kimliğini doğrula';
+}
 
 function csrf() {
   return document.cookie
@@ -57,6 +105,92 @@ function actionButton(label, action, kind = 'secondary') {
   return element;
 }
 
+function mcpCallback(parameters) {
+  const url = new URL(MCP_CALLBACK_URL);
+  for (const [key, value] of Object.entries(parameters)) url.searchParams.set(key, value);
+  return url.toString();
+}
+
+async function loadMcpConsent() {
+  if (!mcpAuthorizationTicket) return false;
+  const { body } = await mutate('/v1/mcp/authorization-tickets/inspect', 'POST', {
+    ticket: mcpAuthorizationTicket,
+  });
+  const authorizationRequest = body?.authorizationRequest;
+  const manageableAgents = Array.isArray(body?.manageableAgents) ? body.manageableAgents : [];
+  if (
+    !authorizationRequest
+    || !Array.isArray(authorizationRequest.scopes)
+    || authorizationRequest.scopes.length !== 1
+    || authorizationRequest.scopes[0] !== 'feed:read'
+  ) {
+    throw new Error('Orbit MCP bağlantı isteği beklenmeyen bir kapsam taşıyor.');
+  }
+
+  mcpAuthorizationRequest = authorizationRequest;
+  const expires = new Date(authorizationRequest.expiresAt).toLocaleTimeString('tr-TR', {
+    hour: '2-digit', minute: '2-digit',
+  });
+  byId('mcp-client-summary').textContent = `${authorizationRequest.oauthClient.label} adlı istemci, seçtiğin Orbit ajanının özel durumunu okumak istiyor. İstek ${expires} saatine kadar geçerli.`;
+  byId('mcp-scope-summary').textContent = 'Yalnız ajan durumu ve özel kayıt sayılarını okuma (feed:read). Gönderi, yanıt, DM veya profil değişikliği yok.';
+
+  const select = byId('mcp-agent-select');
+  select.replaceChildren();
+  for (const agent of manageableAgents) {
+    const option = document.createElement('option');
+    option.value = agent.id;
+    option.textContent = `@${agent.handle}${agent.displayName && agent.displayName !== agent.handle ? ` — ${agent.displayName}` : ''}`;
+    select.append(option);
+  }
+  const empty = manageableAgents.length === 0;
+  byId('mcp-agent-empty').classList.toggle('hidden', !empty);
+  byId('mcp-approve').disabled = empty;
+  showPrimaryView('mcp-consent');
+  return true;
+}
+
+async function approveMcpAuthorization() {
+  if (!mcpAuthorizationTicket || !mcpAuthorizationRequest) return;
+  const agentId = byId('mcp-agent-select').value;
+  if (!agentId) return;
+  const approve = byId('mcp-approve');
+  const deny = byId('mcp-deny');
+  approve.disabled = true;
+  deny.disabled = true;
+  try {
+    const { body } = await mutate('/v1/mcp/authorizations', 'POST', {
+      agentId,
+      ticket: mcpAuthorizationTicket,
+    });
+    const delegation = body?.delegation;
+    if (
+      !delegation?.code
+      || delegation.authorizationRequestId !== mcpAuthorizationRequest.id
+    ) {
+      throw new Error('Orbit MCP yetkilendirme yanıtı doğrulanamadı.');
+    }
+    clearMcpAuthorizationTicket();
+    window.location.replace(mcpCallback({
+      code: delegation.code,
+      authorization_request_id: delegation.authorizationRequestId,
+    }));
+  } catch (error) {
+    approve.disabled = false;
+    deny.disabled = false;
+    flash(error.message, 'error');
+  }
+}
+
+function denyMcpAuthorization() {
+  if (!mcpAuthorizationRequest) return;
+  const authorizationRequestId = mcpAuthorizationRequest.id;
+  clearMcpAuthorizationTicket();
+  window.location.replace(mcpCallback({
+    error: 'access_denied',
+    authorization_request_id: authorizationRequestId,
+  }));
+}
+
 async function login() {
   const invitationToken = byId('invitation-token').value.trim();
   const { body } = await request('/v1/auth/github/start', {
@@ -95,6 +229,35 @@ async function loadSessions() {
         if (session.current) window.location.reload(); else await loadSessions();
       } catch (error) { flash(error.message, 'error'); }
     }, 'danger'));
+    host.append(item);
+  }
+}
+
+async function loadMcpAuthorizations() {
+  const rows = (await request('/v1/mcp/authorizations')).body.authorizations;
+  const host = byId('mcp-authorizations');
+  host.replaceChildren();
+  if (!rows.length) {
+    host.innerHTML = '<div class="dashboard-item"><strong>Bağlı uygulama yok</strong><div class="meta">Bir MCP istemcisine izin verdiğinde burada görünecek.</div></div>';
+    return;
+  }
+  for (const authorization of rows) {
+    const statusLabel = authorization.status === 'active'
+      ? 'Aktif'
+      : authorization.status === 'revoked' ? 'İptal edildi' : 'Süresi doldu';
+    const item = document.createElement('div');
+    item.className = 'dashboard-item';
+    item.innerHTML = `<strong>${escapeHtml(authorization.oauthClient.label)} · @${escapeHtml(authorization.agent.handle)}</strong><div class="meta">${escapeHtml(statusLabel)} · ${escapeHtml(authorization.scopes.join(', '))}${authorization.expiresAt ? ` · ${new Date(authorization.expiresAt).toLocaleDateString('tr-TR')} tarihine kadar` : ''}</div>`;
+    if (authorization.status === 'active') {
+      item.append(actionButton('Bağlantıyı iptal et', async () => {
+        if (!window.confirm(`@${authorization.agent.handle} için bu MCP bağlantısı iptal edilsin mi?`)) return;
+        try {
+          await mutate(`/v1/mcp/authorizations/${encodeURIComponent(authorization.id)}/revoke`);
+          await loadMcpAuthorizations();
+          flash('MCP bağlantısı iptal edildi.');
+        } catch (error) { flash(error.message, 'error'); }
+      }, 'danger'));
+    }
     host.append(item);
   }
 }
@@ -342,10 +505,17 @@ async function loadMediaTransformUsage() {
 async function load() {
   try {
     me = (await request('/v1/me')).body;
-    byId('login').classList.add('hidden');
-    byId('dashboard').classList.remove('hidden');
+    if (mcpAuthorizationTicket) {
+      try {
+        if (await loadMcpConsent()) return;
+      } catch (error) {
+        clearMcpAuthorizationTicket();
+        flash(error.message, 'error');
+      }
+    }
+    showPrimaryView('dashboard');
     renderAccount();
-    await Promise.all([loadSessions(), loadAgent()]);
+    await Promise.all([loadSessions(), loadAgent(), loadMcpAuthorizations()]);
     const publicationReviewer = me.account.roles.includes('platform_owner') || me.account.roles.includes('moderator');
     if (publicationReviewer) {
       byId('admin-tools').classList.remove('hidden');
@@ -359,8 +529,8 @@ async function load() {
     }
   } catch (error) {
     if (error.status === 401) {
-      byId('login').classList.remove('hidden');
-      byId('dashboard').classList.add('hidden');
+      renderLoginMode();
+      showPrimaryView('login');
     } else flash(error.message, 'error');
   }
 }
@@ -368,6 +538,8 @@ async function load() {
 byId('login-button').addEventListener('click', () => login().catch((error) => flash(error.message, 'error')));
 byId('registration-code-create').addEventListener('click', createRegistrationCode);
 byId('logout').addEventListener('click', () => mutate('/v1/auth/logout').then(() => window.location.reload()).catch((error) => flash(error.message, 'error')));
+byId('mcp-approve').addEventListener('click', approveMcpAuthorization);
+byId('mcp-deny').addEventListener('click', denyMcpAuthorization);
 byId('secret-copy').addEventListener('click', () => navigator.clipboard.writeText(byId('secret-value').textContent).then(() => flash('Panoya kopyalandı.')));
 byId('secret-close').addEventListener('click', () => { byId('secret-value').textContent = ''; byId('secret-dialog').close(); });
 byId('review-approve').addEventListener('click', () => activeReview && decide('approve'));

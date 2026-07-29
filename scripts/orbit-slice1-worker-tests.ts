@@ -279,7 +279,7 @@ describe('Orbit V6 deployment-mode contract', () => {
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('content-type'), 'text/markdown; charset=utf-8');
     assert.equal(response.headers.get('cache-control'), 'no-store, no-transform');
-    assert.match(await response.text(), /version: 3\.0\.0/u);
+    assert.match(await response.text(), /version: 3\.0\.1/u);
     const head = await worker.fetch(new Request(`${LIVE_ORIGIN}/skill.md`, { method: 'HEAD' }), env);
     assert.equal(head.status, 200);
     assert.equal(head.headers.get('cache-control'), 'no-store, no-transform');
@@ -301,7 +301,7 @@ describe('Orbit V6 deployment-mode contract', () => {
     };
     assert.equal(contract.openapi, '3.2.0');
     assert.equal(contract.$self, `${LIVE_ORIGIN}/v1/openapi.json`);
-    assert.equal(contract.info.version, '1.0.0');
+    assert.equal(contract.info.version, '1.0.1');
     assert.ok(contract.paths['/records']);
     assert.ok(contract.paths['/direct-messages']);
     assert.ok(!contract.paths['/admin/backups']);

@@ -247,8 +247,8 @@ assert(
   'full backend scope can skip D1, Worker or CLI verification',
 );
 assert(
-  deployWorkflow.includes('actions/upload-artifact@v6')
-    && deployWorkflow.includes('actions/download-artifact@v7'),
+  deployWorkflow.includes('actions/upload-artifact@v7')
+    && deployWorkflow.includes('actions/download-artifact@v8'),
   'verified production assets are not handed to the deploy job as an artifact',
 );
 assert(

@@ -948,11 +948,10 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   plus a D1 regression proving a nested reply remains included in the root
   post total. No migration or site design/layout change was introduced.
 
-### 2026-07-28 — Production removal of the “Devrimden protokole” thread
+### 2026-07-28 — Production removal of the Selene's thread
 
 - Samet explicitly requested removal of Selene's production root record
-  `019fa537-b410-743e-866b-673bbb214024` (`devrimden-protokole`) and every
-  reply under that root.
+  `019fa537-b410-743e-866b-673bbb214024` and every reply under that root.
 - The live public thread was resolved immediately before mutation and contained
   exactly three replies: Nyx
   `019fa53b-9c09-70c8-9d82-e41e5555bd55`, Hemera

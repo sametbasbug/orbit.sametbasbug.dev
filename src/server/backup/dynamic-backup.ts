@@ -4,7 +4,7 @@ import { randomBase64Url, sha256Base64Url } from '../identity/tokens';
 import type { D1DatabaseLike, D1PreparedStatementLike } from '../repositories/d1/d1-foundation-repository';
 
 export const BACKUP_SCHEMA = 'equinox.orbit.dynamic-backup.v1';
-export const BACKUP_SCHEMA_VERSION = 8;
+export const BACKUP_SCHEMA_VERSION = 9;
 export const MAX_RESTORE_INPUT_BYTES = 4 * 1024 * 1024;
 export const MAX_RESTORE_STATEMENTS = 2_000;
 
@@ -40,6 +40,8 @@ const SPECS: TableSpec[] = [
   { exportName: 'invitations', table: 'invitations', columns: ['id','secret_digest','hash_version','expected_github_user_id','expected_github_login_snapshot','agent_quota','created_by_account_id','created_at','expires_at','redeemed_at','redeemed_by_account_id','revoked_at','revoked_by_account_id'], orderBy: 'id' },
   { exportName: 'agents', table: 'agents', columns: ['id','handle','handle_normalized','display_name','bio','avatar_asset','publication_mode','status','created_at','updated_at','version','role','short_bio','motto','accent','responsibility','links_json','avatar_media_id','onboarding_state','onboarding_completed_at','pinned_record_id'], orderBy: 'id' },
   { exportName: 'agentMemberships', table: 'agent_memberships', columns: ['id','agent_id','account_id','role','created_by_account_id','created_at','revoked_at'], orderBy: 'id' },
+  { exportName: 'mcpAuthorizationGrants', table: 'mcp_authorization_grants', columns: ['id','account_id','agent_id','scopes','oauth_client_id','oauth_client_label','created_at','last_used_at','expires_at','revoked_at','revoked_reason'], orderBy: 'created_at, id' },
+  { exportName: 'mcpAuthorizationRevocations', table: 'mcp_authorization_revocations', columns: ['grant_id','actor_account_id','reason','revoked_at'], orderBy: 'revoked_at, grant_id' },
   { exportName: 'agentCredentials', table: 'agent_credentials', columns: ['id','agent_id','secret_digest','hash_version','scopes','created_by_account_id','created_at','last_used_at','expires_at','revoked_at','revoked_reason','replaced_by_credential_id'], orderBy: 'created_at, id' },
   { exportName: 'sessions', table: 'sessions', columns: ['id','account_id','secret_digest','hash_version','csrf_digest','created_at','last_seen_at','idle_expires_at','absolute_expires_at','revoked_at','revoked_reason'], orderBy: 'created_at, id', optional: true },
   { exportName: 'projects', table: 'projects', columns: ['id','slug','name','status','created_at','updated_at','label','footer_label','description','href','accent'], orderBy: 'id' },
@@ -253,12 +255,16 @@ export async function restoreDynamicBackup(
 
   const statements: D1PreparedStatementLike[] = [];
   const seedSafe = new Set(['accounts', 'authIdentities', 'accountRoles', 'accountQuotas', 'auditEvents']);
-  const first = ['accounts','authIdentities','accountRoles','accountQuotas','invitations','agents','agentMemberships','agentCredentials','sessions','projects','topics'];
+  const first = ['accounts','authIdentities','accountRoles','accountQuotas','invitations','agents','agentMemberships','mcpAuthorizationGrants','agentCredentials','sessions','projects','topics'];
   for (const name of first) {
     const item = spec(name);
     for (const row of backup.tables[name]) {
       const adjusted = { ...row };
       if (name === 'agentCredentials') adjusted.replaced_by_credential_id = null;
+      if (name === 'mcpAuthorizationGrants') {
+        adjusted.revoked_at = null;
+        adjusted.revoked_reason = null;
+      }
       if (name === 'accounts') {
         // Closed accounts may retain revoked session history. Keep the normal
         // active-account session trigger enabled, restore dependencies while
@@ -269,6 +275,9 @@ export async function restoreDynamicBackup(
       if (name === 'agents') adjusted.avatar_media_id = null;
       statements.push(insert(db, item, adjusted, seedSafe.has(name)));
     }
+  }
+  for (const row of backup.tables.mcpAuthorizationRevocations) {
+    statements.push(insert(db, spec('mcpAuthorizationRevocations'), row));
   }
 
   const recordsSpec = spec('records');
@@ -440,6 +449,7 @@ export async function restoreDynamicBackup(
     statements.push(
       db.prepare(`UPDATE sessions SET revoked_at = COALESCE(revoked_at, ?), revoked_reason = COALESCE(revoked_reason, 'restore_bulk_revoke')`).bind(now),
       db.prepare(`UPDATE agent_credentials SET revoked_at = COALESCE(revoked_at, ?), revoked_reason = COALESCE(revoked_reason, 'restore_bulk_revoke')`).bind(now),
+      db.prepare(`UPDATE mcp_authorization_grants SET revoked_at = COALESCE(revoked_at, ?), revoked_reason = COALESCE(revoked_reason, 'restore_bulk_revoke')`).bind(now),
     );
   }
 
@@ -447,6 +457,8 @@ export async function restoreDynamicBackup(
     accounts: backup.counts.accounts,
     agents: backup.counts.agents,
     agentMemberships: backup.counts.agentMemberships,
+    mcpAuthorizationGrants: backup.counts.mcpAuthorizationGrants,
+    mcpAuthorizationRevocations: backup.counts.mcpAuthorizationRevocations,
     projects: backup.counts.projects,
     topics: backup.counts.topics,
     records: backup.counts.records,

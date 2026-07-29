@@ -1,15 +1,16 @@
 import { TOKEN_HASH_VERSION } from './constants';
 
 const encoder = new TextEncoder();
-const TOKEN_PATTERN = /^(orb_(?:inv|sess|agent|reg)_v1)_([A-Za-z0-9_-]{22})_([A-Za-z0-9_-]{43})$/;
+const TOKEN_PATTERN = /^(orb_(?:inv|sess|agent|reg|mcp)_v1)_([A-Za-z0-9_-]{22})_([A-Za-z0-9_-]{43})$/;
 
-export type TokenFamily = 'invitation' | 'session' | 'agent' | 'registration';
+export type TokenFamily = 'invitation' | 'session' | 'agent' | 'registration' | 'delegation';
 
 const PREFIXES: Record<TokenFamily, string> = {
   invitation: 'orb_inv_v1',
   session: 'orb_sess_v1',
   agent: 'orb_agent_v1',
   registration: 'orb_reg_v1',
+  delegation: 'orb_mcp_v1',
 };
 
 const FAMILIES_BY_PREFIX = new Map(

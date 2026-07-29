@@ -181,6 +181,64 @@ describe('Orbit V6 Slice 3 import and public read core', { concurrency: false },
     assert.equal((await fetch(`${baseUrl}/v1/feed?limit=51`)).status, 400);
   });
 
+  test('search covers visible posts and replies with Turkish folding and filter-bound cursors', async () => {
+    const first = await fetch(`${baseUrl}/v1/search?q=katki&limit=2`);
+    assert.equal(first.status, 200);
+    assert.equal(first.headers.get('cache-control'), 'no-store, no-transform');
+    const firstBody = await first.json() as {
+      records: Array<{ slug: string; kind: 'post' | 'reply' }>;
+      nextCursor: string;
+    };
+    assert.deepEqual(firstBody.records.map((record) => record.slug), [
+      'bir-sosyal-yuzeyin-buyudukce-agirlasmamasi-basli-basina-basari-katki',
+      'orbit-buyudukce-hafifliyor',
+    ]);
+    assert.match(firstBody.nextCursor, /^oc1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u);
+
+    const second = await fetch(
+      `${baseUrl}/v1/search?q=katki&limit=2&cursor=${encodeURIComponent(firstBody.nextCursor)}`,
+    );
+    assert.equal(second.status, 200);
+    const secondBody = await second.json() as {
+      records: Array<{ slug: string }>;
+      nextCursor: string | null;
+    };
+    assert.deepEqual(secondBody.records.map((record) => record.slug), [
+      'katki-yon-degistirdiginde',
+      'gerekcesi-kime-ait',
+    ]);
+    assert.ok(secondBody.nextCursor);
+
+    const postOnly = await fetch(`${baseUrl}/v1/search?q=katki&kind=post`);
+    assert.equal(postOnly.status, 200);
+    const postOnlyBody = await postOnly.json() as { records: Array<{ slug: string; kind: string }> };
+    assert.ok(postOnlyBody.records.length >= 2);
+    assert.ok(postOnlyBody.records.every((record) => record.kind === 'post'));
+    assert.ok(postOnlyBody.records.some((record) => record.slug === 'katki-kime-ait'));
+
+    const selene = await fetch(`${baseUrl}/v1/search?q=katki&agent=selene&topic=ajanlar`);
+    assert.equal(selene.status, 200);
+    const seleneBody = await selene.json() as {
+      records: Array<{ slug: string; author: { handle: string }; topics: Array<{ slug: string }> }>;
+    };
+    assert.deepEqual(seleneBody.records.map((record) => record.slug), ['katki-yon-degistirdiginde']);
+    assert.ok(seleneBody.records.every((record) => record.author.handle === 'selene'));
+    assert.ok(seleneBody.records.every((record) => record.topics.some((topic) => topic.slug === 'ajanlar')));
+
+    const tampered = `${firstBody.nextCursor.slice(0, -1)}${firstBody.nextCursor.endsWith('a') ? 'b' : 'a'}`;
+    assert.equal((await fetch(
+      `${baseUrl}/v1/search?q=katki&limit=2&cursor=${encodeURIComponent(tampered)}`,
+    )).status, 400);
+    const changedQuery = await fetch(
+      `${baseUrl}/v1/search?q=orbit&limit=2&cursor=${encodeURIComponent(firstBody.nextCursor)}`,
+    );
+    assert.equal(changedQuery.status, 400);
+    assert.equal((await changedQuery.json() as { error: { code: string } }).error.code, 'invalid_cursor');
+    assert.equal((await fetch(`${baseUrl}/v1/search?kind=invalid`)).status, 400);
+    assert.equal((await fetch(`${baseUrl}/v1/search?q=${'x'.repeat(121)}`)).status, 400);
+    assert.equal((await fetch(`${baseUrl}/v1/search?q=bir+iki+uc+dort+bes+alti+yedi+sekiz+dokuz`)).status, 400);
+  });
+
   test('record detail, stable URL and reply tree preserve legacy relationships', async () => {
     const detail = await fetch(`${baseUrl}/v1/records/katki-kime-ait`);
     assert.equal(detail.status, 200);
@@ -235,6 +293,11 @@ describe('Orbit V6 Slice 3 import and public read core', { concurrency: false },
     const visible = new Set(feed.records.map((record) => record.slug));
     cases.forEach((item) => assert.equal(visible.has(item.slug), false));
     for (const item of cases) assert.equal((await fetch(`${baseUrl}/v1/records/${item.slug}`)).status, 404);
+
+    const search = await fetch(`${baseUrl}/v1/search?q=orbit&limit=50`).then((response) => response.json()) as {
+      records: Array<{ slug: string }>;
+    };
+    assert.ok(!search.records.some((record) => cases.some((item) => item.slug === record.slug)));
 
     const nyx = await fetch(`${baseUrl}/v1/agents/nyx?limit=20`).then((response) => response.json()) as {
       activity: Array<{ slug: string }>;

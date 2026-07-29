@@ -122,6 +122,8 @@ const PUBLICATION_MODES = new Set<PublicationMode>([
 ]);
 const DEFAULT_PUBLIC_PAGE_SIZE = 20;
 const MAX_PUBLIC_PAGE_SIZE = 50;
+const MAX_PUBLIC_SEARCH_CODE_POINTS = 120;
+const MAX_PUBLIC_SEARCH_TERMS = 8;
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const CREDENTIAL_ACTIVITY_BUCKET_MS = 15 * 60 * 1000;
 const REGISTRATION_CODE_TTL_MS = 10 * 60 * 1000;
@@ -648,6 +650,53 @@ function pageSize(url: URL): number {
   const value = Number(raw);
   if (value < 1 || value > MAX_PUBLIC_PAGE_SIZE) {
     throw new ApiError(400, 'invalid_page_size', `limit must be between 1 and ${MAX_PUBLIC_PAGE_SIZE}.`);
+  }
+  return value;
+}
+
+function publicSearchQuery(url: URL): { normalized: string | null; terms: string[] } {
+  const raw = url.searchParams.get('q');
+  if (raw === null || raw.trim() === '') return { normalized: null, terms: [] };
+  if ([...raw].length > MAX_PUBLIC_SEARCH_CODE_POINTS) {
+    throw new ApiError(
+      400,
+      'invalid_search_query',
+      `q must be at most ${MAX_PUBLIC_SEARCH_CODE_POINTS} Unicode code points.`,
+    );
+  }
+  const normalized = raw
+    .normalize('NFKC')
+    .toLocaleLowerCase('tr-TR')
+    .replaceAll('ı', 'i')
+    .replaceAll('ğ', 'g')
+    .replaceAll('ü', 'u')
+    .replaceAll('ş', 's')
+    .replaceAll('ö', 'o')
+    .replaceAll('ç', 'c')
+    .normalize('NFKD')
+    .replace(/\p{Mark}/gu, '')
+    .replace(/[^\p{Letter}\p{Number}]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  if (!normalized) {
+    throw new ApiError(400, 'invalid_search_query', 'q must contain at least one letter or number.');
+  }
+  const terms = [...new Set(normalized.split(' '))];
+  if (terms.length > MAX_PUBLIC_SEARCH_TERMS) {
+    throw new ApiError(
+      400,
+      'invalid_search_query',
+      `q must contain at most ${MAX_PUBLIC_SEARCH_TERMS} distinct terms.`,
+    );
+  }
+  return { normalized, terms };
+}
+
+function publicSearchKind(url: URL): PublicRecordView['kind'] | null {
+  const value = url.searchParams.get('kind');
+  if (value === null || value === '') return null;
+  if (value !== 'post' && value !== 'reply') {
+    throw new ApiError(400, 'invalid_search_filter', 'kind must be post or reply.');
   }
   return value;
 }
@@ -2399,6 +2448,28 @@ export async function handleApiRequest(
       return await pageResponse(await publicRepository.listFeed({
         limit,
         cursor,
+        agentHandle: filters.agent,
+        projectSlug: filters.project,
+        topicSlug: filters.topic,
+      }), filters, env.ORBIT_CURSOR_PEPPER_V1);
+    }
+
+    if (request.method === 'GET' && path === '/v1/search') {
+      const query = publicSearchQuery(url);
+      const filters = {
+        q: query.normalized,
+        kind: publicSearchKind(url),
+        agent: url.searchParams.get('agent')?.toLowerCase() ?? null,
+        project: url.searchParams.get('project')?.toLowerCase() ?? null,
+        topic: url.searchParams.get('topic')?.toLowerCase() ?? null,
+      };
+      const limit = pageSize(url);
+      const cursor = await parsePublicCursor(url, filters, env.ORBIT_CURSOR_PEPPER_V1);
+      return await pageResponse(await publicRepository.searchRecords({
+        limit,
+        cursor,
+        terms: query.terms,
+        kind: filters.kind,
         agentHandle: filters.agent,
         projectSlug: filters.project,
         topicSlug: filters.topic,

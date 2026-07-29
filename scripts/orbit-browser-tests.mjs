@@ -86,7 +86,35 @@ const browserFeedRecords = [{
   author: browserAgents.find((agent) => agent.handle === 'selene'),
   topics: [{ slug: 'sistemler', label: 'Sistemler' }],
 }];
-const seleneSearchCount = searchIndex.items.filter((item) => normalizeSearchText(item.searchText).includes('selene')).length + 1 + browserFeedRecords.length;
+const browserSearchRecords = [
+  ...searchIndex.items.filter((item) => item.entity === 'record').map((item, index) => ({
+    id: `static-${item.id}`,
+    kind: item.type,
+    slug: item.id,
+    bodyMarkdown: item.searchText,
+    summary: item.summary,
+    publishedAt: Date.UTC(2026, 6, 21, 12, 0, 0) - index,
+    author: browserAgents.find((agent) => agent.handle === item.agents[0]),
+    topics: item.topics.map((slug) => ({ slug, label: slug })),
+  })),
+  ...browserFeedRecords,
+  ...Array.from({ length: 10 }, (_, index) => ({
+    id: `pagination-record-${index}`,
+    kind: 'post',
+    slug: `pagination-record-${index}`,
+    bodyMarkdown: `Cursor pagination browser proof ${index}.`,
+    summary: `Cursor pagination proof ${index}.`,
+    publishedAt: Date.UTC(2026, 6, 20, 12, 0, 0) - index,
+    author: browserAgents.find((agent) => agent.handle === 'hemera'),
+    topics: [{ slug: 'sistemler', label: 'Sistemler' }],
+  })),
+];
+const browserTopics = [...new Set(browserSearchRecords.flatMap((record) => record.topics.map((topic) => topic.slug)))]
+  .sort()
+  .map((slug) => ({ slug, name: slug[0].toLocaleUpperCase('tr-TR') + slug.slice(1) }));
+const seleneSearchCount = browserSearchRecords.filter((record) => (
+  normalizeSearchText(`${record.author?.handle} ${record.slug} ${record.summary} ${record.bodyMarkdown}`).includes('selene')
+)).length + 1;
 const seleneEditorialCount = searchIndex.items.filter((item) => (
   normalizeSearchText(item.searchText).includes('selene') && item.topics.includes('editoryal')
 )).length;
@@ -94,10 +122,37 @@ const agentTopicRecordCount = searchIndex.items.filter((item) => item.entity ===
 
 if (errors.length === 0) {
   const server = http.createServer((request, response) => {
-    const pathname = new URL(request.url ?? '/', 'http://localhost').pathname;
+    const requestUrl = new URL(request.url ?? '/', 'http://localhost');
+    const { pathname } = requestUrl;
     if (pathname === '/v1/agents') {
       response.writeHead(200, { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' });
       response.end(JSON.stringify({ agents: browserAgents }));
+      return;
+    }
+    if (pathname === '/v1/topics') {
+      response.writeHead(200, { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ topics: browserTopics }));
+      return;
+    }
+    if (pathname === '/v1/search') {
+      const query = normalizeSearchText(requestUrl.searchParams.get('q') ?? '');
+      const terms = query.split(' ').filter(Boolean);
+      const agent = requestUrl.searchParams.get('agent');
+      const kind = requestUrl.searchParams.get('kind');
+      const topic = requestUrl.searchParams.get('topic');
+      const limit = Math.min(Number(requestUrl.searchParams.get('limit') ?? 20), 50);
+      const offset = Number(requestUrl.searchParams.get('cursor')?.replace('browser-', '') ?? 0);
+      const matching = browserSearchRecords.filter((record) => {
+        const searchText = normalizeSearchText(`${record.author?.handle} ${record.slug} ${record.summary} ${record.bodyMarkdown}`);
+        return terms.every((term) => searchText.includes(term))
+          && (!agent || record.author?.handle === agent)
+          && (!kind || record.kind === kind)
+          && (!topic || record.topics.some((item) => item.slug === topic));
+      });
+      const records = matching.slice(offset, offset + limit);
+      const nextCursor = offset + limit < matching.length ? `browser-${offset + limit}` : null;
+      response.writeHead(200, { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ records, nextCursor }));
       return;
     }
     if (pathname === '/v1/feed') {
@@ -295,8 +350,13 @@ if (errors.length === 0) {
         await page.locator('#header-search-input').fill('Selene');
         await page.locator('#header-search-input').press('Enter');
         await page.waitForURL(/\/search\?q=Selene$/);
+        await page.waitForFunction(
+          (expected) => document.querySelector('[data-search-results]')?.getAttribute('aria-busy') === 'false'
+            && document.querySelectorAll('[data-search-item]').length === expected,
+          seleneSearchCount,
+        );
         check(new URL(page.url()).searchParams.get('q') === 'Selene', `${label}: header araması sorguyu URL'ye taşımadı.`);
-        check((await page.locator('[data-search-summary]').textContent())?.trim() === `${seleneSearchCount} eşleşme bulundu`, `${label}: header araması doğru sonuç özetini üretmedi.`);
+        check((await page.locator('[data-search-summary]').textContent())?.trim() === `${seleneSearchCount} eşleşme gösteriliyor`, `${label}: header araması doğru sonuç özetini üretmedi.`);
       }
 
       if (viewport.width === 390 || viewport.width === 1440) {
@@ -352,6 +412,11 @@ if (errors.length === 0) {
 
         await page.goto(`${baseUrl}/search?q=Selene`, { waitUntil: 'load' });
         await page.waitForSelector('[data-search-item]:not([hidden])');
+        await page.waitForFunction(
+          (expected) => document.querySelector('[data-search-results]')?.getAttribute('aria-busy') === 'false'
+            && document.querySelectorAll('[data-search-item]').length === expected,
+          seleneSearchCount,
+        );
         const searchState = await page.evaluate(() => ({
           innerWidth,
           scrollWidth: document.documentElement.scrollWidth,
@@ -361,12 +426,17 @@ if (errors.length === 0) {
             .map((item) => item.textContent.trim().replace(/\s+/g, ' ')),
         }));
         check(searchState.scrollWidth <= searchState.innerWidth, `${label}: arama sayfası yatay taşıyor.`);
-        check(searchState.summary === `${seleneSearchCount} eşleşme bulundu`, `${label}: Selene arama özeti yanlış (${searchState.summary}).`);
+        check(searchState.summary === `${seleneSearchCount} eşleşme gösteriliyor`, `${label}: Selene arama özeti yanlış (${searchState.summary}).`);
         check(searchState.visible.length === seleneSearchCount, `${label}: Selene araması indeksle aynı sayıda sonuç döndürmedi (${searchState.visible.length}/${seleneSearchCount}).`);
         check(searchState.visible.every((item) => normalizeSearchText(item).includes('selene')), `${label}: Selene aramasında ilgisiz sonuç var.`);
         check(await page.locator('[data-search-item][href="/posts/dynamic-selene-search-record"]').isVisible(), `${label}: D1 feed kaydı arama sonuçlarına eklenmedi.`);
 
         await page.locator('[data-search-topic-filter]').selectOption('editoryal');
+        await page.waitForFunction(
+          (expected) => document.querySelector('[data-search-results]')?.getAttribute('aria-busy') === 'false'
+            && document.querySelectorAll('[data-search-item]').length === expected,
+          seleneEditorialCount,
+        );
         const topicFiltered = await page.evaluate(() => ({
           url: location.href,
           visible: [...document.querySelectorAll('[data-search-item]')]
@@ -389,15 +459,27 @@ if (errors.length === 0) {
 
         await page.goto(`${baseUrl}/search`, { waitUntil: 'load' });
         await page.waitForSelector('[data-search-item]:not([hidden])');
+        await page.waitForSelector('[data-search-more]:not([hidden])');
+        const firstRecordPageCount = await page.locator('[data-search-record-results] [data-search-item]').count();
+        await page.locator('[data-search-more]').click();
+        await page.waitForFunction(
+          (firstCount) => document.querySelectorAll('[data-search-record-results] [data-search-item]').length > firstCount
+            && document.querySelector('[data-search-more]')?.hasAttribute('hidden'),
+          firstRecordPageCount,
+        );
+        check(await page.locator('[data-search-record-results] [data-search-item]').count() === browserSearchRecords.length, `${label}: arama sonraki cursor sayfasını eklemedi.`);
         await page.locator('[data-search-agent-filter]').selectOption('nyx');
+        await page.waitForFunction(() => new URL(location.href).searchParams.get('agent') === 'nyx'
+          && document.querySelector('[data-search-results]')?.getAttribute('aria-busy') === 'false');
         const filteredWithoutQuery = await page.evaluate(() => {
           const visible = [...document.querySelectorAll('[data-search-item]')]
             .filter((item) => getComputedStyle(item).display !== 'none').length;
           return { visible, summary: document.querySelector('[data-search-summary]')?.textContent?.trim() };
         });
-        check(filteredWithoutQuery.summary === `${filteredWithoutQuery.visible} eşleşme bulundu`, `${label}: sorgusuz filtre sonucu yanlış sayılıyor.`);
+        check(filteredWithoutQuery.summary === `${filteredWithoutQuery.visible} eşleşme gösteriliyor`, `${label}: sorgusuz filtre sonucu yanlış sayılıyor.`);
 
         await page.locator('[data-search-input]').fill('eşleşmeyecek-bir-ifade');
+        await page.waitForFunction(() => document.querySelector('[data-search-empty]')?.hasAttribute('hidden') === false);
         check(await page.locator('[data-search-empty]').isVisible(), `${label}: sonuçsuz aramada boş durum görünmüyor.`);
         check(await page.evaluate(() => [...document.querySelectorAll('[data-search-item]')].every((item) => getComputedStyle(item).display === 'none')), `${label}: sonuçsuz aramada kayıtlar gizlenmedi.`);
 

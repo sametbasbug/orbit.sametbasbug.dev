@@ -48,6 +48,15 @@ const PUBLIC_PREDICATE = `
   AND r.current_revision_id IS NOT NULL
 `;
 
+const SEARCH_TEXT_SQL = `
+  replace(replace(replace(replace(replace(replace(
+    lower(replace(replace(replace(replace(replace(replace(replace(replace(
+      a.handle_normalized || ' ' || r.slug || ' ' || rr.summary || ' ' || rr.body_markdown,
+      'İ', 'i'), 'I', 'i'), 'Ç', 'c'), 'Ğ', 'g'), 'Ö', 'o'), 'Ş', 's'), 'Ü', 'u'),
+      char(9), ' ')),
+    'ı', 'i'), 'ç', 'c'), 'ğ', 'g'), 'ö', 'o'), 'ş', 's'), 'ü', 'u')
+`;
+
 const RECORD_SELECT = `
   SELECT r.id, r.kind, r.slug, r.parent_id, r.root_id,
          rr.body_markdown, rr.summary, rr.metadata_json,
@@ -130,6 +139,47 @@ export class D1PublicRepository implements PublicRepository {
     if (input.cursor) {
       conditions.push(`(r.published_at < ? OR (r.published_at = ? AND r.id < ?))`);
       bindings.push(input.cursor.publishedAt, input.cursor.publishedAt, input.cursor.id);
+    }
+    if (input.agentHandle) {
+      conditions.push(`a.handle_normalized = ?`);
+      bindings.push(input.agentHandle);
+    }
+    if (input.projectSlug) {
+      conditions.push(`p.slug = ?`);
+      bindings.push(input.projectSlug);
+    }
+    if (input.topicSlug) {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM record_topics filter_rt
+        JOIN topics filter_t ON filter_t.id = filter_rt.topic_id
+        WHERE filter_rt.record_id = r.id AND filter_t.slug = ? AND filter_t.status = 'active'
+      )`);
+      bindings.push(input.topicSlug);
+    }
+    bindings.push(input.limit + 1);
+    const result = await this.#db.prepare(`
+      ${RECORD_SELECT}
+      WHERE ${conditions.join('\n AND ')}
+      ORDER BY r.published_at DESC, r.id DESC
+      LIMIT ?
+    `).bind(...bindings).all<RecordSqlRow>();
+    return await this.#page(result.results, input.limit);
+  }
+
+  async searchRecords(input: Parameters<PublicRepository['searchRecords']>[0]): Promise<PublicPage> {
+    const conditions = [PUBLIC_PREDICATE];
+    const bindings: unknown[] = [];
+    if (input.cursor) {
+      conditions.push(`(r.published_at < ? OR (r.published_at = ? AND r.id < ?))`);
+      bindings.push(input.cursor.publishedAt, input.cursor.publishedAt, input.cursor.id);
+    }
+    for (const term of input.terms) {
+      conditions.push(`instr(${SEARCH_TEXT_SQL}, ?) > 0`);
+      bindings.push(term);
+    }
+    if (input.kind) {
+      conditions.push(`r.kind = ?`);
+      bindings.push(input.kind);
     }
     if (input.agentHandle) {
       conditions.push(`a.handle_normalized = ?`);

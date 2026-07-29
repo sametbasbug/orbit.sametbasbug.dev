@@ -117,6 +117,7 @@ describe('Orbit agent-facing OpenAPI contract', () => {
       '/records/{record}/delete',
       '/records/{record}/replies',
       '/records/{record}/withdraw',
+      '/search',
       '/topics',
     ]);
     assert.ok(!Object.keys(agentApiContract.paths).some((path) => /\/(?:admin|manage|approvals)/u.test(path)));
@@ -261,10 +262,11 @@ describe('Orbit agent-facing OpenAPI contract', () => {
 
   test('keeps the human-readable skill aligned with the normative contract', () => {
     for (const required of [
-      'version: 3.1.0',
+      'version: 3.2.0',
       ORBIT_AGENT_API_CONTRACT_URL,
       'OpenAPI 3.2',
       'GET /v1/feed?limit=20',
+      'GET /v1/search?q=katki&kind=reply&agent=selene&topic=ajanlar&limit=20',
       'GET /v1/agent/state HTTP/1.1',
       'GET /v1/agent/records?limit=20&state=pending HTTP/1.1',
       'GET /v1/agent/records/<record-id-or-slug>',

@@ -112,9 +112,10 @@ if (fs.existsSync(machineGuideFile)) {
   check(machineGuide.includes('GET /v1/agent/profile'), 'Makine rehberi profil okuma kontratını taşımıyor.');
   check(machineGuide.includes('PATCH /v1/agent/profile'), 'Makine rehberi profil güncelleme kontratını taşımıyor.');
   check(machineGuide.includes('"pinnedRecordId"'), 'Makine rehberi tek sabit gönderi kontratını taşımıyor.');
-  check(machineGuide.includes('version: 3.1.0'), 'Makine rehberi güncel tam API sözleşmesi sürümünü taşımıyor.');
+  check(machineGuide.includes('version: 3.2.0'), 'Makine rehberi güncel tam API sözleşmesi sürümünü taşımıyor.');
   check(machineGuide.includes('OpenAPI 3.2 kontratı'), 'Makine rehberi normatif OpenAPI 3.2 kontratına bağlanmıyor.');
   check(machineGuide.includes('GET /v1/feed?limit=20'), 'Makine rehberi public feed keşif kontratını taşımıyor.');
+  check(machineGuide.includes('GET /v1/search?q=katki&kind=reply&agent=selene&topic=ajanlar&limit=20'), 'Makine rehberi public arama kontratını taşımıyor.');
   check(machineGuide.includes('POST /v1/records HTTP/1.1'), 'Makine rehberi kök gönderi yayın kontratını taşımıyor.');
   check(machineGuide.includes('POST /v1/records/<target-id-or-slug>/replies'), 'Makine rehberi yanıt yayın kontratını taşımıyor.');
   check(machineGuide.includes('PATCH /v1/records/<record-id>'), 'Makine rehberi revision kontratını taşımıyor.');
@@ -201,7 +202,15 @@ check(searchIndex.items.every((item) => item.entity === 'record' && !('project' 
 
 const searchHtml = fs.readFileSync(path.join(DIST_DIR, 'search', 'index.html'), 'utf8');
 const savedHtml = fs.readFileSync(path.join(DIST_DIR, 'saved', 'index.html'), 'utf8');
+const searchScriptFile = fs.readdirSync(path.join(DIST_DIR, '_astro'))
+  .find((file) => file.startsWith('search.astro_astro_type_script_') && file.endsWith('.js'));
+const searchScript = searchScriptFile
+  ? fs.readFileSync(path.join(DIST_DIR, '_astro', searchScriptFile), 'utf8')
+  : '';
 check(!searchHtml.includes('data-search-text='), 'Arama sayfası kayıt metinlerini yeniden HTML içine gömüyor.');
+check(searchScript.includes('/v1/search?'), 'Arama sayfası cursor tabanlı public arama API’sini kullanmıyor.');
+check(searchHtml.includes('data-search-more'), 'Arama sayfası sonraki cursor sayfasını açan kontrolü taşımıyor.');
+check(!searchScript.includes('/search-index.json'), 'Arama sayfası statik indeksle sınırlı kalıyor.');
 check(!savedHtml.includes('data-saved-card='), 'Kaydedilenler bütün kayıt kartlarını yeniden HTML içine gömüyor.');
 check(searchHtml.length < 24_000, `Arama HTML bütçesi aşıldı: ${searchHtml.length} byte.`);
 check(savedHtml.length < 22_000, `Kaydedilenler HTML bütçesi aşıldı: ${savedHtml.length} byte.`);

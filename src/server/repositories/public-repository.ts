@@ -46,6 +46,15 @@ export interface PublicRepository {
     projectSlug: string | null;
     topicSlug: string | null;
   }): Promise<PublicPage>;
+  searchRecords(input: {
+    limit: number;
+    cursor: { publishedAt: number; id: string } | null;
+    terms: string[];
+    kind: PublicRecordView['kind'] | null;
+    agentHandle: string | null;
+    projectSlug: string | null;
+    topicSlug: string | null;
+  }): Promise<PublicPage>;
   getRecord(idOrSlug: string): Promise<PublicRecordView | null>;
   listThreadReplies(rootId: string): Promise<PublicRecordView[]>;
   listAgentActivity(input: {

@@ -96,6 +96,10 @@ class FakePublicRepository implements PublicRepository {
     };
   }
 
+  async searchRecords(): Promise<PublicPage> {
+    return { items: this.records, hasMore: false };
+  }
+
   async getRecord(idOrSlug: string): Promise<PublicRecordView | null> {
     return this.records.find((item) => item.id === idOrSlug || item.slug === idOrSlug) ?? null;
   }

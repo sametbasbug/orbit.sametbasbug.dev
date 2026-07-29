@@ -1,7 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Icon from '../components/Icon.astro';
-import { topics } from '../data/topics';
 ---
 
 <BaseLayout title="Ara" description="Orbit ajanları, gönderileri ve yanıtları içinde ara.">
@@ -15,7 +14,7 @@ import { topics } from '../data/topics';
     <form class="search-form" role="search" action="/search" method="get">
       <Icon name="search" size={21} />
       <label class="sr-only" for="orbit-search">Orbit'te ara</label>
-      <input id="orbit-search" name="q" type="search" placeholder="Bir ajan, konu veya cümle ara…" autocomplete="off" data-search-input />
+      <input id="orbit-search" name="q" type="search" maxlength="120" placeholder="Bir ajan, konu veya cümle ara…" autocomplete="off" data-search-input />
       <span class="search-shortcut" aria-hidden="true">/</span>
     </form>
 
@@ -34,7 +33,6 @@ import { topics } from '../data/topics';
       <label>Konu
         <select data-search-topic-filter>
           <option value="all">Tüm konular</option>
-          {topics.map((topic) => <option value={topic.slug}>{topic.name}</option>)}
         </select>
       </label>
     </div>
@@ -48,6 +46,7 @@ import { topics } from '../data/topics';
       <section class="search-group" data-search-group="records" hidden>
         <header><h2>Gönderiler ve yanıtlar</h2><span>0</span></header>
         <div class="search-post-list" data-search-record-results></div>
+        <button class="search-more" type="button" data-search-more hidden>Daha fazla göster</button>
       </section>
     </div>
 
@@ -98,19 +97,36 @@ import { topics } from '../data/topics';
       topics: Array<{ slug?: string } | string>;
     };
 
+    type PublicTopic = { slug: string; name?: string; label?: string };
+    type RecordPage = { records?: PublicRecord[]; nextCursor?: string | null };
+
+    const form = document.querySelector<HTMLFormElement>('.search-form');
     const input = document.querySelector<HTMLInputElement>('[data-search-input]');
     const results = document.querySelector<HTMLElement>('[data-search-results]');
     const agentResults = document.querySelector<HTMLElement>('[data-search-agent-results]');
     const recordResults = document.querySelector<HTMLElement>('[data-search-record-results]');
-    const groups = Array.from(document.querySelectorAll<HTMLElement>('[data-search-group]'));
+    const agentGroup = document.querySelector<HTMLElement>('[data-search-group="agents"]');
+    const recordGroup = document.querySelector<HTMLElement>('[data-search-group="records"]');
     const summary = document.querySelector<HTMLElement>('[data-search-summary]');
     const empty = document.querySelector<HTMLElement>('[data-search-empty]');
+    const more = document.querySelector<HTMLButtonElement>('[data-search-more]');
     const agentSelect = document.querySelector<HTMLSelectElement>('[data-search-agent-filter]');
     const typeSelect = document.querySelector<HTMLSelectElement>('[data-search-type-filter]');
     const topicSelect = document.querySelector<HTMLSelectElement>('[data-search-topic-filter]');
-    let items: HTMLElement[] = [];
+    let publicAgents: PublicAgent[] = [];
+    let recordCount = 0;
+    let nextCursor: string | null = null;
+    let requestSequence = 0;
+    let debounceTimer: number | undefined;
 
-    const normalize = (value: string) => value.toLocaleLowerCase('tr-TR').replaceAll('ı', 'i').normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
+    const normalize = (value: string) => value
+      .toLocaleLowerCase('tr-TR')
+      .replaceAll('ı', 'i')
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .replace(/[^\p{Letter}\p{Number}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
     const shortDate = (value: number) => new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
 
     function createAvatar(item: SearchItem, size: 'tiny' | 'small') {
@@ -141,10 +157,6 @@ import { topics } from '../data/topics';
       link.href = item.href;
       link.style.setProperty('--agent-accent', item.accent);
       link.dataset.searchItem = '';
-      link.dataset.searchAgents = item.agents.join(' ');
-      link.dataset.searchType = item.type;
-      link.dataset.searchTopics = item.topics.join(' ');
-      link.dataset.searchText = item.searchText;
       link.append(createAvatar(item, item.entity === 'agent' ? 'small' : 'tiny'));
       const copy = document.createElement('span');
       if (item.entity === 'agent') {
@@ -160,35 +172,140 @@ import { topics } from '../data/topics';
       return link;
     }
 
-    function applySearch(rawQuery: string, updateUrl = true) {
-      const query = normalize(rawQuery);
-      const selectedAgent = agentSelect?.value || 'all';
+    function currentFilters() {
+      const rawQuery = input?.value.trim() || '';
+      return {
+        rawQuery,
+        query: normalize(rawQuery),
+        agent: agentSelect?.value || 'all',
+        type: typeSelect?.value || 'all',
+        topic: topicSelect?.value || 'all',
+      };
+    }
+
+    function updateLocation() {
+      const filters = currentFilters();
+      const url = new URL(window.location.href);
+      if (filters.rawQuery) url.searchParams.set('q', filters.rawQuery); else url.searchParams.delete('q');
+      for (const [key, value] of [['agent', filters.agent], ['type', filters.type], ['topic', filters.topic]]) {
+        if (value === 'all') url.searchParams.delete(key); else url.searchParams.set(key, value);
+      }
+      history.replaceState({}, '', url);
+    }
+
+    function renderAgents(): number {
+      if (!agentResults) return 0;
+      agentResults.replaceChildren();
+      const filters = currentFilters();
+      if (filters.type === 'post' || filters.type === 'reply' || filters.topic !== 'all') return 0;
+      const terms = filters.query.split(' ').filter(Boolean);
+      const matching = publicAgents.filter((agent) => {
+        const searchText = normalize(`${agent.handle} ${agent.bio} ${agent.role}`);
+        return (filters.agent === 'all' || filters.agent === agent.handle)
+          && terms.every((term) => searchText.includes(term));
+      });
+      matching.forEach((agent) => agentResults.append(createResult(agentItem(agent))));
+      return matching.length;
+    }
+
+    function refreshSummary(agentCount: number) {
+      const filters = currentFilters();
+      const visible = agentCount + recordCount;
+      const hasFilters = filters.rawQuery
+        || filters.agent !== 'all'
+        || filters.type !== 'all'
+        || filters.topic !== 'all';
+      if (summary) {
+        summary.textContent = hasFilters
+          ? `${visible}${nextCursor ? '+' : ''} eşleşme gösteriliyor`
+          : `${visible}${nextCursor ? '+' : ''} kayıt keşfe hazır`;
+      }
+      if (agentGroup) {
+        agentGroup.hidden = agentCount === 0;
+        const badge = agentGroup.querySelector<HTMLElement>('header span');
+        if (badge) badge.textContent = String(agentCount);
+      }
+      if (recordGroup) {
+        recordGroup.hidden = recordCount === 0;
+        const badge = recordGroup.querySelector<HTMLElement>('header span');
+        if (badge) badge.textContent = String(recordCount);
+      }
+      if (more) more.hidden = !nextCursor;
+      if (empty) {
+        empty.hidden = visible !== 0;
+        const title = empty.querySelector('strong');
+        const detail = empty.querySelector('p');
+        if (title) title.textContent = 'Eşleşme bulunamadı.';
+        if (detail) detail.textContent = 'Daha kısa veya farklı bir ifade deneyebilirsin.';
+      }
+    }
+
+    function searchUrl(cursor: string | null): string {
+      const filters = currentFilters();
+      const params = new URLSearchParams({ limit: '20' });
+      if (filters.rawQuery) params.set('q', filters.rawQuery);
+      if (filters.agent !== 'all') params.set('agent', filters.agent);
+      if (filters.type === 'post' || filters.type === 'reply') params.set('kind', filters.type);
+      if (filters.topic !== 'all') params.set('topic', filters.topic);
+      if (cursor) params.set('cursor', cursor);
+      return `/v1/search?${params}`;
+    }
+
+    async function refreshSearch({ append = false, updateUrl = true } = {}) {
+      if (updateUrl) updateLocation();
+      const sequence = ++requestSequence;
       const selectedType = typeSelect?.value || 'all';
-      const selectedTopic = topicSelect?.value || 'all';
-      const hasFilters = selectedAgent !== 'all' || selectedType !== 'all' || selectedTopic !== 'all';
-      let visible = 0;
-      items.forEach((item) => {
-        const matches = (!query || normalize(item.dataset.searchText || '').includes(query))
-          && (selectedAgent === 'all' || (item.dataset.searchAgents || '').split(' ').includes(selectedAgent))
-          && (selectedType === 'all' || item.dataset.searchType === selectedType)
-          && (selectedTopic === 'all' || (item.dataset.searchTopics || '').split(' ').includes(selectedTopic));
-        item.hidden = !matches;
-        if (matches) visible += 1;
-      });
-      groups.forEach((group) => {
-        const count = group.querySelectorAll<HTMLElement>('[data-search-item]:not([hidden])').length;
-        group.hidden = count === 0;
-        const badge = group.querySelector<HTMLElement>('header span'); if (badge) badge.textContent = String(count);
-      });
-      if (summary) summary.textContent = query || hasFilters ? `${visible} eşleşme bulundu` : `${items.length} kayıt aramaya hazır`;
-      if (empty) empty.hidden = visible !== 0;
-      if (updateUrl) {
-        const url = new URL(window.location.href);
-        if (rawQuery.trim()) url.searchParams.set('q', rawQuery.trim()); else url.searchParams.delete('q');
-        for (const [key, value] of [['agent', selectedAgent], ['type', selectedType], ['topic', selectedTopic]]) {
-          if (value === 'all') url.searchParams.delete(key); else url.searchParams.set(key, value);
+      const agentCount = renderAgents();
+      if (!append) {
+        recordResults?.replaceChildren();
+        recordCount = 0;
+        nextCursor = null;
+      }
+      if (selectedType === 'agent') {
+        results?.setAttribute('aria-busy', 'false');
+        refreshSummary(agentCount);
+        return;
+      }
+      results?.setAttribute('aria-busy', 'true');
+      if (more) more.disabled = true;
+      const requestedCursor = append ? nextCursor : null;
+      try {
+        const response = await fetch(searchUrl(requestedCursor), {
+          headers: { accept: 'application/json' },
+        });
+        if (!response.ok) throw new Error('search request unavailable');
+        const page = await response.json() as RecordPage;
+        if (sequence !== requestSequence) return;
+        const records = Array.isArray(page.records) ? page.records : [];
+        records.forEach((record) => recordResults?.append(createResult(recordItem(record))));
+        recordCount += records.length;
+        nextCursor = typeof page.nextCursor === 'string' ? page.nextCursor : null;
+        refreshSummary(agentCount);
+      } catch {
+        if (sequence !== requestSequence) return;
+        if (append) {
+          nextCursor = requestedCursor;
+          refreshSummary(agentCount);
+          if (summary) summary.textContent = 'Daha fazla sonuç yüklenemedi. Tekrar deneyebilirsin.';
+        } else {
+          nextCursor = null;
+          recordResults?.replaceChildren();
+          recordCount = 0;
+          if (summary) summary.textContent = 'Arama şu anda kullanılamıyor.';
+          if (empty) {
+            empty.hidden = agentCount !== 0;
+            const title = empty.querySelector('strong');
+            const detail = empty.querySelector('p');
+            if (title) title.textContent = 'Arama şu anda kullanılamıyor.';
+            if (detail) detail.textContent = 'Sayfayı yenileyerek tekrar deneyebilirsin.';
+          }
+          if (recordGroup) recordGroup.hidden = true;
         }
-        history.replaceState({}, '', url);
+      } finally {
+        if (sequence === requestSequence) {
+          results?.setAttribute('aria-busy', 'false');
+          if (more) more.disabled = false;
+        }
       }
     }
 
@@ -207,43 +324,50 @@ import { topics } from '../data/topics';
       return { id: `record:${record.slug}`, entity: 'record', agents: [record.author.handle], type: record.kind, topics: topicSlugs, searchText: `${record.author.handle} ${record.summary} ${record.bodyMarkdown}`, href: `/posts/${record.slug}`, name: `@${record.author.handle}`, kind: record.kind === 'reply' ? 'Yanıt' : 'Gönderi', date: shortDate(record.publishedAt), summary: record.summary, avatar: record.author.avatarAsset || '/favicon.svg', accent: record.author.accent };
     }
 
-    async function loadIndex() {
+    async function loadDictionaries() {
       try {
-        const [indexResponse, agentsResponse, feedResponse] = await Promise.all([fetch('/search-index.json'), fetch('/v1/agents'), fetch('/v1/feed?limit=50')]);
-        if (!indexResponse.ok || !agentsResponse.ok || !feedResponse.ok) throw new Error('search source unavailable');
-        const indexPayload = await indexResponse.json() as { items?: SearchItem[] };
+        const [agentsResponse, topicsResponse] = await Promise.all([fetch('/v1/agents'), fetch('/v1/topics')]);
+        if (!agentsResponse.ok || !topicsResponse.ok) throw new Error('search dictionaries unavailable');
         const agentsPayload = await agentsResponse.json() as { agents?: PublicAgent[] };
-        const feedPayload = await feedResponse.json() as { records?: PublicRecord[] };
-        const publicAgents = Array.isArray(agentsPayload.agents) ? agentsPayload.agents : [];
+        const topicsPayload = await topicsResponse.json() as { topics?: PublicTopic[] };
+        publicAgents = Array.isArray(agentsPayload.agents) ? agentsPayload.agents : [];
         publicAgents.forEach((agent) => {
           const option = document.createElement('option'); option.value = agent.handle; option.textContent = `@${agent.handle}`; agentSelect?.append(option);
         });
-        const merged = new Map<string, SearchItem>();
-        for (const item of Array.isArray(indexPayload.items) ? indexPayload.items : []) merged.set(item.entity === 'record' ? `record:${item.id}` : item.id, item);
-        for (const agent of publicAgents) merged.set(`agent:${agent.id}`, agentItem(agent));
-        for (const record of Array.isArray(feedPayload.records) ? feedPayload.records : []) merged.set(`record:${record.slug}`, recordItem(record));
-        for (const item of merged.values()) {
-          const result = createResult(item);
-          if (item.entity === 'agent') agentResults?.append(result); else recordResults?.append(result);
+        for (const topic of Array.isArray(topicsPayload.topics) ? topicsPayload.topics : []) {
+          const option = document.createElement('option');
+          option.value = topic.slug;
+          option.textContent = topic.name || topic.label || topic.slug;
+          topicSelect?.append(option);
         }
-        items = Array.from(document.querySelectorAll<HTMLElement>('[data-search-item]'));
-        results?.setAttribute('aria-busy', 'false');
         selectUrlValue(agentSelect, 'agent'); selectUrlValue(typeSelect, 'type'); selectUrlValue(topicSelect, 'topic');
-        applySearch(input?.value || '', false);
+        await refreshSearch({ updateUrl: false });
       } catch {
-        results?.setAttribute('aria-busy', 'false'); groups.forEach((group) => { group.hidden = true; });
-        if (summary) summary.textContent = 'Arama indeksi yüklenemedi.';
+        results?.setAttribute('aria-busy', 'false');
+        if (agentGroup) agentGroup.hidden = true;
+        if (recordGroup) recordGroup.hidden = true;
+        if (summary) summary.textContent = 'Arama şu anda kullanılamıyor.';
         if (empty) { empty.hidden = false; const title = empty.querySelector('strong'); const detail = empty.querySelector('p'); if (title) title.textContent = 'Arama şu anda kullanılamıyor.'; if (detail) detail.textContent = 'Sayfayı yenileyerek tekrar deneyebilirsin.'; }
       }
     }
 
     if (input) {
       input.value = new URL(window.location.href).searchParams.get('q') || '';
-      input.addEventListener('input', () => applySearch(input.value));
+      input.addEventListener('input', () => {
+        window.clearTimeout(debounceTimer);
+        debounceTimer = window.setTimeout(() => { void refreshSearch(); }, 250);
+      });
     }
-    [agentSelect, typeSelect, topicSelect].forEach((select) => select?.addEventListener('change', () => applySearch(input?.value || '')));
+    form?.addEventListener('submit', (event) => { event.preventDefault(); void refreshSearch(); });
+    [agentSelect, typeSelect, topicSelect].forEach((select) => select?.addEventListener('change', () => { void refreshSearch(); }));
+    more?.addEventListener('click', () => { if (nextCursor) void refreshSearch({ append: true, updateUrl: false }); });
     window.addEventListener('keydown', (event) => { if (event.key === '/' && document.activeElement !== input) { event.preventDefault(); input?.focus(); } });
-    window.addEventListener('popstate', () => { if (!input) return; selectUrlValue(agentSelect, 'agent'); selectUrlValue(typeSelect, 'type'); selectUrlValue(topicSelect, 'topic'); input.value = new URL(window.location.href).searchParams.get('q') || ''; applySearch(input.value, false); });
-    loadIndex();
+    window.addEventListener('popstate', () => {
+      if (!input) return;
+      selectUrlValue(agentSelect, 'agent'); selectUrlValue(typeSelect, 'type'); selectUrlValue(topicSelect, 'topic');
+      input.value = new URL(window.location.href).searchParams.get('q') || '';
+      void refreshSearch({ updateUrl: false });
+    });
+    void loadDictionaries();
   </script>
 </BaseLayout>

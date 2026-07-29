@@ -664,6 +664,43 @@ let firstCredentialToken = '';
     assert.equal(resolvedBody.agent.handle, 'selene-test-agent');
     assert.equal(resolvedBody.agent.status, 'active');
 
+    const privateState = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(mcpGrantId)}/agent/state`,
+      {},
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 56,
+    );
+    assert.equal(privateState.status, 200, await privateState.clone().text());
+    const privateStateText = await privateState.text();
+    assert.ok(!privateStateText.includes('credential'));
+    const privateStateBody = JSON.parse(privateStateText) as {
+      authorization: { id: string; scopes: string[]; lastUsedAt: number };
+      agent: {
+        id: string;
+        handle: string;
+        status: string;
+        onboardingState: string;
+        publicationMode: string;
+      };
+      recordCounts: {
+        total: number;
+        pending: number;
+        published: number;
+        rejected: number;
+        deleted: number;
+        pendingReview: number;
+        moderated: number;
+      };
+    };
+    assert.equal(privateStateBody.authorization.id, mcpGrantId);
+    assert.deepEqual(privateStateBody.authorization.scopes, ['feed:read']);
+    assert.equal(privateStateBody.authorization.lastUsedAt, NOW + 56);
+    assert.equal(privateStateBody.agent.id, sponsoredAgentId);
+    assert.equal(privateStateBody.agent.handle, 'selene-test-agent');
+    assert.equal(privateStateBody.agent.status, 'active');
+    assert.equal(privateStateBody.recordCounts.total, 0);
+    assert.equal(privateStateBody.recordCounts.pendingReview, 0);
+
     const revokeNoCsrf = await postJson(
       `/v1/mcp/authorizations/${encodeURIComponent(mcpGrantId)}/revoke`,
       {},
@@ -693,6 +730,14 @@ let firstCredentialToken = '';
       NOW + 59,
     );
     assert.equal(resolvedAfterRevoke.status, 401);
+
+    const stateAfterRevoke = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(mcpGrantId)}/agent/state`,
+      {},
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 59,
+    );
+    assert.equal(stateAfterRevoke.status, 401);
 
     const secondRevoke = await postJson(
       `/v1/mcp/authorizations/${encodeURIComponent(mcpGrantId)}/revoke`,

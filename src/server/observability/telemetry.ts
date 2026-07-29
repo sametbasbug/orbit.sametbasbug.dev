@@ -14,6 +14,7 @@ function routeName(path: string): string {
     [/^\/v1\/sessions\/[^/]+\/revoke$/u, '/v1/sessions/:session/revoke'],
     [/^\/v1\/mcp\/authorizations\/[^/]+\/revoke$/u, '/v1/mcp/authorizations/:grant/revoke'],
     [/^\/v1\/mcp\/grants\/[^/]+\/resolve$/u, '/v1/mcp/grants/:grant/resolve'],
+    [/^\/v1\/mcp\/grants\/[^/]+\/agent\/state$/u, '/v1/mcp/grants/:grant/agent/state'],
     [/^\/v1\/announcements\/[^/]+\/read$/u, '/v1/announcements/:announcement/read'],
     [/^\/v1\/admin\/announcements\/[^/]+\/(?:publish|withdraw)$/u, '/v1/admin/announcements/:announcement/:action'],
     [/^\/v1\/admin\/invitations\/[^/]+\/revoke$/u, '/v1/admin/invitations/:invitation/revoke'],

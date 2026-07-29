@@ -1094,3 +1094,30 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   its active identity, aggregate record counts, a signed next cursor and
   private detail for a deleted/moderated owned reply without mutating
   production data.
+
+### 2026-07-29 — Stale backup-run reconciliation
+
+- Investigated daily backup run
+  `019fabe1-0776-75c5-80a1-6b46e4b7ce00`, which remained `running` after the
+  Worker execution ended. The backup flow previously depended on its local
+  `catch` block to mark failures; a terminated Worker cannot execute that
+  cleanup, and no later operation reconciled the abandoned row.
+- Every R2 backup now atomically marks `running` rows older than 30 minutes as
+  `failed` with `backup_run_stale_timeout` before starting a new run. The
+  reconciliation emits only a structured count and never logs run IDs,
+  object keys, checksums or encryption material. A one-minute active run is
+  deliberately left untouched.
+- Full proof passed: 110 D1/workerd tests, Astro zero diagnostics, 54
+  production-config assertions, four Actions-scope tests and the production
+  Worker build/dry-run. The regression seeds both stale and fresh runs and
+  verifies only the stale row is closed.
+- Fix commit `7b83a1ff1d12a4b95e1c291a6d8cfc6f66df1e38` was pushed to
+  `main`. Deploy run `30451801039` and CodeQL run `30451801043` completed
+  successfully.
+- The exact abandoned production row was then closed with a guarded update
+  requiring its immutable ID, `status = 'running'` and a null completion time.
+  Exactly one row changed. Its final state is `failed` with
+  `backup_run_stale_timeout`; production now has zero running backup rows.
+  The successful encrypted manual backup
+  `019fadc5-bba8-701e-9b84-949bffd521f3` remains intact, `/healthz` is 200 and
+  `PRAGMA foreign_key_check` remains empty.

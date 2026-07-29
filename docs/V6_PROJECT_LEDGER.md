@@ -1206,3 +1206,47 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   `okc1` pages for agents and thread replies, while reusing an agents cursor
   on topics returned `400`. Future Plan 007 stage 5, retry and rate-limit
   metadata, is next.
+
+### 2026-07-29 — Dependency and supply-chain security remediation
+
+- Samet moved Future Plan 007's final security/dependency stage ahead of stage
+  5. The initial GitHub inventory contained two open high-severity Dependabot
+  alerts: PostCSS path traversal/source-map disclosure
+  (`GHSA-r28c-9q8g-f849`) and sharp/libvips vulnerabilities
+  (`GHSA-f88m-g3jw-g9cj`). The npm tree reported five high and one moderate
+  finding across PostCSS, sharp, Wrangler, Miniflare, Cloudflare Vite Plugin
+  and AJV. Code scanning and secret scanning had no open alerts.
+- Updated Astro `7.1.3 → 7.1.5`, Cloudflare adapter `14.1.4 → 14.1.6`,
+  Wrangler `4.113.0 → 4.115.0`, Astro Check `0.9.9 → 0.9.10`, Workers types
+  `5.20260722.1 → 5.20260729.1` and Playwright Core `1.61.1 → 1.62.0`.
+  Lockfile resolution now uses Cloudflare Vite Plugin `1.48.0`, Miniflare
+  `4.20260722.1`, PostCSS `8.5.25`, sharp `0.35.2/0.35.3` and AJV `8.20.0`.
+  Deliberate exact pins remained exact.
+- Upgraded the verified production artifact handoff to
+  `actions/upload-artifact@v7` and `actions/download-artifact@v8`; the
+  fail-closed production workflow regression was advanced with them. Their
+  previous Dependabot PR failures were stale-version assertions rather than
+  runtime incompatibilities.
+- TypeScript remains pinned at `6.0.3`. Dependabot's `7.0.2` PR failed the
+  required checks and current `@astrojs/check 0.9.10` explicitly supports
+  TypeScript 5 or 6, not 7. Forcing the unsupported major was rejected; the PR
+  was closed with that evidence and will be revisited when the Astro toolchain
+  declares compatibility.
+- A clean `npm ci` reported zero vulnerabilities. All 365 installed registry
+  package signatures verified and 106 packages also had attestations. A later
+  npm advisory endpoint check returned 503 twice, so retries stopped; the
+  already verified lock tree and GitHub dependency graph remained the
+  authoritative closure proof.
+- Full local proof passed: 112 D1/workerd tests, 63 content assertions, 80 CLI
+  assertions, 1,856 site assertions, 384 browser assertions, Astro zero
+  diagnostics, 54 production-config assertions, four Actions-scope tests and
+  the Wrangler `4.115.0` production Worker build/dry-run.
+- Implementation commit
+  `a87e1801853476dd6afccc0483e4f87915dd7257` was pushed to `main`. Deploy run
+  `30459772254` passed with the new artifact actions and published Cloudflare
+  Worker version `ad938fac-498a-47f7-9212-66d502bdbc04`; CodeQL run
+  `30459774376` passed.
+- GitHub now reports zero open Dependabot alerts, zero code-scanning alerts,
+  zero secret-scanning alerts and no open Dependabot PR. No D1 migration,
+  production-data mutation, credential operation or cache purge occurred.
+  Future Plan 007 stage 5, retry and rate-limit metadata, remains next.

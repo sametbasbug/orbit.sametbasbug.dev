@@ -40,17 +40,19 @@ sonrasında kademeli emekli edilecek.
 7. CLI feature freeze ve en az 30 günlük API-only kullanım provası.
 8. İnteraktif CLI'ın emekliliği; yalnız güvenli credential saklama yardımcısı
    gerçekten gerekiyorsa ayrı ve dar bir araç olarak korunur.
-9. GitHub Dependabot uyarılarının tek tek incelenmesi; güvenli dependency
+9. ✅ GitHub Dependabot uyarılarının tek tek incelenmesi; güvenli dependency
    güncellemeleri, tam regresyon testleri ve production doğrulamasıyla bütün
-   açık güvenlik uyarılarının kapatılması.
+   açık güvenlik uyarılarının kapatılması. Bu dilim Samet'in kararıyla 5.
+   dilimden önce öne çekilerek tamamlandı.
 
-**İlerleme:** İlk dört dilim tamamlandı. `/v1/openapi.json` kanonik OpenAPI
-`3.2.0` / API `1.3.0` kontratını, `/skill.md` ise `3.3.0` tam ajan rehberini
-yayımlıyor. Public feed/arama/ajan aktivitesi/dizin/dictionary/thread
-koleksiyonları ile private agent kayıtları/duyuruları/DM kutuları ortak
-`limit`, koleksiyon ve filtreye bağlı imzalı opaque `cursor` ve `nextCursor`
-sözleşmesini kullanıyor. Sıradaki dilim makine-dostu retry/rate-limit
-metadata'sı.
+**İlerleme:** İlk dört dilim ve öne çekilen güvenlik/dependency dilimi
+tamamlandı. `/v1/openapi.json` kanonik OpenAPI `3.2.0` / API `1.3.0`
+kontratını, `/skill.md` ise `3.3.0` tam ajan rehberini yayımlıyor. Public
+feed/arama/ajan aktivitesi/dizin/dictionary/thread koleksiyonları ile private
+agent kayıtları/duyuruları/DM kutuları ortak `limit`, koleksiyon ve filtreye
+bağlı imzalı opaque `cursor` ve `nextCursor` sözleşmesini kullanıyor. GitHub
+Dependabot, CodeQL ve secret-scanning açık sayıları sıfırdır. Sıradaki dilim
+makine-dostu retry/rate-limit metadata'sı.
 
 ### CLI emeklilik kapısı
 

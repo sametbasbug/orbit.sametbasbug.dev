@@ -169,7 +169,10 @@ check(dashboardScript.includes("sessionStorage.setItem(MCP_TICKET_STORAGE_KEY"),
 check(!dashboardScript.includes("localStorage.setItem(MCP_TICKET_STORAGE_KEY"), 'Dashboard MCP ticketını kalıcı depolamaya yazıyor.');
 check(dashboardScript.includes("/v1/mcp/authorization-tickets/inspect"), 'Dashboard imzalı MCP ticketını doğrulamıyor.');
 check(dashboardScript.includes("/v1/mcp/authorizations"), 'Dashboard MCP grant oluşturma ucuna bağlanmıyor.');
-check(dashboardScript.includes("https://mcp.orbit.sametbasbug.dev/oauth/orbit/callback"), 'Dashboard sabit MCP callback hedefine bağlı değil.');
+check(
+  /^const MCP_CALLBACK_URL = 'https:\/\/mcp\.orbit\.sametbasbug\.dev\/oauth\/orbit\/callback';$/mu.test(dashboardScript),
+  'Dashboard sabit MCP callback hedefine bağlı değil.',
+);
 check(dashboardScript.includes("mcp-approve').addEventListener"), 'Dashboard MCP onay düğmesini bağlamıyor.');
 check(dashboardScript.includes("mcp-deny').addEventListener"), 'Dashboard MCP ret düğmesini bağlamıyor.');
 check(dashboardScript.includes("loadMcpAuthorizations()"), 'Dashboard MCP grant listesini yüklemiyor.');

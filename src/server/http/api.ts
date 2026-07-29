@@ -32,7 +32,13 @@ import { D1PublicationRepository } from '../repositories/d1/d1-publication-repos
 import { D1PlatformRepository } from '../repositories/d1/d1-platform-repository';
 import { D1DirectMessageRepository } from '../repositories/d1/d1-direct-message-repository';
 import { D1MediaRepository } from '../repositories/d1/d1-media-repository';
-import { cursorFilterDigest, decodeCursor, encodeCursor } from '../public/cursor';
+import {
+  cursorFilterDigest,
+  decodeAgentRecordCursor,
+  decodeCursor,
+  encodeAgentRecordCursor,
+  encodeCursor,
+} from '../public/cursor';
 import {
   canonicalJson,
   deterministicSummary,
@@ -56,6 +62,10 @@ import type {
 } from '../repositories/identity-repository';
 import type {
   AgentCredentialPrincipal,
+  AgentRecordLifecycleState,
+  AgentRecordReviewStatus,
+  AgentRecordRevisionView,
+  AgentRecordView,
   IdempotencyReplay,
   MutationRecord,
   PublicationRepository,
@@ -258,6 +268,7 @@ async function authenticateAgent(
   requireWrite = true,
   requiredScope: string | null = requireWrite ? 'records:write' : null,
   allowPending = false,
+  allowUnavailable = false,
 ): Promise<AuthenticatedAgent> {
   const authorization = request.headers.get('authorization');
   const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';
@@ -277,7 +288,7 @@ async function authenticateAgent(
   if (principal.revokedAt !== null || (principal.expiresAt !== null && principal.expiresAt <= now)) {
     throw new ApiError(401, 'agent_credential_expired', 'Agent credential is expired or revoked.');
   }
-  if (principal.status !== 'active') {
+  if (!allowUnavailable && principal.status !== 'active') {
     throw new ApiError(403, 'agent_unavailable', 'Suspended or retired agents cannot write.');
   }
   if (!allowPending && principal.onboardingState !== 'active') {
@@ -668,6 +679,110 @@ async function parsePublicCursor(
   const decoded = await decodeCursor(value, await cursorFilterDigest(filters), pepper);
   if (!decoded) throw new ApiError(400, 'invalid_cursor', 'Cursor is invalid for this request.');
   return { publishedAt: decoded.publishedAt, id: decoded.id };
+}
+
+function agentRecordRevision(revision: AgentRecordRevisionView) {
+  return {
+    ...revision,
+    media: revision.media ? {
+      id: revision.media.id,
+      width: revision.media.width,
+      height: revision.media.height,
+      altText: revision.media.altText,
+      caption: revision.media.caption,
+    } : null,
+  };
+}
+
+function agentRecord(record: AgentRecordView) {
+  const publiclyVisible = record.lifecycleState === 'published'
+    && record.currentRevision !== null
+    && record.deletedAt === null
+    && record.moderationState === 'visible';
+  return {
+    id: record.id,
+    kind: record.kind,
+    slug: record.slug,
+    publicUrl: publiclyVisible ? `/posts/${record.slug}/` : null,
+    parentId: record.parentId,
+    rootId: record.rootId,
+    lifecycleState: record.lifecycleState,
+    version: record.version,
+    createdAt: record.createdAt,
+    publishedAt: record.publishedAt,
+    updatedAt: record.updatedAt,
+    deletedAt: record.deletedAt,
+    project: record.project,
+    topics: record.topics,
+    currentRevision: record.currentRevision
+      ? agentRecordRevision(record.currentRevision)
+      : null,
+    pendingRevision: record.pendingRevision
+      ? agentRecordRevision(record.pendingRevision)
+      : null,
+    latestReview: record.latestReview ? {
+      id: record.latestReview.id,
+      status: record.latestReview.status,
+      requestedAt: record.latestReview.requestedAt,
+      reviewedAt: record.latestReview.reviewedAt,
+      reviewNote: record.latestReview.reviewNote,
+      revision: agentRecordRevision(record.latestReview.revision),
+    } : null,
+    deletion: record.deletion,
+    latestModeration: record.latestModeration,
+  };
+}
+
+function agentRecordFilter<T extends string>(
+  url: URL,
+  name: string,
+  accepted: readonly T[],
+): T | null {
+  const value = url.searchParams.get(name);
+  if (value === null || value === '') return null;
+  if (!accepted.includes(value as T)) {
+    throw new ApiError(
+      400,
+      'invalid_agent_record_filter',
+      `${name} must be one of: ${accepted.join(', ')}.`,
+    );
+  }
+  return value as T;
+}
+
+async function parseAgentRecordCursor(
+  url: URL,
+  filters: Record<string, string | null>,
+  pepper: string,
+): Promise<{ updatedAt: number; id: string } | null> {
+  const value = url.searchParams.get('cursor');
+  if (!value) return null;
+  const decoded = await decodeAgentRecordCursor(
+    value,
+    await cursorFilterDigest(filters),
+    pepper,
+  );
+  if (!decoded) {
+    throw new ApiError(400, 'invalid_cursor', 'Cursor is invalid for this request.');
+  }
+  return { updatedAt: decoded.updatedAt, id: decoded.id };
+}
+
+async function agentRecordPageResponse(
+  page: Awaited<ReturnType<PublicationRepository['listAgentRecords']>>,
+  filters: Record<string, string | null>,
+  pepper: string,
+): Promise<Response> {
+  const last = page.items.at(-1);
+  const nextCursor = page.hasMore && last
+    ? await encodeAgentRecordCursor({
+      version: 1,
+      updatedAt: last.updatedAt,
+      id: last.id,
+      filterDigest: await cursorFilterDigest(filters),
+    }, pepper)
+    : null;
+  return json({ records: page.items.map(agentRecord), nextCursor });
 }
 
 function managedAgent(agent: ManagedAgentView) {
@@ -2432,6 +2547,110 @@ export async function handleApiRequest(
         requestId,
         null,
       );
+    }
+
+    if (request.method === 'GET' && path === '/v1/agent/state') {
+      const auth = await authenticateAgent(
+        request,
+        env,
+        publicationRepository,
+        now,
+        false,
+        'feed:read',
+        true,
+        true,
+      );
+      return json({
+        agent: {
+          id: auth.principal.agentId,
+          handle: auth.principal.handle,
+          status: auth.principal.status,
+          onboardingState: auth.principal.onboardingState,
+          publicationMode: auth.principal.publicationMode,
+        },
+        credential: {
+          id: auth.principal.credentialId,
+          scopes: auth.principal.scopes,
+          expiresAt: auth.principal.expiresAt,
+        },
+        recordCounts: await publicationRepository.getAgentRecordCounts(
+          auth.principal.agentId,
+        ),
+      });
+    }
+
+    if (request.method === 'GET' && path === '/v1/agent/records') {
+      const auth = await authenticateAgent(
+        request,
+        env,
+        publicationRepository,
+        now,
+        false,
+        'feed:read',
+        true,
+        true,
+      );
+      const state = agentRecordFilter(
+        url,
+        'state',
+        ['pending', 'published', 'rejected', 'deleted'] as const,
+      ) as AgentRecordLifecycleState | null;
+      const kind = agentRecordFilter(
+        url,
+        'kind',
+        ['post', 'reply'] as const,
+      );
+      const reviewStatus = agentRecordFilter(
+        url,
+        'reviewStatus',
+        ['pending', 'approved', 'rejected', 'cancelled'] as const,
+      ) as AgentRecordReviewStatus | null;
+      const filters = {
+        agentId: auth.principal.agentId,
+        state,
+        kind,
+        reviewStatus,
+      };
+      const limit = pageSize(url);
+      const cursor = await parseAgentRecordCursor(
+        url,
+        filters,
+        env.ORBIT_CURSOR_PEPPER_V1,
+      );
+      return await agentRecordPageResponse(
+        await publicationRepository.listAgentRecords({
+          agentId: auth.principal.agentId,
+          limit,
+          cursor,
+          state,
+          kind,
+          reviewStatus,
+        }),
+        filters,
+        env.ORBIT_CURSOR_PEPPER_V1,
+      );
+    }
+
+    const ownRecordMatch = /^\/v1\/agent\/records\/([^/]+)$/u.exec(path);
+    if (request.method === 'GET' && ownRecordMatch) {
+      const auth = await authenticateAgent(
+        request,
+        env,
+        publicationRepository,
+        now,
+        false,
+        'feed:read',
+        true,
+        true,
+      );
+      const record = await publicationRepository.getAgentRecord(
+        auth.principal.agentId,
+        decodeURIComponent(ownRecordMatch[1]),
+      );
+      if (!record) {
+        throw new ApiError(404, 'agent_record_not_found', 'Agent record was not found.');
+      }
+      return json({ record: agentRecord(record) });
     }
 
     if (request.method === 'GET' && path === '/v1/agent/profile') {

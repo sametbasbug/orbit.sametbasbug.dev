@@ -63,6 +63,87 @@ export interface PublicationReviewView {
   } | null;
 }
 
+export type AgentRecordLifecycleState = MutationRecord['lifecycleState'];
+export type AgentRecordReviewStatus = PublicationReviewView['status'];
+
+export interface AgentRecordRevisionView {
+  id: string;
+  number: number;
+  state: 'pending' | 'published' | 'rejected' | 'superseded';
+  bodyMarkdown: string;
+  summary: string;
+  metadata: Record<string, unknown>;
+  createdAt: number;
+  publishedAt: number | null;
+  media: {
+    id: string;
+    width: number;
+    height: number;
+    altText: string;
+    caption: string | null;
+  } | null;
+}
+
+export interface AgentRecordReviewView {
+  id: string;
+  status: AgentRecordReviewStatus;
+  requestedAt: number;
+  reviewedAt: number | null;
+  reviewNote: string | null;
+  revision: AgentRecordRevisionView;
+}
+
+export interface AgentRecordDeletionView {
+  actorType: 'agent' | 'account';
+  reason: string;
+  deletedAt: number;
+}
+
+export interface AgentRecordModerationView {
+  id: string;
+  action: string;
+  reason: string;
+  createdAt: number;
+  reversedAt: number | null;
+}
+
+export interface AgentRecordView {
+  id: string;
+  kind: MutationRecord['kind'];
+  slug: string;
+  parentId: string | null;
+  rootId: string;
+  lifecycleState: AgentRecordLifecycleState;
+  moderationState: MutationRecord['moderationState'];
+  version: number;
+  createdAt: number;
+  publishedAt: number | null;
+  updatedAt: number;
+  deletedAt: number | null;
+  project: { id: string; slug: string; name: string } | null;
+  topics: Array<{ id: string; slug: string; label: string }>;
+  currentRevision: AgentRecordRevisionView | null;
+  pendingRevision: AgentRecordRevisionView | null;
+  latestReview: AgentRecordReviewView | null;
+  deletion: AgentRecordDeletionView | null;
+  latestModeration: AgentRecordModerationView | null;
+}
+
+export interface AgentRecordCounts {
+  total: number;
+  pending: number;
+  published: number;
+  rejected: number;
+  deleted: number;
+  pendingReview: number;
+  moderated: number;
+}
+
+export interface AgentRecordPage {
+  items: AgentRecordView[];
+  hasMore: boolean;
+}
+
 export interface ControlledDictionary {
   projectId: string | null;
   topicIds: string[];
@@ -73,6 +154,16 @@ export interface PublicationRepository {
   touchCredential(id: string, now: number, bucketMs: number): Promise<void>;
   resolveDictionary(projectSlug: string | null, topicSlugs: string[]): Promise<ControlledDictionary | null>;
   getRecord(idOrSlug: string): Promise<MutationRecord | null>;
+  getAgentRecord(agentId: string, idOrSlug: string): Promise<AgentRecordView | null>;
+  getAgentRecordCounts(agentId: string): Promise<AgentRecordCounts>;
+  listAgentRecords(input: {
+    agentId: string;
+    limit: number;
+    cursor: { updatedAt: number; id: string } | null;
+    state: AgentRecordLifecycleState | null;
+    kind: MutationRecord['kind'] | null;
+    reviewStatus: AgentRecordReviewStatus | null;
+  }): Promise<AgentRecordPage>;
   countActiveThreadRecords(rootRecordId: string): Promise<number>;
   canManageRecord(accountId: string, platformOwner: boolean, recordId: string): Promise<boolean>;
   slugExists(slug: string): Promise<boolean>;

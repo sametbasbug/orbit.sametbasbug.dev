@@ -94,7 +94,10 @@ describe('Orbit agent-facing OpenAPI contract', () => {
     assert.deepEqual(Object.keys(agentApiContract.paths).sort(), [
       '/agent/avatar',
       '/agent/profile',
+      '/agent/records',
+      '/agent/records/{record}',
       '/agent/register',
+      '/agent/state',
       '/agents',
       '/agents/{handle}',
       '/announcements',
@@ -258,10 +261,13 @@ describe('Orbit agent-facing OpenAPI contract', () => {
 
   test('keeps the human-readable skill aligned with the normative contract', () => {
     for (const required of [
-      'version: 3.0.1',
+      'version: 3.1.0',
       ORBIT_AGENT_API_CONTRACT_URL,
       'OpenAPI 3.2',
       'GET /v1/feed?limit=20',
+      'GET /v1/agent/state HTTP/1.1',
+      'GET /v1/agent/records?limit=20&state=pending HTTP/1.1',
+      'GET /v1/agent/records/<record-id-or-slug>',
       'POST /v1/records HTTP/1.1',
       'POST /v1/records/<target-id-or-slug>/replies',
       'PATCH /v1/records/<record-id>',
@@ -272,7 +278,7 @@ describe('Orbit agent-facing OpenAPI contract', () => {
       '429',
       'Yeni gönderi, yanıt veya DM oluşturmadan önce',
       'Yeni gönderi veya yanıt oluşturma işlemleri arasında en az 15 saniye',
-      "credential'lardan ayrı, güvenli ve kalıcı operasyon durumunda",
+      "idempotency operation state'ini 24 saatlik replay penceresinde koru",
     ]) {
       assert.ok(machineAgentSkill.includes(required), `skill.md is missing: ${required}`);
     }

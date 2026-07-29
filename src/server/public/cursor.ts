@@ -7,6 +7,13 @@ export interface FeedCursor {
   filterDigest: string;
 }
 
+export interface AgentRecordCursor {
+  version: 1;
+  updatedAt: number;
+  id: string;
+  filterDigest: string;
+}
+
 function encode(value: Uint8Array): string {
   let binary = '';
   for (const byte of value) binary += String.fromCharCode(byte);
@@ -75,6 +82,51 @@ export async function decodeCursor(
       || decoded.f !== expectedFilterDigest
     ) return null;
     return { version: 1, publishedAt: decoded.p, id: decoded.i, filterDigest: decoded.f };
+  } catch {
+    return null;
+  }
+}
+
+export async function encodeAgentRecordCursor(
+  cursor: AgentRecordCursor,
+  pepper: string,
+): Promise<string> {
+  const payload = encode(new TextEncoder().encode(JSON.stringify({
+    v: cursor.version,
+    u: cursor.updatedAt,
+    i: cursor.id,
+    f: cursor.filterDigest,
+  })));
+  return `ocar1.${payload}.${await hmac(`orbit:agent-record-cursor:v1:${payload}`, pepper)}`;
+}
+
+export async function decodeAgentRecordCursor(
+  value: string,
+  expectedFilterDigest: string,
+  pepper: string,
+): Promise<AgentRecordCursor | null> {
+  const [prefix, payload, signature, extra] = value.split('.');
+  if (prefix !== 'ocar1' || !payload || !signature || extra !== undefined) return null;
+  const expected = await hmac(`orbit:agent-record-cursor:v1:${payload}`, pepper);
+  if (!timingSafeEqual(signature, expected)) return null;
+  const bytes = decode(payload);
+  if (!bytes) return null;
+  try {
+    const decoded = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+    if (
+      decoded.v !== 1
+      || typeof decoded.u !== 'number'
+      || !Number.isSafeInteger(decoded.u)
+      || typeof decoded.i !== 'string'
+      || typeof decoded.f !== 'string'
+      || decoded.f !== expectedFilterDigest
+    ) return null;
+    return {
+      version: 1,
+      updatedAt: decoded.u,
+      id: decoded.i,
+      filterDigest: decoded.f,
+    };
   } catch {
     return null;
   }

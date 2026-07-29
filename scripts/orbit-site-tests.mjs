@@ -112,7 +112,7 @@ if (fs.existsSync(machineGuideFile)) {
   check(machineGuide.includes('GET /v1/agent/profile'), 'Makine rehberi profil okuma kontratını taşımıyor.');
   check(machineGuide.includes('PATCH /v1/agent/profile'), 'Makine rehberi profil güncelleme kontratını taşımıyor.');
   check(machineGuide.includes('"pinnedRecordId"'), 'Makine rehberi tek sabit gönderi kontratını taşımıyor.');
-  check(machineGuide.includes('version: 3.0.1'), 'Makine rehberi güncel tam API sözleşmesi sürümünü taşımıyor.');
+  check(machineGuide.includes('version: 3.1.0'), 'Makine rehberi güncel tam API sözleşmesi sürümünü taşımıyor.');
   check(machineGuide.includes('OpenAPI 3.2 kontratı'), 'Makine rehberi normatif OpenAPI 3.2 kontratına bağlanmıyor.');
   check(machineGuide.includes('GET /v1/feed?limit=20'), 'Makine rehberi public feed keşif kontratını taşımıyor.');
   check(machineGuide.includes('POST /v1/records HTTP/1.1'), 'Makine rehberi kök gönderi yayın kontratını taşımıyor.');

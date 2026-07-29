@@ -160,6 +160,19 @@ async function agentWrite(
   });
 }
 
+async function agentRead(
+  agent: SeededAgent,
+  pathname: string,
+  exactNow = NOW,
+): Promise<Response> {
+  return await fetch(`${baseUrl}${pathname}`, {
+    headers: {
+      authorization: `Bearer ${agent.token}`,
+      'x-test-now': String(exactNow),
+    },
+  });
+}
+
 async function humanRequest(
   cookie: string,
   csrf: string,
@@ -256,6 +269,8 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
   let directRecordId = '';
   let directSlug = '';
   let reviewRecordId = '';
+  let rejectedRecordId = '';
+  let withdrawnRecordId = '';
 
   test('direct publish derives identity, slug, summary and replays idempotently', async () => {
     const agent = agents.get('slice4-direct')!;
@@ -403,6 +418,7 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     const pending = await agentWrite(agent, '/v1/records', {
       bodyMarkdown: 'Sponsor tarafından reddedilecek kayıt.',
     }, 'review-reject-create').then((response) => response.json()) as { record: { id: string } };
+    rejectedRecordId = pending.record.id;
     const queue = await ownerRequest('/v1/approvals').then((response) => response.json()) as {
       reviews: Array<{ id: string; record: { id: string } }>;
     };
@@ -461,9 +477,145 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     const pending = await agentWrite(agent, '/v1/records', {
       bodyMarkdown: 'Geri çekilecek pending kayıt.',
     }, 'withdraw-create-1').then((response) => response.json()) as { record: { id: string } };
+    withdrawnRecordId = pending.record.id;
     const withdrawal = await agentWrite(agent, `/v1/records/${pending.record.id}/withdraw`, {}, 'withdraw-1');
     assert.equal(withdrawal.status, 200);
     assert.equal((await fetch(`${baseUrl}/v1/records/${pending.record.id}`)).status, 404);
+  });
+
+  test('agent control plane rediscovers private history, review outcomes and filter-bound pages', async () => {
+    const agent = agents.get('slice4-review')!;
+    assert.equal((await fetch(`${baseUrl}/v1/agent/state`)).status, 401);
+
+    const stateResponse = await agentRead(agent, '/v1/agent/state');
+    assert.equal(stateResponse.status, 200);
+    const state = await stateResponse.json() as {
+      agent: { id: string; handle: string; status: string; publicationMode: string };
+      credential: { id: string; scopes: string[]; expiresAt: number | null };
+      recordCounts: {
+        total: number;
+        pending: number;
+        published: number;
+        rejected: number;
+        deleted: number;
+        pendingReview: number;
+        moderated: number;
+      };
+    };
+    assert.equal(state.agent.id, agent.id);
+    assert.equal(state.agent.handle, agent.handle);
+    assert.equal(state.agent.status, 'active');
+    assert.equal(state.agent.publicationMode, 'approval_required');
+    assert.ok(state.credential.id);
+    assert.ok(state.credential.scopes.includes('feed:read'));
+    assert.equal(state.credential.expiresAt, null);
+    assert.ok(state.recordCounts.total >= 3);
+    assert.ok(state.recordCounts.published >= 1);
+    assert.ok(state.recordCounts.rejected >= 1);
+    assert.ok(state.recordCounts.deleted >= 1);
+    assert.equal(state.recordCounts.pendingReview, 0);
+
+    const firstPageResponse = await agentRead(agent, '/v1/agent/records?limit=1');
+    assert.equal(firstPageResponse.status, 200);
+    const firstPage = await firstPageResponse.json() as {
+      records: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    assert.equal(firstPage.records.length, 1);
+    assert.ok(firstPage.nextCursor);
+    const secondPageResponse = await agentRead(
+      agent,
+      `/v1/agent/records?limit=1&cursor=${encodeURIComponent(firstPage.nextCursor!)}`,
+    );
+    assert.equal(secondPageResponse.status, 200);
+    const secondPage = await secondPageResponse.json() as {
+      records: Array<{ id: string }>;
+    };
+    assert.equal(secondPage.records.length, 1);
+    assert.notEqual(secondPage.records[0].id, firstPage.records[0].id);
+
+    const reboundCursor = await agentRead(
+      agent,
+      `/v1/agent/records?limit=1&state=published&cursor=${encodeURIComponent(firstPage.nextCursor!)}`,
+    );
+    assert.equal(reboundCursor.status, 400);
+    assert.equal(
+      (await reboundCursor.json() as { error: { code: string } }).error.code,
+      'invalid_cursor',
+    );
+
+    const rejectedList = await agentRead(
+      agent,
+      '/v1/agent/records?state=rejected&reviewStatus=rejected',
+    ).then((response) => response.json()) as {
+      records: Array<{ id: string }>;
+    };
+    assert.ok(rejectedList.records.some((record) => record.id === rejectedRecordId));
+
+    const rejectedDetailResponse = await agentRead(
+      agent,
+      `/v1/agent/records/${rejectedRecordId}`,
+    );
+    assert.equal(rejectedDetailResponse.status, 200);
+    const rejectedDetail = await rejectedDetailResponse.json() as {
+      record: {
+        lifecycleState: string;
+        publicUrl: string | null;
+        currentRevision: unknown;
+        pendingRevision: unknown;
+        latestReview: {
+          status: string;
+          reviewNote: string | null;
+          revision: { bodyMarkdown: string; state: string };
+        };
+      };
+    };
+    assert.equal(rejectedDetail.record.lifecycleState, 'rejected');
+    assert.equal(rejectedDetail.record.publicUrl, null);
+    assert.equal(rejectedDetail.record.currentRevision, null);
+    assert.equal(rejectedDetail.record.pendingRevision, null);
+    assert.equal(rejectedDetail.record.latestReview.status, 'rejected');
+    assert.equal(rejectedDetail.record.latestReview.reviewNote, 'Bu sürüm yayınlanmayacak.');
+    assert.equal(rejectedDetail.record.latestReview.revision.state, 'rejected');
+    assert.equal(
+      rejectedDetail.record.latestReview.revision.bodyMarkdown,
+      'Sponsor tarafından reddedilecek kayıt.',
+    );
+
+    const withdrawnDetail = await agentRead(
+      agent,
+      `/v1/agent/records/${withdrawnRecordId}`,
+    ).then((response) => response.json()) as {
+      record: {
+        lifecycleState: string;
+        latestReview: { status: string; reviewNote: string | null };
+        deletion: unknown;
+      };
+    };
+    assert.equal(withdrawnDetail.record.lifecycleState, 'deleted');
+    assert.equal(withdrawnDetail.record.latestReview.status, 'cancelled');
+    assert.equal(withdrawnDetail.record.latestReview.reviewNote, 'withdrawn_by_author');
+    assert.equal(withdrawnDetail.record.deletion, null);
+
+    const foreignDetail = await agentRead(
+      agents.get('slice4-direct')!,
+      `/v1/agent/records/${rejectedRecordId}`,
+    );
+    assert.equal(foreignDetail.status, 404);
+    assert.equal(
+      (await foreignDetail.json() as { error: { code: string } }).error.code,
+      'agent_record_not_found',
+    );
+
+    const suspendedState = await agentRead(
+      agents.get('slice4-suspended')!,
+      '/v1/agent/state',
+    );
+    assert.equal(suspendedState.status, 200);
+    assert.equal(
+      (await suspendedState.json() as { agent: { status: string } }).agent.status,
+      'suspended',
+    );
   });
 
   test('read-only, suspended, raw HTML, dictionaries and privileged fields are rejected', async () => {
@@ -652,6 +804,21 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
       headers: { authorization: `Bearer ${agent.token}` },
     }).then((response) => response.json()) as { agent: { pinnedRecordId: string | null } };
     assert.equal(profile.agent.pinnedRecordId, null);
+    const privateRecord = await agentRead(
+      agent,
+      `/v1/agent/records/${directRecordId}`,
+    ).then((response) => response.json()) as {
+      record: {
+        lifecycleState: string;
+        publicUrl: string | null;
+        deletion: { actorType: string; reason: string; deletedAt: number };
+      };
+    };
+    assert.equal(privateRecord.record.lifecycleState, 'deleted');
+    assert.equal(privateRecord.record.publicUrl, null);
+    assert.equal(privateRecord.record.deletion.actorType, 'agent');
+    assert.equal(privateRecord.record.deletion.reason, 'Yazar geri çekti.');
+    assert.ok(Number.isSafeInteger(privateRecord.record.deletion.deletedAt));
   });
 
   test('sponsor soft delete creates moderation and audit evidence', async () => {
@@ -668,6 +835,21 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
       .then((response) => response.json()) as { audits: Array<{ event_type: string }>; moderation: Array<{ action: string }> };
     assert.ok(evidence.audits.some((item) => item.event_type === 'record.soft_deleted'));
     assert.deepEqual(evidence.moderation.map((item) => item.action), ['record.soft_deleted']);
+    const privateRecord = await agentRead(
+      agent,
+      `/v1/agent/records/${created.record.id}`,
+    ).then((response) => response.json()) as {
+      record: {
+        latestModeration: {
+          action: string;
+          reason: string;
+          reversedAt: number | null;
+        };
+      };
+    };
+    assert.equal(privateRecord.record.latestModeration.action, 'record.soft_deleted');
+    assert.equal(privateRecord.record.latestModeration.reason, 'Sponsor kaldırma provası.');
+    assert.equal(privateRecord.record.latestModeration.reversedAt, null);
   });
 
   test('platform owner deletes a root post and its complete reply tree atomically', async () => {

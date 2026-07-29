@@ -1,6 +1,12 @@
 import type { D1DatabaseLike, D1PreparedStatementLike } from './d1-foundation-repository';
 import type {
   AgentCredentialPrincipal,
+  AgentRecordCounts,
+  AgentRecordLifecycleState,
+  AgentRecordPage,
+  AgentRecordReviewStatus,
+  AgentRecordRevisionView,
+  AgentRecordView,
   ControlledDictionary,
   IdempotencyReplay,
   MutationRecord,
@@ -59,6 +65,175 @@ interface ReviewRow extends RecordRow {
   media_height: number | null;
   media_alt_text: string | null;
   media_caption: string | null;
+}
+
+interface AgentRecordRow {
+  id: string;
+  kind: AgentRecordView['kind'];
+  slug: string;
+  parent_id: string | null;
+  root_id: string;
+  lifecycle_state: AgentRecordView['lifecycleState'];
+  moderation_state: AgentRecordView['moderationState'];
+  version: number;
+  created_at: number;
+  published_at: number | null;
+  updated_at: number;
+  deleted_at: number | null;
+  project_id: string | null;
+  project_slug: string | null;
+  project_name: string | null;
+  topics_json: string;
+  current_revision_id: string | null;
+  current_revision_number: number | null;
+  current_revision_state: AgentRecordRevisionView['state'] | null;
+  current_body_markdown: string | null;
+  current_summary: string | null;
+  current_metadata_json: string | null;
+  current_revision_created_at: number | null;
+  current_revision_published_at: number | null;
+  current_media_id: string | null;
+  current_media_width: number | null;
+  current_media_height: number | null;
+  current_media_alt_text: string | null;
+  current_media_caption: string | null;
+  pending_revision_id: string | null;
+  pending_revision_number: number | null;
+  pending_revision_state: AgentRecordRevisionView['state'] | null;
+  pending_body_markdown: string | null;
+  pending_summary: string | null;
+  pending_metadata_json: string | null;
+  pending_revision_created_at: number | null;
+  pending_revision_published_at: number | null;
+  pending_media_id: string | null;
+  pending_media_width: number | null;
+  pending_media_height: number | null;
+  pending_media_alt_text: string | null;
+  pending_media_caption: string | null;
+  review_id: string | null;
+  review_status: AgentRecordReviewStatus | null;
+  review_requested_at: number | null;
+  review_reviewed_at: number | null;
+  review_note: string | null;
+  review_revision_id: string | null;
+  review_revision_number: number | null;
+  review_revision_state: AgentRecordRevisionView['state'] | null;
+  review_body_markdown: string | null;
+  review_summary: string | null;
+  review_metadata_json: string | null;
+  review_revision_created_at: number | null;
+  review_revision_published_at: number | null;
+  review_media_id: string | null;
+  review_media_width: number | null;
+  review_media_height: number | null;
+  review_media_alt_text: string | null;
+  review_media_caption: string | null;
+  deletion_actor_type: 'agent' | 'account' | null;
+  deletion_reason: string | null;
+  deletion_created_at: number | null;
+  moderation_id: string | null;
+  moderation_action: string | null;
+  moderation_reason: string | null;
+  moderation_created_at: number | null;
+  moderation_reversed_at: number | null;
+}
+
+function agentRevision(
+  row: AgentRecordRow,
+  prefix: 'current' | 'pending' | 'review',
+): AgentRecordRevisionView | null {
+  const id = row[`${prefix}_revision_id`];
+  const number = row[`${prefix}_revision_number`];
+  const state = row[`${prefix}_revision_state`];
+  const bodyMarkdown = row[`${prefix}_body_markdown`];
+  const summary = row[`${prefix}_summary`];
+  const metadataJson = row[`${prefix}_metadata_json`];
+  const createdAt = row[`${prefix}_revision_created_at`];
+  if (
+    id === null
+    || number === null
+    || state === null
+    || bodyMarkdown === null
+    || summary === null
+    || metadataJson === null
+    || createdAt === null
+  ) return null;
+  const mediaId = row[`${prefix}_media_id`];
+  const mediaWidth = row[`${prefix}_media_width`];
+  const mediaHeight = row[`${prefix}_media_height`];
+  const mediaAltText = row[`${prefix}_media_alt_text`];
+  return {
+    id,
+    number,
+    state,
+    bodyMarkdown,
+    summary,
+    metadata: JSON.parse(metadataJson) as Record<string, unknown>,
+    createdAt,
+    publishedAt: row[`${prefix}_revision_published_at`],
+    media: mediaId && mediaWidth && mediaHeight && mediaAltText
+      ? {
+        id: mediaId,
+        width: mediaWidth,
+        height: mediaHeight,
+        altText: mediaAltText,
+        caption: row[`${prefix}_media_caption`],
+      }
+      : null,
+  };
+}
+
+function agentRecordView(row: AgentRecordRow): AgentRecordView {
+  const reviewRevision = agentRevision(row, 'review');
+  return {
+    id: row.id,
+    kind: row.kind,
+    slug: row.slug,
+    parentId: row.parent_id,
+    rootId: row.root_id,
+    lifecycleState: row.lifecycle_state,
+    moderationState: row.moderation_state,
+    version: row.version,
+    createdAt: row.created_at,
+    publishedAt: row.published_at,
+    updatedAt: row.updated_at,
+    deletedAt: row.deleted_at,
+    project: row.project_id && row.project_slug && row.project_name
+      ? { id: row.project_id, slug: row.project_slug, name: row.project_name }
+      : null,
+    topics: JSON.parse(row.topics_json) as AgentRecordView['topics'],
+    currentRevision: agentRevision(row, 'current'),
+    pendingRevision: agentRevision(row, 'pending'),
+    latestReview: row.review_id && row.review_status && row.review_requested_at !== null && reviewRevision
+      ? {
+        id: row.review_id,
+        status: row.review_status,
+        requestedAt: row.review_requested_at,
+        reviewedAt: row.review_reviewed_at,
+        reviewNote: row.review_note,
+        revision: reviewRevision,
+      }
+      : null,
+    deletion: row.deletion_actor_type && row.deletion_reason && row.deletion_created_at !== null
+      ? {
+        actorType: row.deletion_actor_type,
+        reason: row.deletion_reason,
+        deletedAt: row.deletion_created_at,
+      }
+      : null,
+    latestModeration: row.moderation_id
+      && row.moderation_action
+      && row.moderation_reason
+      && row.moderation_created_at !== null
+      ? {
+        id: row.moderation_id,
+        action: row.moderation_action,
+        reason: row.moderation_reason,
+        createdAt: row.moderation_created_at,
+        reversedAt: row.moderation_reversed_at,
+      }
+      : null,
+  };
 }
 
 function mutationRecord(row: RecordRow): MutationRecord {
@@ -130,6 +305,109 @@ const REVIEW_SELECT = `
     AND am.role = 'primary_sponsor' AND am.revoked_at IS NULL
   LEFT JOIN media_assets media ON media.attached_revision_id = rr.id
     AND media.media_kind = 'post_image' AND media.state IN ('pending', 'active')
+`;
+
+const AGENT_RECORD_SELECT = `
+  SELECT
+    r.id, r.kind, r.slug, r.parent_id, r.root_id, r.lifecycle_state,
+    r.moderation_state, r.version, r.created_at, r.published_at,
+    r.updated_at, r.deleted_at,
+    p.id AS project_id, p.slug AS project_slug, p.name AS project_name,
+    COALESCE((
+      SELECT json_group_array(json_object(
+        'id', topic_rows.id,
+        'slug', topic_rows.slug,
+        'label', topic_rows.label
+      ))
+      FROM (
+        SELECT t.id, t.slug, t.label
+        FROM record_topics rt
+        JOIN topics t ON t.id = rt.topic_id
+        WHERE rt.record_id = r.id
+        ORDER BY t.label, t.id
+      ) AS topic_rows
+    ), '[]') AS topics_json,
+    current_rr.id AS current_revision_id,
+    current_rr.revision_number AS current_revision_number,
+    current_rr.state AS current_revision_state,
+    current_rr.body_markdown AS current_body_markdown,
+    current_rr.summary AS current_summary,
+    current_rr.metadata_json AS current_metadata_json,
+    current_rr.created_at AS current_revision_created_at,
+    current_rr.published_at AS current_revision_published_at,
+    current_media.id AS current_media_id,
+    current_media.width AS current_media_width,
+    current_media.height AS current_media_height,
+    current_media.alt_text AS current_media_alt_text,
+    current_media.caption AS current_media_caption,
+    pending_rr.id AS pending_revision_id,
+    pending_rr.revision_number AS pending_revision_number,
+    pending_rr.state AS pending_revision_state,
+    pending_rr.body_markdown AS pending_body_markdown,
+    pending_rr.summary AS pending_summary,
+    pending_rr.metadata_json AS pending_metadata_json,
+    pending_rr.created_at AS pending_revision_created_at,
+    pending_rr.published_at AS pending_revision_published_at,
+    pending_media.id AS pending_media_id,
+    pending_media.width AS pending_media_width,
+    pending_media.height AS pending_media_height,
+    pending_media.alt_text AS pending_media_alt_text,
+    pending_media.caption AS pending_media_caption,
+    latest_review.id AS review_id,
+    latest_review.status AS review_status,
+    latest_review.requested_at AS review_requested_at,
+    latest_review.reviewed_at AS review_reviewed_at,
+    latest_review.review_note AS review_note,
+    review_rr.id AS review_revision_id,
+    review_rr.revision_number AS review_revision_number,
+    review_rr.state AS review_revision_state,
+    review_rr.body_markdown AS review_body_markdown,
+    review_rr.summary AS review_summary,
+    review_rr.metadata_json AS review_metadata_json,
+    review_rr.created_at AS review_revision_created_at,
+    review_rr.published_at AS review_revision_published_at,
+    review_media.id AS review_media_id,
+    review_media.width AS review_media_width,
+    review_media.height AS review_media_height,
+    review_media.alt_text AS review_media_alt_text,
+    review_media.caption AS review_media_caption,
+    deletion.actor_type AS deletion_actor_type,
+    deletion.reason AS deletion_reason,
+    deletion.created_at AS deletion_created_at,
+    latest_moderation.id AS moderation_id,
+    latest_moderation.action AS moderation_action,
+    latest_moderation.reason AS moderation_reason,
+    latest_moderation.created_at AS moderation_created_at,
+    reversal.created_at AS moderation_reversed_at
+  FROM records r
+  LEFT JOIN projects p ON p.id = r.project_id
+  LEFT JOIN record_revisions current_rr ON current_rr.id = r.current_revision_id
+  LEFT JOIN media_assets current_media ON current_media.attached_revision_id = current_rr.id
+    AND current_media.media_kind = 'post_image'
+  LEFT JOIN record_revisions pending_rr ON pending_rr.id = r.pending_revision_id
+  LEFT JOIN media_assets pending_media ON pending_media.attached_revision_id = pending_rr.id
+    AND pending_media.media_kind = 'post_image'
+  LEFT JOIN publication_reviews latest_review ON latest_review.id = (
+    SELECT pr.id
+    FROM publication_reviews pr
+    WHERE pr.record_id = r.id
+    ORDER BY pr.requested_at DESC, pr.id DESC
+    LIMIT 1
+  )
+  LEFT JOIN record_revisions review_rr ON review_rr.id = latest_review.revision_id
+  LEFT JOIN media_assets review_media ON review_media.attached_revision_id = review_rr.id
+    AND review_media.media_kind = 'post_image'
+  LEFT JOIN record_deletion_transitions deletion ON deletion.record_id = r.id
+  LEFT JOIN moderation_actions latest_moderation ON latest_moderation.id = (
+    SELECT ma.id
+    FROM moderation_actions ma
+    WHERE ma.target_type = 'record'
+      AND ma.target_id = r.id
+      AND ma.action = 'record.soft_deleted'
+    ORDER BY ma.created_at DESC, ma.id DESC
+    LIMIT 1
+  )
+  LEFT JOIN moderation_actions reversal ON reversal.id = latest_moderation.reversed_by_action_id
 `;
 
 function audit(
@@ -216,6 +494,97 @@ export class D1PublicationRepository implements PublicationRepository {
       FROM records WHERE id = ? OR slug = ? LIMIT 1
     `).bind(idOrSlug, idOrSlug).first<RecordRow>();
     return row ? mutationRecord(row) : null;
+  }
+
+  async getAgentRecord(agentId: string, idOrSlug: string): Promise<AgentRecordView | null> {
+    const row = await this.#db.prepare(`${AGENT_RECORD_SELECT}
+      WHERE r.author_agent_id = ? AND (r.id = ? OR r.slug = ?)
+      LIMIT 1
+    `).bind(agentId, idOrSlug, idOrSlug).first<AgentRecordRow>();
+    return row ? agentRecordView(row) : null;
+  }
+
+  async getAgentRecordCounts(agentId: string): Promise<AgentRecordCounts> {
+    const row = await this.#db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        COALESCE(SUM(CASE WHEN lifecycle_state = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+        COALESCE(SUM(CASE WHEN lifecycle_state = 'published' THEN 1 ELSE 0 END), 0) AS published,
+        COALESCE(SUM(CASE WHEN lifecycle_state = 'rejected' THEN 1 ELSE 0 END), 0) AS rejected,
+        COALESCE(SUM(CASE WHEN lifecycle_state = 'deleted' THEN 1 ELSE 0 END), 0) AS deleted,
+        COALESCE(SUM(CASE WHEN pending_revision_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS pending_review,
+        COALESCE(SUM(CASE WHEN EXISTS (
+          SELECT 1
+          FROM moderation_actions current_moderation
+          WHERE current_moderation.target_type = 'record'
+            AND current_moderation.target_id = records.id
+            AND current_moderation.action = 'record.soft_deleted'
+            AND current_moderation.reversed_by_action_id IS NULL
+        ) THEN 1 ELSE 0 END), 0) AS moderated
+      FROM records
+      WHERE author_agent_id = ?
+    `).bind(agentId).first<{
+      total: number;
+      pending: number;
+      published: number;
+      rejected: number;
+      deleted: number;
+      pending_review: number;
+      moderated: number;
+    }>();
+    return {
+      total: Number(row?.total ?? 0),
+      pending: Number(row?.pending ?? 0),
+      published: Number(row?.published ?? 0),
+      rejected: Number(row?.rejected ?? 0),
+      deleted: Number(row?.deleted ?? 0),
+      pendingReview: Number(row?.pending_review ?? 0),
+      moderated: Number(row?.moderated ?? 0),
+    };
+  }
+
+  async listAgentRecords(input: {
+    agentId: string;
+    limit: number;
+    cursor: { updatedAt: number; id: string } | null;
+    state: AgentRecordLifecycleState | null;
+    kind: MutationRecord['kind'] | null;
+    reviewStatus: AgentRecordReviewStatus | null;
+  }): Promise<AgentRecordPage> {
+    const bindings: unknown[] = [input.agentId];
+    const predicates = ['r.author_agent_id = ?'];
+    if (input.state) {
+      predicates.push('r.lifecycle_state = ?');
+      bindings.push(input.state);
+    }
+    if (input.kind) {
+      predicates.push('r.kind = ?');
+      bindings.push(input.kind);
+    }
+    if (input.reviewStatus) {
+      predicates.push(`(
+        SELECT filter_review.status
+        FROM publication_reviews filter_review
+        WHERE filter_review.record_id = r.id
+        ORDER BY filter_review.requested_at DESC, filter_review.id DESC
+        LIMIT 1
+      ) = ?`);
+      bindings.push(input.reviewStatus);
+    }
+    if (input.cursor) {
+      predicates.push('(r.updated_at < ? OR (r.updated_at = ? AND r.id < ?))');
+      bindings.push(input.cursor.updatedAt, input.cursor.updatedAt, input.cursor.id);
+    }
+    bindings.push(input.limit + 1);
+    const result = await this.#db.prepare(`${AGENT_RECORD_SELECT}
+      WHERE ${predicates.join(' AND ')}
+      ORDER BY r.updated_at DESC, r.id DESC
+      LIMIT ?
+    `).bind(...bindings).all<AgentRecordRow>();
+    return {
+      items: result.results.slice(0, input.limit).map(agentRecordView),
+      hasMore: result.results.length > input.limit,
+    };
   }
 
   async countActiveThreadRecords(rootRecordId: string): Promise<number> {

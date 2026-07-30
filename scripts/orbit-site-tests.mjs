@@ -152,6 +152,11 @@ if (fs.existsSync(dashboardFile)) {
   check(dashboardHtml.includes('public profilinde “İnsanı” olarak görünür'), 'Dashboard GitHub insan bağlantısının public olacağını açıklamıyor.');
   check(dashboardHtml.includes('Yayın incelemeleri'), 'Dashboard moderator yayın kuyruğunu taşımıyor.');
   check(dashboardHtml.includes('Metin değiştirilemez'), 'Dashboard moderatorün içeriği düzenleyemeyeceğini açıklamıyor.');
+  check(dashboardHtml.includes('Bağlantıyı onayla'), 'Dashboard MCP yetkilendirme ekranını taşımıyor.');
+  check(dashboardHtml.includes('id="mcp-agent-select"'), 'Dashboard MCP ajan seçimini taşımıyor.');
+  check(dashboardHtml.includes('uzun ömürlü API anahtarı'), 'Dashboard MCP credential güvenlik sınırını açıklamıyor.');
+  check(dashboardHtml.includes('Bağlı uygulamalar'), 'Dashboard MCP grant yönetim kartını taşımıyor.');
+  check(dashboardHtml.includes('id="mcp-authorizations"'), 'Dashboard MCP grant listesini taşımıyor.');
   check(!dashboardHtml.includes('orb_agent_v1_'), 'Dashboard build çıktısı ajan credential kalıbı içeriyor.');
 }
 const dashboardScript = fs.readFileSync(path.join(ROOT, 'src', 'scripts', 'dashboard.js'), 'utf8');
@@ -159,6 +164,19 @@ check(dashboardScript.includes("roles.includes('moderator')"), 'Dashboard modera
 check(dashboardScript.includes("loadApprovals()"), 'Dashboard moderator yayın kuyruğunu yüklemiyor.');
 check(dashboardScript.includes("review-approve').addEventListener"), 'Dashboard yayın onay düğmesini bağlamıyor.');
 check(dashboardScript.includes("review-reject').addEventListener"), 'Dashboard yayın ret düğmesini bağlamıyor.');
+check(dashboardScript.includes("history.replaceState"), 'Dashboard MCP ticket fragmentını adres çubuğundan temizlemiyor.');
+check(dashboardScript.includes("sessionStorage.setItem(MCP_TICKET_STORAGE_KEY"), 'Dashboard MCP ticketını yalnız sekme oturumunda korumuyor.');
+check(!dashboardScript.includes("localStorage.setItem(MCP_TICKET_STORAGE_KEY"), 'Dashboard MCP ticketını kalıcı depolamaya yazıyor.');
+check(dashboardScript.includes("/v1/mcp/authorization-tickets/inspect"), 'Dashboard imzalı MCP ticketını doğrulamıyor.');
+check(dashboardScript.includes("/v1/mcp/authorizations"), 'Dashboard MCP grant oluşturma ucuna bağlanmıyor.');
+check(
+  /^const MCP_CALLBACK_URL = 'https:\/\/mcp\.orbit\.sametbasbug\.dev\/oauth\/orbit\/callback';$/mu.test(dashboardScript),
+  'Dashboard sabit MCP callback hedefine bağlı değil.',
+);
+check(dashboardScript.includes("mcp-approve').addEventListener"), 'Dashboard MCP onay düğmesini bağlamıyor.');
+check(dashboardScript.includes("mcp-deny').addEventListener"), 'Dashboard MCP ret düğmesini bağlamıyor.');
+check(dashboardScript.includes("loadMcpAuthorizations()"), 'Dashboard MCP grant listesini yüklemiyor.');
+check(dashboardScript.includes("/v1/mcp/authorizations/${encodeURIComponent(authorization.id)}/revoke"), 'Dashboard MCP grant iptal ucuna bağlanmıyor.');
 check(!fs.existsSync(path.join(DIST_DIR, 'projects', 'index.html')), 'Kaldırılan Projeler rotası build çıktısında kaldı.');
 check(fs.existsSync(path.join(DIST_DIR, 'topics', 'index.html')), 'Konular rotası build çıktısında yok.');
 for (const topic of ['orbit', 'ajanlar', 'editoryal', 'sistemler']) {

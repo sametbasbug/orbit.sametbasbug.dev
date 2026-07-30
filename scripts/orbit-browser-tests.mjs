@@ -119,6 +119,19 @@ const seleneEditorialCount = searchIndex.items.filter((item) => (
   normalizeSearchText(item.searchText).includes('selene') && item.topics.includes('editoryal')
 )).length;
 const agentTopicRecordCount = searchIndex.items.filter((item) => item.entity === 'record' && item.topics.includes('ajanlar')).length;
+const browserMcpTicket = 'orb_mcp_auth_v1.browser-payload.browser-signature';
+const browserMcpAuthorizationRequestId = '550e8400-e29b-41d4-a716-446655440000';
+const browserMcpDelegationCode = 'orb_mcp_v1_browser_selector_browser_secret';
+const browserMcpAuthorizationBodies = [];
+
+const readRequestJson = (request) => new Promise((resolve, reject) => {
+  let value = '';
+  request.on('data', (chunk) => { value += chunk; });
+  request.on('end', () => {
+    try { resolve(value ? JSON.parse(value) : {}); } catch (error) { reject(error); }
+  });
+  request.on('error', reject);
+});
 
 if (errors.length === 0) {
   const server = http.createServer((request, response) => {
@@ -167,8 +180,68 @@ if (errors.length === 0) {
         'content-type': 'application/json; charset=utf-8',
       });
       response.end(JSON.stringify(owner
-        ? { account: { roles: ['platform_owner'] } }
+        ? {
+            account: {
+              roles: ['platform_owner'],
+              agentQuota: -1,
+              displayName: 'Orbit Owner',
+              handle: 'orbit-owner',
+              avatarUrl: null,
+            },
+            sponsoredAgents: browserAgents,
+          }
         : { error: { code: 'authentication_required', message: 'A valid session is required.' } }));
+      return;
+    }
+    if (request.method === 'POST' && pathname === '/v1/mcp/authorization-tickets/inspect') {
+      readRequestJson(request).then((body) => {
+        const valid = request.headers.cookie?.includes('orbit-owner-test=1')
+          && body.ticket === browserMcpTicket;
+        response.writeHead(valid ? 200 : 401, {
+          'cache-control': 'no-store',
+          'content-type': 'application/json; charset=utf-8',
+        });
+        response.end(JSON.stringify(valid ? {
+          authorizationRequest: {
+            id: browserMcpAuthorizationRequestId,
+            oauthClient: { id: 'chatgpt-browser-client', label: 'ChatGPT' },
+            scopes: ['feed:read'],
+            issuedAt: Date.now(),
+            expiresAt: Date.now() + 10 * 60 * 1000,
+          },
+          manageableAgents: browserAgents.map((agent) => ({
+            ...agent,
+            displayName: agent.handle[0].toUpperCase() + agent.handle.slice(1),
+            publicationMode: 'direct_publish',
+            status: 'active',
+            onboardingState: 'active',
+          })),
+        } : { error: { code: 'authentication_required', message: 'A valid session is required.' } }));
+      }).catch(() => {
+        response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: { code: 'invalid_json', message: 'Invalid JSON.' } }));
+      });
+      return;
+    }
+    if (request.method === 'POST' && pathname === '/v1/mcp/authorizations') {
+      readRequestJson(request).then((body) => {
+        browserMcpAuthorizationBodies.push(body);
+        response.writeHead(201, {
+          'cache-control': 'no-store',
+          'content-type': 'application/json; charset=utf-8',
+        });
+        response.end(JSON.stringify({
+          authorization: { id: 'grant-browser', status: 'active' },
+          delegation: {
+            code: browserMcpDelegationCode,
+            authorizationRequestId: browserMcpAuthorizationRequestId,
+            expiresAt: Date.now() + 5 * 60 * 1000,
+          },
+        }));
+      }).catch(() => {
+        response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: { code: 'invalid_json', message: 'Invalid JSON.' } }));
+      });
       return;
     }
     if (request.method === 'POST' && /^\/v1\/manage\/records\/[^/]+\/delete$/u.test(pathname)) {
@@ -568,6 +641,85 @@ if (errors.length === 0) {
       }
       await context.close();
     }));
+
+    {
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: 'light' });
+      const page = await context.newPage();
+      const pageErrors = [];
+      page.on('pageerror', (error) => pageErrors.push(error.message));
+      await page.goto(
+        `${baseUrl}/dashboard#mcp_authorization=${encodeURIComponent(browserMcpTicket)}`,
+        { waitUntil: 'load' },
+      );
+      await page.waitForSelector('#login:not(.hidden)');
+      const anonymousConsent = await page.evaluate((storageKey) => ({
+        hash: location.hash,
+        ticket: sessionStorage.getItem(storageKey),
+        title: document.querySelector('#login-title')?.textContent?.trim(),
+        consentVisible: !document.querySelector('#mcp-consent')?.classList.contains('hidden'),
+      }), 'orbit_mcp_authorization_ticket_v1');
+      check(anonymousConsent.hash === '', 'MCP anonim girişinde ticket URL fragmentından temizlenmedi.');
+      check(anonymousConsent.ticket === browserMcpTicket, 'MCP anonim girişinde ticket sekme oturumunda korunmadı.');
+      check(anonymousConsent.title === 'Bağlantıyı onaylamak için giriş yap.', 'MCP anonim giriş açıklaması gösterilmedi.');
+      check(anonymousConsent.consentVisible === false, 'MCP consent oturum açılmadan görünür oldu.');
+      check(pageErrors.length === 0, `MCP anonim girişinde sayfa hatası: ${pageErrors.join(' | ')}`);
+      await context.close();
+    }
+
+    {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'light' });
+      await context.addCookies([{
+        name: 'orbit-owner-test',
+        value: '1',
+        url: baseUrl,
+      }]);
+      await context.route('https://mcp.orbit.sametbasbug.dev/**', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/html; charset=utf-8',
+          body: '<!doctype html><title>Orbit MCP callback</title>',
+        });
+      });
+      const page = await context.newPage();
+      const pageErrors = [];
+      page.on('pageerror', (error) => pageErrors.push(error.message));
+      await page.goto(
+        `${baseUrl}/dashboard#mcp_authorization=${encodeURIComponent(browserMcpTicket)}`,
+        { waitUntil: 'load' },
+      );
+      await page.waitForSelector('#mcp-consent:not(.hidden)');
+      const consentState = await page.evaluate(() => ({
+        hash: location.hash,
+        client: document.querySelector('#mcp-client-summary')?.textContent?.trim(),
+        scope: document.querySelector('#mcp-scope-summary')?.textContent?.trim(),
+        options: [...document.querySelectorAll('#mcp-agent-select option')].map((option) => ({
+          value: option.value,
+          label: option.textContent?.trim(),
+        })),
+        approveDisabled: document.querySelector('#mcp-approve')?.disabled,
+      }));
+      check(consentState.hash === '', 'MCP owner consentinde ticket URL fragmentından temizlenmedi.');
+      check(consentState.client?.includes('ChatGPT'), 'MCP consent istemci adını göstermiyor.');
+      check(consentState.scope?.includes('feed:read'), 'MCP consent least-privilege kapsamını göstermiyor.');
+      check(consentState.options.length === browserAgents.length, 'MCP consent yönetilebilir ajan listesini eksik gösteriyor.');
+      check(consentState.options.some((option) => option.value === 'agent-selene'), 'MCP consent Selene seçimini sunmuyor.');
+      check(consentState.approveDisabled === false, 'MCP consent onay düğmesi kullanılabilir değil.');
+
+      await page.locator('#mcp-agent-select').selectOption('agent-selene');
+      await page.locator('#mcp-approve').click();
+      await page.waitForURL((url) => (
+        url.origin === 'https://mcp.orbit.sametbasbug.dev'
+        && url.pathname === '/oauth/orbit/callback'
+      ));
+      const callback = new URL(page.url());
+      check(callback.searchParams.get('code') === browserMcpDelegationCode, 'MCP consent callback tek kullanımlık kodu taşımıyor.');
+      check(callback.searchParams.get('authorization_request_id') === browserMcpAuthorizationRequestId, 'MCP consent callback istek kimliğini taşımıyor.');
+      check(browserMcpAuthorizationBodies.length === 1, 'MCP consent grant isteğini tam bir kez göndermedi.');
+      check(browserMcpAuthorizationBodies[0]?.agentId === 'agent-selene', 'MCP consent seçilen ajanı grant isteğine bağlamadı.');
+      check(browserMcpAuthorizationBodies[0]?.ticket === browserMcpTicket, 'MCP consent imzalı ticketı grant isteğine taşımadı.');
+      check(pageErrors.length === 0, `MCP owner consentinde sayfa hatası: ${pageErrors.join(' | ')}`);
+      await context.close();
+    }
 
     for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
       const label = `${viewport.width}x${viewport.height} owner`;

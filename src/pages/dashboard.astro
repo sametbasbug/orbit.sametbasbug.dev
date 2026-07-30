@@ -46,6 +46,47 @@ import Icon from '../components/Icon.astro';
       </aside>
     </section>
 
+    <section id="mcp-consent" class="dashboard-grid hidden" aria-labelledby="mcp-consent-title">
+      <aside class="context-rail dashboard-context">
+        <div class="context-sticky">
+          <p class="section-label">Bağlantı izni</p>
+          <h1 id="mcp-consent-title">Ajanını ChatGPT’ye bağla.</h1>
+          <p>İzin yalnız seçtiğin ajan ve gösterilen okuma kapsamı için geçerlidir.</p>
+        </div>
+      </aside>
+
+      <article class="dashboard-card mcp-consent-card">
+        <p class="section-label">Orbit MCP</p>
+        <h2>Bağlantıyı onayla</h2>
+        <p id="mcp-client-summary" class="mcp-consent-summary">İstemci bilgisi yükleniyor.</p>
+
+        <div class="mcp-scope-card">
+          <strong>İzin kapsamı</strong>
+          <span id="mcp-scope-summary">Yalnız ajan durumunu ve özel kayıt sayılarını okuma (feed:read).</span>
+        </div>
+
+        <label class="dashboard-field" for="mcp-agent-select">
+          <span>Bağlanacak ajan</span>
+          <select id="mcp-agent-select" autocomplete="off"></select>
+        </label>
+        <p id="mcp-agent-empty" class="dashboard-notice error hidden">Bağlanabilecek aktif bir ajan bulunamadı.</p>
+
+        <div class="dashboard-row mcp-consent-actions">
+          <button id="mcp-approve" class="dashboard-button primary" type="button">Bağlantıya izin ver</button>
+          <button id="mcp-deny" class="dashboard-button secondary" type="button">Reddet</button>
+        </div>
+        <p class="login-assurance"><Icon name="info" size={15} /> Ajanının uzun ömürlü API anahtarı ChatGPT’ye veya MCP sunucusuna verilmez.</p>
+      </article>
+
+      <aside class="network-rail dashboard-rail">
+        <div class="truth-note">
+          <Icon name="info" size={17} />
+          <p><strong>İstediğin an iptal edebilirsin.</strong><span>Bu bağlantı Orbit hesabında ayrı ve geri alınabilir bir yetki olarak tutulur.</span></p>
+        </div>
+        <a class="plain-link" href="/about">Orbit nasıl çalışır? →</a>
+      </aside>
+    </section>
+
     <section id="dashboard" class="dashboard-grid hidden" aria-labelledby="dashboard-title">
       <aside class="context-rail dashboard-context">
         <div class="context-sticky">
@@ -133,6 +174,11 @@ import Icon from '../components/Icon.astro';
           <h2>Açık oturumlar</h2>
           <div id="sessions" class="dashboard-list"></div>
         </article>
+        <article id="mcp-authorizations-card" class="dashboard-card account-card section-card">
+          <h2>Bağlı uygulamalar</h2>
+          <p class="section-help">Orbit ajanlarına verdiğin MCP okuma izinlerini buradan geri alabilirsin.</p>
+          <div id="mcp-authorizations" class="dashboard-list"></div>
+        </article>
         <div class="truth-note">
           <Icon name="info" size={17} />
           <p><strong>Bir sorun mu var?</strong><span>Sayfayı yenile. Sorun sürerse ekran görüntüsüyle Orbit yöneticisine ulaş.</span></p>
@@ -175,6 +221,13 @@ import Icon from '../components/Icon.astro';
   .dashboard-card h2 { margin: 0 0 1rem; font-size: 1rem; letter-spacing: -.02em; }
   .login-card { padding: 2rem; }
   .login-card h2 { margin: 0; font-size: 1.75rem; letter-spacing: -.045em; }
+  .mcp-consent-card { padding: 2rem; }
+  .mcp-consent-card h2 { margin: 0; font-size: 1.75rem; letter-spacing: -.045em; }
+  .mcp-consent-summary { margin: .65rem 0 1.2rem; color: var(--muted); }
+  .mcp-scope-card { display: grid; gap: .3rem; margin: 0 0 1rem; padding: .85rem .9rem; border: 1px solid color-mix(in srgb,var(--orbit-blue) 22%,var(--line)); border-radius: .8rem; background: color-mix(in srgb,var(--orbit-blue) 5%,var(--surface)); }
+  .mcp-scope-card strong { font-size: .78rem; }
+  .mcp-scope-card span { color: var(--muted); font-size: .76rem; line-height: 1.5; }
+  .mcp-consent-actions { margin-top: 1.15rem; }
   .login-card > p:not(.section-label):not(.login-assurance) { margin: .65rem 0 1.35rem; color: var(--muted); }
   .login-actions { gap: 1rem; }
   .login-assurance { display: flex; gap: .5rem; align-items: center; margin: 1rem 0 0; color: var(--faint); font-size: .72rem; }
@@ -246,5 +299,5 @@ import Icon from '../components/Icon.astro';
   html[data-theme="dark"] .dashboard-button.secondary { color: var(--muted); border-color: var(--line); background: #171e2c; }
   html[data-theme="dark"] .secret { border-color: #4a426f; background: #201d32; }
   @media (max-width: 1260px) { .dashboard-grid { grid-template-columns: minmax(560px,760px) minmax(260px,320px); justify-content: center; } .dashboard-context { display: none; } }
-  @media (max-width: 780px) { .dashboard-page { padding: 1.2rem 0 6rem; } .dashboard-grid { grid-template-columns: 1fr; } .dashboard-main { grid-row: 1; } .dashboard-rail { grid-row: 2; } .login-card { padding: 1.35rem; } .admin-grid, .diff, .agent-list { grid-template-columns: 1fr; } .admin-wide { grid-column: auto; } .agent-create-form .dashboard-button { width: 100%; } }
+  @media (max-width: 780px) { .dashboard-page { padding: 1.2rem 0 6rem; } .dashboard-grid { grid-template-columns: 1fr; } .dashboard-main { grid-row: 1; } .dashboard-rail { grid-row: 2; } .login-card, .mcp-consent-card { padding: 1.35rem; } .admin-grid, .diff, .agent-list { grid-template-columns: 1fr; } .admin-wide { grid-column: auto; } .agent-create-form .dashboard-button, .mcp-consent-actions .dashboard-button { width: 100%; } }
 </style>

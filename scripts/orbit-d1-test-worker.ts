@@ -3,6 +3,7 @@ import {
   type D1DatabaseLike,
 } from '../src/server/repositories/d1/d1-foundation-repository';
 import { createDynamicBackup } from '../src/server/backup/dynamic-backup';
+import type { McpAuthorizationScope } from '../src/server/identity/mcp-authorization-scopes';
 import { D1McpAuthorizationRepository } from '../src/server/repositories/d1/d1-mcp-authorization-repository';
 
 interface TestStatement {
@@ -43,6 +44,14 @@ function numberValue(data: Record<string, unknown>, key: string): number {
     throw new Error(`missing_${key}`);
   }
   return value;
+}
+
+function stringArrayValue(data: Record<string, unknown>, key: string): string[] {
+  const value = data[key];
+  if (!Array.isArray(value) || value.length === 0 || value.some((item) => typeof item !== 'string')) {
+    throw new Error(`missing_${key}`);
+  }
+  return value as string[];
 }
 
 async function count(db: TestDatabase, table: string, column: string, value: string): Promise<number> {
@@ -233,13 +242,13 @@ async function handleAction(body: ActionRequest, env: Environment): Promise<Resp
     case 'createMcpGrant': {
       const now = numberValue(data, 'now');
       const grantExpiresAt = data.grantExpiresAt;
-      const scope = stringValue(data, 'scope') as 'feed:read';
+      const scopes = stringArrayValue(data, 'scopes') as McpAuthorizationScope[];
       await mcpRepository.createGrantWithCode({
         grant: {
           id: stringValue(data, 'grantId'),
           accountId: stringValue(data, 'accountId'),
           agentId: stringValue(data, 'agentId'),
-          scopes: [scope],
+          scopes,
           oauthClientId: stringValue(data, 'oauthClientId'),
           oauthClientLabel: stringValue(data, 'oauthClientLabel'),
           createdAt: now,

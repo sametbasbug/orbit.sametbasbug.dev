@@ -1,3 +1,4 @@
+import { normalizeMcpAuthorizationScopes } from '../../identity/mcp-authorization-scopes';
 import type {
   McpAuthorizationGrantView,
   McpAuthorizationRepository,
@@ -46,16 +47,13 @@ const GRANT_SELECT = `
 `;
 
 function serializeScopes(scopes: McpAuthorizationScope[]): string {
-  const normalized = [...new Set(scopes)].sort();
-  if (normalized.length !== 1 || normalized[0] !== 'feed:read') {
-    throw new Error('mcp_authorization_scope_invalid');
-  }
-  return normalized.join(' ');
+  return normalizeMcpAuthorizationScopes(scopes).join(' ');
 }
 
 function parseScopes(value: string): McpAuthorizationScope[] {
-  if (value !== 'feed:read') throw new Error('mcp_authorization_scope_invalid');
-  return ['feed:read'];
+  const normalized = normalizeMcpAuthorizationScopes(value.split(' ').filter(Boolean));
+  if (normalized.join(' ') !== value) throw new Error('mcp_authorization_scope_invalid');
+  return normalized;
 }
 
 function grantFromSql(row: GrantSqlRow): McpAuthorizationGrantView {

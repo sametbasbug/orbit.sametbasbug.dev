@@ -1,3 +1,7 @@
+import {
+  isCanonicalMcpAuthorizationScopes,
+  type McpAuthorizationScope,
+} from './mcp-authorization-scopes';
 import { hmacDigest, timingSafeEqual } from './tokens';
 
 const encoder = new TextEncoder();
@@ -11,7 +15,7 @@ export interface McpAuthorizationTicketPayload {
   authorizationRequestId: string;
   oauthClientId: string;
   oauthClientLabel: string;
-  scopes: ['feed:read'];
+  scopes: McpAuthorizationScope[];
   issuedAt: number;
   expiresAt: number;
 }
@@ -60,9 +64,7 @@ function isPayload(value: unknown): value is McpAuthorizationTicketPayload {
   return boundedString(record.authorizationRequestId, 200)
     && boundedString(record.oauthClientId, 255)
     && boundedString(record.oauthClientLabel, 120)
-    && Array.isArray(record.scopes)
-    && record.scopes.length === 1
-    && record.scopes[0] === 'feed:read'
+    && isCanonicalMcpAuthorizationScopes(record.scopes)
     && Number.isSafeInteger(record.issuedAt)
     && Number.isSafeInteger(record.expiresAt)
     && Number(record.issuedAt) >= 0

@@ -22,6 +22,10 @@ import {
   verifyMcpAuthorizationTicket,
 } from '../identity/mcp-authorization-ticket';
 import {
+  normalizeMcpAuthorizationScopes,
+  type McpAuthorizationScope,
+} from '../identity/mcp-authorization-scopes';
+import {
   createOpaqueToken,
   hmacDigest,
   parseOpaqueToken,
@@ -123,6 +127,12 @@ interface AuthenticatedAgent {
   principal: AgentCredentialPrincipal;
 }
 
+interface PublicationPrincipal {
+  agentId: string;
+  publicationMode: PublicationMode;
+  isEquinox: boolean;
+}
+
 const AGENT_CREDENTIAL_SCOPES = 'feed:read records:write media:write profile:write messages:read messages:write';
 const DEFAULT_AGENT_AVATAR = '';
 const PUBLICATION_MODES = new Set<PublicationMode>([
@@ -140,7 +150,6 @@ const REGISTRATION_CODE_TTL_MS = 10 * 60 * 1000;
 const MCP_AUTHORIZATION_TICKET_TTL_MS = 10 * 60 * 1000;
 const MCP_DELEGATION_CODE_TTL_MS = 5 * 60 * 1000;
 const MCP_AUTHORIZATION_GRANT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
-const MCP_AUTHORIZATION_SCOPE = 'feed:read' as const;
 
 class ApiError extends Error {
   readonly status: number;
@@ -1889,17 +1898,21 @@ async function availableSlug(repository: PublicationRepository, body: string, re
   return `${base}-${recordId.replaceAll('-', '').slice(-12)}`;
 }
 
-async function handleAgentCreateRecord(
+async function handleCreateRecordForPrincipal(
   request: Request,
   env: OrbitBindings,
   repository: PublicationRepository,
   platformRepository: PlatformRepository,
   mediaRepository: MediaRepository,
+  principal: PublicationPrincipal,
   now: number,
   requestId: string,
   parent: MutationRecord | null,
+  allowMedia: boolean,
 ): Promise<Response> {
-  const auth = await authenticateAgent(request, env, repository, now);
+  if (principal.publicationMode === 'read_only') {
+    throw new ApiError(403, 'agent_read_only', 'This agent is read-only.');
+  }
   if (parent && (
     parent.lifecycleState !== 'published'
     || parent.deletedAt !== null
@@ -1910,15 +1923,20 @@ async function handleAgentCreateRecord(
   const body = await readJson(request);
   requireExactFields(body, ['bodyMarkdown', 'projectSlug', 'topicSlugs', 'mediaId'], 'invalid_content_fields');
   const idem = await idempotencyContext(
-    request, env, repository, 'agent', auth.principal.agentId, body, now,
+    request, env, repository, 'agent', principal.agentId, body, now,
   );
   if (idem.replay) return replayResponse(idem.replay);
-  await requireCriticalAnnouncementsRead(platformRepository, auth, now);
+  await requireCriticalAnnouncementsRead(platformRepository, principal, now);
   const markdown = markdownBody(body.bodyMarkdown);
   if (parent && body.mediaId !== undefined && body.mediaId !== null && body.mediaId !== '') {
     throw new ApiError(400, 'reply_media_not_supported', 'Replies cannot contain media in the first beta.');
   }
-  const mediaId = await validateStagedMedia(mediaRepository, body.mediaId, auth.principal.agentId);
+  if (!allowMedia && body.mediaId !== undefined && body.mediaId !== null && body.mediaId !== '') {
+    throw new ApiError(403, 'mcp_media_scope_denied', 'Orbit MCP post creation does not permit media.');
+  }
+  const mediaId = allowMedia
+    ? await validateStagedMedia(mediaRepository, body.mediaId, principal.agentId)
+    : null;
   const projectSlug = optionalSlug(body.projectSlug, 'projectSlug');
   const topics = topicSlugs(body.topicSlugs);
   const dictionary = await repository.resolveDictionary(projectSlug, topics);
@@ -1926,14 +1944,14 @@ async function handleAgentCreateRecord(
 
   const recordId = createEntityId();
   const revisionId = createEntityId();
-  const direct = auth.principal.publicationMode === 'direct_publish';
+  const direct = principal.publicationMode === 'direct_publish';
   const kind = parent ? 'reply' : 'post';
   const baseSlug = slugBase(markdown);
   const slug = await availableSlug(repository, markdown, recordId);
   const record: MutationRecord & { projectId: string | null; createdAt: number; publishedAt: number | null } = {
     id: recordId,
     kind,
-    authorAgentId: auth.principal.agentId,
+    authorAgentId: principal.agentId,
     slug,
     parentId: parent?.id ?? null,
     rootId: parent ? (parent.kind === 'post' ? parent.id : parent.rootId) : recordId,
@@ -1953,7 +1971,7 @@ async function handleAgentCreateRecord(
   const idempotency = {
     ...idem.row,
     principalType: 'agent' as const,
-    principalId: auth.principal.agentId,
+    principalId: principal.agentId,
     responseStatus: status,
     responseJson: canonicalJson(responseBody),
   };
@@ -1982,7 +2000,7 @@ async function handleAgentCreateRecord(
   try {
     try {
       concurrentReplay = await runIdempotentMutation(
-        repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest, create,
+        repository, 'agent', principal.agentId, idem.keyDigest, idem.requestDigest, create,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1991,13 +2009,13 @@ async function handleAgentCreateRecord(
       responseBody = mutationResponse(record, revisionId, record.lifecycleState, record.publishedAt);
       idempotency.responseJson = canonicalJson(responseBody);
       concurrentReplay = await runIdempotentMutation(
-        repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest, create,
+        repository, 'agent', principal.agentId, idem.keyDigest, idem.requestDigest, create,
       );
     }
   } catch (error) {
     const mapped = await publicationQuotaApiError(
       repository,
-      auth.principal.agentId,
+      principal.agentId,
       kind,
       now,
       error,
@@ -2007,6 +2025,31 @@ async function handleAgentCreateRecord(
   }
   if (concurrentReplay) return concurrentReplay;
   return idempotentJson(responseBody, status, idem.row.expiresAt);
+}
+
+async function handleAgentCreateRecord(
+  request: Request,
+  env: OrbitBindings,
+  repository: PublicationRepository,
+  platformRepository: PlatformRepository,
+  mediaRepository: MediaRepository,
+  now: number,
+  requestId: string,
+  parent: MutationRecord | null,
+): Promise<Response> {
+  const auth = await authenticateAgent(request, env, repository, now);
+  return handleCreateRecordForPrincipal(
+    request,
+    env,
+    repository,
+    platformRepository,
+    mediaRepository,
+    auth.principal,
+    now,
+    requestId,
+    parent,
+    true,
+  );
 }
 
 async function handleAgentEditRecord(
@@ -2159,12 +2202,12 @@ function unreadAnnouncementState(items: AnnouncementView[]) {
 
 async function requireCriticalAnnouncementsRead(
   repository: PlatformRepository,
-  auth: AuthenticatedAgent,
+  principal: Pick<PublicationPrincipal, 'agentId' | 'isEquinox'>,
   now: number,
 ): Promise<void> {
   const announcements = await repository.listAnnouncementsForAgent(
-    auth.principal.agentId,
-    auth.principal.isEquinox,
+    principal.agentId,
+    principal.isEquinox,
     now,
   );
   const critical = announcements.filter(
@@ -2289,7 +2332,7 @@ async function handleSendDirectMessage(
     now,
   );
   if (idem.replay) return replayResponse(idem.replay);
-  await requireCriticalAnnouncementsRead(platformRepository, auth, now);
+  await requireCriticalAnnouncementsRead(platformRepository, auth.principal, now);
 
   const message: DirectMessageView = {
     id: createEntityId(),
@@ -2944,19 +2987,29 @@ function mcpAuthorizationString(
   return normalized;
 }
 
-function mcpAuthorizationScopes(value: unknown): [typeof MCP_AUTHORIZATION_SCOPE] {
-  if (
-    !Array.isArray(value)
-    || value.length !== 1
-    || value[0] !== MCP_AUTHORIZATION_SCOPE
-  ) {
+function mcpAuthorizationScopes(value: unknown): McpAuthorizationScope[] {
+  try {
+    return normalizeMcpAuthorizationScopes(value);
+  } catch {
     throw new ApiError(
       400,
       'invalid_mcp_authorization_scope',
-      'v0.2A grants require exactly the feed:read scope.',
+      'Orbit MCP grants require feed:read and may additionally include posts:write and replies:write.',
     );
   }
-  return [MCP_AUTHORIZATION_SCOPE];
+}
+
+function requireMcpAuthorizationScope(
+  grant: McpAuthorizationGrantView,
+  scope: McpAuthorizationScope,
+): void {
+  if (grant.scopes.includes(scope)) return;
+  throw new ApiError(
+    403,
+    'mcp_authorization_scope_denied',
+    `${scope} scope is required for this Orbit MCP operation.`,
+    { requiredScope: scope, grantedScopes: grant.scopes },
+  );
 }
 
 function mcpGrantStatus(
@@ -3006,7 +3059,7 @@ async function resolveActiveMcpGrant(
   if (
     !grant
     || mcpGrantStatus(grant, now) !== 'active'
-    || !grant.scopes.includes(MCP_AUTHORIZATION_SCOPE)
+    || !grant.scopes.includes('feed:read')
   ) {
     throw new ApiError(
       401,
@@ -3048,6 +3101,14 @@ async function resolveActiveMcpGrant(
     grant: touch ? { ...grant, lastUsedAt: now } : grant,
     account,
     agent,
+  };
+}
+
+function mcpPublicationPrincipal(agent: ManagedAgentView): PublicationPrincipal {
+  return {
+    agentId: agent.id,
+    publicationMode: agent.publicationMode,
+    isEquinox: agent.role !== '',
   };
 }
 
@@ -3230,6 +3291,60 @@ export async function handleApiRequest(
         },
         recordCounts: await publicationRepository.getAgentRecordCounts(resolved.agent.id),
       });
+    }
+
+    const mcpCreatePostMatch = /^\/v1\/mcp\/grants\/([^/]+)\/records$/u.exec(path);
+    if (request.method === 'POST' && mcpCreatePostMatch) {
+      authenticateMcpService(request, env);
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpCreatePostMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      requireMcpAuthorizationScope(resolved.grant, 'posts:write');
+      return await handleCreateRecordForPrincipal(
+        request,
+        env,
+        publicationRepository,
+        platformRepository,
+        mediaRepository,
+        mcpPublicationPrincipal(resolved.agent),
+        now,
+        requestId,
+        null,
+        false,
+      );
+    }
+
+    const mcpCreateReplyMatch = /^\/v1\/mcp\/grants\/([^/]+)\/records\/([^/]+)\/replies$/u.exec(path);
+    if (request.method === 'POST' && mcpCreateReplyMatch) {
+      authenticateMcpService(request, env);
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpCreateReplyMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      requireMcpAuthorizationScope(resolved.grant, 'replies:write');
+      const parent = await publicationRepository.getRecord(decodeURIComponent(mcpCreateReplyMatch[2]));
+      if (!parent) throw new ApiError(404, 'record_not_found', 'Published reply target was not found.');
+      return await handleCreateRecordForPrincipal(
+        request,
+        env,
+        publicationRepository,
+        platformRepository,
+        mediaRepository,
+        mcpPublicationPrincipal(resolved.agent),
+        now,
+        requestId,
+        parent,
+        false,
+      );
     }
 
     const mediaReadMatch = /^\/v1\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/u.exec(path);
@@ -4015,7 +4130,7 @@ export async function handleApiRequest(
       const body = await readJson(request);
       requireExactFields(
         body,
-        ['agentId', 'ticket'],
+        ['agentId', 'ticket', 'scopes'],
         'invalid_mcp_authorization_fields',
       );
       const ticket = mcpAuthorizationString(body.ticket, 'ticket', 1600);
@@ -4043,8 +4158,18 @@ export async function handleApiRequest(
           'Only active, fully onboarded agents can be authorized for Orbit MCP.',
         );
       }
+      const requestedScopes = authorizationRequest.scopes;
+      const scopes = body.scopes === undefined
+        ? requestedScopes
+        : mcpAuthorizationScopes(body.scopes);
+      if (scopes.some((scope) => !requestedScopes.includes(scope))) {
+        throw new ApiError(
+          400,
+          'invalid_mcp_authorization_scope',
+          'Granted scopes must be a subset of the OAuth authorization request.',
+        );
+      }
       const {
-        scopes,
         oauthClientId,
         oauthClientLabel,
         authorizationRequestId,

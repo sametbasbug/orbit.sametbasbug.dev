@@ -1,6 +1,9 @@
-export const MCP_AUTHORIZATION_SCOPES = ['feed:read'] as const;
+import type { McpAuthorizationScope } from '../identity/mcp-authorization-scopes';
 
-export type McpAuthorizationScope = typeof MCP_AUTHORIZATION_SCOPES[number];
+export {
+  MCP_AUTHORIZATION_SCOPES,
+  type McpAuthorizationScope,
+} from '../identity/mcp-authorization-scopes';
 
 export interface McpAuthorizationGrantView {
   id: string;

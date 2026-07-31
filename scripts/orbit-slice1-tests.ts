@@ -229,8 +229,6 @@ let firstCredentialToken = '';
 
   async function createAuthorizedMcpGrant(options: {
     requestId: string;
-    requestedScopes: string[];
-    grantedScopes: string[];
     now: number;
   }): Promise<{
     grantId: string;
@@ -243,7 +241,8 @@ let firstCredentialToken = '';
         authorizationRequestId: options.requestId,
         oauthClientId: `chatgpt-${options.requestId}`,
         oauthClientLabel: 'ChatGPT',
-        scopes: options.requestedScopes,
+        scopes: ['feed:read', 'posts:write', 'replies:write'],
+        scopeBundleVersion: 1,
       },
       { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
       options.now,
@@ -256,7 +255,6 @@ let firstCredentialToken = '';
       {
         agentId: sponsoredAgentId,
         ticket: ticketBody.ticket,
-        scopes: options.grantedScopes,
       },
       authenticatedHeaders(sponsorCookies, true),
       options.now + 1,
@@ -266,7 +264,10 @@ let firstCredentialToken = '';
       authorization: { id: string; scopes: string[] };
       delegation: { code: string };
     };
-    assert.deepEqual(body.authorization.scopes, options.grantedScopes);
+    assert.deepEqual(
+      body.authorization.scopes,
+      ['feed:read', 'posts:write', 'replies:write'],
+    );
     return {
       grantId: body.authorization.id,
       delegationCode: body.delegation.code,
@@ -508,12 +509,13 @@ let firstCredentialToken = '';
     assert.deepEqual(meBody.sponsoredAgents.map((agent) => agent.id), [sponsoredAgentId]);
   });
 
-  test('MCP authorization uses CSRF, least privilege, one-time exchange and revocation', async () => {
+  test('MCP authorization uses CSRF, a versioned permission bundle, one-time exchange and revocation', async () => {
     const ticketRequest = {
       authorizationRequestId: mcpAuthorizationRequestId,
       oauthClientId: 'chatgpt-dynamic-client-001',
       oauthClientLabel: 'ChatGPT',
       scopes: ['feed:read', 'posts:write', 'replies:write'],
+      scopeBundleVersion: 1,
     };
 
     const unauthenticatedList = await request('/v1/mcp/authorizations', {}, NOW + 47);
@@ -535,7 +537,7 @@ let firstCredentialToken = '';
     );
     assert.equal(elevated.status, 400);
     const elevatedBody = await elevated.json() as { error: { code: string } };
-    assert.equal(elevatedBody.error.code, 'invalid_mcp_authorization_scope');
+    assert.equal(elevatedBody.error.code, 'invalid_mcp_authorization_scope_bundle');
 
     const ticketResponse = await postJson(
       '/v1/mcp/authorization-tickets',
@@ -550,6 +552,7 @@ let firstCredentialToken = '';
         id: string;
         oauthClient: { id: string; label: string };
         scopes: string[];
+        scopeBundleVersion: number;
         issuedAt: number;
         expiresAt: number;
       };
@@ -561,6 +564,7 @@ let firstCredentialToken = '';
       ticketBody.authorizationRequest.scopes,
       ['feed:read', 'posts:write', 'replies:write'],
     );
+    assert.equal(ticketBody.authorizationRequest.scopeBundleVersion, 1);
     assert.equal(ticketBody.authorizationRequest.issuedAt, NOW + 49);
     assert.equal(ticketBody.authorizationRequest.expiresAt, NOW + 49 + 10 * 60 * 1000);
 
@@ -580,7 +584,12 @@ let firstCredentialToken = '';
     );
     assert.equal(inspected.status, 200, await inspected.clone().text());
     const inspectedBody = await inspected.json() as {
-      authorizationRequest: { id: string; oauthClient: { label: string }; scopes: string[] };
+      authorizationRequest: {
+        id: string;
+        oauthClient: { label: string };
+        scopes: string[];
+        scopeBundleVersion: number;
+      };
       manageableAgents: Array<{
         id: string;
         handle: string;
@@ -594,6 +603,7 @@ let firstCredentialToken = '';
       inspectedBody.authorizationRequest.scopes,
       ['feed:read', 'posts:write', 'replies:write'],
     );
+    assert.equal(inspectedBody.authorizationRequest.scopeBundleVersion, 1);
     assert.deepEqual(
       inspectedBody.manageableAgents.map((agent) => agent.id),
       [sponsoredAgentId],
@@ -611,36 +621,23 @@ let firstCredentialToken = '';
     );
     assert.equal(tamperedInspect.status, 400);
 
-    const readOnlyTicket = await postJson(
+    const partialBundleTicket = await postJson(
       '/v1/mcp/authorization-tickets',
       {
         ...ticketRequest,
-        authorizationRequestId: 'chatgpt-read-only-request',
+        authorizationRequestId: 'chatgpt-partial-bundle-request',
         scopes: ['feed:read'],
       },
       { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
       NOW + 49,
     );
-    assert.equal(readOnlyTicket.status, 201, await readOnlyTicket.clone().text());
-    const readOnlyTicketBody = await readOnlyTicket.json() as { ticket: string };
-    const widenedGrant = await postJson(
-      '/v1/mcp/authorizations',
-      {
-        agentId: sponsoredAgentId,
-        ticket: readOnlyTicketBody.ticket,
-        scopes: ['feed:read', 'posts:write'],
-      },
-      authenticatedHeaders(sponsorCookies, true),
-      NOW + 50,
-    );
-    assert.equal(widenedGrant.status, 400);
-    const widenedGrantBody = await widenedGrant.json() as { error: { code: string } };
-    assert.equal(widenedGrantBody.error.code, 'invalid_mcp_authorization_scope');
+    assert.equal(partialBundleTicket.status, 400);
+    const partialBundleBody = await partialBundleTicket.json() as { error: { code: string } };
+    assert.equal(partialBundleBody.error.code, 'invalid_mcp_authorization_scope_bundle');
 
     const authorizationBody = {
       agentId: sponsoredAgentId,
       ticket: ticketBody.ticket,
-      scopes: ['feed:read'],
     };
     const noCsrf = await postJson(
       '/v1/mcp/authorizations',
@@ -686,7 +683,7 @@ let firstCredentialToken = '';
     mcpDelegationCode = createdBody.delegation.code;
     assert.ok(mcpGrantId);
     assert.ok(mcpDelegationCode.startsWith('orb_mcp_v1_'));
-    assert.deepEqual(createdBody.authorization.scopes, ['feed:read']);
+    assert.deepEqual(createdBody.authorization.scopes, ['feed:read', 'posts:write', 'replies:write']);
     assert.equal(createdBody.authorization.agent.id, sponsoredAgentId);
     assert.equal(createdBody.authorization.oauthClient.label, 'ChatGPT');
     assert.equal(createdBody.authorization.status, 'active');
@@ -730,7 +727,7 @@ let firstCredentialToken = '';
       authorization: { id: string; scopes: string[]; status: string };
     };
     assert.equal(redeemedBody.authorization.id, mcpGrantId);
-    assert.deepEqual(redeemedBody.authorization.scopes, ['feed:read']);
+    assert.deepEqual(redeemedBody.authorization.scopes, ['feed:read', 'posts:write', 'replies:write']);
     assert.equal(redeemedBody.authorization.status, 'active');
 
     const replay = await postJson('/v1/mcp/delegations/redeem', {
@@ -786,7 +783,10 @@ let firstCredentialToken = '';
       };
     };
     assert.equal(privateStateBody.authorization.id, mcpGrantId);
-    assert.deepEqual(privateStateBody.authorization.scopes, ['feed:read']);
+    assert.deepEqual(
+      privateStateBody.authorization.scopes,
+      ['feed:read', 'posts:write', 'replies:write'],
+    );
     assert.equal(privateStateBody.authorization.lastUsedAt, NOW + 56);
     assert.equal(privateStateBody.agent.id, sponsoredAgentId);
     assert.equal(privateStateBody.agent.handle, 'selene-test-agent');
@@ -865,24 +865,9 @@ let firstCredentialToken = '';
     assert.equal(expiredTicket.status, 400);
   });
 
-  test('MCP delegated writes enforce independent scopes, idempotency and revocation', async () => {
-    const requestedScopes = ['feed:read', 'posts:write', 'replies:write'];
-    const postOnly = await createAuthorizedMcpGrant({
-      requestId: 'chatgpt-post-only-request',
-      requestedScopes,
-      grantedScopes: ['feed:read', 'posts:write'],
-      now: NOW + 1_000,
-    });
-    const replyOnly = await createAuthorizedMcpGrant({
-      requestId: 'chatgpt-reply-only-request',
-      requestedScopes,
-      grantedScopes: ['feed:read', 'replies:write'],
-      now: NOW + 1_010,
-    });
+  test('MCP delegated writes enforce the full bundle, idempotency and revocation', async () => {
     const full = await createAuthorizedMcpGrant({
       requestId: 'chatgpt-write-request',
-      requestedScopes,
-      grantedScopes: requestedScopes,
       now: NOW + 1_020,
     });
 
@@ -915,26 +900,6 @@ let firstCredentialToken = '';
     assert.equal(missingKey.status, 400);
     const missingKeyBody = await missingKey.json() as { error: { code: string } };
     assert.equal(missingKeyBody.error.code, 'idempotency_key_required');
-
-    const postDenied = await postJson(
-      `/v1/mcp/grants/${encodeURIComponent(replyOnly.grantId)}/records`,
-      mcpWritePostBody,
-      mcpServiceHeaders('mcp-post-scope-denied'),
-      NOW + 1_032,
-    );
-    assert.equal(postDenied.status, 403);
-    const mcpPostDeniedBody = await postDenied.json() as { error: { code: string } };
-    assert.equal(mcpPostDeniedBody.error.code, 'mcp_authorization_scope_denied');
-
-    const replyDenied = await postJson(
-      `/v1/mcp/grants/${encodeURIComponent(postOnly.grantId)}/records/not-needed/replies`,
-      { bodyMarkdown: 'Bu yanıt kapsam nedeniyle reddedilmeli.' },
-      mcpServiceHeaders('mcp-reply-scope-denied'),
-      NOW + 1_033,
-    );
-    assert.equal(replyDenied.status, 403);
-    const replyDeniedBody = await replyDenied.json() as { error: { code: string } };
-    assert.equal(replyDeniedBody.error.code, 'mcp_authorization_scope_denied');
 
     const mediaDenied = await postJson(
       `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/records`,
@@ -1211,7 +1176,8 @@ let firstCredentialToken = '';
       authorizationRequestId: 'foreign-authorization-request',
       oauthClientId: 'foreign-client',
       oauthClientLabel: 'Foreign client',
-      scopes: ['feed:read'],
+      scopes: ['feed:read', 'posts:write', 'replies:write'],
+      scopeBundleVersion: 1,
     }, { authorization: `Bearer ${MCP_SERVICE_SECRET}` }, NOW + 54);
     assert.equal(foreignTicketResponse.status, 201);
     const foreignTicket = (await foreignTicketResponse.json() as { ticket: string }).ticket;

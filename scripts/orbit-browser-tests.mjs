@@ -206,6 +206,7 @@ if (errors.length === 0) {
             id: browserMcpAuthorizationRequestId,
             oauthClient: { id: 'chatgpt-browser-client', label: 'ChatGPT' },
             scopes: ['feed:read', 'posts:write', 'replies:write'],
+            scopeBundleVersion: 1,
             issuedAt: Date.now(),
             expiresAt: Date.now() + 10 * 60 * 1000,
           },
@@ -692,11 +693,10 @@ if (errors.length === 0) {
         hash: location.hash,
         client: document.querySelector('#mcp-client-summary')?.textContent?.trim(),
         scope: document.querySelector('#mcp-scope-summary')?.textContent?.trim(),
-        scopeOptions: [...document.querySelectorAll('#mcp-scope-options input[data-mcp-scope]')].map((input) => ({
-          scope: input.dataset.mcpScope,
-          checked: input.checked,
-          disabled: input.disabled,
+        scopeOptions: [...document.querySelectorAll('#mcp-scope-options .mcp-scope-option')].map((option) => ({
+          text: option.textContent?.trim(),
         })),
+        scopeInputs: document.querySelectorAll('#mcp-scope-options input').length,
         options: [...document.querySelectorAll('#mcp-agent-select option')].map((option) => ({
           value: option.value,
           label: option.textContent?.trim(),
@@ -705,21 +705,16 @@ if (errors.length === 0) {
       }));
       check(consentState.hash === '', 'MCP owner consentinde ticket URL fragmentından temizlenmedi.');
       check(consentState.client?.includes('ChatGPT'), 'MCP consent istemci adını göstermiyor.');
-      check(consentState.scope?.includes('isteğe bağlı yazma'), 'MCP consent kapsam daraltma açıklamasını göstermiyor.');
-      check(consentState.scopeOptions.length === 3, 'MCP consent istenen kapsamları ayrı seçenekler olarak göstermiyor.');
-      const feedScope = consentState.scopeOptions.find((option) => option.scope === 'feed:read');
-      const postScope = consentState.scopeOptions.find((option) => option.scope === 'posts:write');
-      const replyScope = consentState.scopeOptions.find((option) => option.scope === 'replies:write');
-      check(feedScope?.checked === true && feedScope?.disabled === true, 'MCP consent zorunlu feed:read kapsamını sabitlemiyor.');
-      check(postScope?.checked === false && postScope?.disabled === false, 'MCP consent posts:write kapsamını varsayılan kapalı göstermiyor.');
-      check(replyScope?.checked === false && replyScope?.disabled === false, 'MCP consent replies:write kapsamını varsayılan kapalı göstermiyor.');
+      check(consentState.scope?.includes('tek izin paketi'), 'MCP consent tek paket politikasını açıklamıyor.');
+      check(consentState.scope?.includes('yeniden onay'), 'MCP consent gelecek yeteneklerde yeniden onayı açıklamıyor.');
+      check(consentState.scopeOptions.length === 3, 'MCP consent zorunlu kapsamları ayrı kartlarda göstermiyor.');
+      check(consentState.scopeInputs === 0, 'MCP consent isteğe bağlı checkbox göstermeye devam ediyor.');
+      check(consentState.scopeOptions.every((option) => option.text?.includes('zorunlu')), 'MCP consent tüm mevcut kapsamları zorunlu göstermiyor.');
       check(consentState.options.length === browserAgents.length, 'MCP consent yönetilebilir ajan listesini eksik gösteriyor.');
       check(consentState.options.some((option) => option.value === 'agent-selene'), 'MCP consent Selene seçimini sunmuyor.');
       check(consentState.approveDisabled === false, 'MCP consent onay düğmesi kullanılabilir değil.');
 
       await page.locator('#mcp-agent-select').selectOption('agent-selene');
-      await page.locator('#mcp-scope-options input[data-mcp-scope="posts:write"]').check();
-      await page.locator('#mcp-scope-options input[data-mcp-scope="replies:write"]').check();
       await page.locator('#mcp-approve').click();
       await page.waitForURL((url) => (
         url.origin === 'https://mcp.orbit.sametbasbug.dev'
@@ -732,8 +727,8 @@ if (errors.length === 0) {
       check(browserMcpAuthorizationBodies[0]?.agentId === 'agent-selene', 'MCP consent seçilen ajanı grant isteğine bağlamadı.');
       check(browserMcpAuthorizationBodies[0]?.ticket === browserMcpTicket, 'MCP consent imzalı ticketı grant isteğine taşımadı.');
       check(
-        JSON.stringify(browserMcpAuthorizationBodies[0]?.scopes) === JSON.stringify(['feed:read', 'posts:write', 'replies:write']),
-        'MCP consent yalnız açıkça seçilen kapsamları grant isteğine taşımadı.',
+        !Object.hasOwn(browserMcpAuthorizationBodies[0] ?? {}, 'scopes'),
+        'MCP consent istemci kontrollü scopes alanı göndermeye devam ediyor.',
       );
       check(pageErrors.length === 0, `MCP owner consentinde sayfa hatası: ${pageErrors.join(' | ')}`);
       await context.close();

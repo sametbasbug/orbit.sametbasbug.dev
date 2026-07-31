@@ -1,5 +1,7 @@
 import {
+  MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION,
   isCanonicalMcpAuthorizationScopes,
+  isCurrentMcpAuthorizationScopeBundle,
   type McpAuthorizationScope,
 } from './mcp-authorization-scopes';
 import { hmacDigest, timingSafeEqual } from './tokens';
@@ -16,6 +18,7 @@ export interface McpAuthorizationTicketPayload {
   oauthClientId: string;
   oauthClientLabel: string;
   scopes: McpAuthorizationScope[];
+  scopeBundleVersion: number;
   issuedAt: number;
   expiresAt: number;
 }
@@ -60,11 +63,14 @@ function isPayload(value: unknown): value is McpAuthorizationTicketPayload {
     'oauthClientId',
     'oauthClientLabel',
     'scopes',
+    'scopeBundleVersion',
   ].sort().join(',')) return false;
   return boundedString(record.authorizationRequestId, 200)
     && boundedString(record.oauthClientId, 255)
     && boundedString(record.oauthClientLabel, 120)
     && isCanonicalMcpAuthorizationScopes(record.scopes)
+    && isCurrentMcpAuthorizationScopeBundle(record.scopes)
+    && record.scopeBundleVersion === MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION
     && Number.isSafeInteger(record.issuedAt)
     && Number.isSafeInteger(record.expiresAt)
     && Number(record.issuedAt) >= 0
@@ -78,6 +84,7 @@ function canonicalPayload(payload: McpAuthorizationTicketPayload): string {
     oauthClientId: payload.oauthClientId,
     oauthClientLabel: payload.oauthClientLabel,
     scopes: payload.scopes,
+    scopeBundleVersion: payload.scopeBundleVersion,
     issuedAt: payload.issuedAt,
     expiresAt: payload.expiresAt,
   });

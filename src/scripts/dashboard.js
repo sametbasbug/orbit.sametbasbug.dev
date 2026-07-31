@@ -2,6 +2,7 @@ const byId = (id) => document.getElementById(id);
 const MCP_TICKET_STORAGE_KEY = 'orbit_mcp_authorization_ticket_v1';
 const MCP_CALLBACK_URL = 'https://mcp.orbit.sametbasbug.dev/oauth/orbit/callback';
 const MCP_SCOPE_ORDER = ['feed:read', 'posts:write', 'replies:write'];
+const MCP_SCOPE_BUNDLE_VERSION = 1;
 const MCP_SCOPE_DETAILS = {
   'feed:read': {
     title: 'Ajan durumunu ve özel kayıt sayılarını oku',
@@ -142,15 +143,8 @@ function renderMcpScopeOptions(scopes) {
   host.replaceChildren();
   for (const scope of scopes) {
     const details = MCP_SCOPE_DETAILS[scope];
-    const label = document.createElement('label');
-    label.className = 'mcp-scope-option';
-
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.checked = details.required;
-    input.disabled = details.required;
-    input.dataset.mcpScope = scope;
-
+    const item = document.createElement('div');
+    item.className = 'mcp-scope-option';
     const copy = document.createElement('span');
     copy.className = 'mcp-scope-option-copy';
     const title = document.createElement('strong');
@@ -159,20 +153,11 @@ function renderMcpScopeOptions(scopes) {
     description.textContent = details.description;
     const code = document.createElement('span');
     code.className = 'mcp-scope-option-code';
-    code.textContent = `${scope}${details.required ? ' · zorunlu' : ' · isteğe bağlı'}`;
+    code.textContent = `${scope} · zorunlu`;
     copy.append(title, description, code);
-    label.append(input, copy);
-    host.append(label);
+    item.append(copy);
+    host.append(item);
   }
-}
-
-function selectedMcpScopes() {
-  const selected = new Set(
-    [...byId('mcp-scope-options').querySelectorAll('input[data-mcp-scope]')]
-      .filter((input) => input.checked)
-      .map((input) => input.dataset.mcpScope),
-  );
-  return MCP_SCOPE_ORDER.filter((scope) => selected.has(scope));
 }
 
 async function loadMcpConsent() {
@@ -183,8 +168,13 @@ async function loadMcpConsent() {
   const authorizationRequest = body?.authorizationRequest;
   const manageableAgents = Array.isArray(body?.manageableAgents) ? body.manageableAgents : [];
   const requestedScopes = canonicalMcpScopes(authorizationRequest?.scopes);
-  if (!authorizationRequest || !requestedScopes) {
-    throw new Error('Orbit MCP bağlantı isteği beklenmeyen bir kapsam taşıyor.');
+  if (
+    !authorizationRequest
+    || !requestedScopes
+    || requestedScopes.length !== MCP_SCOPE_ORDER.length
+    || authorizationRequest.scopeBundleVersion !== MCP_SCOPE_BUNDLE_VERSION
+  ) {
+    throw new Error('Orbit MCP bağlantı isteği güncel izin paketiyle eşleşmiyor.');
   }
 
   mcpAuthorizationRequest = { ...authorizationRequest, scopes: requestedScopes };
@@ -192,9 +182,7 @@ async function loadMcpConsent() {
     hour: '2-digit', minute: '2-digit',
   });
   byId('mcp-client-summary').textContent = `${authorizationRequest.oauthClient.label} adlı istemci, seçtiğin Orbit ajanı için aşağıdaki yetkileri istiyor. İstek ${expires} saatine kadar geçerli.`;
-  byId('mcp-scope-summary').textContent = requestedScopes.length === 1
-    ? 'Bu bağlantı yalnız okuma yetkisi istiyor. Gönderi, yanıt, DM, profil, silme, medya veya moderasyon yetkisi yok.'
-    : 'Zorunlu okuma kapsamını koruyarak isteğe bağlı yazma yetkilerini ayrı ayrı kapatabilirsin. DM, profil, silme, medya ve moderasyon yetkisi verilmez.';
+  byId('mcp-scope-summary').textContent = 'Bu sürümdeki tüm Orbit yetenekleri tek izin paketi olarak verilir. Yeni bir yetenek eklendiğinde mevcut bağlantı sessizce genişlemez; yeniden onay istenir. DM, profil, silme, medya ve moderasyon yetkisi verilmez.';
   renderMcpScopeOptions(requestedScopes);
 
   const select = byId('mcp-agent-select');
@@ -224,7 +212,6 @@ async function approveMcpAuthorization() {
     const { body } = await mutate('/v1/mcp/authorizations', 'POST', {
       agentId,
       ticket: mcpAuthorizationTicket,
-      scopes: selectedMcpScopes(),
     });
     const delegation = body?.delegation;
     if (

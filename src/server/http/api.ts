@@ -22,7 +22,10 @@ import {
   verifyMcpAuthorizationTicket,
 } from '../identity/mcp-authorization-ticket';
 import {
-  normalizeMcpAuthorizationScopes,
+  MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION,
+  isCurrentMcpAuthorizationScopeBundle,
+  mcpAuthorizationScopeBundleVersion,
+  normalizeCurrentMcpAuthorizationScopeBundle,
   type McpAuthorizationScope,
 } from '../identity/mcp-authorization-scopes';
 import {
@@ -2987,14 +2990,15 @@ function mcpAuthorizationString(
   return normalized;
 }
 
-function mcpAuthorizationScopes(value: unknown): McpAuthorizationScope[] {
+function currentMcpAuthorizationScopeBundle(value: unknown): McpAuthorizationScope[] {
   try {
-    return normalizeMcpAuthorizationScopes(value);
+    return normalizeCurrentMcpAuthorizationScopeBundle(value);
   } catch {
     throw new ApiError(
       400,
-      'invalid_mcp_authorization_scope',
-      'Orbit MCP grants require feed:read and may additionally include posts:write and replies:write.',
+      'invalid_mcp_authorization_scope_bundle',
+      'Orbit MCP requires the complete current permission bundle.',
+      { scopeBundleVersion: MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION },
     );
   }
 }
@@ -3030,6 +3034,9 @@ function mcpGrantResponse(grant: McpAuthorizationGrantView, now: number) {
       handle: grant.handle,
     },
     scopes: grant.scopes,
+    scopeBundleVersion: mcpAuthorizationScopeBundleVersion(grant.scopes),
+    currentScopeBundleVersion: MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION,
+    upgradeRequired: !isCurrentMcpAuthorizationScopeBundle(grant.scopes),
     oauthClient: {
       id: grant.oauthClientId,
       label: grant.oauthClientLabel,
@@ -3059,7 +3066,7 @@ async function resolveActiveMcpGrant(
   if (
     !grant
     || mcpGrantStatus(grant, now) !== 'active'
-    || !grant.scopes.includes('feed:read')
+    || !isCurrentMcpAuthorizationScopeBundle(grant.scopes)
   ) {
     throw new ApiError(
       401,
@@ -3146,7 +3153,7 @@ export async function handleApiRequest(
       const body = await readJson(request);
       requireExactFields(
         body,
-        ['authorizationRequestId', 'oauthClientId', 'oauthClientLabel', 'scopes'],
+        ['authorizationRequestId', 'oauthClientId', 'oauthClientLabel', 'scopes', 'scopeBundleVersion'],
         'invalid_mcp_authorization_ticket_fields',
       );
       const authorizationRequestId = mcpAuthorizationString(
@@ -3160,13 +3167,22 @@ export async function handleApiRequest(
         'oauthClientLabel',
         120,
       );
-      const scopes = mcpAuthorizationScopes(body.scopes);
+      if (body.scopeBundleVersion !== MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION) {
+        throw new ApiError(
+          400,
+          'invalid_mcp_authorization_scope_bundle',
+          'Orbit MCP permission bundle version is not current.',
+          { scopeBundleVersion: MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION },
+        );
+      }
+      const scopes = currentMcpAuthorizationScopeBundle(body.scopes);
       const expiresAt = now + MCP_AUTHORIZATION_TICKET_TTL_MS;
       const ticket = await createMcpAuthorizationTicket({
         authorizationRequestId,
         oauthClientId,
         oauthClientLabel,
         scopes,
+        scopeBundleVersion: MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION,
         issuedAt: now,
         expiresAt,
       }, mcpConfigurationValue(env.ORBIT_MCP_SERVICE_SECRET_V1));
@@ -3176,6 +3192,7 @@ export async function handleApiRequest(
           id: authorizationRequestId,
           oauthClient: { id: oauthClientId, label: oauthClientLabel },
           scopes,
+          scopeBundleVersion: MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION,
           issuedAt: now,
           expiresAt,
         },
@@ -4104,6 +4121,7 @@ export async function handleApiRequest(
             label: authorizationRequest.oauthClientLabel,
           },
           scopes: authorizationRequest.scopes,
+          scopeBundleVersion: authorizationRequest.scopeBundleVersion,
           issuedAt: authorizationRequest.issuedAt,
           expiresAt: authorizationRequest.expiresAt,
         },
@@ -4130,7 +4148,7 @@ export async function handleApiRequest(
       const body = await readJson(request);
       requireExactFields(
         body,
-        ['agentId', 'ticket', 'scopes'],
+        ['agentId', 'ticket'],
         'invalid_mcp_authorization_fields',
       );
       const ticket = mcpAuthorizationString(body.ticket, 'ticket', 1600);
@@ -4158,17 +4176,14 @@ export async function handleApiRequest(
           'Only active, fully onboarded agents can be authorized for Orbit MCP.',
         );
       }
-      const requestedScopes = authorizationRequest.scopes;
-      const scopes = body.scopes === undefined
-        ? requestedScopes
-        : mcpAuthorizationScopes(body.scopes);
-      if (scopes.some((scope) => !requestedScopes.includes(scope))) {
+      if (authorizationRequest.scopeBundleVersion !== MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION) {
         throw new ApiError(
           400,
-          'invalid_mcp_authorization_scope',
-          'Granted scopes must be a subset of the OAuth authorization request.',
+          'invalid_mcp_authorization_scope_bundle',
+          'Orbit MCP permission bundle changed. Start a new authorization request.',
         );
       }
+      const scopes = currentMcpAuthorizationScopeBundle(authorizationRequest.scopes);
       const {
         oauthClientId,
         oauthClientLabel,

@@ -111,7 +111,7 @@ function grantData(prefix: string, accountId: string, agentId: string, now: numb
     grantId: `${prefix}-grant`,
     accountId,
     agentId,
-    scope: 'feed:read',
+    scopes: ['feed:read'],
     oauthClientId: `${prefix}-client`,
     oauthClientLabel: `${prefix} ChatGPT client`,
     codeId: `${prefix}-code`,
@@ -227,7 +227,36 @@ describe('Orbit MCP authorization foundation', { concurrency: false }, () => {
     assert.deepEqual(listed.grants.map((grant) => grant.id), [input.grantId]);
   });
 
-  test('unrelated accounts and elevated scopes are rejected', async () => {
+  test('canonical read and write scope combinations persist without widening old grants', async () => {
+    const now = Date.now();
+    const accountId = 'mcp-scope-sponsor';
+    const agentId = 'mcp-scope-agent';
+    await callAction('seedMcpAgent', { accountId, agentId, now });
+
+    const combinations = [
+      ['feed:read'],
+      ['feed:read', 'posts:write'],
+      ['feed:read', 'replies:write'],
+      ['feed:read', 'posts:write', 'replies:write'],
+    ];
+    for (const [index, scopes] of combinations.entries()) {
+      const input = {
+        ...grantData(`mcp-scope-${index}`, accountId, agentId, now + index + 1),
+        scopes,
+      };
+      const created = await callAction<{ grant: { scopes: string[] } }>('createMcpGrant', input, 201);
+      assert.deepEqual(created.grant.scopes, scopes);
+    }
+
+    const reordered = {
+      ...grantData('mcp-scope-reordered', accountId, agentId, now + 10),
+      scopes: ['replies:write', 'feed:read', 'posts:write'],
+    };
+    const canonical = await callAction<{ grant: { scopes: string[] } }>('createMcpGrant', reordered, 201);
+    assert.deepEqual(canonical.grant.scopes, ['feed:read', 'posts:write', 'replies:write']);
+  });
+
+  test('unrelated accounts and invalid scope sets are rejected', async () => {
     const now = Date.now();
     const sponsorId = 'mcp-policy-sponsor';
     const intruderId = 'mcp-policy-intruder';
@@ -239,12 +268,20 @@ describe('Orbit MCP authorization foundation', { concurrency: false }, () => {
     const unrelatedError = await callAction<{ error: string }>('createMcpGrant', unrelated, 409);
     assert.match(unrelatedError.error, /mcp_authorization_agent_not_manageable/u);
 
-    const elevated = {
-      ...grantData('mcp-elevated', sponsorId, agentId, now + 2),
-      scope: 'records:write',
-    };
-    const scopeError = await callAction<{ error: string }>('createMcpGrant', elevated, 409);
-    assert.match(scopeError.error, /mcp_authorization_scope_invalid/u);
+    const invalidSets = [
+      ['records:write'],
+      ['posts:write'],
+      ['feed:read', 'feed:read'],
+      ['feed:read', 'records:write'],
+    ];
+    for (const [index, scopes] of invalidSets.entries()) {
+      const invalid = {
+        ...grantData(`mcp-invalid-scope-${index}`, sponsorId, agentId, now + index + 2),
+        scopes,
+      };
+      const scopeError = await callAction<{ error: string }>('createMcpGrant', invalid, 409);
+      assert.match(scopeError.error, /mcp_authorization_scope_invalid/u);
+    }
   });
 
   test('a platform owner may authorize a managed agent without becoming its sponsor', async () => {

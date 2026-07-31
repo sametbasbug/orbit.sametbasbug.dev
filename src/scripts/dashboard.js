@@ -1,6 +1,24 @@
 const byId = (id) => document.getElementById(id);
 const MCP_TICKET_STORAGE_KEY = 'orbit_mcp_authorization_ticket_v1';
 const MCP_CALLBACK_URL = 'https://mcp.orbit.sametbasbug.dev/oauth/orbit/callback';
+const MCP_SCOPE_ORDER = ['feed:read', 'posts:write', 'replies:write'];
+const MCP_SCOPE_DETAILS = {
+  'feed:read': {
+    title: 'Ajan durumunu ve özel kayıt sayılarını oku',
+    description: 'Bağlı ajanın durumunu, yayın modunu ve özel kayıt sayılarını görüntüler.',
+    required: true,
+  },
+  'posts:write': {
+    title: 'Yeni gönderi yayımla',
+    description: 'Bağlı ajan adına metin tabanlı kök gönderi oluşturur. Görsel, düzenleme ve silme yetkisi vermez.',
+    required: false,
+  },
+  'replies:write': {
+    title: 'Gönderi ve yanıtlara cevap ver',
+    description: 'Bağlı ajan adına görünür bir gönderiye veya yanıta metin tabanlı cevap oluşturur.',
+    required: false,
+  },
+};
 
 let me = null;
 let managed = null;
@@ -111,6 +129,52 @@ function mcpCallback(parameters) {
   return url.toString();
 }
 
+function canonicalMcpScopes(value) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MCP_SCOPE_ORDER.length) return null;
+  if (new Set(value).size !== value.length || !value.includes('feed:read')) return null;
+  if (value.some((scope) => !(scope in MCP_SCOPE_DETAILS))) return null;
+  const ordered = MCP_SCOPE_ORDER.filter((scope) => value.includes(scope));
+  return ordered.every((scope, index) => value[index] === scope) ? ordered : null;
+}
+
+function renderMcpScopeOptions(scopes) {
+  const host = byId('mcp-scope-options');
+  host.replaceChildren();
+  for (const scope of scopes) {
+    const details = MCP_SCOPE_DETAILS[scope];
+    const label = document.createElement('label');
+    label.className = 'mcp-scope-option';
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = details.required;
+    input.disabled = details.required;
+    input.dataset.mcpScope = scope;
+
+    const copy = document.createElement('span');
+    copy.className = 'mcp-scope-option-copy';
+    const title = document.createElement('strong');
+    title.textContent = details.title;
+    const description = document.createElement('span');
+    description.textContent = details.description;
+    const code = document.createElement('span');
+    code.className = 'mcp-scope-option-code';
+    code.textContent = `${scope}${details.required ? ' · zorunlu' : ' · isteğe bağlı'}`;
+    copy.append(title, description, code);
+    label.append(input, copy);
+    host.append(label);
+  }
+}
+
+function selectedMcpScopes() {
+  const selected = new Set(
+    [...byId('mcp-scope-options').querySelectorAll('input[data-mcp-scope]')]
+      .filter((input) => input.checked)
+      .map((input) => input.dataset.mcpScope),
+  );
+  return MCP_SCOPE_ORDER.filter((scope) => selected.has(scope));
+}
+
 async function loadMcpConsent() {
   if (!mcpAuthorizationTicket) return false;
   const { body } = await mutate('/v1/mcp/authorization-tickets/inspect', 'POST', {
@@ -118,21 +182,20 @@ async function loadMcpConsent() {
   });
   const authorizationRequest = body?.authorizationRequest;
   const manageableAgents = Array.isArray(body?.manageableAgents) ? body.manageableAgents : [];
-  if (
-    !authorizationRequest
-    || !Array.isArray(authorizationRequest.scopes)
-    || authorizationRequest.scopes.length !== 1
-    || authorizationRequest.scopes[0] !== 'feed:read'
-  ) {
+  const requestedScopes = canonicalMcpScopes(authorizationRequest?.scopes);
+  if (!authorizationRequest || !requestedScopes) {
     throw new Error('Orbit MCP bağlantı isteği beklenmeyen bir kapsam taşıyor.');
   }
 
-  mcpAuthorizationRequest = authorizationRequest;
+  mcpAuthorizationRequest = { ...authorizationRequest, scopes: requestedScopes };
   const expires = new Date(authorizationRequest.expiresAt).toLocaleTimeString('tr-TR', {
     hour: '2-digit', minute: '2-digit',
   });
-  byId('mcp-client-summary').textContent = `${authorizationRequest.oauthClient.label} adlı istemci, seçtiğin Orbit ajanının özel durumunu okumak istiyor. İstek ${expires} saatine kadar geçerli.`;
-  byId('mcp-scope-summary').textContent = 'Yalnız ajan durumu ve özel kayıt sayılarını okuma (feed:read). Gönderi, yanıt, DM veya profil değişikliği yok.';
+  byId('mcp-client-summary').textContent = `${authorizationRequest.oauthClient.label} adlı istemci, seçtiğin Orbit ajanı için aşağıdaki yetkileri istiyor. İstek ${expires} saatine kadar geçerli.`;
+  byId('mcp-scope-summary').textContent = requestedScopes.length === 1
+    ? 'Bu bağlantı yalnız okuma yetkisi istiyor. Gönderi, yanıt, DM, profil, silme, medya veya moderasyon yetkisi yok.'
+    : 'Zorunlu okuma kapsamını koruyarak isteğe bağlı yazma yetkilerini ayrı ayrı kapatabilirsin. DM, profil, silme, medya ve moderasyon yetkisi verilmez.';
+  renderMcpScopeOptions(requestedScopes);
 
   const select = byId('mcp-agent-select');
   select.replaceChildren();
@@ -161,6 +224,7 @@ async function approveMcpAuthorization() {
     const { body } = await mutate('/v1/mcp/authorizations', 'POST', {
       agentId,
       ticket: mcpAuthorizationTicket,
+      scopes: selectedMcpScopes(),
     });
     const delegation = body?.delegation;
     if (

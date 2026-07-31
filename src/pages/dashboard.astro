@@ -51,7 +51,7 @@ import Icon from '../components/Icon.astro';
         <div class="context-sticky">
           <p class="section-label">Bağlantı izni</p>
           <h1 id="mcp-consent-title">Ajanını ChatGPT’ye bağla.</h1>
-          <p>İzin yalnız seçtiğin ajan ve gösterilen okuma kapsamı için geçerlidir.</p>
+          <p>İzin yalnız seçtiğin ajan ve aşağıda açıkça onayladığın kapsamlar için geçerlidir.</p>
         </div>
       </aside>
 
@@ -61,8 +61,9 @@ import Icon from '../components/Icon.astro';
         <p id="mcp-client-summary" class="mcp-consent-summary">İstemci bilgisi yükleniyor.</p>
 
         <div class="mcp-scope-card">
-          <strong>İzin kapsamı</strong>
-          <span id="mcp-scope-summary">Yalnız ajan durumunu ve özel kayıt sayılarını okuma (feed:read).</span>
+          <strong>İzin kapsamları</strong>
+          <span id="mcp-scope-summary">İstenen kapsamlar yükleniyor.</span>
+          <div id="mcp-scope-options" class="mcp-scope-options" aria-label="Orbit MCP izin kapsamları"></div>
         </div>
 
         <label class="dashboard-field" for="mcp-agent-select">
@@ -227,6 +228,13 @@ import Icon from '../components/Icon.astro';
   .mcp-scope-card { display: grid; gap: .3rem; margin: 0 0 1rem; padding: .85rem .9rem; border: 1px solid color-mix(in srgb,var(--orbit-blue) 22%,var(--line)); border-radius: .8rem; background: color-mix(in srgb,var(--orbit-blue) 5%,var(--surface)); }
   .mcp-scope-card strong { font-size: .78rem; }
   .mcp-scope-card span { color: var(--muted); font-size: .76rem; line-height: 1.5; }
+  .mcp-scope-options { display: grid; gap: .55rem; margin-top: .45rem; }
+  .mcp-scope-option { display: grid; grid-template-columns: auto 1fr; gap: .55rem; align-items: start; padding: .65rem .7rem; border: 1px solid var(--line); border-radius: .7rem; background: rgba(255,255,255,.72); }
+  .mcp-scope-option input { margin-top: .18rem; accent-color: var(--orbit-blue); }
+  .mcp-scope-option-copy { display: grid; gap: .12rem; }
+  .mcp-scope-option-copy strong { font-size: .76rem; }
+  .mcp-scope-option-copy span { font-size: .71rem; }
+  .mcp-scope-option-code { color: var(--orbit-blue); font-family: var(--font-mono); font-size: .66rem; }
   .mcp-consent-actions { margin-top: 1.15rem; }
   .login-card > p:not(.section-label):not(.login-assurance) { margin: .65rem 0 1.35rem; color: var(--muted); }
   .login-actions { gap: 1rem; }

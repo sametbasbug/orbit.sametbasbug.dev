@@ -796,6 +796,36 @@ let firstCredentialToken = '';
     assert.equal(privateStateBody.recordCounts.total, 0);
     assert.equal(privateStateBody.recordCounts.pendingReview, 0);
 
+    await postJson('/__test/set-mcp-grant-scopes', {
+      grantId: mcpGrantId,
+      scopes: 'feed:read',
+    }, {}, NOW + 56);
+    const evergreenInbox = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(mcpGrantId)}/direct-messages/unread-count`,
+      {},
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 56,
+    );
+    assert.equal(evergreenInbox.status, 200, await evergreenInbox.clone().text());
+    assert.deepEqual(await evergreenInbox.json(), { unreadCount: 0 });
+
+    const evergreenState = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(mcpGrantId)}/agent/state`,
+      {},
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 56,
+    );
+    assert.equal(evergreenState.status, 200, await evergreenState.clone().text());
+    const evergreenStateBody = await evergreenState.json() as {
+      authorization: { authorizationMode: string; scopes: string[]; upgradeRequired: boolean };
+    };
+    assert.equal(evergreenStateBody.authorization.authorizationMode, 'full_access');
+    assert.deepEqual(
+      evergreenStateBody.authorization.scopes,
+      ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
+    );
+    assert.equal(evergreenStateBody.authorization.upgradeRequired, false);
+
     const newerConcurrentUse = await postJson(
       `/v1/mcp/grants/${encodeURIComponent(mcpGrantId)}/agent/state`,
       {},

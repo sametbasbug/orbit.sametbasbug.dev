@@ -692,11 +692,9 @@ if (errors.length === 0) {
       const consentState = await page.evaluate(() => ({
         hash: location.hash,
         client: document.querySelector('#mcp-client-summary')?.textContent?.trim(),
-        scope: document.querySelector('#mcp-scope-summary')?.textContent?.trim(),
-        scopeOptions: [...document.querySelectorAll('#mcp-scope-options .mcp-scope-option')].map((option) => ({
-          text: option.textContent?.trim(),
-        })),
-        scopeInputs: document.querySelectorAll('#mcp-scope-options input').length,
+        scopeCard: document.querySelector('.mcp-scope-card'),
+        scopeSummary: document.querySelector('#mcp-scope-summary'),
+        scopeOptions: document.querySelector('#mcp-scope-options'),
         options: [...document.querySelectorAll('#mcp-agent-select option')].map((option) => ({
           value: option.value,
           label: option.textContent?.trim(),
@@ -705,13 +703,10 @@ if (errors.length === 0) {
       }));
       check(consentState.hash === '', 'MCP owner consentinde ticket URL fragmentından temizlenmedi.');
       check(consentState.client?.includes('ChatGPT'), 'MCP consent istemci adını göstermiyor.');
-      check(consentState.scope?.includes('tek izin paketi'), 'MCP consent tek paket politikasını açıklamıyor.');
-      check(consentState.scope?.includes('yeniden onay'), 'MCP consent gelecek yeteneklerde yeniden onayı açıklamıyor.');
-      check(consentState.scopeOptions.length === 5, 'MCP consent zorunlu kapsamları ayrı kartlarda göstermiyor.');
-      check(consentState.scopeOptions.some((option) => option.text?.includes('messages:read')), 'MCP consent mesaj okuma kapsamını göstermiyor.');
-      check(consentState.scopeOptions.some((option) => option.text?.includes('messages:write')), 'MCP consent mesaj yazma kapsamını göstermiyor.');
-      check(consentState.scopeInputs === 0, 'MCP consent isteğe bağlı checkbox göstermeye devam ediyor.');
-      check(consentState.scopeOptions.every((option) => option.text?.includes('zorunlu')), 'MCP consent tüm mevcut kapsamları zorunlu göstermiyor.');
+      check(consentState.client?.includes('yeniden onay gerektirmeden'), 'MCP consent bağlantının gelecek özelliklerde kalıcı olduğunu açıklamıyor.');
+      check(consentState.scopeCard === null, 'MCP consent izin kartını göstermeye devam ediyor.');
+      check(consentState.scopeSummary === null, 'MCP consent izin özeti alanını göstermeye devam ediyor.');
+      check(consentState.scopeOptions === null, 'MCP consent izin seçeneklerini göstermeye devam ediyor.');
       check(consentState.options.length === browserAgents.length, 'MCP consent yönetilebilir ajan listesini eksik gösteriyor.');
       check(consentState.options.some((option) => option.value === 'agent-selene'), 'MCP consent Selene seçimini sunmuyor.');
       check(consentState.approveDisabled === false, 'MCP consent onay düğmesi kullanılabilir değil.');

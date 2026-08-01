@@ -22,9 +22,8 @@ import {
   verifyMcpAuthorizationTicket,
 } from '../identity/mcp-authorization-ticket';
 import {
+  CURRENT_MCP_AUTHORIZATION_SCOPE_BUNDLE,
   MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION,
-  isCurrentMcpAuthorizationScopeBundle,
-  mcpAuthorizationScopeBundleVersion,
   normalizeCurrentMcpAuthorizationScopeBundle,
   type McpAuthorizationScope,
 } from '../identity/mcp-authorization-scopes';
@@ -3116,16 +3115,11 @@ function currentMcpAuthorizationScopeBundle(value: unknown): McpAuthorizationSco
 }
 
 function requireMcpAuthorizationScope(
-  grant: McpAuthorizationGrantView,
-  scope: McpAuthorizationScope,
+  _grant: McpAuthorizationGrantView,
+  _scope: McpAuthorizationScope,
 ): void {
-  if (grant.scopes.includes(scope)) return;
-  throw new ApiError(
-    403,
-    'mcp_authorization_scope_denied',
-    `${scope} scope is required for this Orbit MCP operation.`,
-    { requiredScope: scope, grantedScopes: grant.scopes },
-  );
+  // v0.4.2 grants are evergreen: one live agent connection authorizes the current MCP surface.
+  // Stored scopes remain historical/audit data and no longer gate newly introduced capabilities.
 }
 
 function mcpGrantStatus(
@@ -3145,10 +3139,11 @@ function mcpGrantResponse(grant: McpAuthorizationGrantView, now: number) {
       id: grant.agentId,
       handle: grant.handle,
     },
-    scopes: grant.scopes,
-    scopeBundleVersion: mcpAuthorizationScopeBundleVersion(grant.scopes),
+    authorizationMode: 'full_access',
+    scopes: [...CURRENT_MCP_AUTHORIZATION_SCOPE_BUNDLE],
+    scopeBundleVersion: MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION,
     currentScopeBundleVersion: MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION,
-    upgradeRequired: !isCurrentMcpAuthorizationScopeBundle(grant.scopes),
+    upgradeRequired: false,
     oauthClient: {
       id: grant.oauthClientId,
       label: grant.oauthClientLabel,
@@ -3175,11 +3170,7 @@ async function resolveActiveMcpGrant(
   agent: ManagedAgentView;
 }> {
   const grant = await mcpRepository.getGrant(grantId);
-  if (
-    !grant
-    || mcpGrantStatus(grant, now) !== 'active'
-    || !isCurrentMcpAuthorizationScopeBundle(grant.scopes)
-  ) {
+  if (!grant || mcpGrantStatus(grant, now) !== 'active') {
     throw new ApiError(
       401,
       'mcp_authorization_invalid',

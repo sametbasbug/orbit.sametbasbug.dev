@@ -230,6 +230,8 @@ let firstCredentialToken = '';
   async function createAuthorizedMcpGrant(options: {
     requestId: string;
     now: number;
+    agentId?: string;
+    cookies?: Map<string, string>;
   }): Promise<{
     grantId: string;
     delegationCode: string;
@@ -241,8 +243,8 @@ let firstCredentialToken = '';
         authorizationRequestId: options.requestId,
         oauthClientId: `chatgpt-${options.requestId}`,
         oauthClientLabel: 'ChatGPT',
-        scopes: ['feed:read', 'posts:write', 'replies:write'],
-        scopeBundleVersion: 1,
+        scopes: ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
+        scopeBundleVersion: 2,
       },
       { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
       options.now,
@@ -253,10 +255,10 @@ let firstCredentialToken = '';
     const created = await postJson(
       '/v1/mcp/authorizations',
       {
-        agentId: sponsoredAgentId,
+        agentId: options.agentId ?? sponsoredAgentId,
         ticket: ticketBody.ticket,
       },
-      authenticatedHeaders(sponsorCookies, true),
+      authenticatedHeaders(options.cookies ?? sponsorCookies, true),
       options.now + 1,
     );
     assert.equal(created.status, 201, await created.clone().text());
@@ -266,7 +268,7 @@ let firstCredentialToken = '';
     };
     assert.deepEqual(
       body.authorization.scopes,
-      ['feed:read', 'posts:write', 'replies:write'],
+      ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
     );
     return {
       grantId: body.authorization.id,
@@ -514,8 +516,8 @@ let firstCredentialToken = '';
       authorizationRequestId: mcpAuthorizationRequestId,
       oauthClientId: 'chatgpt-dynamic-client-001',
       oauthClientLabel: 'ChatGPT',
-      scopes: ['feed:read', 'posts:write', 'replies:write'],
-      scopeBundleVersion: 1,
+      scopes: ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
+      scopeBundleVersion: 2,
     };
 
     const unauthenticatedList = await request('/v1/mcp/authorizations', {}, NOW + 47);
@@ -562,9 +564,9 @@ let firstCredentialToken = '';
     assert.equal(ticketBody.authorizationRequest.oauthClient.label, 'ChatGPT');
     assert.deepEqual(
       ticketBody.authorizationRequest.scopes,
-      ['feed:read', 'posts:write', 'replies:write'],
+      ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
     );
-    assert.equal(ticketBody.authorizationRequest.scopeBundleVersion, 1);
+    assert.equal(ticketBody.authorizationRequest.scopeBundleVersion, 2);
     assert.equal(ticketBody.authorizationRequest.issuedAt, NOW + 49);
     assert.equal(ticketBody.authorizationRequest.expiresAt, NOW + 49 + 10 * 60 * 1000);
 
@@ -601,9 +603,9 @@ let firstCredentialToken = '';
     assert.equal(inspectedBody.authorizationRequest.oauthClient.label, 'ChatGPT');
     assert.deepEqual(
       inspectedBody.authorizationRequest.scopes,
-      ['feed:read', 'posts:write', 'replies:write'],
+      ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
     );
-    assert.equal(inspectedBody.authorizationRequest.scopeBundleVersion, 1);
+    assert.equal(inspectedBody.authorizationRequest.scopeBundleVersion, 2);
     assert.deepEqual(
       inspectedBody.manageableAgents.map((agent) => agent.id),
       [sponsoredAgentId],
@@ -683,7 +685,7 @@ let firstCredentialToken = '';
     mcpDelegationCode = createdBody.delegation.code;
     assert.ok(mcpGrantId);
     assert.ok(mcpDelegationCode.startsWith('orb_mcp_v1_'));
-    assert.deepEqual(createdBody.authorization.scopes, ['feed:read', 'posts:write', 'replies:write']);
+    assert.deepEqual(createdBody.authorization.scopes, ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write']);
     assert.equal(createdBody.authorization.agent.id, sponsoredAgentId);
     assert.equal(createdBody.authorization.oauthClient.label, 'ChatGPT');
     assert.equal(createdBody.authorization.status, 'active');
@@ -727,7 +729,7 @@ let firstCredentialToken = '';
       authorization: { id: string; scopes: string[]; status: string };
     };
     assert.equal(redeemedBody.authorization.id, mcpGrantId);
-    assert.deepEqual(redeemedBody.authorization.scopes, ['feed:read', 'posts:write', 'replies:write']);
+    assert.deepEqual(redeemedBody.authorization.scopes, ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write']);
     assert.equal(redeemedBody.authorization.status, 'active');
 
     const replay = await postJson('/v1/mcp/delegations/redeem', {
@@ -785,7 +787,7 @@ let firstCredentialToken = '';
     assert.equal(privateStateBody.authorization.id, mcpGrantId);
     assert.deepEqual(
       privateStateBody.authorization.scopes,
-      ['feed:read', 'posts:write', 'replies:write'],
+      ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
     );
     assert.equal(privateStateBody.authorization.lastUsedAt, NOW + 56);
     assert.equal(privateStateBody.agent.id, sponsoredAgentId);
@@ -979,6 +981,172 @@ let firstCredentialToken = '';
     assert.equal(replayReply.status, 202, await replayReply.clone().text());
     assert.equal(replayReply.headers.get('idempotency-replayed'), 'true');
     assert.deepEqual(await replayReply.json(), createdReplyBody);
+
+    const recipientAgentId = '019fba91-1000-7000-8000-000000000001';
+    await postJson('/__test/seed-publication-agent', {
+      agentId: recipientAgentId,
+      handle: 'mcp-inbox-recipient',
+      publicationMode: 'direct_publish',
+      status: 'active',
+      onboardingState: 'active',
+      role: '',
+      membershipId: '019fba91-1000-7000-8000-000000000002',
+      credentialId: '019fba91-1000-7000-8000-000000000003',
+      secretDigest: 'recipient-secret-digest-for-mcp-inbox-tests',
+      now: NOW + 17_100,
+    }, {}, NOW + 17_100);
+    const recipientGrant = await createAuthorizedMcpGrant({
+      requestId: 'chatgpt-inbox-recipient-request',
+      now: NOW + 17_110,
+      agentId: recipientAgentId,
+      cookies: ownerCookies,
+    });
+
+    const initialUnread = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/direct-messages/unread-count`,
+      {},
+      mcpServiceHeaders(),
+      NOW + 17_120,
+    );
+    assert.equal(initialUnread.status, 200, await initialUnread.clone().text());
+    assert.deepEqual(await initialUnread.json(), { unreadCount: 0 });
+
+    const directMessageBody = {
+      recipientHandle: 'mcp-inbox-recipient',
+      bodyMarkdown: 'MCP inbox üzerinden özel mesaj testi.',
+    };
+    const sentMessage = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/direct-messages/send`,
+      directMessageBody,
+      mcpServiceHeaders('mcp-direct-message-001'),
+      NOW + 17_130,
+    );
+    assert.equal(sentMessage.status, 201, await sentMessage.clone().text());
+    const sentMessageBody = await sentMessage.json() as {
+      directMessage: {
+        id: string;
+        sender: { handle: string };
+        recipient: { handle: string };
+        bodyMarkdown: string;
+        readAt: number | null;
+      };
+    };
+    assert.equal(sentMessageBody.directMessage.sender.handle, 'selene-test-agent');
+    assert.equal(sentMessageBody.directMessage.recipient.handle, 'mcp-inbox-recipient');
+    assert.equal(sentMessageBody.directMessage.readAt, null);
+
+    const replayMessage = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/direct-messages/send`,
+      directMessageBody,
+      mcpServiceHeaders('mcp-direct-message-001'),
+      NOW + 17_131,
+    );
+    assert.equal(replayMessage.status, 201, await replayMessage.clone().text());
+    assert.equal(replayMessage.headers.get('idempotency-replayed'), 'true');
+    assert.deepEqual(await replayMessage.json(), sentMessageBody);
+
+    const conflictingMessage = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/direct-messages/send`,
+      { ...directMessageBody, bodyMarkdown: 'Aynı anahtarla farklı özel mesaj.' },
+      mcpServiceHeaders('mcp-direct-message-001'),
+      NOW + 17_132,
+    );
+    assert.equal(conflictingMessage.status, 409, await conflictingMessage.clone().text());
+    const conflictingMessageBody = await conflictingMessage.json() as { error: { code: string } };
+    assert.equal(conflictingMessageBody.error.code, 'idempotency_conflict');
+
+    const selfMessage = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/direct-messages/send`,
+      { recipientHandle: 'selene-test-agent', bodyMarkdown: 'Kendine mesaj gönderilemez.' },
+      mcpServiceHeaders('mcp-direct-message-self'),
+      NOW + 23_000,
+    );
+    assert.equal(selfMessage.status, 400);
+    const selfMessageBody = await selfMessage.json() as { error: { code: string } };
+    assert.equal(selfMessageBody.error.code, 'direct_message_self_forbidden');
+
+    const sentBox = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/direct-messages/list`,
+      { box: 'sent', limit: 10 },
+      mcpServiceHeaders(),
+      NOW + 23_001,
+    );
+    assert.equal(sentBox.status, 200, await sentBox.clone().text());
+    const sentBoxBody = await sentBox.json() as {
+      directMessages: Array<{ id: string; bodyMarkdown: string }>;
+      nextCursor: string | null;
+    };
+    assert.deepEqual(sentBoxBody.directMessages.map((item) => item.id), [sentMessageBody.directMessage.id]);
+    assert.equal(sentBoxBody.directMessages[0]?.bodyMarkdown, directMessageBody.bodyMarkdown);
+    assert.equal(sentBoxBody.nextCursor, null);
+
+    const recipientUnread = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/direct-messages/unread-count`,
+      {},
+      mcpServiceHeaders(),
+      NOW + 23_002,
+    );
+    assert.equal(recipientUnread.status, 200, await recipientUnread.clone().text());
+    assert.deepEqual(await recipientUnread.json(), { unreadCount: 1 });
+
+    const recipientInbox = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/direct-messages/list`,
+      { box: 'inbox', limit: 10 },
+      mcpServiceHeaders(),
+      NOW + 23_003,
+    );
+    assert.equal(recipientInbox.status, 200, await recipientInbox.clone().text());
+    const recipientInboxBody = await recipientInbox.json() as {
+      directMessages: Array<{ id: string; sender: { handle: string }; bodyMarkdown: string; readAt: number | null }>;
+    };
+    assert.equal(recipientInboxBody.directMessages[0]?.id, sentMessageBody.directMessage.id);
+    assert.equal(recipientInboxBody.directMessages[0]?.sender.handle, 'selene-test-agent');
+    assert.equal(recipientInboxBody.directMessages[0]?.readAt, null);
+
+    const markedRead = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/direct-messages/${encodeURIComponent(sentMessageBody.directMessage.id)}/read`,
+      {},
+      mcpServiceHeaders(),
+      NOW + 23_004,
+    );
+    assert.equal(markedRead.status, 200, await markedRead.clone().text());
+    const markedReadBody = await markedRead.json() as { directMessage: { id: string; readAt: number } };
+    assert.equal(markedReadBody.directMessage.id, sentMessageBody.directMessage.id);
+    assert.equal(markedReadBody.directMessage.readAt, NOW + 23_004);
+
+    const replayRead = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/direct-messages/${encodeURIComponent(sentMessageBody.directMessage.id)}/read`,
+      {},
+      mcpServiceHeaders(),
+      NOW + 23_005,
+    );
+    assert.equal(replayRead.status, 200, await replayRead.clone().text());
+    assert.deepEqual(await replayRead.json(), markedReadBody);
+
+    const afterReadUnread = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/direct-messages/unread-count`,
+      {},
+      mcpServiceHeaders(),
+      NOW + 23_006,
+    );
+    assert.equal(afterReadUnread.status, 200, await afterReadUnread.clone().text());
+    assert.deepEqual(await afterReadUnread.json(), { unreadCount: 0 });
+
+    const senderCannotMarkRead = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/direct-messages/${encodeURIComponent(sentMessageBody.directMessage.id)}/read`,
+      {},
+      mcpServiceHeaders(),
+      NOW + 23_007,
+    );
+    assert.equal(senderCannotMarkRead.status, 404);
+
+    const revokedRecipientGrant = await postJson(
+      `/v1/mcp/authorizations/${encodeURIComponent(recipientGrant.grantId)}/revoke`,
+      {},
+      authenticatedHeaders(ownerCookies, true),
+      NOW + 23_008,
+    );
+    assert.equal(revokedRecipientGrant.status, 200, await revokedRecipientGrant.clone().text());
 
     const revokedMcpWriteGrant = await postJson(
       `/v1/mcp/authorizations/${encodeURIComponent(full.grantId)}/revoke`,
@@ -1176,8 +1344,8 @@ let firstCredentialToken = '';
       authorizationRequestId: 'foreign-authorization-request',
       oauthClientId: 'foreign-client',
       oauthClientLabel: 'Foreign client',
-      scopes: ['feed:read', 'posts:write', 'replies:write'],
-      scopeBundleVersion: 1,
+      scopes: ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
+      scopeBundleVersion: 2,
     }, { authorization: `Bearer ${MCP_SERVICE_SECRET}` }, NOW + 54);
     assert.equal(foreignTicketResponse.status, 201);
     const foreignTicket = (await foreignTicketResponse.json() as { ticket: string }).ticket;

@@ -227,7 +227,7 @@ describe('Orbit MCP authorization foundation', { concurrency: false }, () => {
     assert.deepEqual(listed.grants.map((grant) => grant.id), [input.grantId]);
   });
 
-  test('canonical read and write scope combinations persist without widening old grants', async () => {
+  test('legacy scope combinations persist and the current inbox bundle is canonical', async () => {
     const now = Date.now();
     const accountId = 'mcp-scope-sponsor';
     const agentId = 'mcp-scope-agent';
@@ -238,6 +238,7 @@ describe('Orbit MCP authorization foundation', { concurrency: false }, () => {
       ['feed:read', 'posts:write'],
       ['feed:read', 'replies:write'],
       ['feed:read', 'posts:write', 'replies:write'],
+      ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
     ];
     for (const [index, scopes] of combinations.entries()) {
       const input = {
@@ -250,10 +251,16 @@ describe('Orbit MCP authorization foundation', { concurrency: false }, () => {
 
     const reordered = {
       ...grantData('mcp-scope-reordered', accountId, agentId, now + 10),
-      scopes: ['replies:write', 'feed:read', 'posts:write'],
+      scopes: ['messages:write', 'replies:write', 'feed:read', 'messages:read', 'posts:write'],
     };
     const canonical = await callAction<{ grant: { scopes: string[] } }>('createMcpGrant', reordered, 201);
-    assert.deepEqual(canonical.grant.scopes, ['feed:read', 'posts:write', 'replies:write']);
+    assert.deepEqual(canonical.grant.scopes, [
+      'feed:read',
+      'posts:write',
+      'replies:write',
+      'messages:read',
+      'messages:write',
+    ]);
   });
 
   test('unrelated accounts and invalid scope sets are rejected', async () => {
@@ -273,6 +280,8 @@ describe('Orbit MCP authorization foundation', { concurrency: false }, () => {
       ['posts:write'],
       ['feed:read', 'feed:read'],
       ['feed:read', 'records:write'],
+      ['feed:read', 'posts:write', 'replies:write', 'messages:read'],
+      ['feed:read', 'messages:write'],
     ];
     for (const [index, scopes] of invalidSets.entries()) {
       const invalid = {

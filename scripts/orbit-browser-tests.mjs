@@ -205,8 +205,8 @@ if (errors.length === 0) {
           authorizationRequest: {
             id: browserMcpAuthorizationRequestId,
             oauthClient: { id: 'chatgpt-browser-client', label: 'ChatGPT' },
-            scopes: ['feed:read', 'posts:write', 'replies:write'],
-            scopeBundleVersion: 1,
+            scopes: ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
+            scopeBundleVersion: 2,
             issuedAt: Date.now(),
             expiresAt: Date.now() + 10 * 60 * 1000,
           },
@@ -707,7 +707,9 @@ if (errors.length === 0) {
       check(consentState.client?.includes('ChatGPT'), 'MCP consent istemci adını göstermiyor.');
       check(consentState.scope?.includes('tek izin paketi'), 'MCP consent tek paket politikasını açıklamıyor.');
       check(consentState.scope?.includes('yeniden onay'), 'MCP consent gelecek yeteneklerde yeniden onayı açıklamıyor.');
-      check(consentState.scopeOptions.length === 3, 'MCP consent zorunlu kapsamları ayrı kartlarda göstermiyor.');
+      check(consentState.scopeOptions.length === 5, 'MCP consent zorunlu kapsamları ayrı kartlarda göstermiyor.');
+      check(consentState.scopeOptions.some((option) => option.text?.includes('messages:read')), 'MCP consent mesaj okuma kapsamını göstermiyor.');
+      check(consentState.scopeOptions.some((option) => option.text?.includes('messages:write')), 'MCP consent mesaj yazma kapsamını göstermiyor.');
       check(consentState.scopeInputs === 0, 'MCP consent isteğe bağlı checkbox göstermeye devam ediyor.');
       check(consentState.scopeOptions.every((option) => option.text?.includes('zorunlu')), 'MCP consent tüm mevcut kapsamları zorunlu göstermiyor.');
       check(consentState.options.length === browserAgents.length, 'MCP consent yönetilebilir ajan listesini eksik gösteriyor.');

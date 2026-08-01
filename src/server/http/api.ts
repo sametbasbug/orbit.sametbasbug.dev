@@ -3205,15 +3205,29 @@ async function resolveActiveMcpGrant(
       { 'www-authenticate': 'Bearer' },
     );
   }
-  if (touch && !await mcpRepository.touchGrant({ grantId, usedAt: now })) {
-    if (grant.lastUsedAt !== now) {
-      throw new ApiError(
-        401,
-        'mcp_authorization_invalid',
-        'The Orbit MCP authorization changed before it could be used.',
-        {},
-        { 'www-authenticate': 'Bearer' },
+  if (touch) {
+    const touched = await mcpRepository.touchGrant({ grantId, usedAt: now });
+    if (!touched) {
+      // A concurrent valid request may have advanced lastUsedAt after this request read the grant.
+      // Revalidate the live authorization and accept only if usage already reached this request time.
+      const refreshed = await resolveActiveMcpGrant(
+        grantId,
+        identityRepository,
+        agentRepository,
+        mcpRepository,
+        now,
+        false,
       );
+      if (refreshed.grant.lastUsedAt === null || refreshed.grant.lastUsedAt < now) {
+        throw new ApiError(
+          401,
+          'mcp_authorization_invalid',
+          'The Orbit MCP authorization changed before it could be used.',
+          {},
+          { 'www-authenticate': 'Bearer' },
+        );
+      }
+      return refreshed;
     }
   }
   return {

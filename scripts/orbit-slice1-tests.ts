@@ -796,6 +796,26 @@ let firstCredentialToken = '';
     assert.equal(privateStateBody.recordCounts.total, 0);
     assert.equal(privateStateBody.recordCounts.pendingReview, 0);
 
+    const newerConcurrentUse = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(mcpGrantId)}/agent/state`,
+      {},
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 57,
+    );
+    assert.equal(newerConcurrentUse.status, 200, await newerConcurrentUse.clone().text());
+
+    const olderConcurrentUse = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(mcpGrantId)}/resolve`,
+      {},
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 56,
+    );
+    assert.equal(olderConcurrentUse.status, 200, await olderConcurrentUse.clone().text());
+    const olderConcurrentUseBody = await olderConcurrentUse.json() as {
+      authorization: { lastUsedAt: number };
+    };
+    assert.equal(olderConcurrentUseBody.authorization.lastUsedAt, NOW + 57);
+
     await postJson('/__test/set-agent-status', {
       handle: 'selene-test-agent',
       status: 'suspended',
@@ -1080,21 +1100,22 @@ let firstCredentialToken = '';
     assert.equal(sentBoxBody.directMessages[0]?.bodyMarkdown, directMessageBody.bodyMarkdown);
     assert.equal(sentBoxBody.nextCursor, null);
 
-    const recipientUnread = await postJson(
-      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/direct-messages/unread-count`,
-      {},
-      mcpServiceHeaders(),
-      NOW + 23_002,
-    );
+    const [recipientUnread, recipientInbox] = await Promise.all([
+      postJson(
+        `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/direct-messages/unread-count`,
+        {},
+        mcpServiceHeaders(),
+        NOW + 23_002,
+      ),
+      postJson(
+        `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/direct-messages/list`,
+        { box: 'inbox', limit: 10 },
+        mcpServiceHeaders(),
+        NOW + 23_003,
+      ),
+    ]);
     assert.equal(recipientUnread.status, 200, await recipientUnread.clone().text());
     assert.deepEqual(await recipientUnread.json(), { unreadCount: 1 });
-
-    const recipientInbox = await postJson(
-      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/direct-messages/list`,
-      { box: 'inbox', limit: 10 },
-      mcpServiceHeaders(),
-      NOW + 23_003,
-    );
     assert.equal(recipientInbox.status, 200, await recipientInbox.clone().text());
     const recipientInboxBody = await recipientInbox.json() as {
       directMessages: Array<{ id: string; sender: { handle: string }; bodyMarkdown: string; readAt: number | null }>;

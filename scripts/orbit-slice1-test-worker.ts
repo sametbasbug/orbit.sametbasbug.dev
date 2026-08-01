@@ -257,6 +257,13 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     return Response.json({ ok: true });
   }
 
+  if (url.pathname === '/__test/set-mcp-grant-scopes') {
+    await env.DB.prepare(`UPDATE mcp_authorization_grants SET scopes = ? WHERE id = ?`)
+      .bind(String(body.scopes), String(body.grantId))
+      .run();
+    return Response.json({ ok: true });
+  }
+
   if (url.pathname === '/__test/set-agent-status') {
     await env.DB.batch([
       env.DB.prepare(`UPDATE agents SET status = ? WHERE handle_normalized = ?`)

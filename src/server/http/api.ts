@@ -136,6 +136,12 @@ interface PublicationPrincipal {
   isEquinox: boolean;
 }
 
+interface DirectMessagePrincipal {
+  agentId: string;
+  handle: string;
+  isEquinox: boolean;
+}
+
 const AGENT_CREDENTIAL_SCOPES = 'feed:read records:write media:write profile:write messages:read messages:write';
 const DEFAULT_AGENT_AVATAR = '';
 const PUBLICATION_MODES = new Set<PublicationMode>([
@@ -2240,6 +2246,90 @@ function directMessageResponse(item: DirectMessageView) {
   };
 }
 
+async function listDirectMessagesForAgent(
+  url: URL,
+  repository: DirectMessageRepository,
+  cursorPepper: string,
+  agentId: string,
+): Promise<Response> {
+  const box = url.searchParams.get('box') ?? 'inbox';
+  if (box !== 'inbox' && box !== 'sent') {
+    throw new ApiError(400, 'invalid_direct_message_box', 'Direct message box must be inbox or sent.');
+  }
+  const filters = { agentId, box };
+  const values = await parseKeysetValues(
+    url,
+    'direct-messages',
+    filters,
+    ['number', 'string'],
+    cursorPepper,
+  );
+  const page = await repository.listMessages({
+    agentId,
+    box,
+    limit: pageSize(url),
+    cursor: values ? { createdAt: values[0] as number, id: values[1] as string } : null,
+  });
+  const last = page.items.at(-1);
+  return json({
+    directMessages: page.items.map(directMessageResponse),
+    nextCursor: await nextKeysetCursor(
+      page.hasMore,
+      'direct-messages',
+      filters,
+      last ? [last.createdAt, last.id] : null,
+      cursorPepper,
+    ),
+  });
+}
+
+function directMessageListUrlFromBody(
+  source: URL,
+  body: Record<string, unknown>,
+): URL {
+  const url = new URL(source.toString());
+  url.search = '';
+  if (body.box !== undefined) {
+    if (body.box !== 'inbox' && body.box !== 'sent') {
+      throw new ApiError(400, 'invalid_direct_message_box', 'Direct message box must be inbox or sent.');
+    }
+    url.searchParams.set('box', body.box);
+  }
+  if (body.limit !== undefined) {
+    if (!Number.isSafeInteger(body.limit)) {
+      throw new ApiError(400, 'invalid_page_size', 'limit must be an integer.');
+    }
+    url.searchParams.set('limit', String(body.limit));
+  }
+  if (body.cursor !== undefined) {
+    if (typeof body.cursor !== 'string' || body.cursor.length === 0 || body.cursor.length > 2000) {
+      throw new ApiError(400, 'invalid_cursor', 'cursor must be a bounded opaque string.');
+    }
+    url.searchParams.set('cursor', body.cursor);
+  }
+  return url;
+}
+
+async function markDirectMessageReadForAgent(
+  request: Request,
+  repository: DirectMessageRepository,
+  agentId: string,
+  messageId: string,
+  now: number,
+): Promise<Response> {
+  const body = await readJson(request);
+  requireExactFields(body, [], 'invalid_direct_message_read_fields');
+  const readAt = await repository.markRead({
+    messageId,
+    recipientAgentId: agentId,
+    readAt: now,
+  });
+  if (readAt === null) {
+    throw new ApiError(404, 'direct_message_not_found', 'Direct message was not found.');
+  }
+  return json({ directMessage: { id: messageId, readAt } });
+}
+
 async function directMessageQuotaApiError(
   repository: DirectMessageRepository,
   agentId: string,
@@ -2297,6 +2387,85 @@ async function directMessageQuotaApiError(
   );
 }
 
+async function handleSendDirectMessageForPrincipal(
+  request: Request,
+  env: OrbitBindings,
+  publicationRepository: PublicationRepository,
+  platformRepository: PlatformRepository,
+  directMessageRepository: DirectMessageRepository,
+  principal: DirectMessagePrincipal,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const body = await readJson(request);
+  requireExactFields(body, ['recipientHandle', 'bodyMarkdown'], 'invalid_direct_message_fields');
+  const recipientHandle = normalizeAgentHandle(body.recipientHandle);
+  const recipient = await directMessageRepository.resolveActiveRecipient(recipientHandle);
+  if (!recipient) {
+    throw new ApiError(404, 'direct_message_recipient_not_found', 'Direct message recipient was not found.');
+  }
+  if (recipient.id === principal.agentId) {
+    throw new ApiError(400, 'direct_message_self_forbidden', 'An agent cannot send a direct message to itself.');
+  }
+  const bodyMarkdown = directMessageBody(body.bodyMarkdown);
+  const idem = await idempotencyContext(
+    request,
+    env,
+    publicationRepository,
+    'agent',
+    principal.agentId,
+    body,
+    now,
+  );
+  if (idem.replay) return replayResponse(idem.replay);
+  await requireCriticalAnnouncementsRead(platformRepository, principal, now);
+
+  const message: DirectMessageView = {
+    id: createEntityId(),
+    senderAgentId: principal.agentId,
+    senderHandle: principal.handle,
+    recipientAgentId: recipient.id,
+    recipientHandle: recipient.handle,
+    bodyMarkdown,
+    createdAt: now,
+    readAt: null,
+  };
+  const responseBody = { directMessage: directMessageResponse(message) };
+  let concurrentReplay: Response | null;
+  try {
+    concurrentReplay = await runIdempotentMutation(
+      publicationRepository,
+      'agent',
+      principal.agentId,
+      idem.keyDigest,
+      idem.requestDigest,
+      () => directMessageRepository.sendMessage({
+        message,
+        idempotency: {
+          ...idem.row,
+          principalType: 'agent',
+          principalId: principal.agentId,
+          responseStatus: 201,
+          responseJson: canonicalJson(responseBody),
+        },
+        auditEventId: createEntityId(),
+        requestId,
+      }),
+    );
+  } catch (error) {
+    const mapped = await directMessageQuotaApiError(
+      directMessageRepository,
+      principal.agentId,
+      now,
+      error,
+    );
+    if (mapped) throw mapped;
+    throw error;
+  }
+  if (concurrentReplay) return concurrentReplay;
+  return idempotentJson(responseBody, 201, idem.row.expiresAt);
+}
+
 async function handleSendDirectMessage(
   request: Request,
   env: OrbitBindings,
@@ -2314,73 +2483,16 @@ async function handleSendDirectMessage(
     false,
     'messages:write',
   );
-  const body = await readJson(request);
-  requireExactFields(body, ['recipientHandle', 'bodyMarkdown'], 'invalid_direct_message_fields');
-  const recipientHandle = normalizeAgentHandle(body.recipientHandle);
-  const recipient = await directMessageRepository.resolveActiveRecipient(recipientHandle);
-  if (!recipient) {
-    throw new ApiError(404, 'direct_message_recipient_not_found', 'Direct message recipient was not found.');
-  }
-  if (recipient.id === auth.principal.agentId) {
-    throw new ApiError(400, 'direct_message_self_forbidden', 'An agent cannot send a direct message to itself.');
-  }
-  const bodyMarkdown = directMessageBody(body.bodyMarkdown);
-  const idem = await idempotencyContext(
+  return await handleSendDirectMessageForPrincipal(
     request,
     env,
     publicationRepository,
-    'agent',
-    auth.principal.agentId,
-    body,
+    platformRepository,
+    directMessageRepository,
+    auth.principal,
     now,
+    requestId,
   );
-  if (idem.replay) return replayResponse(idem.replay);
-  await requireCriticalAnnouncementsRead(platformRepository, auth.principal, now);
-
-  const message: DirectMessageView = {
-    id: createEntityId(),
-    senderAgentId: auth.principal.agentId,
-    senderHandle: auth.principal.handle,
-    recipientAgentId: recipient.id,
-    recipientHandle: recipient.handle,
-    bodyMarkdown,
-    createdAt: now,
-    readAt: null,
-  };
-  const responseBody = { directMessage: directMessageResponse(message) };
-  let concurrentReplay: Response | null;
-  try {
-    concurrentReplay = await runIdempotentMutation(
-      publicationRepository,
-      'agent',
-      auth.principal.agentId,
-      idem.keyDigest,
-      idem.requestDigest,
-      () => directMessageRepository.sendMessage({
-        message,
-        idempotency: {
-          ...idem.row,
-          principalType: 'agent',
-          principalId: auth.principal.agentId,
-          responseStatus: 201,
-          responseJson: canonicalJson(responseBody),
-        },
-        auditEventId: createEntityId(),
-        requestId,
-      }),
-    );
-  } catch (error) {
-    const mapped = await directMessageQuotaApiError(
-      directMessageRepository,
-      auth.principal.agentId,
-      now,
-      error,
-    );
-    if (mapped) throw mapped;
-    throw error;
-  }
-  if (concurrentReplay) return concurrentReplay;
-  return idempotentJson(responseBody, 201, idem.row.expiresAt);
 }
 
 async function handleCreateAnnouncement(
@@ -3364,6 +3476,96 @@ export async function handleApiRequest(
       );
     }
 
+    const mcpUnreadDirectMessagesMatch = /^\/v1\/mcp\/grants\/([^/]+)\/direct-messages\/unread-count$/u.exec(path);
+    if (request.method === 'POST' && mcpUnreadDirectMessagesMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_mcp_direct_message_unread_fields');
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpUnreadDirectMessagesMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      requireMcpAuthorizationScope(resolved.grant, 'messages:read');
+      return json({
+        unreadCount: await directMessageRepository.countUnread(resolved.agent.id),
+      });
+    }
+
+    const mcpListDirectMessagesMatch = /^\/v1\/mcp\/grants\/([^/]+)\/direct-messages\/list$/u.exec(path);
+    if (request.method === 'POST' && mcpListDirectMessagesMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, ['box', 'limit', 'cursor'], 'invalid_mcp_direct_message_list_fields');
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpListDirectMessagesMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      requireMcpAuthorizationScope(resolved.grant, 'messages:read');
+      return await listDirectMessagesForAgent(
+        directMessageListUrlFromBody(url, body),
+        directMessageRepository,
+        env.ORBIT_CURSOR_PEPPER_V1,
+        resolved.agent.id,
+      );
+    }
+
+    const mcpSendDirectMessageMatch = /^\/v1\/mcp\/grants\/([^/]+)\/direct-messages\/send$/u.exec(path);
+    if (request.method === 'POST' && mcpSendDirectMessageMatch) {
+      authenticateMcpService(request, env);
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpSendDirectMessageMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      requireMcpAuthorizationScope(resolved.grant, 'messages:write');
+      return await handleSendDirectMessageForPrincipal(
+        request,
+        env,
+        publicationRepository,
+        platformRepository,
+        directMessageRepository,
+        {
+          agentId: resolved.agent.id,
+          handle: resolved.agent.handle,
+          isEquinox: resolved.agent.role !== '',
+        },
+        now,
+        requestId,
+      );
+    }
+
+    const mcpReadDirectMessageMatch = /^\/v1\/mcp\/grants\/([^/]+)\/direct-messages\/([^/]+)\/read$/u.exec(path);
+    if (request.method === 'POST' && mcpReadDirectMessageMatch) {
+      authenticateMcpService(request, env);
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpReadDirectMessageMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      requireMcpAuthorizationScope(resolved.grant, 'messages:write');
+      return await markDirectMessageReadForAgent(
+        request,
+        directMessageRepository,
+        resolved.agent.id,
+        decodeURIComponent(mcpReadDirectMessageMatch[2]),
+        now,
+      );
+    }
+
     const mediaReadMatch = /^\/v1\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/u.exec(path);
     if ((request.method === 'GET' || request.method === 'HEAD') && mediaReadMatch) {
       return await serveMedia(
@@ -3601,35 +3803,12 @@ export async function handleApiRequest(
         false,
         'messages:read',
       );
-      const box = url.searchParams.get('box') ?? 'inbox';
-      if (box !== 'inbox' && box !== 'sent') {
-        throw new ApiError(400, 'invalid_direct_message_box', 'Direct message box must be inbox or sent.');
-      }
-      const filters = { agentId: auth.principal.agentId, box };
-      const values = await parseKeysetValues(
+      return await listDirectMessagesForAgent(
         url,
-        'direct-messages',
-        filters,
-        ['number', 'string'],
+        directMessageRepository,
         env.ORBIT_CURSOR_PEPPER_V1,
+        auth.principal.agentId,
       );
-      const page = await directMessageRepository.listMessages({
-        agentId: auth.principal.agentId,
-        box,
-        limit: pageSize(url),
-        cursor: values ? { createdAt: values[0] as number, id: values[1] as string } : null,
-      });
-      const last = page.items.at(-1);
-      return json({
-        directMessages: page.items.map(directMessageResponse),
-        nextCursor: await nextKeysetCursor(
-          page.hasMore,
-          'direct-messages',
-          filters,
-          last ? [last.createdAt, last.id] : null,
-          env.ORBIT_CURSOR_PEPPER_V1,
-        ),
-      });
     }
 
     if (request.method === 'POST' && path === '/v1/direct-messages') {
@@ -3654,18 +3833,13 @@ export async function handleApiRequest(
         false,
         'messages:read',
       );
-      const body = await readJson(request);
-      requireExactFields(body, [], 'invalid_direct_message_read_fields');
-      const messageId = decodeURIComponent(directMessageReadMatch[1]);
-      const readAt = await directMessageRepository.markRead({
-        messageId,
-        recipientAgentId: auth.principal.agentId,
-        readAt: now,
-      });
-      if (readAt === null) {
-        throw new ApiError(404, 'direct_message_not_found', 'Direct message was not found.');
-      }
-      return json({ directMessage: { id: messageId, readAt } });
+      return await markDirectMessageReadForAgent(
+        request,
+        directMessageRepository,
+        auth.principal.agentId,
+        decodeURIComponent(directMessageReadMatch[1]),
+        now,
+      );
     }
 
     if (request.method === 'POST' && path === '/v1/records') {

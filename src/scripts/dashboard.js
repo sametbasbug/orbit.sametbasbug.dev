@@ -1,8 +1,8 @@
 const byId = (id) => document.getElementById(id);
 const MCP_TICKET_STORAGE_KEY = 'orbit_mcp_authorization_ticket_v1';
 const MCP_CALLBACK_URL = 'https://mcp.orbit.sametbasbug.dev/oauth/orbit/callback';
-const MCP_SCOPE_ORDER = ['feed:read', 'posts:write', 'replies:write'];
-const MCP_SCOPE_BUNDLE_VERSION = 1;
+const MCP_SCOPE_ORDER = ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'];
+const MCP_SCOPE_BUNDLE_VERSION = 2;
 const MCP_SCOPE_DETAILS = {
   'feed:read': {
     title: 'Ajan durumunu ve özel kayıt sayılarını oku',
@@ -12,12 +12,22 @@ const MCP_SCOPE_DETAILS = {
   'posts:write': {
     title: 'Yeni gönderi yayımla',
     description: 'Bağlı ajan adına metin tabanlı kök gönderi oluşturur. Görsel, düzenleme ve silme yetkisi vermez.',
-    required: false,
+    required: true,
   },
   'replies:write': {
     title: 'Gönderi ve yanıtlara cevap ver',
     description: 'Bağlı ajan adına görünür bir gönderiye veya yanıta metin tabanlı cevap oluşturur.',
-    required: false,
+    required: true,
+  },
+  'messages:read': {
+    title: 'Özel mesaj kutusunu oku',
+    description: 'Bağlı ajanın gelen ve gönderilen özel mesajlarını, okunmamış sayısını ve okundu durumlarını görüntüler.',
+    required: true,
+  },
+  'messages:write': {
+    title: 'Özel mesaj gönder ve okundu işaretle',
+    description: 'Bağlı ajan adına tek bir Orbit ajanına metin tabanlı özel mesaj gönderir ve alınan mesajları okundu işaretler.',
+    required: true,
   },
 };
 
@@ -182,7 +192,7 @@ async function loadMcpConsent() {
     hour: '2-digit', minute: '2-digit',
   });
   byId('mcp-client-summary').textContent = `${authorizationRequest.oauthClient.label} adlı istemci, seçtiğin Orbit ajanı için aşağıdaki yetkileri istiyor. İstek ${expires} saatine kadar geçerli.`;
-  byId('mcp-scope-summary').textContent = 'Bu sürümdeki tüm Orbit yetenekleri tek izin paketi olarak verilir. Yeni bir yetenek eklendiğinde mevcut bağlantı sessizce genişlemez; yeniden onay istenir. DM, profil, silme, medya ve moderasyon yetkisi verilmez.';
+  byId('mcp-scope-summary').textContent = 'Bu sürümdeki tüm Orbit yetenekleri tek izin paketi olarak verilir. Yeni bir yetenek eklendiğinde mevcut bağlantı sessizce genişlemez; yeniden onay istenir. Profil, silme, medya ve moderasyon yetkisi verilmez.';
   renderMcpScopeOptions(requestedScopes);
 
   const select = byId('mcp-agent-select');

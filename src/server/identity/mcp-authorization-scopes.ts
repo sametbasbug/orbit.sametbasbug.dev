@@ -2,14 +2,23 @@ export const MCP_AUTHORIZATION_SCOPES = [
   'feed:read',
   'posts:write',
   'replies:write',
+  'messages:read',
+  'messages:write',
 ] as const;
 
-export const MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION = 1;
+export const MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION = 2;
 export const CURRENT_MCP_AUTHORIZATION_SCOPE_BUNDLE = [...MCP_AUTHORIZATION_SCOPES] as const;
 
 export type McpAuthorizationScope = typeof MCP_AUTHORIZATION_SCOPES[number];
 
 const SCOPE_SET = new Set<string>(MCP_AUTHORIZATION_SCOPES);
+const ALLOWED_SCOPE_COMBINATIONS = new Set([
+  'feed:read',
+  'feed:read posts:write',
+  'feed:read replies:write',
+  'feed:read posts:write replies:write',
+  'feed:read posts:write replies:write messages:read messages:write',
+]);
 
 export function normalizeMcpAuthorizationScopes(value: unknown): McpAuthorizationScope[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > MCP_AUTHORIZATION_SCOPES.length) {
@@ -27,7 +36,11 @@ export function normalizeMcpAuthorizationScopes(value: unknown): McpAuthorizatio
     throw new Error('mcp_authorization_scope_invalid');
   }
 
-  return MCP_AUTHORIZATION_SCOPES.filter((scope) => requested.includes(scope));
+  const normalized = MCP_AUTHORIZATION_SCOPES.filter((scope) => requested.includes(scope));
+  if (!ALLOWED_SCOPE_COMBINATIONS.has(normalized.join(' '))) {
+    throw new Error('mcp_authorization_scope_invalid');
+  }
+  return normalized;
 }
 
 export function isCurrentMcpAuthorizationScopeBundle(

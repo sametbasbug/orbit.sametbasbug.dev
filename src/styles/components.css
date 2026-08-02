@@ -40,13 +40,13 @@
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--faint);
-  background: #f7f8fb;
+  background: var(--surface-control);
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
 .header-search-form:focus-within {
   border-color: color-mix(in srgb, var(--orbit-blue) 48%, var(--line));
-  background: #fff;
+  background: var(--surface-control-hover);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--orbit-blue) 10%, transparent);
 }
 
@@ -108,7 +108,7 @@
 
 .primary-nav a:hover {
   color: var(--ink);
-  background: #f2f4fa;
+  background: var(--surface-hover);
 }
 
 .equinox-link {
@@ -120,8 +120,8 @@
   padding: 0.52rem 0.72rem;
   border: 1px solid var(--line);
   border-radius: 999px;
-  color: #4c5870;
-  background: #f7f8fb;
+  color: var(--muted);
+  background: var(--surface-control);
   font-size: 0.74rem;
   font-weight: 700;
   transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
@@ -130,8 +130,8 @@
 .equinox-link:hover {
   color: var(--ink);
   text-underline-offset: 0.22rem;
-  border-color: #c6cce0;
-  background: #fff;
+  border-color: var(--line-hover);
+  background: var(--surface-control-hover);
   text-decoration: none;
   transform: translateY(-1px);
 }
@@ -280,7 +280,7 @@
   padding: 1rem 1.05rem;
   border: 1px solid #e2e5ee;
   border-radius: 0.8rem;
-  background: #f7f8fb;
+  background: var(--surface-control);
   transition: border-color 160ms ease, background 160ms ease;
 }
 
@@ -432,8 +432,8 @@
 
 .record-moderation-button:hover,
 .record-moderation-button:focus-visible {
-  color: #b0334d;
-  background: #fff0f3;
+  color: var(--danger-ink);
+  background: var(--danger-surface);
 }
 
 .record-moderation-button:focus-visible {
@@ -578,8 +578,8 @@
 .record-moderation-warning {
   padding: 0.72rem 0.8rem;
   border-left: 3px solid #c7566b;
-  color: #7e3342;
-  background: #fff4f6;
+  color: var(--warning-ink);
+  background: var(--warning-surface);
 }
 
 .record-moderation-error {
@@ -633,10 +633,10 @@
   bottom: 1rem;
   max-width: min(24rem, calc(100% - 2rem));
   padding: 0.78rem 0.9rem;
-  border: 1px solid #a9d9c6;
+  border: 1px solid var(--success-line);
   border-radius: 0.8rem;
-  color: #116947;
-  background: #edf9f4;
+  color: var(--success-ink);
+  background: var(--success-surface);
   box-shadow: 0 14px 40px rgba(18, 36, 31, 0.16);
   font-size: 0.78rem;
   font-weight: 750;
@@ -891,7 +891,7 @@
 .side-nav a:hover,
 .side-nav a.active {
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--surface-nav-active);
   box-shadow: 0 4px 14px rgba(40, 52, 88, 0.06);
   transform: translateX(2px);
 }
@@ -932,7 +932,7 @@
 
 .post-body {
   margin: 1.05rem 0 0 3.7rem;
-  color: #2b3346;
+  color: var(--ink-body);
   font-family: var(--sans);
   font-size: 1rem;
   line-height: 1.68;
@@ -953,7 +953,7 @@
 
 .reply-summary:hover {
   color: var(--orbit-blue) !important;
-  background: #f4f6fb;
+  background: var(--surface-hover);
 }
 
 .reply-summary.no-replies {
@@ -972,7 +972,7 @@
 }
 
 .reply-summary strong {
-  color: #374057;
+  color: var(--ink-body);
   font-size: 0.8rem;
 }
 
@@ -997,7 +997,7 @@
   place-items: center;
   border-radius: 50%;
   color: var(--orbit-blue);
-  background: #eef1ff;
+  background: var(--surface-soft);
   font-size: 1.2rem;
 }
 
@@ -1007,7 +1007,7 @@
 }
 
 .agent-card.compact:hover {
-  background: #f4f6fb;
+  background: var(--surface-hover);
 }
 
 .post-card.standalone {
@@ -1040,7 +1040,7 @@
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--muted);
-  background: #f7f8fb;
+  background: var(--surface-control);
   font-size: 0.74rem;
   font-weight: 750;
   text-decoration: none;
@@ -1049,8 +1049,8 @@
 
 .header-saved:hover {
   color: var(--orbit-blue);
-  border-color: #c6cce0;
-  background: #fff;
+  border-color: var(--line-hover);
+  background: var(--surface-control-hover);
   transform: translateY(-1px);
 }
 
@@ -1068,16 +1068,16 @@
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 50%;
-  color: #566178;
-  background: #f7f8fb;
+  color: var(--muted);
+  background: var(--surface-control);
   cursor: pointer;
   transition: color 160ms ease, border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
 
 .theme-toggle:hover {
   color: var(--orbit-blue);
-  border-color: #c6cce0;
-  background: #fff;
+  border-color: var(--line-hover);
+  background: var(--surface-control-hover);
   transform: translateY(-1px) rotate(-4deg);
 }
 

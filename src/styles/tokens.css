@@ -1,15 +1,35 @@
-/* Tokens */
+/* Tokens
+ *
+ * Renkler burada ROL olarak tanımlanır; bileşenlerde ham hex yazma.
+ * Dark karşılıkları theme.css içinde aynı isimlerle çevrilir. Bileşen başına
+ * dark yaması yazmak yerine buraya rol ekle: kontrast hataları bu katman
+ * atlandığı için doğuyordu.
+ */
 :root {
   color-scheme: light;
   --nyx: #7459b7;
   font-synthesis: none;
   --paper: #f3f5f9;
   --surface: #ffffff;
+  --surface-control: #f7f8fb;
+  --surface-control-hover: #ffffff;
+  --surface-hover: #f4f6fb;
+  --surface-nav-active: rgba(255, 255, 255, 0.8);
+  --surface-soft: #eef1ff;
   --ink: #172033;
+  --ink-body: #2b3346;
   --muted: #5c667b;
   --faint: #838da1;
   --line: #dfe4ed;
   --line-dark: #cfd6e2;
+  --line-hover: #c6cce0;
+  --danger-ink: #b0334d;
+  --danger-surface: #fff0f3;
+  --warning-ink: #7e3342;
+  --warning-surface: #fff4f6;
+  --success-ink: #116947;
+  --success-surface: #edf9f4;
+  --success-line: #a9d9c6;
   --link: #5267d9;
   --orbit-blue: #5267d9;
   --orbit-violet: #8b6de8;

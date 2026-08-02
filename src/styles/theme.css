@@ -3,11 +3,25 @@ html[data-theme="dark"] {
   color-scheme: dark;
   --paper: #0d111b;
   --surface: #151b28;
+  --surface-control: #171e2c;
+  --surface-control-hover: #1b2333;
+  --surface-hover: #1a2232;
+  --surface-nav-active: #1a2232;
+  --surface-soft: #222b49;
   --ink: #edf1fb;
+  --ink-body: #d8deeb;
   --muted: #a1abc0;
   --faint: #78849c;
   --line: #283145;
   --line-dark: #354159;
+  --line-hover: #3f4960;
+  --danger-ink: #f0a4b3;
+  --danger-surface: rgba(150, 43, 67, 0.2);
+  --warning-ink: #efb4bf;
+  --warning-surface: rgba(154, 46, 68, 0.18);
+  --success-ink: #9fe1c8;
+  --success-surface: #15382d;
+  --success-line: #286a53;
   --link: #9aa8ff;
   --orbit-blue: #92a1ff;
   --orbit-violet: #b39af7;
@@ -68,27 +82,15 @@ html[data-theme="dark"] .header-saved:hover {
   background: #1b2231;
 }
 
-html[data-theme="dark"] .primary-nav a:hover,
-html[data-theme="dark"] .side-nav a:hover,
-html[data-theme="dark"] .side-nav a.active,
-html[data-theme="dark"] .agent-card.compact:hover,
-html[data-theme="dark"] .reply-summary:hover,
+/* nav/kart hover'ları, kontrol yüzeyleri ve durum renkleri token'dan geliyor;
+   bunlara ayrı dark yaması gerekmiyor. */
 html[data-theme="dark"] .pagination-direction > a:hover {
-  background: #1a2232;
-}
-
-html[data-theme="dark"] .theme-toggle,
-html[data-theme="dark"] .equinox-link {
-  color: var(--muted);
-  border-color: var(--line);
-  background: #171e2c;
+  background: var(--surface-hover);
 }
 
 html[data-theme="dark"] .theme-toggle:hover,
 html[data-theme="dark"] .equinox-link:hover {
   color: var(--orbit-blue);
-  border-color: #3c4862;
-  background: #1b2333;
 }
 
 html[data-theme="dark"] .theme-toggle-light {
@@ -135,12 +137,6 @@ html[data-theme="dark"] .post-card:hover {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
 }
 
-html[data-theme="dark"] .record-moderation-button:hover,
-html[data-theme="dark"] .record-moderation-button:focus-visible {
-  color: #f0a4b3;
-  background: rgba(150, 43, 67, 0.2);
-}
-
 html[data-theme="dark"] .record-moderation-dialog {
   border-color: var(--line);
   background: #151b28;
@@ -151,22 +147,6 @@ html[data-theme="dark"] .record-moderation-field textarea,
 html[data-theme="dark"] .record-moderation-cancel {
   border-color: var(--line);
   background: #111724;
-}
-
-html[data-theme="dark"] .record-moderation-warning {
-  color: #efb4bf;
-  background: rgba(154, 46, 68, 0.18);
-}
-
-html[data-theme="dark"] .moderation-toast {
-  border-color: #286a53;
-  color: #9fe1c8;
-  background: #15382d;
-}
-
-html[data-theme="dark"] .post-body,
-html[data-theme="dark"] .reply-summary strong {
-  color: #d8deeb;
 }
 
 html[data-theme="dark"] .post-byline > span {

@@ -196,7 +196,9 @@ describe('Orbit dynamic public pages', () => {
     assert.match(html, /data-record-ref="record-1"/u);
     assert.match(html, /data-record-author="nyx"/u);
     assert.match(html, /data-record-reply-count="0"/u);
-    assert.match(html, /<div class="post-header-actions"><\/div>/u);
+    assert.match(html, /<div class="post-header-actions"><button class="save-button"/u);
+    assert.match(html, /data-save-slug="d1-dinamik-kayit"/u);
+    assert.match(html, /<a href="\/topics\/orbit" style="--topic-accent:#6f63e8">/u);
     assert.doesNotMatch(html, /__ORBIT_/u);
   });
 

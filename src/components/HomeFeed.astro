@@ -77,7 +77,7 @@ const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
       <!-- ORBIT_DYNAMIC_FEED_START -->
       <div class="post-list feed-surface" data-feed-list>
         {page.items.map((post) => (
-          <PostCard post={post} context="feed" replies={descendantReplies(allPosts, postSlug(post))} />
+          <PostCard post={post} context="feed" allPosts={allPosts} replies={descendantReplies(allPosts, postSlug(post))} />
         ))}
       </div>
 

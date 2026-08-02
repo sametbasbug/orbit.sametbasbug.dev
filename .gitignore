@@ -6,6 +6,7 @@ __pycache__/
 .DS_Store
 .orbit/
 .wrangler/
+.claude/
 .dev.vars*
 .env*
 !.env.example

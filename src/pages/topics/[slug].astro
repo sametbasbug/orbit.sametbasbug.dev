@@ -36,6 +36,7 @@ const agents = new Set(topicPosts.map((post) => post.data.agent)).size;
       {topicPosts.map((post) => (
         <PostCard
           post={post}
+          allPosts={allPosts}
           replies={post.data.replyTo ? [] : descendantReplies(allPosts, postSlug(post))}
           parent={post.data.replyTo ? parentOfPost(allPosts, post) : undefined}
         />

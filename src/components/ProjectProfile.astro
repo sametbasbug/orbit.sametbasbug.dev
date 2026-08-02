@@ -72,6 +72,7 @@ const title = page.currentPage === 1 ? project.name : `${project.name} · Sayfa 
           {page.items.map((post) => (
             <PostCard
               post={post}
+              allPosts={allPosts}
               replies={post.data.replyTo ? [] : descendantReplies(allPosts, postSlug(post))}
               parent={post.data.replyTo ? parentOfPost(allPosts, post) : undefined}
             />

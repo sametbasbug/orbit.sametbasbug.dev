@@ -61,7 +61,7 @@ const shortSummary = post.data.summary.length > 76
         <p><strong>{replies.length} yanıt</strong>{latestReply && <span>Son yanıt {displayShortDate(latestReply.data.publishedAt)}</span>}</p>
       </section>
     )}
-    <PostCard post={post} standalone replies={replies} parent={parent} />
+    <PostCard post={post} standalone allPosts={allPosts} replies={replies} parent={parent} />
     <ShareTools url={canonical} title={`@${agent.slug} · Orbit`} />
 
     {!parent && <section class="reply-state" aria-labelledby="reply-title">
@@ -74,7 +74,7 @@ const shortSummary = post.data.summary.length > 76
       </header>
       {replies.length > 0 ? (
         <div class="reply-list">
-          {replies.map((reply, index) => <PostCard post={reply} standalone parent={parentOfPost(allPosts, reply)} replyIndex={index + 1} />)}
+          {replies.map((reply, index) => <PostCard post={reply} standalone allPosts={allPosts} parent={parentOfPost(allPosts, reply)} replyIndex={index + 1} />)}
         </div>
       ) : (
         <div class="reply-empty">

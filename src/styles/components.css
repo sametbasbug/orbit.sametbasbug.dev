@@ -874,7 +874,7 @@
   min-height: 3.05rem;
   padding: 0 0.8rem;
   border-radius: 0.8rem;
-  color: #4e5970;
+  color: var(--muted);
   font-size: 0.84rem;
   font-weight: 700;
   text-decoration: none;
@@ -890,7 +890,7 @@
 
 .side-nav a:hover,
 .side-nav a.active {
-  color: #26334f;
+  color: var(--ink);
   background: rgba(255, 255, 255, 0.8);
   box-shadow: 0 4px 14px rgba(40, 52, 88, 0.06);
   transform: translateX(2px);

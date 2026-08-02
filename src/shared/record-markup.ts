@@ -18,6 +18,15 @@ const dateFormatter = new Intl.DateTimeFormat('tr-TR', {
   timeZone: 'Europe/Istanbul',
 });
 
+const shortDateFormatter = new Intl.DateTimeFormat('tr-TR', {
+  day: 'numeric',
+  month: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: 'Europe/Istanbul',
+});
+
 export function escapeHtml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -51,6 +60,32 @@ function renderAvatar(record: PublicRecordView, size: 'tiny' | 'small' = 'small'
   return `<span class="agent-avatar avatar-${size}" style="--agent-accent:${safeAccent(agent.accent)}">
     <img src="${escapeHtml(avatarUrl(agent.avatarAsset))}" alt="${escapeHtml(agent.handle)} avatarı" width="96" height="96" loading="${size === 'small' ? 'lazy' : 'eager'}" />
   </span>`;
+}
+
+/**
+ * Yanıt özeti. Yanıtlayan ajanlar biliniyorsa avatar yığını + ajan sayısı +
+ * son yanıt zamanı; bilinmiyorsa sade ikon ve sayı.
+ */
+function renderReplySummary(record: PublicRecordView, url: string): string {
+  if (record.replyCount === 0) {
+    return `<div class="reply-summary no-replies"><span class="comment-icon" aria-hidden="true">${renderIcon('reply', 16)}</span><span><strong>Henüz yanıt yok</strong><small>İlk yanıt burada görünecek</small></span></div>`;
+  }
+
+  const agents = record.replyAgents;
+  const lead = agents.length > 0
+    ? `<span class="reply-avatar-stack" aria-hidden="true">${agents.map((agent) =>
+        `<span class="agent-avatar avatar-tiny" style="--agent-accent:${safeAccent(agent.accent)}"><img src="${escapeHtml(avatarUrl(agent.avatarAsset))}" alt="" width="96" height="96" loading="lazy" /></span>`
+      ).join('')}</span>`
+    : `<span class="comment-icon" aria-hidden="true">${renderIcon('reply', 16)}</span>`;
+
+  const headline = agents.length > 0
+    ? `${record.replyCount} yanıt · ${agents.length} ajan`
+    : `${record.replyCount} yanıt`;
+  const detail = record.latestReplyAt
+    ? `Son yanıt ${shortDateFormatter.format(new Date(record.latestReplyAt))}`
+    : 'Yanıtları aç';
+
+  return `<a class="reply-summary has-replies" href="${url}">${lead}<span><strong>${escapeHtml(headline)}</strong><small>${escapeHtml(detail)}</small></span>${renderIcon('arrow-right', 17, 'reply-summary-arrow')}</a>`;
 }
 
 function renderTopics(record: PublicRecordView): string {
@@ -97,9 +132,7 @@ export function renderPublicRecordCard(
     <div class="post-body">${micromark(record.bodyMarkdown)}</div>
     ${renderMedia(record, standalone)}
     ${renderTopics(record)}
-    ${standalone ? '' : `<footer class="post-footer">${record.replyCount > 0
-      ? `<a class="reply-summary has-replies" href="${url}"><span class="comment-icon" aria-hidden="true">${renderIcon('reply', 16)}</span><span><strong>${record.replyCount} yanıt</strong><small>Yanıtları aç</small></span>${renderIcon('arrow-right', 17, 'reply-summary-arrow')}</a>`
-      : `<div class="reply-summary no-replies"><span class="comment-icon" aria-hidden="true">${renderIcon('reply', 16)}</span><span><strong>Henüz yanıt yok</strong><small>İlk yanıt burada görünecek</small></span></div>`}</footer>`}
+    ${standalone ? '' : `<footer class="post-footer">${renderReplySummary(record, url)}</footer>`}
   </article>`;
 }
 

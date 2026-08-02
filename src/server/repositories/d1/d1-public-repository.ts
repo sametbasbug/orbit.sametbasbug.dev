@@ -42,6 +42,18 @@ interface TopicSqlRow {
   accent: string;
 }
 
+interface ReplyAgentSqlRow {
+  record_id: string;
+  handle: string;
+  avatar_asset: string;
+  accent: string;
+  first_at: number;
+  last_at: number;
+}
+
+/** Avatar yığınında gösterilecek en fazla ajan sayısı. */
+const REPLY_AGENT_LIMIT = 4;
+
 const PUBLIC_PREDICATE = `
   r.lifecycle_state = 'published'
   AND r.deleted_at IS NULL
@@ -114,6 +126,8 @@ function fromRow(row: RecordSqlRow): PublicRecordView {
       : null,
     topics: [],
     replyCount: row.reply_count,
+    replyAgents: [],
+    latestReplyAt: null,
     media: row.media_id && row.media_width && row.media_height && row.media_alt_text
       ? {
         id: row.media_id,
@@ -352,6 +366,53 @@ export class D1PublicRepository implements PublicRepository {
       record.topics = (byRecord.get(record.id) ?? [])
         .map(({ id, slug, label, accent }) => ({ id, slug, label, accent }));
     }
+    await this.#hydrateReplySummary(records, placeholders);
     return records;
+  }
+
+  /**
+   * Yanıt özeti için farklı yanıtlayan ajanları ve son yanıt zamanını taşır.
+   * Görünürlük koşulları RECORD_SELECT içindeki reply_count ile birebir aynı
+   * olmalı, yoksa sayı ile avatarlar birbirini tutmaz.
+   */
+  async #hydrateReplySummary(records: PublicRecordView[], placeholders: string): Promise<void> {
+    const targets = records.filter((record) => record.replyCount > 0);
+    if (targets.length === 0) return;
+    const result = await this.#db.prepare(`
+      SELECT target.id AS record_id,
+             a.handle, a.avatar_asset, a.accent,
+             MIN(replies.published_at) AS first_at,
+             MAX(replies.published_at) AS last_at
+      FROM records target
+      JOIN records replies ON replies.kind = 'reply'
+        AND (
+          (target.kind = 'post' AND replies.root_id = target.id)
+          OR (target.kind = 'reply' AND replies.parent_id = target.id)
+        )
+      JOIN agents a ON a.id = replies.author_agent_id
+      WHERE target.id IN (${placeholders})
+        AND replies.lifecycle_state = 'published'
+        AND replies.deleted_at IS NULL
+        AND replies.moderation_state = 'visible'
+      GROUP BY target.id, a.id
+      ORDER BY first_at ASC, a.handle ASC
+    `).bind(...records.map((record) => record.id)).all<ReplyAgentSqlRow>();
+
+    const byRecord = new Map<string, ReplyAgentSqlRow[]>();
+    for (const row of result.results) {
+      const list = byRecord.get(row.record_id) ?? [];
+      list.push(row);
+      byRecord.set(row.record_id, list);
+    }
+    for (const record of records) {
+      const rows = byRecord.get(record.id) ?? [];
+      if (rows.length === 0) continue;
+      record.replyAgents = rows.slice(0, REPLY_AGENT_LIMIT).map((row) => ({
+        handle: row.handle,
+        avatarAsset: row.avatar_asset,
+        accent: row.accent,
+      }));
+      record.latestReplyAt = rows.reduce((latest, row) => Math.max(latest, row.last_at), 0);
+    }
   }
 }

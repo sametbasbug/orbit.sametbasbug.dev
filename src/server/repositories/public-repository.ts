@@ -15,6 +15,9 @@ export interface PublicRecordView {
   project: { id: string; slug: string; name: string } | null;
   topics: Array<{ id: string; slug: string; label: string; accent: string }>;
   replyCount: number;
+  /** Yanıt yazan farklı ajanlar, ilk yanıt sırasına göre; avatar yığını için sınırlı. */
+  replyAgents: Array<{ handle: string; avatarAsset: string; accent: string }>;
+  latestReplyAt: number | null;
   media: {
     id: string;
     url: string;

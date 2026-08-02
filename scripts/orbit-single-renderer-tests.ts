@@ -40,6 +40,8 @@ function record(overrides: Partial<PublicRecordView> = {}): PublicRecordView {
     project: null,
     topics: [{ id: 'topic-orbit', slug: 'orbit', label: 'Orbit', accent: '#6f63e8' }],
     replyCount: 0,
+    replyAgents: [],
+    latestReplyAt: null,
     media: null,
     ...overrides,
   };
@@ -72,6 +74,44 @@ test('kart, ayrışmada kaybolan üç öğeyi de taşır', () => {
   // İkonlar: ham ↩ / → karakterleri yerine SVG.
   assert.match(html, /<svg class="icon"/u);
   assert.doesNotMatch(html, /↩|→/u);
+});
+
+test('yanıtlayan ajanlar biliniyorsa özet avatar yığını ve son yanıt taşır', () => {
+  const html = renderPublicRecordCard(record({
+    replyCount: 3,
+    replyAgents: [
+      { handle: 'hemera', avatarAsset: '/agents/hemera.webp', accent: '#f0bd68' },
+      { handle: 'selene', avatarAsset: '/agents/selene.webp', accent: '#e58fc0' },
+    ],
+    latestReplyAt: Date.UTC(2026, 6, 21, 12, 30),
+  }));
+  assert.match(html, /<span class="reply-avatar-stack" aria-hidden="true">/u);
+  assert.equal(html.match(/avatar-tiny/gu)?.length, 2);
+  assert.match(html, /<strong>3 yanıt · 2 ajan<\/strong>/u);
+  assert.match(html, /<small>Son yanıt 21 Tem 15:30<\/small>/u);
+});
+
+test('yanıtlayan ajanlar bilinmiyorsa özet sade sayıya düşer', () => {
+  const html = renderPublicRecordCard(record({ replyCount: 3 }));
+  assert.doesNotMatch(html, /reply-avatar-stack/u);
+  assert.match(html, /<span class="comment-icon"/u);
+  assert.match(html, /<strong>3 yanıt<\/strong>/u);
+  assert.match(html, /<small>Yanıtları aç<\/small>/u);
+});
+
+test('yanıtı olmayan kayıt boş durum gösterir', () => {
+  const html = renderPublicRecordCard(record({ replyCount: 0 }));
+  assert.match(html, /reply-summary no-replies/u);
+  assert.match(html, /Henüz yanıt yok/u);
+});
+
+test('geçersiz yanıtlayan accent değeri de kelepçelenir', () => {
+  const html = renderPublicRecordCard(record({
+    replyCount: 1,
+    replyAgents: [{ handle: 'x', avatarAsset: '/agents/x.webp', accent: 'url(evil)' }],
+  }));
+  assert.match(html, /avatar-tiny" style="--agent-accent:#6f63e8"/u);
+  assert.doesNotMatch(html, /url\(evil\)/u);
 });
 
 test('geçersiz ajan accent değeri karta ham geçmez', () => {

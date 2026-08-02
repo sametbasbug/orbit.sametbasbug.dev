@@ -31,7 +31,7 @@ const {
 } = Astro.props;
 
 const pool = allPosts.length > 0 ? allPosts : [post, ...replies, ...(parent ? [parent] : [])];
-const view = toPublicRecordView(post, { allPosts: pool, replyCount: replies.length });
+const view = toPublicRecordView(post, { allPosts: pool, replies, replyCount: replies.length });
 const parentView = parent ? toPublicRecordView(parent, { allPosts: pool }) : null;
 
 const html = renderPublicRecordCard(view, {

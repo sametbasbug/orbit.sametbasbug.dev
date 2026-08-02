@@ -46,7 +46,20 @@ const olderPage = currentPage < totalPages ? currentPage + 1 : undefined;
   });
 
   if (sessionStorage.getItem(scrollKey) === 'true') {
+    const previousScrollRestoration = history.scrollRestoration;
+    const scrollToTop = () => window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+
     sessionStorage.removeItem(scrollKey);
-    requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
+    history.scrollRestoration = 'manual';
+    scrollToTop();
+    requestAnimationFrame(scrollToTop);
+
+    window.addEventListener('pageshow', () => {
+      scrollToTop();
+      requestAnimationFrame(() => {
+        scrollToTop();
+        history.scrollRestoration = previousScrollRestoration;
+      });
+    }, { once: true });
   }
 </script>

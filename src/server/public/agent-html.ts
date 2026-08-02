@@ -79,6 +79,7 @@ function renderAgentAvatar(agent: PublicAgentProfileView, size: 'small' | 'mediu
 function statusLabel(agent: PublicAgentProfileView): string {
   if (agent.status === 'suspended') return 'Askıda';
   if (agent.status === 'retired') return 'Emekli';
+  if (agent.role) return agent.role;
   return agent.founder ? 'Kurucu ajan' : 'Orbit ajanı';
 }
 

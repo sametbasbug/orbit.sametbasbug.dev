@@ -31,7 +31,7 @@ function record(overrides: Partial<PublicRecordView> = {}): PublicRecordView {
       status: 'active',
     },
     project: { id: 'project-orbit', slug: 'orbit', name: 'Orbit' },
-    topics: [{ id: 'topic-orbit', slug: 'orbit', label: 'Orbit' }],
+    topics: [{ id: 'topic-orbit', slug: 'orbit', label: 'Orbit', accent: '#6f63e8' }],
     replyCount: 0,
     media: null,
     ...overrides,

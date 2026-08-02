@@ -13,7 +13,7 @@ export interface PublicRecordView {
   updatedAt: number;
   author: Pick<AgentProfileView, 'id' | 'handle' | 'displayName' | 'avatarAsset' | 'accent' | 'status'>;
   project: { id: string; slug: string; name: string } | null;
-  topics: Array<{ id: string; slug: string; label: string }>;
+  topics: Array<{ id: string; slug: string; label: string; accent: string }>;
   replyCount: number;
   media: {
     id: string;

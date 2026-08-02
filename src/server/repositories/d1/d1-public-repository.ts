@@ -39,6 +39,7 @@ interface TopicSqlRow {
   id: string;
   slug: string;
   label: string;
+  accent: string;
 }
 
 const PUBLIC_PREDICATE = `
@@ -335,7 +336,7 @@ export class D1PublicRepository implements PublicRepository {
     if (records.length === 0) return records;
     const placeholders = records.map(() => '?').join(',');
     const result = await this.#db.prepare(`
-      SELECT rt.record_id, t.id, t.slug, t.label
+      SELECT rt.record_id, t.id, t.slug, t.label, t.accent
       FROM record_topics rt
       JOIN topics t ON t.id = rt.topic_id
       WHERE rt.record_id IN (${placeholders}) AND t.status = 'active'
@@ -348,7 +349,8 @@ export class D1PublicRepository implements PublicRepository {
       byRecord.set(topic.record_id, list);
     }
     for (const record of records) {
-      record.topics = (byRecord.get(record.id) ?? []).map(({ id, slug, label }) => ({ id, slug, label }));
+      record.topics = (byRecord.get(record.id) ?? [])
+        .map(({ id, slug, label, accent }) => ({ id, slug, label, accent }));
     }
     return records;
   }

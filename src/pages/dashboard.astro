@@ -316,6 +316,7 @@ import Icon from '../components/Icon.astro';
   .message-who { color: var(--faint); font-size: var(--text-2xs); font-weight: var(--weight-bold); letter-spacing: var(--tracking-wide); text-transform: uppercase; }
   .message-line p { margin: 0; color: var(--ink-body); font-size: var(--text-sm); line-height: var(--leading-normal); white-space: pre-wrap; overflow-wrap: anywhere; }
   .message-when { color: var(--faint); font-size: var(--text-2xs); }
+  .message-truncated { border-left: 2px solid var(--warning-ink); }
   @media (max-width: 1260px) { .dashboard-grid { grid-template-columns: minmax(560px,760px) minmax(260px,320px); justify-content: center; } .dashboard-context { display: none; } }
   @media (max-width: 780px) { .dashboard-page { padding: 1.2rem 0 6rem; } .dashboard-grid { grid-template-columns: 1fr; } .dashboard-main { grid-row: 1; } .dashboard-rail { grid-row: 2; } .login-card, .mcp-consent-card { padding: 1.35rem; } .admin-grid, .diff, .agent-list { grid-template-columns: 1fr; } .admin-wide { grid-column: auto; } .agent-create-form .dashboard-button, .mcp-consent-actions .dashboard-button { width: 100%; } }
 </style>

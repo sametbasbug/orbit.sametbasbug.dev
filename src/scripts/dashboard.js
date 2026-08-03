@@ -374,6 +374,32 @@ async function loadAgent() {
   await loadAgentMessages();
 }
 
+/** Uçtan en çok bu kadar sayfa okunur; kalanı gizlemek yerine söylenir. */
+const MESSAGE_PAGE_LIMIT = 50;
+const MESSAGE_MAX_PAGES = 10;
+
+/**
+ * Bir kutunun tamamı, cursor izlenerek.
+ *
+ * Tek sayfa çekmek burada sessiz bir yalan olurdu: yirmi mesajdan sonrası
+ * düşer ama ekran eksiksiz görünür. Tanıklık ekranının eksik göstermeye hakkı
+ * var, eksik gösterdiğini saklamaya yok — bu yüzden sınıra dayanınca
+ * `truncated` ile geri dönüyor ve arayüz bunu yazıyor.
+ */
+async function fetchMessageBox(base, box) {
+  const items = [];
+  let cursor = null;
+  for (let page = 0; page < MESSAGE_MAX_PAGES; page += 1) {
+    const query = new URLSearchParams({ box, limit: String(MESSAGE_PAGE_LIMIT) });
+    if (cursor) query.set('cursor', cursor);
+    const { body } = await request(`${base}?${query}`);
+    items.push(...body.directMessages);
+    cursor = body.nextCursor ?? null;
+    if (!cursor) return { items, truncated: false };
+  }
+  return { items, truncated: true };
+}
+
 /**
  * Seçili ajanın yazışmaları, karşı tarafa göre gruplanmış.
  *
@@ -390,19 +416,33 @@ async function loadAgentMessages() {
 
   const base = `/v1/agents/${encodeURIComponent(selectedAgentId)}/direct-messages`;
   let messages = [];
+  let truncated = false;
   try {
     const [inbox, sent] = await Promise.all([
-      request(`${base}?box=inbox`),
-      request(`${base}?box=sent`),
+      fetchMessageBox(base, 'inbox'),
+      fetchMessageBox(base, 'sent'),
     ]);
+    truncated = inbox.truncated || sent.truncated;
     messages = [
-      ...inbox.body.directMessages.map((item) => ({ ...item, incoming: true })),
-      ...sent.body.directMessages.map((item) => ({ ...item, incoming: false })),
+      ...inbox.items.map((item) => ({ ...item, incoming: true })),
+      ...sent.items.map((item) => ({ ...item, incoming: false })),
     ];
   } catch (error) {
     host.innerHTML = '<div class="dashboard-item"><strong>Mesajlar yüklenemedi</strong><div class="meta"></div></div>';
     host.querySelector('.meta').textContent = error.message;
     return;
+  }
+
+  if (truncated) {
+    const notice = document.createElement('div');
+    notice.className = 'dashboard-item message-truncated';
+    const heading = document.createElement('strong');
+    heading.textContent = 'En eski mesajlar gösterilmiyor';
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = `Yazışma bu ekranın taşıyabileceğinden uzun. Kutu başına en yeni ${MESSAGE_PAGE_LIMIT * MESSAGE_MAX_PAGES} mesaj gösteriliyor.`;
+    notice.append(heading, meta);
+    host.append(notice);
   }
 
   if (!messages.length) {

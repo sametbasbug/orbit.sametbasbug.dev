@@ -971,6 +971,106 @@ if (errors.length === 0) {
       }
       await context.close();
     }
+
+    /*
+     * Uzun yazışmada sayfalama.
+     *
+     * Tek sayfa çekmek burada sessiz bir yalandı: yirminci mesajdan sonrası
+     * düşerdi ama ekran eksiksiz görünürdü. Test iki şeyi ayrı ayrı ölçüyor —
+     * cursor'ın sonuna kadar izlendiğini (biten kutu), ve bitmeyen bir kutuda
+     * hem durulduğunu hem de durulduğunun yazıldığını.
+     */
+    {
+      const context = await browser.newContext({ viewport: { width: 1280, height: 1050 } });
+      const page = await context.newPage();
+      const agentId = '019f0000-0000-7000-8000-000000000002';
+      const boxRequests = { inbox: [], sent: [] };
+      const inboxPages = { '': 'c1', c1: 'c2', c2: null };
+      await page.route('**/v1/**', async (route) => {
+        const requestUrl = new URL(route.request().url());
+        const send = (data) => route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(data),
+        });
+        if (requestUrl.pathname === '/v1/me') {
+          return await send({
+            account: { id: 'acc', handle: 'samet', displayName: 'Samet', roles: [], quota: {} },
+            session: {},
+            sponsoredAgents: [{ id: agentId, handle: 'hemera', status: 'active', onboardingState: 'active' }],
+          });
+        }
+        if (requestUrl.pathname.endsWith('/manage')) {
+          return await send({
+            agent: {
+              id: agentId, handle: 'hemera', status: 'active', onboardingState: 'active',
+              publicationMode: 'direct_publish', links: [], activeCredential: null,
+            },
+            mediaPolicy: {},
+          });
+        }
+        if (requestUrl.pathname.endsWith('/direct-messages')) {
+          const box = requestUrl.searchParams.get('box');
+          const cursor = requestUrl.searchParams.get('cursor') ?? '';
+          boxRequests[box].push(requestUrl.searchParams.get('limit'));
+          const index = boxRequests[box].length;
+          if (box === 'inbox') {
+            return await send({
+              directMessages: [{
+                id: `in${index}`, sender: { handle: 'nyx' }, recipient: { handle: 'hemera' },
+                bodyMarkdown: `gelen ${index}`, createdAt: 1754000000000 + index, readAt: null,
+              }],
+              nextCursor: inboxPages[cursor] ?? null,
+            });
+          }
+          // Bitmeyen kutu: uç her seferinde yeni bir cursor veriyor.
+          return await send({
+            directMessages: [{
+              id: `out${index}`, sender: { handle: 'hemera' }, recipient: { handle: 'yabanci' },
+              bodyMarkdown: `giden ${index}`, createdAt: 1754500000000 + index, readAt: null,
+            }],
+            nextCursor: `s${index}`,
+          });
+        }
+        return await send({ sessions: [], authorizations: [] });
+      });
+
+      await page.goto(`${baseUrl}/dashboard`, { waitUntil: 'load' });
+      await page.waitForSelector('.message-thread');
+      const paging = await page.evaluate(() => {
+        const host = document.getElementById('agent-messages');
+        const notice = host.querySelector('.message-truncated');
+        return {
+          noticeIsFirst: host.firstElementChild === notice,
+          noticeText: notice?.textContent ?? '',
+          threads: [...host.querySelectorAll('.message-thread')].map((thread) => ({
+            partner: thread.querySelector('strong').textContent,
+            lines: thread.querySelectorAll('.message-line').length,
+          })),
+        };
+      });
+
+      check(boxRequests.inbox.length === 3, `sayfalama: biten kutuda cursor sonuna kadar izlenmedi (${boxRequests.inbox.length}).`);
+      check(boxRequests.sent.length === 10, `sayfalama: bitmeyen kutuda sayfa sınırında durulmadı (${boxRequests.sent.length}).`);
+      check(
+        boxRequests.inbox.every((limit) => limit === '50'),
+        `sayfalama: uçtan sayfa boyu istenmiyor (${boxRequests.inbox.join(',')}).`,
+      );
+      check(paging.noticeIsFirst, 'sayfalama: eksik gösterildiği uyarısı listenin başında değil.');
+      check(
+        paging.noticeText.includes('En eski mesajlar gösterilmiyor'),
+        'sayfalama: kesilen yazışma için uyarı yazılmadı.',
+      );
+      check(
+        paging.threads.find((thread) => thread.partner === '@nyx')?.lines === 3,
+        'sayfalama: sonraki sayfaların mesajları ekrana girmedi.',
+      );
+      check(
+        paging.threads.find((thread) => thread.partner === '@yabanci')?.lines === 10,
+        'sayfalama: sınıra kadar okunan mesajların hepsi gösterilmedi.',
+      );
+      await context.close();
+    }
   } finally {
     await browser.close();
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

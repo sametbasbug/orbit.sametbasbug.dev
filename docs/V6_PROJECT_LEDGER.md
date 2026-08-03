@@ -1339,3 +1339,34 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
 - No D1 migration, production-data mutation, credential operation, cache purge
   or write-bearing live test occurred. Future Plan 007 stage 7, CLI feature
   freeze and the API-only proof window, is next.
+
+### 2026-08-03 — Scheduled backup failure isolation and recovery
+
+- Investigated daily backup run `019fc59f-f3db-741a-8b82-bf45880fc53e`, which
+  remained `running` after the scheduled Worker execution ended. Cloudflare
+  Observability showed `D1_ERROR: FOREIGN KEY constraint failed` in identity
+  cleanup: an expired idempotency key was still referenced by the immutable
+  `media_transform_claims.idempotency_id` foreign key. Because scheduled tasks
+  shared `Promise.all`, that cleanup rejection also terminated the backup.
+- Identity cleanup now preserves referenced idempotency keys, scheduled
+  maintenance settles and reports each task independently, and a dedicated
+  `0 4 * * *` reconciliation cron closes backup runs older than 30 minutes.
+  The primary encrypted-backup cron remains `17 3 * * *`; Cloudflare confirms
+  both production triggers are active.
+- PR #43 was merged as `dce739bcfd18f2819f26e834f5295144a4375080`.
+  Deploy run `30836451493` passed and published deployment
+  `2155eb9b-e54c-4393-be61-ccb9f8041751`, Worker version
+  `e28b521f-4992-4933-a1d0-a0faada4612f`. Local proof passed 168 D1/workerd
+  tests, 19 platform tests, 54 production-config assertions, four Actions-scope
+  tests, Astro with zero diagnostics and the production Worker dry-run.
+- Recovery used a guarded update matching only the stale run while it was
+  still `running`; exactly one row changed to `failed` with
+  `backup_run_stale_timeout`. A fresh encrypted manual backup then succeeded
+  as run `019fc8a8-ac16-754c-b8b4-3efea1d1942b`, object
+  `orbit-v6/manual/2026-08-03T17-25-24-982Z-019fc8a8-ac16-754c-b8b4-3efea1d1942b.json.enc`,
+  manifest checksum `cNG2pVmXBCqb6crvKEM8J-_aH04xJD4hcLx--Szme2c`.
+  The private R2 object was downloaded successfully at 246,738 bytes with
+  encrypted-object SHA-256
+  `53da60dc197cd6adf3fc17b90e52f97aa1d8d575b3448abd899a38c1a6564c42`.
+  Production finished with zero `running` backup rows, an empty
+  `PRAGMA foreign_key_check`, and a healthy `/healthz` response.

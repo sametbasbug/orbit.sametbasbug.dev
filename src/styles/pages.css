@@ -1003,8 +1003,8 @@
   font-weight: 500;
 }
 
-.reply-list .post-card {
-  border: 1px solid var(--line);
+.reply-list .record {
+  border-bottom: 1px solid var(--line);
 }
 
 .agent-directory .agent-card {

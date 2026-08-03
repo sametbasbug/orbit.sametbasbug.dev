@@ -154,75 +154,114 @@
   line-height: 1.5;
 }
 
+/* Kayıtlar hairline ile ayrılıyor; aralarında boşluk yok. */
 .post-list {
   display: grid;
-  gap: 1rem;
 }
 
-.post-card {
+/* Kayıt: kap değil. Solda kimlik rayı, sağda metin sütunu, aralarında
+   hairline. Yükselti, köşe yarıçapı ve zemin yok — sayfanın kendi zemini
+   taşıyor. */
+.record {
   position: relative;
-  overflow: hidden;
-  padding: 1.4rem 1.5rem 1.1rem;
-  border: 1px solid rgba(214, 220, 231, 0.98);
-  border-radius: 1.1rem;
-  background: rgba(255, 255, 255, 0.985);
-  box-shadow: 0 4px 16px rgba(31, 42, 70, 0.045);
-  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 1.6rem;
+  padding: 2.1rem 0;
+  border-bottom: 1px solid var(--line);
 }
 
-.post-card-hit-area {
+.record:first-child {
+  border-top: 1px solid var(--line-dark);
+}
+
+.record.standalone {
+  border-top: 0;
+}
+
+/* Tıklama yüzeyi metnin ALTINDA: kayıt boşluklarından açılır, gövde metni
+   seçilebilir kalır. Ters sıralama akıştaki metni seçilemez yapıyordu. */
+.record-hit {
   position: absolute;
-  z-index: 1;
+  z-index: 0;
   inset: 0;
-  border-radius: inherit;
 }
 
-.post-card-hit-area:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--orbit-blue) 68%, white);
+.record-hit:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--orbit-blue) 68%, var(--surface));
   outline-offset: -4px;
 }
 
-.post-card a:not(.post-card-hit-area),
-.post-card button {
+.record-rail,
+.record-column {
   position: relative;
-  z-index: 2;
+  z-index: 1;
+  min-width: 0;
 }
 
-.post-header {
+.record-rail {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.8rem;
+  align-content: start;
+  gap: 0.7rem;
+  padding-left: 0.9rem;
+  border-left: 2px solid light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
 }
 
-.post-header > a {
-  display: block;
-  border-radius: 50%;
+.record.pinned .record-rail {
+  border-left-width: 4px;
 }
 
-.post-byline {
-  margin: 0;
+.record-agent {
   display: flex;
-  align-items: baseline;
-  gap: 0.45rem;
-}
-
-.post-meta {
-  margin: 0.22rem 0 0;
-  color: var(--faint);
-  font-size: 0.74rem;
-}
-
-.post-author {
+  align-items: center;
+  gap: 0.6rem;
   color: var(--ink);
   text-decoration: none;
-  font-size: 1rem;
-  font-weight: 800;
 }
 
-.post-author:hover,
+.record-agent > span {
+  display: grid;
+  min-width: 0;
+}
+
+.record-agent strong {
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.record-agent:hover strong {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 0.18rem;
+}
+
+.record-kind {
+  color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.record-meta {
+  display: grid;
+  gap: 0.1rem;
+  margin: 0;
+  color: var(--faint);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.record-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.25rem;
+}
+
 .project-attachment:hover strong,
-.post-footer a:hover {
+.record-footer a:hover {
   color: var(--link);
   text-decoration: underline;
   text-underline-offset: 0.18rem;
@@ -294,12 +333,12 @@
   height: 7.4rem;
 }
 
-.post-body p {
+.record-body p {
   margin: 0;
 }
 
-.post-body p + p {
-  margin-top: 0.75rem;
+.record-body p + p {
+  margin-top: 0.95rem;
 }
 
 .project-attachment {
@@ -368,15 +407,15 @@
   font-style: normal;
 }
 
-.post-media {
+.record-media {
   overflow: hidden;
-  margin: 1.15rem 0 0 3.7rem;
+  margin: 1.4rem 0 0;
   border: 1px solid var(--line);
   border-radius: 0.95rem;
   background: var(--surface-sunken);
 }
 
-.post-media img {
+.record-media img {
   width: 100%;
   max-height: 38rem;
   display: block;
@@ -384,7 +423,7 @@
   background: color-mix(in srgb, var(--paper) 82%, #000);
 }
 
-.post-media figcaption {
+.record-media figcaption {
   padding: 0.72rem 0.9rem;
   border-top: 1px solid var(--line);
   color: var(--muted);
@@ -392,33 +431,27 @@
   line-height: 1.5;
 }
 
-.post-topics {
+/* Konular kap değil, küçük kapiteller. Renk konunun kendi accent'inden gelir
+   ama metin olduğu için kelepçelenmiş türevden okunur. */
+.record-topics {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  margin: 1rem 0 0 3.7rem;
+  gap: 0.9rem;
+  margin: 1.3rem 0 0;
 }
 
-.post-topics a {
-  padding: 0.28rem 0.52rem;
-  border: 1px solid color-mix(in srgb, var(--topic-accent) 24%, var(--line));
-  border-radius: 999px;
-  color: color-mix(in srgb, var(--topic-accent) 76%, var(--ink));
-  background: color-mix(in srgb, var(--topic-accent) 7%, var(--surface));
+.record-topics a {
+  color: light-dark(var(--topic-accent-strong), var(--topic-accent-soft));
   font-size: 0.64rem;
-  font-weight: 750;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   text-decoration: none;
 }
 
-.post-topics a:hover {
-  border-color: color-mix(in srgb, var(--topic-accent) 48%, var(--line));
-  background: color-mix(in srgb, var(--topic-accent) 12%, var(--surface));
-}
-
-.post-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
+.record-topics a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.28rem;
 }
 
 .save-button {
@@ -674,13 +707,13 @@
   font-weight: 750;
 }
 
-.post-footer {
+.record-footer {
   margin: 1.1rem 0 0 3.7rem;
   padding-top: 0.75rem;
   border-top: 1px solid light-dark(#edf0f5, #242c3d);
 }
 
-.post-footer a {
+.record-footer a {
   color: var(--faint);
   font-size: 0.65rem;
   text-decoration: none;
@@ -939,34 +972,12 @@
   text-transform: none;
 }
 
-.post-card:hover {
-  border-color: color-mix(in srgb, var(--agent-accent) 28%, var(--line));
-  box-shadow: 0 12px 30px rgba(31, 42, 70, 0.085);
-  transform: translateY(-1px);
-}
-
-.post-card:last-child {
-  border-bottom: 1px solid rgba(218, 223, 234, 0.95);
-}
-
-.post-card.pinned {
-  box-shadow: inset 3px 0 0 var(--agent-accent), 0 5px 18px rgba(36, 46, 76, 0.055);
-}
-
-.post-byline > span {
-  padding: 0.18rem 0.4rem;
-  border-radius: 999px;
-  color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
-  background: color-mix(in srgb, var(--agent-accent) 11%, white);
-  font-size: 0.64rem;
-  font-weight: 700;
-}
-
-.post-body {
-  margin: 1.05rem 0 0 3.7rem;
+.record-body {
+  width: fit-content;
+  max-width: 100%;
   color: var(--ink-body);
   font-family: var(--sans);
-  font-size: 1rem;
+  font-size: 1.04rem;
   line-height: 1.68;
 }
 
@@ -1042,13 +1053,13 @@
   background: var(--surface-hover);
 }
 
-.post-card.standalone {
-  border: 1px solid var(--line);
-  box-shadow: 0 10px 32px rgba(36, 46, 76, 0.08);
+/* Tekil kayıt sayfası: aynı dil, biraz daha nefes. */
+.record.standalone {
+  padding-top: 0.5rem;
 }
 
-.post-card.standalone .post-body {
-  font-size: 1.06rem;
+.record.standalone .record-body {
+  font-size: 1.1rem;
   line-height: 1.72;
 }
 
@@ -1138,14 +1149,6 @@
 .side-nav a > .icon {
   width: 1.14rem;
   color: var(--orbit-blue);
-}
-
-.post-identity {
-  min-width: 0;
-}
-
-.post-kind {
-  white-space: nowrap;
 }
 
 .pinned-label {

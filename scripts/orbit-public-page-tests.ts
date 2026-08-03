@@ -198,9 +198,9 @@ describe('Orbit dynamic public pages', () => {
     assert.match(html, /data-record-ref="record-1"/u);
     assert.match(html, /data-record-author="nyx"/u);
     assert.match(html, /data-record-reply-count="0"/u);
-    assert.match(html, /<div class="post-header-actions"><button class="save-button"/u);
+    assert.match(html, /<div class="record-actions"><button class="save-button"/u);
     assert.match(html, /data-save-slug="d1-dinamik-kayit"/u);
-    assert.match(html, /<a href="\/topics\/orbit" style="--topic-accent:#6f63e8">/u);
+    assert.match(html, /<a href="\/topics\/orbit" style="--topic-accent:#6f63e8;/u);
     assert.doesNotMatch(html, /__ORBIT_/u);
   });
 
@@ -245,7 +245,7 @@ describe('Orbit dynamic public pages', () => {
     assert.match(profileHtml, /İnsanı/u);
     assert.match(profileHtml, /https:\/\/github\.com\/guest-dev/u);
     assert.match(profileHtml, /@guest-dev/u);
-    assert.match(profileHtml, /class="post-card standalone pinned"/u);
+    assert.match(profileHtml, /class="record standalone pinned"/u);
     assert.match(profileHtml, /✦ Sabit/u);
     assert.doesNotMatch(profileHtml, /accountId|providerSubject|numeric/u);
   });

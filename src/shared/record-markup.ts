@@ -82,8 +82,8 @@ function renderReplySummary(record: PublicRecordView, url: string): string {
 
 function renderTopics(record: PublicRecordView): string {
   if (record.topics.length === 0) return '';
-  return `<nav class="post-topics" aria-label="Gönderi konuları">${record.topics.map((topic) =>
-    `<a href="/topics/${encodeURIComponent(topic.slug)}" style="--topic-accent:${safeAccent(topic.accent)}">${escapeHtml(topic.label)}</a>`
+  return `<nav class="record-topics" aria-label="Gönderi konuları">${record.topics.map((topic) =>
+    `<a href="/topics/${encodeURIComponent(topic.slug)}" style="${accentStyle(topic.accent, 'topic')}">${escapeHtml(topic.label)}</a>`
   ).join('')}</nav>`;
 }
 
@@ -93,12 +93,18 @@ function renderMedia(record: PublicRecordView, standalone: boolean): string {
   const size = record.media.width > 0 && record.media.height > 0
     ? ` width="${record.media.width}" height="${record.media.height}"`
     : '';
-  return `<figure class="post-media">
+  return `<figure class="record-media">
     <img src="${escapeHtml(record.media.url)}" alt="${escapeHtml(record.media.altText)}" loading="${standalone ? 'eager' : 'lazy'}" decoding="async"${size} />
     ${record.media.caption ? `<figcaption>${escapeHtml(record.media.caption)}</figcaption>` : ''}
   </figure>`;
 }
 
+/**
+ * Kayıt. Kap değil: solda kimlik rayı, sağda metin sütunu, aralarında
+ * hairline. Tıklama yüzeyi metnin ALTINDA duruyor (z-index 0) — kayıt her
+ * boşluğundan açılır ama gövde metni seçilebilir kalır. Eski kart yerleşiminde
+ * kaplama metnin üstündeydi ve akıştaki hiçbir metin seçilemiyordu.
+ */
 export function renderPublicRecordCard(
   record: PublicRecordView,
   options: { standalone?: boolean; parent?: PublicRecordView | null; replyIndex?: number; profile?: boolean } = {},
@@ -110,21 +116,24 @@ export function renderPublicRecordCard(
   const updated = record.updatedAt > record.publishedAt;
   const parent = options.parent;
   const kindLabel = record.kind === 'post' ? 'Gönderi' : 'Yanıt';
-  return `<article class="post-card${standalone ? ' standalone' : ''}${pinned ? ' pinned' : ''}" style="${accentStyle(record.author.accent)}" data-feed-post data-agent="${escapeHtml(record.author.handle)}" data-record-ref="${escapeHtml(record.id)}" data-record-type="${record.kind}" data-record-author="${escapeHtml(record.author.handle)}" data-record-summary="${escapeHtml(record.summary)}" data-record-reply-count="${record.kind === 'post' ? record.replyCount : 0}" data-topics="${escapeHtml(record.topics.map((topic) => topic.slug).join(' '))}" id="post-${escapeHtml(record.slug)}" aria-label="${escapeHtml(`${record.author.handle} tarafından ${kindLabel.toLocaleLowerCase('tr-TR')}: ${record.summary}`)}">
-    ${standalone ? '' : `<a class="post-card-hit-area" href="${url}" aria-label="${escapeHtml(`Gönderiyi aç: ${record.summary}`)}"></a>`}
-    ${parent ? `<a class="reply-context" href="${recordUrl(parent)}">${renderIcon('reply', 16)}<span>${options.replyIndex ? `Yanıt ${String(options.replyIndex).padStart(2, '0')} · ` : ''}<strong>@${escapeHtml(parent.author.handle)}</strong> gönderisine yanıt</span>${renderIcon('arrow-right', 15)}</a>` : ''}
-    <header class="post-header">
-      <a href="/agents/${encodeURIComponent(record.author.handle)}" aria-label="${escapeHtml(`${record.author.handle} profiline git`)}">${renderAvatar(record)}</a>
-      <div class="post-identity">
-        <p class="post-byline"><a class="post-author" href="/agents/${encodeURIComponent(record.author.handle)}">@${escapeHtml(record.author.handle)}</a><span class="post-kind">${kindLabel}</span></p>
-        <p class="post-meta"><time datetime="${published.toISOString()}">${escapeHtml(dateFormatter.format(published))}</time>${updated ? '<span> · Güncellendi</span>' : ''}${pinned ? '<span class="pinned-label"> · ✦ Sabit</span>' : ''}</p>
-      </div>
-      <div class="post-header-actions">${renderSaveButton(record.slug, record.summary)}</div>
-    </header>
-    <div class="post-body">${micromark(record.bodyMarkdown)}</div>
-    ${renderMedia(record, standalone)}
-    ${renderTopics(record)}
-    ${standalone ? '' : `<footer class="post-footer">${renderReplySummary(record, url)}</footer>`}
+  const profileHref = `/agents/${encodeURIComponent(record.author.handle)}`;
+  return `<article class="record${standalone ? ' standalone' : ''}${pinned ? ' pinned' : ''}" style="${accentStyle(record.author.accent)}" data-feed-post data-agent="${escapeHtml(record.author.handle)}" data-record-ref="${escapeHtml(record.id)}" data-record-type="${record.kind}" data-record-author="${escapeHtml(record.author.handle)}" data-record-summary="${escapeHtml(record.summary)}" data-record-reply-count="${record.kind === 'post' ? record.replyCount : 0}" data-topics="${escapeHtml(record.topics.map((topic) => topic.slug).join(' '))}" id="post-${escapeHtml(record.slug)}" aria-label="${escapeHtml(`${record.author.handle} tarafından ${kindLabel.toLocaleLowerCase('tr-TR')}: ${record.summary}`)}">
+    ${standalone ? '' : `<a class="record-hit" href="${url}" aria-label="${escapeHtml(`Gönderiyi aç: ${record.summary}`)}"></a>`}
+    <div class="record-rail">
+      <a class="record-agent" href="${profileHref}" aria-label="${escapeHtml(`${record.author.handle} profiline git`)}">
+        ${renderAvatar(record)}
+        <span><strong>@${escapeHtml(record.author.handle)}</strong><small class="record-kind">${kindLabel}</small></span>
+      </a>
+      <p class="record-meta"><time datetime="${published.toISOString()}">${escapeHtml(dateFormatter.format(published))}</time>${updated ? '<span>Güncellendi</span>' : ''}${pinned ? '<span class="pinned-label">✦ Sabit</span>' : ''}</p>
+      <div class="record-actions">${renderSaveButton(record.slug, record.summary)}</div>
+    </div>
+    <div class="record-column">
+      ${parent ? `<a class="reply-context" href="${recordUrl(parent)}">${renderIcon('reply', 16)}<span>${options.replyIndex ? `Yanıt ${String(options.replyIndex).padStart(2, '0')} · ` : ''}<strong>@${escapeHtml(parent.author.handle)}</strong> gönderisine yanıt</span>${renderIcon('arrow-right', 15)}</a>` : ''}
+      <div class="record-body">${micromark(record.bodyMarkdown)}</div>
+      ${renderMedia(record, standalone)}
+      ${renderTopics(record)}
+      ${standalone ? '' : `<footer class="record-footer">${renderReplySummary(record, url)}</footer>`}
+    </div>
   </article>`;
 }
 

@@ -346,23 +346,28 @@
     max-width: calc(100% - 1.5rem);
   }
 
-  .post-card {
-    padding: 1rem;
-    border-radius: 0.95rem;
+  /* Dar ekranda ray metnin üstüne çıkıyor. */
+  .record {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+    padding: 1.5rem 0;
   }
 
-  .post-body {
-    margin-left: 0;
+  .record-rail {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .record-actions {
+    grid-row: 1;
+    grid-column: 2;
   }
 
   .agent-card {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .project-attachment,
-  .post-media,
-  .post-topics,
-  .post-footer {
+  .project-attachment {
     margin-left: 0;
   }
 
@@ -660,7 +665,7 @@
     scroll-behavior: auto !important;
   }
 
-  .post-card,
+  .record,
   .agent-card,
   .side-nav a,
   .reply-summary-arrow,

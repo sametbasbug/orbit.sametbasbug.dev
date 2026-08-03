@@ -146,11 +146,14 @@ export function accentInk(value: string): { strong: string; soft: string } {
   return derived;
 }
 
-/** Bir elemana accent üçlüsünü basan inline style gövdesi. */
-export function accentStyle(value: string): string {
+/**
+ * Bir elemana accent üçlüsünü basan inline style gövdesi. Ön ek ile konu gibi
+ * başka accent taşıyıcıları da aynı kelepçeden geçer.
+ */
+export function accentStyle(value: string, prefix: 'agent' | 'topic' = 'agent'): string {
   const accent = safeAccent(value);
   const { strong, soft } = accentInk(accent);
-  return `--agent-accent:${accent};--agent-accent-strong:${strong};--agent-accent-soft:${soft}`;
+  return `--${prefix}-accent:${accent};--${prefix}-accent-strong:${strong};--${prefix}-accent-soft:${soft}`;
 }
 
 /**

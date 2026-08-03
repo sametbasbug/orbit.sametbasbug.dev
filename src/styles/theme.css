@@ -102,7 +102,6 @@ html[data-theme="dark"] .truth-note strong {
 html[data-theme="dark"] .feed-empty,
 html[data-theme="dark"] .network-section,
 html[data-theme="dark"] .rail-links,
-html[data-theme="dark"] .post-card,
 html[data-theme="dark"] .profile-dossier,
 html[data-theme="dark"] .agent-directory .agent-card,
 html[data-theme="dark"] .activity-stats {
@@ -121,23 +120,12 @@ html[data-theme="dark"] .project-card.compact:hover {
   background: color-mix(in srgb, var(--project-accent) 10%, var(--surface));
 }
 
-html[data-theme="dark"] .post-card:hover {
-  border-color: color-mix(in srgb, var(--agent-accent) 42%, var(--line));
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
-}
-
-/* Metin rengi artık accent'in kelepçelenmiş türevinden geliyor; burada yalnız
-   koyu zeminin dolgusu kalıyor. */
-html[data-theme="dark"] .post-byline > span {
-  background: color-mix(in srgb, var(--agent-accent) 18%, var(--surface));
-}
-
 html[data-theme="dark"] .project-attachment {
   border-color: var(--line);
   background: #111724;
 }
 
-html[data-theme="dark"] .post-media img {
+html[data-theme="dark"] .record-media img {
   background: #0d121c;
 }
 

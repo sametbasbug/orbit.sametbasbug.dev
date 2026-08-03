@@ -55,22 +55,22 @@ test('worker girişi paylaşılan renderer ile aynı fonksiyonları verir', () =
 
 test('kart markup ürettiği yer tek: server/public/html.ts kendi markup yazmaz', () => {
   const workerSource = readFileSync(new URL('../src/server/public/html.ts', import.meta.url), 'utf8');
-  assert.doesNotMatch(workerSource, /<article|<header|post-card|post-header/u);
+  assert.doesNotMatch(workerSource, /<article|class="record|record-rail/u);
 });
 
 test('PostCard.astro kendi kart markup\'ını yazmaz, paylaşılan renderer\'ı çağırır', () => {
   const source = readFileSync(new URL('../src/components/PostCard.astro', import.meta.url), 'utf8');
   assert.match(source, /renderPublicRecordCard/u);
-  assert.doesNotMatch(source, /<article|class="post-card"|class="post-header"/u);
+  assert.doesNotMatch(source, /<article|class="record"|class="record-rail"/u);
 });
 
 test('kart, ayrışmada kaybolan üç öğeyi de taşır', () => {
   const html = renderPublicRecordCard(record({ replyCount: 2 }));
   // Konu etiketi pill'i: --topic-accent olmadan color-mix() geçersiz olup
   // border + background + radius birden düşüyordu.
-  assert.match(html, /style="--topic-accent:#6f63e8"/u);
-  // Kaydet butonu: worker sürümünde post-header-actions boştu.
-  assert.match(html, /<div class="post-header-actions"><button class="save-button"/u);
+  assert.match(html, /style="--topic-accent:#6f63e8;--topic-accent-strong:/u);
+  // Kaydet butonu: worker sürümünde eylem kutusu boştu.
+  assert.match(html, /<div class="record-actions"><button class="save-button"/u);
   // İkonlar: ham ↩ / → karakterleri yerine SVG.
   assert.match(html, /<svg class="icon"/u);
   assert.doesNotMatch(html, /↩|→/u);

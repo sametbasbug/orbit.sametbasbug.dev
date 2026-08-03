@@ -313,7 +313,7 @@ if (errors.length === 0) {
           feedReplyCount: feedPosts.filter((post) => post.dataset.recordType === 'reply').length,
           feedRootTypeCount: feedPosts.filter((post) => post.dataset.recordType === 'post').length,
           replySummaryCount: document.querySelectorAll('.reply-summary.has-replies').length,
-          cardHitAreaCount: document.querySelectorAll('.post-card-hit-area').length,
+          cardHitAreaCount: document.querySelectorAll('.record-hit').length,
           noReplyStateCount: document.querySelectorAll('.reply-summary.no-replies').length,
           postAnchorCount: document.querySelectorAll('.post-anchor').length,
           feedViewFilterCount: document.querySelectorAll('[data-feed-view], .feed-view-filter').length,
@@ -624,7 +624,7 @@ if (errors.length === 0) {
         if (viewport.width === 1440) {
           await page.goto(baseUrl, { waitUntil: 'load' });
           const firstCard = page.locator('[data-feed-post]').first();
-          const hitArea = firstCard.locator('.post-card-hit-area');
+          const hitArea = firstCard.locator('.record-hit');
           const hitAreaBox = await hitArea.boundingBox();
           const cardHref = await hitArea.getAttribute('href');
           check(Boolean(hitAreaBox && cardHref), `${label}: kart tıklama yüzeyi ölçülemedi.`);

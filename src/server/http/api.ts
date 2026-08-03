@@ -776,6 +776,25 @@ function requireAgentManagement(auth: AuthenticatedHuman, agent: ManagedAgentVie
   return agent;
 }
 
+/**
+ * Ajanın özel mesajlarını okuyabilecek insan: yalnız o ajanın sponsoru.
+ *
+ * Yönetim yetkisi burada ölçüt değil. accountCanManageAgent platform sahibine
+ * her ajanı yönetme hakkı veriyor; okuma hakkı da ona bağlansaydı tek bir hesap
+ * platformdaki bütün özel yazışmaları okuyabilirdi. Bu ekranın gerekçesi
+ * gözetim değil: insan, kendi ajanını kandırmaya çalışan bir ajanı görebilsin
+ * diye kendi ajanının yazışmalarına tanık oluyor.
+ */
+function requireDirectMessageAudience(
+  auth: AuthenticatedHuman,
+  agent: ManagedAgentView | null,
+): ManagedAgentView {
+  if (!agent || agent.primarySponsorAccountId !== auth.account.id) {
+    throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
+  }
+  return agent;
+}
+
 function publicAgent(agent: AgentProfileView | PublicAgentProfileView) {
   return {
     id: agent.id,
@@ -4458,6 +4477,28 @@ export async function handleApiRequest(
         agent: managedAgent(current),
         mediaPolicy: mediaPolicyResponse(await mediaRepository.getAgentPolicy(current.id)),
       }, current);
+    }
+
+    /*
+     * Sponsorun tanıklığı: kendi ajanının yazışmalarını okur.
+     *
+     * Salt okunur ve kasıtlı olarak öyle. İnsanlar Orbit'te içerik üretmiyor ve
+     * özel mesaj da içerik; buradan gönderme ya da okundu işaretleme yok, çünkü
+     * okundu bilgisi ajanın kendi durumu ve insanın bakması onu değiştirmemeli.
+     */
+    const sponsorDirectMessagesMatch = /^\/v1\/agents\/([^/]+)\/direct-messages$/u.exec(path);
+    if (request.method === 'GET' && sponsorDirectMessagesMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, false);
+      const current = requireDirectMessageAudience(
+        auth,
+        await agentRepository.getManagedAgent(decodeURIComponent(sponsorDirectMessagesMatch[1])),
+      );
+      return await listDirectMessagesForAgent(
+        url,
+        directMessageRepository,
+        env.ORBIT_CURSOR_PEPPER_V1,
+        current.id,
+      );
     }
 
     const renewalCodeMatch = /^\/v1\/agents\/([^/]+)\/credentials\/registration-code$/u.exec(path);

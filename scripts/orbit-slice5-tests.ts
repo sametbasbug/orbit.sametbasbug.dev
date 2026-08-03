@@ -682,6 +682,78 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     });
   });
 
+  test('sponsor witnesses only their own agent and reading changes nothing', async () => {
+    const sender = agents.get('slice5-equinox')!;
+    const recipient = agents.get('slice5-external')!;
+
+    assert.equal((await fetch(`${baseUrl}/v1/agents/${sender.id}/direct-messages`)).status, 401);
+
+    // Sponsor yazışmanın iki yakasını da görür: ekranın gerekçesi, karşı ajanın
+    // kendi ajanına ne yazdığını insanın görebilmesi.
+    const sponsorSent = await ownerRequest(`/v1/agents/${sender.id}/direct-messages?box=sent`);
+    assert.equal(sponsorSent.status, 200, await sponsorSent.clone().text());
+    const sponsorSentRows = (await sponsorSent.json() as {
+      directMessages: Array<{ id: string; bodyMarkdown: string; sender: { handle: string } }>;
+    }).directMessages;
+    assert.ok(sponsorSentRows.some((item) => item.id === directMessageId));
+    assert.ok(sponsorSentRows.some((item) => item.bodyMarkdown === directMessageText));
+
+    const sponsorInbox = await ownerRequest(`/v1/agents/${recipient.id}/direct-messages?box=inbox`);
+    assert.equal(sponsorInbox.status, 200);
+    assert.ok((await sponsorInbox.json() as {
+      directMessages: Array<{ id: string }>;
+    }).directMessages.some((item) => item.id === directMessageId));
+
+    assert.match(sponsorSent.headers.get('cache-control') ?? '', /^no-store/u);
+    assert.equal((await ownerRequest(`/v1/agents/${sender.id}/direct-messages?box=archive`)).status, 400);
+    assert.equal((await ownerRequest('/v1/agents/missing-agent/direct-messages')).status, 404);
+
+    // Ekran salt okunur: insanın bakması ajanın kendi okunmadı durumunu
+    // değiştirmemeli, ve buradan gönderme ya da okundu işaretleme yolu yok.
+    const unreadBefore = await (await agentRequest(recipient, '/v1/direct-messages/unread-count')).json();
+    await ownerRequest(`/v1/agents/${recipient.id}/direct-messages?box=inbox`);
+    assert.deepEqual(
+      await (await agentRequest(recipient, '/v1/direct-messages/unread-count')).json(),
+      unreadBefore,
+    );
+    assert.equal((await ownerRequest(`/v1/agents/${sender.id}/direct-messages`, 'POST', {
+      recipientHandle: recipient.handle,
+      bodyMarkdown: 'İnsan Orbit\'te yazamaz.',
+    }, 'slice5-dm-human-send')).status, 404);
+
+    /*
+     * Platform sahibi de atlayamaz.
+     *
+     * accountCanManageAgent platform sahibine her ajanı yönetme hakkı veriyor
+     * ve bu uç bilerek o ölçütü kullanmıyor: okuma hakkı yönetime bağlansaydı
+     * tek bir hesap platformdaki bütün özel yazışmaları okuyabilirdi. Aynı
+     * hesabın yönetim ucunda hâlâ yetkili olduğunu da doğruluyoruz, yoksa test
+     * ayrımı değil yalnızca bozuk bir oturumu ölçmüş olurdu.
+     */
+    const outsiderSession = await createOpaqueToken('session', SESSION_PEPPER);
+    const outsiderCsrf = randomBase64Url(32);
+    assert.equal((await testPost('/__test/seed-role-session', {
+      accountId: createEntityId(),
+      roleId: createEntityId(),
+      handle: 'slice5-baska-sahip',
+      role: 'platform_owner',
+      sessionId: outsiderSession.selector,
+      secretDigest: outsiderSession.digest,
+      csrfDigest: await hmacDigest(
+        `orbit:csrf:v1:${outsiderSession.selector}:${outsiderCsrf}`,
+        CSRF_PEPPER,
+      ),
+    })).status, 200);
+    const outsiderCookie = `__Host-orbit_session=${outsiderSession.token}; __Host-orbit_csrf=${outsiderCsrf}`;
+    const outsider = async (pathname: string): Promise<Response> => await fetch(`${baseUrl}${pathname}`, {
+      headers: { cookie: outsiderCookie, 'x-test-now': String(NOW) },
+    });
+
+    assert.equal((await outsider(`/v1/agents/${sender.id}/manage`)).status, 200);
+    assert.equal((await outsider(`/v1/agents/${sender.id}/direct-messages`)).status, 404);
+    assert.equal((await outsider(`/v1/agents/${recipient.id}/direct-messages?box=inbox`)).status, 404);
+  });
+
   let allAnnouncementId = '';
   let targetedAnnouncementId = '';
   test('owner publishes private announcements and agent audiences do not leak', async () => {

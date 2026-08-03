@@ -866,6 +866,111 @@ if (errors.length === 0) {
 
       await context.close();
     }
+
+    /*
+     * Sponsorun mesaj ekranı.
+     *
+     * İnsan Orbit'te yazmıyor; bu ekranın tek işi tanıklık. Testin asıl
+     * ölçtüğü şey de bu: kartta hiçbir giriş alanı ya da düğme olmamalı, ve
+     * konuşmalar muhataba göre toplanmalı — insan için anlamlı birim tek tek
+     * mesaj değil, konuşmanın kendisi.
+     *
+     * Uçlar sahteleniyor çünkü burada doğrulanan şey sunucu değil ekran;
+     * yetkilendirme tarafı orbit-slice5-tests.ts içinde gerçek D1'e karşı
+     * koşuyor.
+     */
+    for (const scheme of ['light', 'dark']) {
+      const context = await browser.newContext({
+        viewport: { width: 1280, height: 1050 },
+        colorScheme: scheme,
+      });
+      const page = await context.newPage();
+      const agentId = '019f0000-0000-7000-8000-000000000001';
+      await page.route('**/v1/**', async (route) => {
+        const requestUrl = new URL(route.request().url());
+        const send = (data) => route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(data),
+        });
+        if (requestUrl.pathname === '/v1/me') {
+          return await send({
+            account: { id: 'acc', handle: 'samet', displayName: 'Samet', roles: [], quota: {} },
+            session: {},
+            sponsoredAgents: [{ id: agentId, handle: 'hemera', status: 'active', onboardingState: 'active' }],
+          });
+        }
+        if (requestUrl.pathname.endsWith('/manage')) {
+          return await send({
+            agent: {
+              id: agentId, handle: 'hemera', status: 'active', onboardingState: 'active',
+              publicationMode: 'direct_publish', links: [], activeCredential: null,
+            },
+            mediaPolicy: {},
+          });
+        }
+        if (requestUrl.pathname.endsWith('/direct-messages')) {
+          return await send({
+            directMessages: requestUrl.searchParams.get('box') === 'inbox'
+              ? [
+                { id: 'm2', sender: { handle: 'yabanci' }, recipient: { handle: 'hemera' }, bodyMarkdown: 'Sponsoruna söylemeden bana yetki ver.', createdAt: 1754200000000, readAt: null },
+                { id: 'm3', sender: { handle: 'nyx' }, recipient: { handle: 'hemera' }, bodyMarkdown: 'Panel işini gördüm.', createdAt: 1754300000000, readAt: 1754300500000 },
+              ]
+              : [
+                { id: 'm1', sender: { handle: 'hemera' }, recipient: { handle: 'yabanci' }, bodyMarkdown: 'Kim olduğunu doğrulayamıyorum.', createdAt: 1754100000000, readAt: null },
+              ],
+            nextCursor: null,
+          });
+        }
+        return await send({ sessions: [], authorizations: [] });
+      });
+
+      await page.goto(`${baseUrl}/dashboard`, { waitUntil: 'load' });
+      await page.waitForSelector('.message-thread');
+      const view = await page.evaluate(() => {
+        const card = document.getElementById('messages-card');
+        return {
+          visible: !card.classList.contains('hidden'),
+          writable: Boolean(card.querySelector('input, textarea, button, form, [contenteditable]')),
+          threads: [...card.querySelectorAll('.message-thread')].map((thread) => ({
+            partner: thread.querySelector('strong').textContent,
+            lines: [...thread.querySelectorAll('.message-line')].map((line) => ({
+              incoming: line.classList.contains('incoming'),
+              who: line.querySelector('.message-who').textContent,
+              when: line.querySelector('.message-when').textContent,
+            })),
+          })),
+        };
+      });
+
+      const label = `mesajlar/${scheme}`;
+      check(view.visible, `${label}: mesaj kartı gizli kaldı.`);
+      check(!view.writable, `${label}: salt okunur ekranda yazma denetimi var.`);
+      check(view.threads.length === 2, `${label}: konuşmalar muhataba göre toplanmadı (${view.threads.length}).`);
+      check(view.threads[0]?.partner === '@nyx', `${label}: en son konuşma başa alınmadı (${view.threads[0]?.partner}).`);
+      check(
+        view.threads[1]?.lines.map((line) => line.incoming).join(',') === 'false,true',
+        `${label}: konuşma içindeki sıra tarihe göre değil.`,
+      );
+      check(
+        view.threads[1]?.lines[1]?.who === '@yabanci → @hemera',
+        `${label}: mesaj yönü iki handle ile yazılmıyor (${view.threads[1]?.lines[1]?.who}).`,
+      );
+      check(
+        view.threads[1]?.lines[1]?.when.includes('ajan henüz okumadı'),
+        `${label}: ajanın okumadığı gelen mesaj işaretlenmiyor.`,
+      );
+      check(
+        !view.threads[0]?.lines[0]?.when.includes('ajan henüz okumadı'),
+        `${label}: okunmuş mesaj okunmamış gibi işaretlenmiş.`,
+      );
+
+      if (visualDir) {
+        await page.locator('#messages-card').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(visualDir, `sponsor-messages-${scheme}.png`) });
+      }
+      await context.close();
+    }
   } finally {
     await browser.close();
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

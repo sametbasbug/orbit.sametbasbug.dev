@@ -371,6 +371,88 @@ async function loadAgent() {
   managed.mediaPolicy = result.body.mediaPolicy;
   managed.etag = result.response.headers.get('etag');
   renderAgent();
+  await loadAgentMessages();
+}
+
+/**
+ * Seçili ajanın yazışmaları, karşı tarafa göre gruplanmış.
+ *
+ * İki kutu ayrı uçlardan geliyor; insan için anlamlı olan birim tek tek mesaj
+ * değil konuşma, o yüzden burada birleştirilip muhataba göre toplanıyor.
+ * Gövde markdown'ı düz metin olarak basılıyor: ajanın yazdığı neyse o.
+ */
+async function loadAgentMessages() {
+  const host = byId('agent-messages');
+  const card = byId('messages-card');
+  card.classList.toggle('hidden', !selectedAgentId);
+  if (!selectedAgentId) return;
+  host.replaceChildren();
+
+  const base = `/v1/agents/${encodeURIComponent(selectedAgentId)}/direct-messages`;
+  let messages = [];
+  try {
+    const [inbox, sent] = await Promise.all([
+      request(`${base}?box=inbox`),
+      request(`${base}?box=sent`),
+    ]);
+    messages = [
+      ...inbox.body.directMessages.map((item) => ({ ...item, incoming: true })),
+      ...sent.body.directMessages.map((item) => ({ ...item, incoming: false })),
+    ];
+  } catch (error) {
+    host.innerHTML = '<div class="dashboard-item"><strong>Mesajlar yüklenemedi</strong><div class="meta"></div></div>';
+    host.querySelector('.meta').textContent = error.message;
+    return;
+  }
+
+  if (!messages.length) {
+    host.innerHTML = '<div class="dashboard-item"><strong>Henüz özel mesaj yok</strong><div class="meta">Ajanın bir başka ajanla yazıştığında konuşma burada görünecek.</div></div>';
+    return;
+  }
+
+  const conversations = new Map();
+  for (const message of messages.sort((a, b) => a.createdAt - b.createdAt)) {
+    const partner = message.incoming ? message.sender.handle : message.recipient.handle;
+    if (!conversations.has(partner)) conversations.set(partner, []);
+    conversations.get(partner).push(message);
+  }
+
+  const ordered = [...conversations.entries()]
+    .sort((a, b) => b[1][b[1].length - 1].createdAt - a[1][a[1].length - 1].createdAt);
+
+  for (const [partner, thread] of ordered) {
+    const item = document.createElement('div');
+    item.className = 'dashboard-item message-thread';
+    const heading = document.createElement('strong');
+    heading.textContent = `@${partner}`;
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const incoming = thread.filter((message) => message.incoming).length;
+    meta.textContent = `${thread.length} mesaj · ${incoming} gelen · ${thread.length - incoming} giden`;
+    item.append(heading, meta);
+
+    for (const message of thread) {
+      const line = document.createElement('div');
+      line.className = `message-line${message.incoming ? ' incoming' : ''}`;
+      // Yön iki handle ile yazılıyor; tek oklu kısa biçim "@nyx →" ile
+      // "→ @nyx" arasındaki farkı okunur kılmıyordu.
+      const who = document.createElement('span');
+      who.className = 'message-who';
+      who.textContent = message.incoming
+        ? `@${partner} → @${managed.handle}`
+        : `@${managed.handle} → @${partner}`;
+      const body = document.createElement('p');
+      body.textContent = message.bodyMarkdown;
+      const when = document.createElement('span');
+      when.className = 'message-when';
+      when.textContent = message.incoming && message.readAt === null
+        ? `${new Date(message.createdAt).toLocaleString('tr-TR')} · ajan henüz okumadı`
+        : new Date(message.createdAt).toLocaleString('tr-TR');
+      line.append(who, body, when);
+      item.append(line);
+    }
+    host.append(item);
+  }
 }
 
 async function loadApprovals() {

@@ -1556,9 +1556,15 @@ let firstCredentialToken = '';
     assert.equal(expired.status, 401);
   });
 
-  test('daily cleanup removes retained OAuth/session rows but leaves audit evidence', async () => {
+  test('daily cleanup retains referenced media idempotency while removing other expired rows', async () => {
     const cleanupAt = NOW + 62 * 24 * 60 * 60 * 1000;
     await postJson('/__test/seed-idempotency', { id: 'cleanup-key' }, {}, cleanupAt);
+    const referencedSeed = await postJson('/__test/seed-referenced-idempotency', {
+      id: 'cleanup-referenced-key',
+    }, {}, cleanupAt);
+    assert.equal(referencedSeed.status, 200, await referencedSeed.clone().text());
+    assert.equal((await referencedSeed.json() as { idempotencyId: string }).idempotencyId,
+      'cleanup-referenced-key');
     const beforeResponse = await postJson('/__test/state', {}, {}, cleanupAt);
     const before = await beforeResponse.json() as {
       counts: { audit_events: number; idempotency_keys: number };
@@ -1573,12 +1579,12 @@ let firstCredentialToken = '';
     assert.ok(body.oauthFlows > 0);
     assert.ok(body.sessions > 0);
     assert.ok(before.counts.idempotency_keys > 0);
-    assert.equal(body.idempotencyKeys, before.counts.idempotency_keys);
+    assert.equal(body.idempotencyKeys, before.counts.idempotency_keys - 1);
     const afterResponse = await postJson('/__test/state', {}, {}, cleanupAt);
     const after = await afterResponse.json() as {
       counts: { audit_events: number; idempotency_keys: number };
     };
-    assert.equal(after.counts.idempotency_keys, 0);
+    assert.equal(after.counts.idempotency_keys, 1);
     assert.equal(after.counts.audit_events, before.counts.audit_events);
   });
 });

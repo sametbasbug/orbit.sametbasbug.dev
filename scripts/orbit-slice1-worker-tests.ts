@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import worker from '../src/worker';
+import worker, {
+  BACKUP_CRON,
+  BACKUP_RECONCILIATION_CRON,
+  runScheduledMaintenance,
+} from '../src/worker';
 import {
   assertDeploymentBindings,
   assertIdentityBindings,
@@ -330,5 +334,55 @@ describe('Orbit V6 deployment-mode contract', () => {
       assert.equal(response.status, 200);
       assert.equal(response.headers.get('x-robots-tag'), null);
     }
+  });
+
+  test('waits for independent scheduled tasks before reporting one task failure', async () => {
+    const calls: string[] = [];
+    const scheduledTime = 1_785_727_021_000;
+    await assert.rejects(
+      runScheduledMaintenance(
+        { cron: BACKUP_CRON, scheduledTime },
+        productionBindings('live'),
+        {
+          async runIdentityCleanup(_env, now) {
+            assert.equal(now, scheduledTime);
+            calls.push('identity_cleanup');
+            throw new Error('simulated_cleanup_failure');
+          },
+          async runScheduledBackups(_env, now) {
+            assert.equal(now, scheduledTime);
+            calls.push('backup');
+          },
+          async cleanupMedia(_env, now) {
+            assert.equal(now, scheduledTime);
+            calls.push('media_cleanup');
+          },
+          async reconcileStaleBackupRuns() {
+            calls.push('reconciliation');
+          },
+        },
+      ),
+      /scheduled_maintenance_failed:identity_cleanup/u,
+    );
+    assert.deepEqual(calls.sort(), ['backup', 'identity_cleanup', 'media_cleanup']);
+  });
+
+  test('routes the follow-up cron only to stale backup reconciliation', async () => {
+    const calls: string[] = [];
+    const scheduledTime = 1_785_729_600_000;
+    await runScheduledMaintenance(
+      { cron: BACKUP_RECONCILIATION_CRON, scheduledTime },
+      productionBindings('live'),
+      {
+        async runIdentityCleanup() { calls.push('identity_cleanup'); },
+        async runScheduledBackups() { calls.push('backup'); },
+        async cleanupMedia() { calls.push('media_cleanup'); },
+        async reconcileStaleBackupRuns(_env, now) {
+          assert.equal(now, scheduledTime);
+          calls.push('reconciliation');
+        },
+      },
+    );
+    assert.deepEqual(calls, ['reconciliation']);
   });
 });

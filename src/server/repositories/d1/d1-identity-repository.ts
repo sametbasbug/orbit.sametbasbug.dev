@@ -528,7 +528,12 @@ export class D1IdentityRepository implements IdentityRepository {
            OR (MIN(idle_expires_at, absolute_expires_at) <= ?)
       `).bind(sessionCutoff, sessionCutoff),
       this.#db.prepare(`
-        DELETE FROM idempotency_keys WHERE expires_at <= ?
+        DELETE FROM idempotency_keys
+        WHERE expires_at <= ?
+          AND NOT EXISTS (
+            SELECT 1 FROM media_transform_claims claim
+            WHERE claim.idempotency_id = idempotency_keys.id
+          )
       `).bind(now),
     ]);
     return {

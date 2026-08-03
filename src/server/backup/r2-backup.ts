@@ -63,12 +63,10 @@ export async function enforceBackupRetention(bucket: R2BucketLike): Promise<Reco
   return deleted;
 }
 
-export async function runR2Backup(
+export async function reconcileStaleBackupRuns(
   env: OrbitBindings,
-  kind: BackupKind,
   now = Date.now(),
-  actorAccountId: string | null = null,
-): Promise<{ runId: string; objectKey: string; manifestChecksum: string; objectChecksum: string }> {
+): Promise<number> {
   const repository = new D1PlatformRepository(env.DB);
   const reconciledRuns = await repository.failStaleBackupRuns({
     before: now - STALE_BACKUP_RUN_MS,
@@ -82,6 +80,17 @@ export async function runR2Backup(
       count: reconciledRuns,
     }));
   }
+  return reconciledRuns;
+}
+
+export async function runR2Backup(
+  env: OrbitBindings,
+  kind: BackupKind,
+  now = Date.now(),
+  actorAccountId: string | null = null,
+): Promise<{ runId: string; objectKey: string; manifestChecksum: string; objectChecksum: string }> {
+  const repository = new D1PlatformRepository(env.DB);
+  await reconcileStaleBackupRuns(env, now);
   const runId = createEntityId();
   const startedAt = Date.now();
   await repository.startBackupRun({ id: runId, kind, actorAccountId, now });

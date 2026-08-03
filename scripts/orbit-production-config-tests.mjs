@@ -124,7 +124,7 @@ const expectedResources = {
     },
   },
   triggers: {
-    crons: ['17 3 * * *'],
+    crons: ['17 3 * * *', '0 4 * * *'],
   },
 };
 

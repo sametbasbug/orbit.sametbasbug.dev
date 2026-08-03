@@ -296,9 +296,21 @@ for (const post of publicPosts) {
   }
 }
 
+/*
+ * CSS bütçesi iki eşikli, çünkü ham boyut kullanıcıya giden şey değil.
+ *
+ * Token skalasına geçerken ham CSS 71.492'den 78.377 byte'a çıktı ama aynı
+ * derlemede gzip 13.366'dan 13.125'e, brotli 11.417'den 11.242'ye indi:
+ * yüzlerce kez tekrarlanan var(--space-8), 70 ayrı keyfi değerden daha iyi
+ * sıkışıyor. Cloudflare sıkıştırılmış servis ediyor, yani gerçek bütçe gzip.
+ *
+ * Ham eşik yine de duruyor ama artık asıl ölçü değil, emniyet sınırı: iyi
+ * sıkışan ama kopyala-yapıştır büyümüş bir stil dosyasını yakalamak için.
+ */
 const css = Buffer.concat(cssFiles.map((file) => fs.readFileSync(file)));
-check(css.length < 72_000, `Derlenmiş CSS gereksiz büyüdü: ${css.length} byte.`);
-check(gzipSync(css).length < 16_000, `Gzip CSS bütçesi aşıldı: ${gzipSync(css).length} byte.`);
+const gzipped = gzipSync(css).length;
+check(gzipped < 14_000, `Gzip CSS bütçesi aşıldı: ${gzipped} byte.`);
+check(css.length < 88_000, `Ham CSS emniyet sınırını aştı: ${css.length} byte.`);
 
 if (errors.length) {
   process.stderr.write(`${errors.map((error) => `- ${error}`).join('\n')}\n`);

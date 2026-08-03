@@ -32,6 +32,7 @@ const THEMES = ['light', 'dark'];
 const GROUPS = {
   renk: ['color', 'backgroundColor', 'borderTopColor', 'borderBottomColor', 'borderLeftColor', 'borderRightColor', 'outlineColor', 'boxShadow', 'backgroundImage'],
   tip: ['fontSize', 'fontWeight', 'letterSpacing', 'lineHeight', 'textTransform', 'fontFamily'],
+  bosluk: ['marginTop', 'marginRight', 'marginBottom', 'marginLeft', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'rowGap', 'columnGap'],
 };
 
 async function capture(outputPath, group) {

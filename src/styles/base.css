@@ -72,7 +72,7 @@ main {
 }
 
 .section-label {
-  margin: 0 0 0.65rem;
+  margin: 0 0 var(--space-5);
   color: var(--muted);
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
@@ -82,7 +82,7 @@ main {
 
 .plain-link {
   display: inline-block;
-  margin-top: 1rem;
+  margin-top: var(--space-8);
   color: var(--link);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
@@ -94,7 +94,7 @@ main {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 1rem;
+  padding: 0 var(--space-8);
   border: 1px solid var(--ink);
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);
@@ -133,7 +133,7 @@ main {
   z-index: 100;
   top: 0.75rem;
   left: 0.75rem;
-  padding: 0.7rem 0.9rem;
+  padding: var(--space-6) var(--space-7);
   border-radius: 0.7rem;
   color: #fff;
   background: #27345f;

@@ -68,5 +68,35 @@
   --text-6xl: 2.281rem;
   --text-7xl: 2.566rem;
 
+  /* Ağırlık. Beş kademe, aralarda 50–100 var.
+   *
+   * Kademe azlığı kasıtlı: proje hiçbir font dosyası yayınlamıyor, --sans
+   * ziyaretçinin sisteminde Inter varsa ona, yoksa sistem fontuna düşüyor.
+   * Inter ve SF değişken, ara ağırlıkları verir; Segoe UI vermez, oradaki
+   * ziyaretçi için 750/800/850 zaten tek ağırlığa çöküyor. Daha ince bir
+   * skala yalnız bizim makinemizde var olurdu. */
+  --weight-medium: 500;
+  --weight-semibold: 650;
+  --weight-bold: 750;
+  --weight-extrabold: 800;
+  --weight-black: 850;
+
+  /* Harf aralığı. İki aile: küçük büyük-harf etiketler açılır, iri başlıklar
+   * sıkışır. Ortadaki 0 ikisinin de olmadığı yer. */
+  --tracking-tighter: -0.055em;
+  --tracking-tight: -0.03em;
+  --tracking-none: 0;
+  --tracking-wide: 0.08em;
+  --tracking-widest: 0.14em;
+
+  /* Satır yüksekliği. En alttaki iki kademe tek satırlık başlık ve etiketler
+   * için; --leading-relaxed uzun gövde metninin okuma ritmi. */
+  --leading-squeeze: 0.9;
+  --leading-none: 1;
+  --leading-tight: 1.15;
+  --leading-snug: 1.35;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.68;
+
   font-family: var(--sans);
 }

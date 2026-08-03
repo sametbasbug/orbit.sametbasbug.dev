@@ -443,7 +443,7 @@
 
   .brand-copy small {
     font-size: var(--text-3xs);
-    letter-spacing: 0.13em;
+    letter-spacing: var(--tracking-widest);
   }
 
   .orbit-welcome {

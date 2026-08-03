@@ -75,8 +75,8 @@ main {
   margin: 0 0 0.65rem;
   color: var(--muted);
   font-size: var(--text-2xs);
-  font-weight: 700;
-  letter-spacing: 0.09em;
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
 }
 
@@ -85,7 +85,7 @@ main {
   margin-top: 1rem;
   color: var(--link);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   text-underline-offset: 0.2rem;
 }
 
@@ -97,7 +97,7 @@ main {
   padding: 0 1rem;
   border: 1px solid var(--ink);
   font-size: var(--text-sm);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   text-decoration: none;
 }
 
@@ -138,7 +138,7 @@ main {
   color: #fff;
   background: #27345f;
   font-size: var(--text-sm);
-  font-weight: 800;
+  font-weight: var(--weight-extrabold);
   text-decoration: none;
   transform: translateY(-180%);
   transition: transform 150ms ease;

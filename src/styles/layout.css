@@ -39,9 +39,9 @@
   margin: 0;
   font-family: var(--serif);
   font-size: var(--text-4xl);
-  font-weight: 600;
-  letter-spacing: -0.035em;
-  line-height: 1.08;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-tight);
 }
 
 .footer-inner {

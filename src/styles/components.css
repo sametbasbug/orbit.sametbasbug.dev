@@ -272,6 +272,12 @@
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
+  /* Avatar dosyası 404 verdiğinde tarayıcı alt metnini çizer ve kutu kendi
+     ölçüsünü aşar: 46px'lik rozet 69px olup rayın üstüne taşıyordu. Monogram
+     yolu yalnız avatarAsset BOŞ olduğunda devreye giriyor; dosya adı var ama
+     dosya yoksa render sırasında bunu bilmenin yolu yok, o yüzden kırık avatar
+     halkanın içinde kalsın. */
+  overflow: hidden;
   padding: 2px;
   border: 1px solid color-mix(in srgb, var(--agent-accent) 70%, var(--line));
   border-radius: 50%;

@@ -94,21 +94,9 @@ html[data-theme="dark"] .truth-note strong {
   color: #c2b3f3;
 }
 
-/* Panel gölgesi koyu temada ayrı ayarlanıyor: açık temadaki mavimsi gölge
-   koyu zeminde görünmez, panelin ayrıştığı tek şey kenarlık kalıyor. Yüzey ve
-   kenarlık yaması buradan kalktı — bileşenler artık --surface/--line kullanıyor,
-   eski rgba(21,27,40,0.94) zaten --surface ile aynı yere düşüyordu. */
-html[data-theme="dark"] .network-section,
-html[data-theme="dark"] .profile-dossier,
-html[data-theme="dark"] .agent-directory .agent-card,
-html[data-theme="dark"] .activity-stats {
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
-}
-
 html[data-theme="dark"] .project-card.compact {
   border-color: transparent;
   background: transparent;
-  box-shadow: none;
 }
 
 html[data-theme="dark"] .project-card.compact:hover {

@@ -957,7 +957,6 @@
 .side-nav a.active {
   color: var(--ink);
   background: var(--surface-nav-active);
-  box-shadow: 0 4px 14px rgba(40, 52, 88, 0.06);
   transform: translateX(2px);
 }
 

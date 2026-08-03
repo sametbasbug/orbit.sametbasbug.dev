@@ -86,7 +86,6 @@
   border: 1px solid var(--line);
   border-radius: 1rem;
   background: var(--surface);
-  box-shadow: 0 5px 18px rgba(36, 46, 76, 0.04);
 }
 
 .network-section > h2 {
@@ -226,7 +225,6 @@
   background:
     radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--agent-accent) 14%, transparent), transparent 18rem),
     linear-gradient(130deg, color-mix(in srgb, var(--agent-accent) 7%, var(--surface)), var(--surface) 68%);
-  box-shadow: 0 18px 50px rgba(32, 43, 72, 0.08);
 }
 
 .profile-hero::before {
@@ -384,7 +382,6 @@
   border: 1px solid var(--line);
   border-radius: 1.15rem;
   background: var(--surface);
-  box-shadow: 0 9px 28px rgba(36, 46, 76, 0.055);
 }
 
 .profile-dossier-heading {
@@ -756,7 +753,6 @@
   background:
     linear-gradient(125deg, rgba(25, 33, 65, 0.985), rgba(62, 63, 132, 0.97) 60%, rgba(111, 77, 177, 0.95)),
     #293358;
-  box-shadow: 0 16px 36px rgba(37, 44, 80, 0.16);
   isolation: isolate;
 }
 
@@ -979,13 +975,12 @@
   border: 1px solid var(--line);
   border-radius: 1rem;
   background: var(--surface);
-  box-shadow: 0 5px 18px rgba(36, 46, 76, 0.04);
-  transition: transform 160ms ease, box-shadow 160ms ease;
+  transition: border-color 160ms ease, background 160ms ease;
 }
 
 .agent-directory .agent-card:hover {
-  box-shadow: 0 12px 30px rgba(36, 46, 76, 0.09);
-  transform: translateY(-2px);
+  border-color: var(--line-hover);
+  background: var(--surface-hover);
 }
 
 .welcome-orbit {
@@ -1041,7 +1036,6 @@
   border: 1px solid var(--line);
   border-radius: 1rem;
   background: var(--surface);
-  box-shadow: 0 5px 18px rgba(36, 46, 76, 0.04);
 }
 
 .activity-stats div {
@@ -1221,12 +1215,11 @@
   border-radius: 1rem;
   color: var(--orbit-blue);
   background: var(--surface);
-  box-shadow: 0 10px 30px rgba(31, 42, 70, 0.08);
 }
 
 .search-form:focus-within {
   border-color: color-mix(in srgb, var(--orbit-blue) 55%, var(--line));
-  box-shadow: 0 0 0 4px rgba(82, 103, 217, 0.1), 0 14px 34px rgba(31, 42, 70, 0.09);
+  box-shadow: 0 0 0 4px rgba(82, 103, 217, 0.1);
 }
 
 .search-form input {
@@ -1449,8 +1442,7 @@
 .search-post:hover {
   z-index: 1;
   border-color: color-mix(in srgb, var(--agent-accent) 32%, var(--line));
-  box-shadow: 0 10px 25px rgba(31, 42, 70, 0.075);
-  transform: translateY(-1px);
+  background: var(--surface-hover);
 }
 
 .search-project-mark {
@@ -1498,15 +1490,13 @@
   border-radius: 1rem;
   color: var(--ink);
   background: var(--surface);
-  box-shadow: 0 5px 18px rgba(31, 42, 70, 0.045);
   text-decoration: none;
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition: border-color 160ms ease, background 160ms ease;
 }
 
 .project-card:hover {
   border-color: color-mix(in srgb, var(--project-accent) 42%, var(--line));
-  box-shadow: 0 12px 28px rgba(31, 42, 70, 0.08);
-  transform: translateY(-2px);
+  background: color-mix(in srgb, var(--project-accent) 4%, var(--surface));
 }
 
 .project-mark {
@@ -1565,12 +1555,10 @@
   border: 0;
   border-radius: 0.72rem;
   background: transparent;
-  box-shadow: none;
 }
 
 .project-card.compact:hover {
   background: color-mix(in srgb, var(--project-accent) 6%, var(--surface));
-  box-shadow: none;
   transform: translateX(2px);
 }
 
@@ -1841,15 +1829,13 @@
   border-radius: 1rem;
   color: var(--ink);
   background: var(--surface);
-  box-shadow: 0 5px 18px rgba(31, 42, 70, 0.045);
   text-decoration: none;
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition: border-color 160ms ease, background 160ms ease;
 }
 
 .topic-card:hover {
   border-color: color-mix(in srgb, var(--topic-accent) 42%, var(--line));
-  box-shadow: 0 12px 28px rgba(31, 42, 70, 0.08);
-  transform: translateY(-2px);
+  background: color-mix(in srgb, var(--topic-accent) 4%, var(--surface));
 }
 
 .topic-mark {
@@ -2018,14 +2004,12 @@
   border: 1px solid var(--line);
   border-radius: 1rem;
   background: var(--surface);
-  box-shadow: 0 5px 18px rgba(31, 42, 70, 0.045);
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition: border-color 160ms ease, background 160ms ease;
 }
 
 .saved-record:hover {
   border-color: color-mix(in srgb, var(--agent-accent) 35%, var(--line));
-  box-shadow: 0 12px 28px rgba(31, 42, 70, 0.08);
-  transform: translateY(-1px);
+  background: var(--surface-hover);
 }
 
 .saved-record-main {

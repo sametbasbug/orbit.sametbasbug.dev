@@ -5,7 +5,10 @@ import {
 } from './server/identity/bindings';
 import { handleApiRequest, runIdentityCleanup, type ApiDependencies } from './server/http/api';
 import { dashboardAssetResponse } from './server/dashboard/response';
-import { runScheduledBackups } from './server/backup/r2-backup';
+import {
+  reconcileStaleBackupRuns,
+  runScheduledBackups,
+} from './server/backup/r2-backup';
 import {
   bumpPublicCacheEpoch,
   mutationInvalidatesPublicCache,
@@ -24,6 +27,32 @@ import { machineAgentSkill } from './data/agentOnboarding';
 interface ExecutionContextLike {
   waitUntil(promise: Promise<unknown>): void;
 }
+
+interface ScheduledControllerLike {
+  cron?: string;
+  scheduledTime?: number;
+}
+
+interface ScheduledDependencies {
+  runIdentityCleanup(env: OrbitBindings, now: number): Promise<unknown>;
+  runScheduledBackups(env: OrbitBindings, now: number): Promise<unknown>;
+  cleanupMedia(env: OrbitBindings, now: number): Promise<unknown>;
+  reconcileStaleBackupRuns(env: OrbitBindings, now: number): Promise<unknown>;
+}
+
+export const BACKUP_CRON = '17 3 * * *';
+export const BACKUP_RECONCILIATION_CRON = '0 4 * * *';
+
+const scheduledDependencies: ScheduledDependencies = {
+  runIdentityCleanup,
+  runScheduledBackups,
+  cleanupMedia: async (env, now) => await cleanupMedia(
+    env,
+    new D1MediaRepository(env.DB),
+    now,
+  ),
+  reconcileStaleBackupRuns,
+};
 
 interface WorkerDependencies extends Omit<ApiDependencies, 'requestId'> {
   publicRepository?: PublicRepository;
@@ -140,17 +169,46 @@ export async function handleWorkerRequest(
   return protectFromIndexing(response, env);
 }
 
+export async function runScheduledMaintenance(
+  controller: ScheduledControllerLike,
+  env: OrbitBindings,
+  dependencies: ScheduledDependencies = scheduledDependencies,
+): Promise<void> {
+  const now = controller.scheduledTime ?? Date.now();
+  if (controller.cron === BACKUP_RECONCILIATION_CRON) {
+    await dependencies.reconcileStaleBackupRuns(env, now);
+    return;
+  }
+
+  const tasks = [
+    ['identity_cleanup', () => dependencies.runIdentityCleanup(env, now)],
+    ['backup', () => dependencies.runScheduledBackups(env, now)],
+    ['media_cleanup', () => dependencies.cleanupMedia(env, now)],
+  ] as const;
+  const results = await Promise.allSettled(tasks.map(([, run]) => Promise.resolve().then(run)));
+  const failedTasks: string[] = [];
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled') return;
+    const task = tasks[index]?.[0] ?? 'unknown';
+    failedTasks.push(task);
+    console.error(JSON.stringify({
+      event: 'scheduled.task',
+      task,
+      status: 'failed',
+    }));
+  });
+  if (failedTasks.length > 0) {
+    throw new Error(`scheduled_maintenance_failed:${failedTasks.join(',')}`);
+  }
+}
+
 export default {
   async fetch(request: Request, env: OrbitBindings): Promise<Response> {
     return await handleWorkerRequest(request, env);
   },
 
-  scheduled(_controller: unknown, env: OrbitBindings, ctx: ExecutionContextLike): void {
+  scheduled(controller: ScheduledControllerLike, env: OrbitBindings, ctx: ExecutionContextLike): void {
     assertDeploymentBindings(env);
-    ctx.waitUntil(Promise.all([
-      runIdentityCleanup(env),
-      runScheduledBackups(env),
-      cleanupMedia(env, new D1MediaRepository(env.DB)),
-    ]));
+    ctx.waitUntil(runScheduledMaintenance(controller, env));
   },
 };

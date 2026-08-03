@@ -657,6 +657,56 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     return Response.json({ ok: true });
   }
 
+  if (url.pathname === '/__test/seed-referenced-idempotency') {
+    try {
+      const id = String(body.id);
+      const accountId = '019f64d2-0109-7644-9a4e-a0d25df888e2';
+      const monthUtc = new Date(now).toISOString().slice(0, 7);
+      const usageDay = new Date(now).toISOString().slice(0, 10);
+      await env.DB.batch([
+      env.DB.prepare(`
+        INSERT INTO idempotency_keys (
+          id, principal_type, principal_id, key_digest, operation,
+          request_digest, response_status, resource_type, resource_id,
+          created_at, expires_at, response_json, state, completed_at
+        ) VALUES (?, 'account', ?, ?, 'POST /v1/account/avatar', ?, 0,
+          'media_upload', NULL, ?, ?, '{}', 'in_progress', NULL)
+      `).bind(id, accountId, id, id, now - 1000, now - 1),
+      env.DB.prepare(`
+        INSERT INTO media_transform_usage_monthly (
+          month_utc, attempted_count, succeeded_count, failed_count, updated_at
+        ) VALUES (?, 0, 0, 0, ?)
+        ON CONFLICT(month_utc) DO NOTHING
+      `).bind(monthUtc, now),
+      env.DB.prepare(`
+        INSERT INTO media_transform_claims (
+          id, month_utc, profile, actor_type, actor_id,
+          source_content_type, source_byte_size, status, created_at,
+          usage_day, target_type, target_id, idempotency_id
+        ) VALUES (?, ?, 'avatar', 'account', ?, 'image/png', 128,
+          'reserved', ?, ?, 'account', ?, NULL)
+      `).bind(`${id}-claim`, monthUtc, accountId, now, usageDay, accountId),
+      ]);
+      await env.DB.prepare(`
+        UPDATE media_transform_claims SET idempotency_id = ? WHERE id = ?
+      `).bind(id, `${id}-claim`).run();
+      await env.DB.prepare(`
+        UPDATE idempotency_keys
+        SET state = 'completed', response_status = 201,
+            response_json = '{"ok":true}', completed_at = ?
+        WHERE id = ?
+      `).bind(now, id).run();
+      const claim = await env.DB.prepare(`
+        SELECT idempotency_id FROM media_transform_claims WHERE id = ?
+      `).bind(`${id}-claim`).first<{ idempotency_id: string | null }>();
+      return Response.json({ ok: true, idempotencyId: claim?.idempotency_id ?? null });
+    } catch (error) {
+      return Response.json({
+        error: error instanceof Error ? error.message : 'seed_referenced_idempotency_failed',
+      }, { status: 500 });
+    }
+  }
+
   return Response.json({ error: 'not_found' }, { status: 404 });
 }
 

@@ -94,19 +94,14 @@ html[data-theme="dark"] .truth-note strong {
   color: #c2b3f3;
 }
 
-/* Panel yükseltisi: açık temada bu yedi bileşenin beşi birbirine yakın ama
-   farklı beyazlar ve gölgeler kullanıyor; koyu temada hepsi tek yüzeye iniyor.
-   Bu kasıtlı bir sadeleşme, kayıp bir token değil — bu yüzden yama olarak
-   duruyor. Açık taraftaki beş varyantın tekilleşmesi tipografi/boşluk turunun
-   (adım 4) elevation kararıyla birlikte yapılacak. */
-html[data-theme="dark"] .feed-empty,
+/* Panel gölgesi koyu temada ayrı ayarlanıyor: açık temadaki mavimsi gölge
+   koyu zeminde görünmez, panelin ayrıştığı tek şey kenarlık kalıyor. Yüzey ve
+   kenarlık yaması buradan kalktı — bileşenler artık --surface/--line kullanıyor,
+   eski rgba(21,27,40,0.94) zaten --surface ile aynı yere düşüyordu. */
 html[data-theme="dark"] .network-section,
-html[data-theme="dark"] .rail-links,
 html[data-theme="dark"] .profile-dossier,
 html[data-theme="dark"] .agent-directory .agent-card,
 html[data-theme="dark"] .activity-stats {
-  border-color: var(--line);
-  background: rgba(21, 27, 40, 0.94);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
 }
 

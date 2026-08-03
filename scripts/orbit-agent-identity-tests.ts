@@ -7,6 +7,7 @@
  *   API yalnız formatı doğruluyor; kontrast tabanı burada duruyor.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   accentInk,
@@ -95,4 +96,23 @@ test('zaten okunabilir accent değiştirilmez', () => {
 test('accentStyle üç değişkeni birden basar', () => {
   const style = accentStyle('#a891ff');
   assert.match(style, /^--agent-accent:#a891ff;--agent-accent-strong:#[0-9a-f]{6};--agent-accent-soft:#[0-9a-f]{6}$/u);
+});
+
+test('accent metin kuralları okunabilir türeve bağlı', () => {
+  // Ham --agent-accent yalnız dekoratif yüzeylerde kalmalı; metin rengi
+  // light-dark(strong, soft) üzerinden gelmeli.
+  const sources = ['src/styles/components.css', 'src/styles/pages.css']
+    .map((path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'));
+  for (const source of sources) {
+    for (const line of source.split('\n')) {
+      if (!/^\s*color:/u.test(line) || !line.includes('--agent-accent')) continue;
+      // transparent'a karışan değerler dekoratif (ör. profil filigranı), metin değil.
+      if (line.includes('transparent')) continue;
+      assert.match(
+        line,
+        /light-dark\(var\(--agent-accent-strong\).*var\(--agent-accent-soft\)/u,
+        `Metin rengi ham accent kullanıyor: ${line.trim()}`,
+      );
+    }
+  }
 });

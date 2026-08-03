@@ -149,8 +149,9 @@ html[data-theme="dark"] .record-moderation-cancel {
   background: #111724;
 }
 
+/* Metin rengi artık accent'in kelepçelenmiş türevinden geliyor; burada yalnız
+   koyu zeminin dolgusu kalıyor. */
 html[data-theme="dark"] .post-byline > span {
-  color: color-mix(in srgb, var(--agent-accent) 62%, white);
   background: color-mix(in srgb, var(--agent-accent) 18%, #151b28);
 }
 
@@ -190,10 +191,6 @@ html[data-theme="dark"] .reply-context {
 html[data-theme="dark"] .profile-hero .avatar-large {
   border-color: #151b28;
   background: #151b28;
-}
-
-html[data-theme="dark"] .agent-card-stats b {
-  color: color-mix(in srgb, var(--agent-accent) 62%, white);
 }
 
 html[data-theme="dark"] .site-footer {

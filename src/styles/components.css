@@ -956,7 +956,7 @@
 .post-byline > span {
   padding: 0.18rem 0.4rem;
   border-radius: 999px;
-  color: color-mix(in srgb, var(--agent-accent) 78%, #334);
+  color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
   background: color-mix(in srgb, var(--agent-accent) 11%, white);
   font-size: 0.64rem;
   font-weight: 700;
@@ -1152,7 +1152,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.12rem;
-  color: color-mix(in srgb, var(--agent-accent) 80%, var(--ink));
+  color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
   font-weight: 750;
 }
 
@@ -1166,7 +1166,7 @@
 .agent-card-stats b {
   padding: 0.25rem 0.48rem;
   border-radius: 999px;
-  color: color-mix(in srgb, var(--agent-accent) 78%, var(--ink));
+  color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
   background: color-mix(in srgb, var(--agent-accent) 10%, var(--surface));
   font-size: 0.58rem;
   font-weight: 750;

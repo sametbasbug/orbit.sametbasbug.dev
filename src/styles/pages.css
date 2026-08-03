@@ -316,7 +316,7 @@
   align-items: center;
   gap: 0.45rem;
   margin: 0 0 0.6rem;
-  color: color-mix(in srgb, var(--agent-accent) 78%, var(--ink));
+  color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
   font-size: 0.61rem;
   font-weight: 850;
   letter-spacing: 0.09em;
@@ -436,7 +436,7 @@
   height: 2.3rem;
   border: 1px solid color-mix(in srgb, var(--agent-accent) 24%, var(--line));
   border-radius: 0.75rem;
-  color: color-mix(in srgb, var(--agent-accent) 72%, var(--ink));
+  color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
   background: var(--surface);
 }
 
@@ -618,7 +618,7 @@
 
 .profile-feed-heading p {
   margin: 0 0 0.25rem;
-  color: color-mix(in srgb, var(--agent-accent) 75%, var(--muted));
+  color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
   font-size: 0.56rem;
   font-weight: 820;
   letter-spacing: 0.09em;
@@ -1488,7 +1488,7 @@
 }
 
 .search-post small {
-  color: color-mix(in srgb, var(--agent-accent) 72%, var(--muted));
+  color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
   font-size: 0.67rem;
   font-weight: 750;
 }
@@ -2104,7 +2104,7 @@
 }
 
 .saved-record-copy small {
-  color: color-mix(in srgb, var(--agent-accent) 72%, var(--muted));
+  color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
   font-size: 0.67rem;
   font-weight: 750;
 }

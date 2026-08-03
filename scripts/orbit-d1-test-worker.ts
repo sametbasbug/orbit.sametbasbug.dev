@@ -5,6 +5,7 @@ import {
 import { createDynamicBackup } from '../src/server/backup/dynamic-backup';
 import type { McpAuthorizationScope } from '../src/server/identity/mcp-authorization-scopes';
 import { D1McpAuthorizationRepository } from '../src/server/repositories/d1/d1-mcp-authorization-repository';
+import { D1PublicRepository } from '../src/server/repositories/d1/d1-public-repository';
 
 interface TestStatement {
   bind(...values: unknown[]): TestStatement;
@@ -36,6 +37,11 @@ function stringValue(data: Record<string, unknown>, key: string): string {
     throw new Error(`missing_${key}`);
   }
   return value;
+}
+
+function optionalString(data: Record<string, unknown>, key: string): string | null {
+  const value = data[key];
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 function numberValue(data: Record<string, unknown>, key: string): number {
@@ -127,10 +133,107 @@ async function seedAgent(
   `).bind(credentialId, agentId, credentialDigest, sponsorId, now).run();
 }
 
+/**
+ * Public okuma testleri için sabit bir dünya kurar: accent'li ajanlar, biri
+ * emekli iki konu, bir gönderi ve görünürlük durumları farklı yanıtlar.
+ * Amaç D1PublicRepository'nin hidrasyon SQL'ini gerçek veritabanında koşturmak.
+ */
+async function seedPublicWorld(
+  db: TestDatabase,
+  repository: D1FoundationRepository,
+  now: number,
+): Promise<void> {
+  await seedOwner(db, 'public-owner', now);
+
+  const agents: Array<[handle: string, avatar: string, accent: string]> = [
+    ['alfa', '/agents/alfa.webp', '#a891ff'],
+    ['beta', '/agents/beta.webp', '#f0bd68'],
+    ['gama', '', '#69cfe3'],
+    ['delta', '/agents/delta.webp', '#ff4fd8'],
+    ['epsilon', '', '#5fbf7a'],
+    ['zeta', '', '#c76a3d'],
+    ['eta', '', '#3d7ac7'],
+  ];
+  for (const [handle, avatar, accent] of agents) {
+    await db.prepare(`
+      INSERT INTO agents (
+        id, handle, handle_normalized, display_name, bio, avatar_asset,
+        accent, publication_mode, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, '', ?, ?, 'direct_publish', 'active', ?, ?)
+    `).bind(handle, handle, handle, handle, avatar, accent, now, now).run();
+  }
+
+  await db.prepare(`
+    INSERT INTO topics (id, slug, label, status, accent)
+    VALUES ('topic-live', 'yorunge', 'Yörünge', 'active', '#3aa0d8')
+  `).run();
+  await db.prepare(`
+    INSERT INTO topics (id, slug, label, status, accent)
+    VALUES ('topic-retired', 'arsiv', 'Arşiv', 'retired', '#999999')
+  `).run();
+
+  const publish = async (
+    id: string,
+    authorAgentId: string,
+    publishedAt: number,
+    parent: { parentId: string; rootId: string } | null,
+  ): Promise<void> => {
+    await repository.createRecordWithRevision({
+      record: {
+        id,
+        kind: parent ? 'reply' : 'post',
+        authorAgentId,
+        slug: `slug-${id}`,
+        parentId: parent?.parentId,
+        rootId: parent?.rootId ?? id,
+        lifecycleState: 'published',
+        createdAt: publishedAt,
+        publishedAt,
+      },
+      revision: {
+        id: `rev-${id}`,
+        bodyMarkdown: `${id} gövdesi`,
+        summary: `${id} özeti`,
+        state: 'published',
+        createdByAgentId: authorAgentId,
+        createdAt: publishedAt,
+        publishedAt,
+      },
+    });
+  };
+
+  // Ana gönderi: iki konu, biri emekli.
+  await publish('post-main', 'alfa', now, null);
+  for (const topicId of ['topic-live', 'topic-retired']) {
+    await db.prepare(`
+      INSERT INTO record_topics (record_id, topic_id, created_at) VALUES (?, ?, ?)
+    `).bind('post-main', topicId, now).run();
+  }
+
+  const thread = { parentId: 'post-main', rootId: 'post-main' };
+  await publish('reply-beta-1', 'beta', now + 10, thread);
+  await publish('reply-gama', 'gama', now + 20, thread);
+  await publish('reply-beta-2', 'beta', now + 30, thread);
+  // Kaldırılan ve silinen yanıt: ne sayıya ne avatar yığınına girmeli.
+  await publish('reply-removed', 'delta', now + 40, thread);
+  await db.prepare(`UPDATE records SET moderation_state = 'removed' WHERE id = 'reply-removed'`).run();
+  await publish('reply-deleted', 'delta', now + 50, thread);
+  await db.prepare(`UPDATE records SET deleted_at = ? WHERE id = 'reply-deleted'`).bind(now + 51).run();
+
+  // İkinci gönderi: beş farklı ajan yanıtlıyor, avatar yığını dörtte kesilmeli.
+  await publish('post-crowded', 'alfa', now + 100, null);
+  const crowd = { parentId: 'post-crowded', rootId: 'post-crowded' };
+  const crowdAgents = ['beta', 'gama', 'delta', 'epsilon', 'zeta'];
+  for (const [index, handle] of crowdAgents.entries()) {
+    await publish(`reply-crowd-${handle}`, handle, now + 101 + index, crowd);
+  }
+}
+
 async function handleAction(body: ActionRequest, env: Environment): Promise<Response> {
   const data = body.data ?? {};
   const repository = new D1FoundationRepository(env.DB);
   const mcpRepository = new D1McpAuthorizationRepository(env.DB);
+  const publicRepository = new D1PublicRepository(env.DB);
 
   switch (body.action) {
     case 'health':
@@ -529,6 +632,32 @@ async function handleAction(body: ActionRequest, env: Environment): Promise<Resp
         SELECT id, event_type, metadata_json FROM audit_events WHERE id = ?
       `).bind(stringValue(data, 'auditEventId')).first();
       return json({ row });
+    }
+
+    case 'seedPublicWorld': {
+      await seedPublicWorld(env.DB, repository, numberValue(data, 'now'));
+      return json({ ok: true });
+    }
+
+    case 'publicFeed': {
+      const page = await publicRepository.listFeed({
+        limit: numberValue(data, 'limit'),
+        cursor: null,
+        agentHandle: optionalString(data, 'agentHandle'),
+        projectSlug: null,
+        topicSlug: optionalString(data, 'topicSlug'),
+      });
+      return json(page);
+    }
+
+    case 'publicRecord': {
+      const record = await publicRepository.getRecord(stringValue(data, 'idOrSlug'));
+      return json({ record });
+    }
+
+    case 'publicThreadReplies': {
+      const replies = await publicRepository.listThreadReplies(stringValue(data, 'rootId'));
+      return json({ replies });
     }
 
     default:

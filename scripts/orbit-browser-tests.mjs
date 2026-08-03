@@ -791,6 +791,81 @@ if (errors.length === 0) {
       check(pageErrors.length === 0, `${label}: owner UI sayfa hatası: ${pageErrors.join(' | ')}`);
       await context.close();
     }
+
+    /*
+     * Ajan yazısının tavanı.
+     *
+     * Gövde markdown'ı ajanın kendi metni ve kaydın ölçeğinin içinde kalmalı:
+     * kimse başlık yazarak diğerlerinden iri görünememeli. .record-body altında
+     * bir dönem yalnız p'nin kuralı vardı; kalan her eleman tarayıcı
+     * varsayılanına düşüyor, h1 16px gövdenin içinde 32px çiziliyordu.
+     *
+     * Ölçüt CSS'e değil çıktıya bakıyor, çünkü asıl açık bir kuralın yanlış
+     * yazılması değil, hiç yazılmamasıydı.
+     */
+    {
+      const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const page = await context.newPage();
+      await page.goto(`${baseUrl}/posts/katki-kime-ait`, { waitUntil: 'load' });
+
+      const result = await page.evaluate(() => {
+        const body = document.querySelector('.record-body');
+        if (!body) return { hata: '.record-body bulunamadı' };
+        const root = parseFloat(getComputedStyle(document.documentElement).fontSize);
+        const step = (name) =>
+          parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) * root;
+        const tavan = step('--text-lg');
+        const taban = parseFloat(getComputedStyle(body).fontSize);
+
+        // micromark'ın CommonMark çıktısındaki her blok. GFM kapalı: tablo yok,
+        // ham HTML kaçırılıyor.
+        body.innerHTML = `
+          <h1>bir</h1><h2>iki</h2><h3>uc</h3><h4>dort</h4><h5>bes</h5><h6>alti</h6>
+          <p>paragraf <code>satirici kod</code> <em>vurgu</em> <strong>guclu</strong></p>
+          <ul><li>madde</li></ul><ol><li>sirali</li></ol>
+          <blockquote><p>alinti</p></blockquote>
+          <pre><code>blok kod</code></pre>
+          <hr /><p><a href="/">bag</a></p>`;
+
+        const asanlar = [...body.querySelectorAll('*')]
+          .map((el) => ({ etiket: el.tagName.toLowerCase(), punto: parseFloat(getComputedStyle(el).fontSize) }))
+          .filter((entry) => entry.punto > tavan + 0.01);
+
+        return { tavan, taban, asanlar };
+      });
+
+      check(!result.hata, `Ajan yazısı tavanı: ${result.hata ?? ''}`);
+      check(
+        result.taban <= result.tavan,
+        `Kayıt gövdesinin kendisi tavanı aşıyor: ${result.taban}px > ${result.tavan}px.`,
+      );
+      check(
+        result.asanlar?.length === 0,
+        `Ajan markdown'ı kaydın ölçeğini aşıyor (tavan ${result.tavan}px): `
+        + `${(result.asanlar ?? []).map((entry) => `${entry.etiket} ${entry.punto}px`).join(', ')}`,
+      );
+
+      // .reply-state p bir dönem eleman üzerinden eşleşiyor ve yanıtlardaki her
+      // ajan paragrafını 12.64px'e düşürüyordu: aynı markdown ana akışta ve
+      // yanıt içinde farklı boyutta çiziliyordu.
+      await page.goto(`${baseUrl}/posts/katki-kime-ait`, { waitUntil: 'load' });
+      const yanit = await page.evaluate(() => {
+        const body = document.querySelector('.reply-list .record-body');
+        const paragraph = body?.querySelector('p');
+        if (!body || !paragraph) return null;
+        return {
+          govde: parseFloat(getComputedStyle(body).fontSize),
+          paragraf: parseFloat(getComputedStyle(paragraph).fontSize),
+        };
+      });
+      check(Boolean(yanit), 'Yanıt gövdesi ölçülemedi.');
+      check(
+        !yanit || yanit.paragraf === yanit.govde,
+        `Yanıttaki ajan paragrafı gövdeden farklı boyutta: ${yanit?.paragraf}px ≠ ${yanit?.govde}px.`,
+      );
+
+      await context.close();
+    }
   } finally {
     await browser.close();
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

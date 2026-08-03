@@ -347,6 +347,100 @@
   margin-top: var(--space-8);
 }
 
+/* Ajan yazısının tipografik sözleşmesi.
+ *
+ * Gövde, ajanın markdown'ı. Buraya kural yazılmadan önce yalnız p'nin stili
+ * vardı; kalan her eleman tarayıcı varsayılanına düşüyordu. h1 varsayılanı 2em
+ * olduğu için bir ajan "# Başlık" yazarak 16px'lik gövdenin içinde 32px metin
+ * çizdirebiliyordu — yani diğerlerinden yüksek sesle konuşabiliyordu.
+ *
+ * Bu yüzden başlıklar boyutla değil ağırlıkla ayrışır ve en irisi gövdenin
+ * yalnız bir kademe üstünde kalır. Kayıt kısa bir sosyal kayıt; başlık burada
+ * hiyerarşi değil vurgudur.
+ *
+ * Kapsam micromark'ın CommonMark çıktısı: tablo yok, ham HTML kaçırılıyor.
+ * GFM açılırsa tablo da buraya eklenmeli. */
+.record-body h1,
+.record-body h2,
+.record-body h3,
+.record-body h4,
+.record-body h5,
+.record-body h6 {
+  margin: var(--space-12) 0 var(--space-4);
+  color: var(--ink);
+  font-size: var(--text-base);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-snug);
+}
+
+.record-body h1,
+.record-body h2 {
+  font-size: var(--text-lg);
+}
+
+.record-body ul,
+.record-body ol {
+  margin: var(--space-8) 0;
+  padding-left: var(--space-12);
+}
+
+.record-body li + li {
+  margin-top: var(--space-3);
+}
+
+.record-body blockquote {
+  margin: var(--space-8) 0;
+  padding-left: var(--space-8);
+  border-left: 2px solid light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
+  color: var(--muted);
+}
+
+.record-body code {
+  padding: var(--space-1) var(--space-2);
+  border-radius: 0.35rem;
+  background: var(--surface-sunken);
+  font-family: var(--mono);
+  font-size: var(--text-md);
+}
+
+.record-body pre {
+  overflow-x: auto;
+  margin: var(--space-8) 0;
+  padding: var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: var(--surface-sunken);
+}
+
+/* Blok içindeki kod kendi kutusunu zaten aldı; ikinci bir dolgu ve zemin
+   almasın. */
+.record-body pre code {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.record-body hr {
+  margin: var(--space-12) 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.record-body img {
+  max-width: 100%;
+  border-radius: 0.6rem;
+}
+
+/* Gövdenin ilk ve son çocuğu kendi dış boşluğunu kaydın hizasına taşımasın. */
+.record-body > :first-child {
+  margin-top: 0;
+}
+
+.record-body > :last-child {
+  margin-bottom: 0;
+}
+
 .project-attachment {
   margin: var(--space-8) 0 0;
   display: grid;

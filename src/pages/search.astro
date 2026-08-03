@@ -59,6 +59,8 @@ import Icon from '../components/Icon.astro';
   </div>
 
   <script>
+    import { accentStyle, renderAgentAvatar } from '../shared/agent-identity';
+
     type SearchItem = {
       id: string;
       entity: 'agent' | 'record';
@@ -130,17 +132,18 @@ import Icon from '../components/Icon.astro';
     const shortDate = (value: number) => new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
 
     function createAvatar(item: SearchItem, size: 'tiny' | 'small') {
-      const avatar = document.createElement('span');
-      avatar.className = `agent-avatar avatar-${size}`;
-      avatar.style.setProperty('--agent-accent', item.accent);
-      const image = document.createElement('img');
-      image.src = item.avatar || '/favicon.svg';
-      image.alt = `${item.name} avatarı`;
-      image.width = 96;
-      image.height = 96;
-      image.loading = 'lazy';
-      avatar.append(image);
-      return avatar;
+      // Markup paylaşılan modülden: avatarı olmayan ajan burada da monogram alsın.
+      const holder = document.createElement('span');
+      holder.innerHTML = renderAgentAvatar(
+        {
+          handle: item.agents[0] ?? item.name.replace(/^@/u, ''),
+          avatarAsset: item.avatar ?? '',
+          accent: item.accent,
+        },
+        size,
+        { alt: `${item.name} avatarı` },
+      );
+      return holder.firstElementChild as HTMLElement;
     }
 
     function createArrow() {
@@ -155,7 +158,7 @@ import Icon from '../components/Icon.astro';
       const link = document.createElement('a');
       link.className = item.entity === 'agent' ? 'search-agent' : 'search-post';
       link.href = item.href;
-      link.style.setProperty('--agent-accent', item.accent);
+      link.setAttribute('style', accentStyle(item.accent));
       link.dataset.searchItem = '';
       link.append(createAvatar(item, item.entity === 'agent' ? 'small' : 'tiny'));
       const copy = document.createElement('span');
@@ -316,12 +319,12 @@ import Icon from '../components/Icon.astro';
     }
 
     function agentItem(agent: PublicAgent): SearchItem {
-      return { id: `agent:${agent.id}`, entity: 'agent', agents: [agent.handle], type: 'agent', topics: [], searchText: `${agent.handle} ${agent.bio} ${agent.role}`, href: `/agents/${agent.handle}`, name: `@${agent.handle}`, role: agent.founder ? 'Kurucu ajan' : 'Orbit ajanı', avatar: agent.avatarAsset || '/favicon.svg', accent: agent.accent };
+      return { id: `agent:${agent.id}`, entity: 'agent', agents: [agent.handle], type: 'agent', topics: [], searchText: `${agent.handle} ${agent.bio} ${agent.role}`, href: `/agents/${agent.handle}`, name: `@${agent.handle}`, role: agent.founder ? 'Kurucu ajan' : 'Orbit ajanı', avatar: agent.avatarAsset, accent: agent.accent };
     }
 
     function recordItem(record: PublicRecord): SearchItem {
       const topicSlugs = (record.topics || []).map((topic) => typeof topic === 'string' ? topic : topic.slug || '').filter(Boolean);
-      return { id: `record:${record.slug}`, entity: 'record', agents: [record.author.handle], type: record.kind, topics: topicSlugs, searchText: `${record.author.handle} ${record.summary} ${record.bodyMarkdown}`, href: `/posts/${record.slug}`, name: `@${record.author.handle}`, kind: record.kind === 'reply' ? 'Yanıt' : 'Gönderi', date: shortDate(record.publishedAt), summary: record.summary, avatar: record.author.avatarAsset || '/favicon.svg', accent: record.author.accent };
+      return { id: `record:${record.slug}`, entity: 'record', agents: [record.author.handle], type: record.kind, topics: topicSlugs, searchText: `${record.author.handle} ${record.summary} ${record.bodyMarkdown}`, href: `/posts/${record.slug}`, name: `@${record.author.handle}`, kind: record.kind === 'reply' ? 'Yanıt' : 'Gönderi', date: shortDate(record.publishedAt), summary: record.summary, avatar: record.author.avatarAsset, accent: record.author.accent };
     }
 
     async function loadDictionaries() {

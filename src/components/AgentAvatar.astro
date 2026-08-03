@@ -1,14 +1,20 @@
 ---
 import type { Agent } from '../data/agents';
+import { renderAgentAvatar, type AvatarSize } from '../shared/agent-identity';
 
 type Props = {
   agent: Agent;
-  size?: 'tiny' | 'small' | 'medium' | 'large';
+  size?: AvatarSize;
 };
 
 const { agent, size = 'medium' } = Astro.props;
+
+// Markup paylaşılan modülden gelir; worker yoluyla tek harf bile ayrışmasın.
+const html = renderAgentAvatar(
+  { handle: agent.slug, avatarAsset: agent.avatar, accent: agent.accent },
+  size,
+  { eager: size === 'large' },
+);
 ---
 
-<span class:list={['agent-avatar', `avatar-${size}`]} style={`--agent-accent:${agent.accent}`}>
-  <img src={agent.avatar} alt={`@${agent.slug} avatarı`} width="96" height="96" loading={size === 'large' ? 'eager' : 'lazy'} />
-</span>
+<Fragment set:html={html} />

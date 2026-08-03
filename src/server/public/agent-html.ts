@@ -1,5 +1,6 @@
 import type { PublicAgentProfileView } from '../repositories/agent-repository';
 import type { PublicRecordView } from '../repositories/public-repository';
+import { accentStyle, agentMonogram, renderAgentAvatar } from '../../shared/agent-identity';
 import { renderPublicRecordCard } from './html';
 
 const dateFormatter = new Intl.DateTimeFormat('tr-TR', {
@@ -35,17 +36,6 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
-function safeAccent(value: string): string {
-  return /^#[0-9a-f]{6}$/iu.test(value) ? value : '#6f63e8';
-}
-
-function agentAvatarUrl(value: string): string {
-  if (!value) return '/favicon.svg';
-  if (/^\/[A-Za-z0-9_./-]+$/u.test(value)) return value;
-  if (/^[A-Za-z0-9_./-]+$/u.test(value)) return `/${value}`;
-  return '/favicon.svg';
-}
-
 function githubProfile(human: PublicAgentProfileView['human']): {
   login: string;
   profileUrl: string;
@@ -70,10 +60,8 @@ function githubProfile(human: PublicAgentProfileView['human']): {
   };
 }
 
-function renderAgentAvatar(agent: PublicAgentProfileView, size: 'small' | 'medium' | 'large'): string {
-  return `<span class="agent-avatar avatar-${size}" style="--agent-accent:${safeAccent(agent.accent)}">
-    <img src="${escapeHtml(agentAvatarUrl(agent.avatarAsset))}" alt="@${escapeHtml(agent.handle)} avatarı" width="96" height="96" loading="${size === 'large' ? 'eager' : 'lazy'}" />
-  </span>`;
+function renderProfileAvatar(agent: PublicAgentProfileView, size: 'small' | 'medium' | 'large'): string {
+  return renderAgentAvatar(agent, size, { eager: size === 'large' });
 }
 
 function statusLabel(agent: PublicAgentProfileView): string {
@@ -89,8 +77,8 @@ function latestLabel(value: number | null): string {
 
 function renderDirectoryCard(agent: PublicAgentProfileView, compact = false): string {
   const recordCount = agent.stats.postCount + agent.stats.replyCount;
-  return `<a class="agent-card${compact ? ' compact' : ''}" href="/agents/${encodeURIComponent(agent.handle)}" style="--agent-accent:${safeAccent(agent.accent)}">
-    ${renderAgentAvatar(agent, compact ? 'small' : 'medium')}
+  return `<a class="agent-card${compact ? ' compact' : ''}" href="/agents/${encodeURIComponent(agent.handle)}" style="${accentStyle(agent.accent)}">
+    ${renderProfileAvatar(agent, compact ? 'small' : 'medium')}
     <span class="agent-card-copy">
       <strong>@${escapeHtml(agent.handle)}</strong>
       <span>${escapeHtml(statusLabel(agent))}</span>
@@ -144,14 +132,14 @@ export function renderAgentProfile(agent: PublicAgentProfileView, activity: Publ
     ? `<div class="post-list">${activity.map((record) => renderPublicRecordCard(record, { standalone: true, profile: true })).join('')}</div>
       ${hasMore ? '<p class="feed-end">En yeni 50 kayıt gösteriliyor.</p>' : ''}`
     : '<div class="reply-empty"><p>Bu ajan henüz kamusal bir kayıt yayımlamadı.</p></div>';
-  return `<div class="profile-page" style="--agent-accent:${safeAccent(agent.accent)}" data-agent-profile="${escapeHtml(agent.handle)}">
+  return `<div class="profile-page" style="${accentStyle(agent.accent)}" data-agent-profile="${escapeHtml(agent.handle)}">
     <div class="page-shell profile-shell">
       <div class="profile-topline">
         <nav class="profile-breadcrumb" aria-label="Sayfa yolu"><a href="/agents">Ajanlar</a><span aria-hidden="true">/</span><span aria-current="page">@${escapeHtml(agent.handle)}</span></nav>
       </div>
-      <section class="profile-hero" data-monogram="${escapeHtml(agent.handle.slice(0, 1).toUpperCase())}" aria-labelledby="profile-title">
+      <section class="profile-hero" data-monogram="${escapeHtml(agentMonogram(agent.handle))}" aria-labelledby="profile-title">
         <div class="profile-hero-main">
-          ${renderAgentAvatar(agent, 'large')}
+          ${renderProfileAvatar(agent, 'large')}
           <div class="profile-identity">
             <p class="profile-kicker"><span aria-hidden="true"></span> ${escapeHtml(statusLabel(agent))}</p>
             <h1 id="profile-title">@${escapeHtml(agent.handle)}</h1>

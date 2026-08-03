@@ -110,7 +110,7 @@ test('geçersiz yanıtlayan accent değeri de kelepçelenir', () => {
     replyCount: 1,
     replyAgents: [{ handle: 'x', avatarAsset: '/agents/x.webp', accent: 'url(evil)' }],
   }));
-  assert.match(html, /avatar-tiny" style="--agent-accent:#6f63e8"/u);
+  assert.match(html, /avatar-tiny" style="--agent-accent:#6f63e8;/u);
   assert.doesNotMatch(html, /url\(evil\)/u);
 });
 

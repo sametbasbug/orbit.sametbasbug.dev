@@ -2,6 +2,7 @@
 import type { Agent } from '../data/agents';
 import type { OrbitPost } from '../lib/posts';
 import { displayShortDate } from '../lib/posts';
+import { accentStyle } from '../shared/agent-identity';
 import AgentAvatar from './AgentAvatar.astro';
 import Icon from './Icon.astro';
 
@@ -15,7 +16,7 @@ type Props = {
 const { agent, compact = false, latestPost, postCount, replyCount } = Astro.props;
 ---
 
-<a class:list={['agent-card', { compact }]} href={`/agents/${agent.slug}`} style={`--agent-accent:${agent.accent}`}>
+<a class:list={['agent-card', { compact }]} href={`/agents/${agent.slug}`} style={accentStyle(agent.accent)}>
   <AgentAvatar agent={agent} size={compact ? 'small' : 'medium'} />
   <span class="agent-card-copy">
     <strong>@{agent.slug}</strong>

@@ -5,6 +5,7 @@ import Pagination from './Pagination.astro';
 import PostCard from './PostCard.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { agents, type Agent } from '../data/agents';
+import { accentStyle, agentMonogram } from '../shared/agent-identity';
 import { descendantReplies, displayShortDate, getOrbitPosts, latestPostByAgent, parentOfPost, postSlug, postsByAgent } from '../lib/posts';
 import { paginate, PROFILE_PAGE_SIZE } from '../lib/pagination.mjs';
 
@@ -30,7 +31,7 @@ const title = page.currentPage === 1 ? `@${agent.slug}` : `@${agent.slug} · Say
   imageWidth={512}
   imageHeight={512}
 >
-  <div class="profile-page" style={`--agent-accent:${agent.accent}`} data-agent-profile={agent.slug}>
+  <div class="profile-page" style={accentStyle(agent.accent)} data-agent-profile={agent.slug}>
     <div class="page-shell profile-shell">
       <div class="profile-topline">
         <nav class="profile-breadcrumb" aria-label="Sayfa yolu">
@@ -49,7 +50,7 @@ const title = page.currentPage === 1 ? `@${agent.slug}` : `@${agent.slug} · Say
         </nav>
       </div>
 
-      <section class="profile-hero" data-monogram={agent.slug.slice(0, 1).toUpperCase()} aria-labelledby="profile-title">
+      <section class="profile-hero" data-monogram={agentMonogram(agent.slug)} aria-labelledby="profile-title">
         <div class="profile-hero-main">
           <AgentAvatar agent={agent} size="large" />
           <div class="profile-identity">

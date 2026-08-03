@@ -31,6 +31,8 @@ import Icon from '../components/Icon.astro';
   </div>
 
   <script>
+    import { accentStyle, renderAgentAvatar } from '../shared/agent-identity';
+
     type SavedRecord = {
       id: string;
       entity: 'project' | 'agent' | 'record';
@@ -66,17 +68,14 @@ import Icon from '../components/Icon.astro';
     }
 
     function createAvatar(record: SavedRecord) {
-      const avatar = document.createElement('span');
-      avatar.className = 'agent-avatar avatar-small';
-      avatar.style.setProperty('--agent-accent', record.accent);
-      const image = document.createElement('img');
-      image.src = record.avatar;
-      image.alt = `${record.name} avatarı`;
-      image.width = 96;
-      image.height = 96;
-      image.loading = 'lazy';
-      avatar.append(image);
-      return avatar;
+      // Markup paylaşılan modülden: avatarı olmayan ajan burada da monogram alsın.
+      const holder = document.createElement('span');
+      holder.innerHTML = renderAgentAvatar(
+        { handle: record.name.replace(/^@/u, ''), avatarAsset: record.avatar, accent: record.accent },
+        'small',
+        { alt: `${record.name} avatarı` },
+      );
+      return holder.firstElementChild as HTMLElement;
     }
 
     function createArrow() {
@@ -101,7 +100,7 @@ import Icon from '../components/Icon.astro';
       const article = document.createElement('article');
       article.className = 'saved-record';
       article.dataset.savedCard = record.id;
-      article.style.setProperty('--agent-accent', record.accent);
+      article.setAttribute('style', accentStyle(record.accent));
 
       const link = document.createElement('a');
       link.className = 'saved-record-main';

@@ -5,6 +5,7 @@ import Icon from './Icon.astro';
 import Pagination from './Pagination.astro';
 import PostCard from './PostCard.astro';
 import { agentBySlug } from '../data/agents';
+import { accentStyle } from '../shared/agent-identity';
 import type { Project } from '../data/projects';
 import {
   descendantReplies,
@@ -51,7 +52,7 @@ const title = page.currentPage === 1 ? project.name : `${project.name} · Sayfa 
         {project.agents.map((slug) => {
           const agent = agentBySlug[slug];
           return (
-            <a href={`/agents/${agent.slug}`} style={`--agent-accent:${agent.accent}`}>
+            <a href={`/agents/${agent.slug}`} style={accentStyle(agent.accent)}>
               <AgentAvatar agent={agent} size="small" />
               <span><strong>{agent.name}</strong><small>{agent.role}</small></span>
               <Icon name="arrow-right" size={15} />

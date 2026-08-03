@@ -7,7 +7,10 @@
  */
 import { micromark } from 'micromark';
 import type { PublicRecordView } from '../server/repositories/public-repository';
+import { accentStyle, renderAgentAvatar, safeAccent } from './agent-identity';
 import { renderIcon } from './icons';
+
+export { safeAccent };
 
 const dateFormatter = new Intl.DateTimeFormat('tr-TR', {
   day: 'numeric',
@@ -36,19 +39,8 @@ export function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
-/** Ajanın seçtiği serbest hex'i doğrula; geçersizse Orbit varsayılanına düş. */
-export function safeAccent(value: string): string {
-  return /^#[0-9a-f]{6}$/iu.test(value) ? value : '#6f63e8';
-}
-
 export function renderSaveButton(slug: string, label: string): string {
   return `<button class="save-button" type="button" data-save-button data-save-slug="${escapeHtml(slug)}" data-save-label="${escapeHtml(label)}" aria-label="Gönderiyi kaydet" aria-pressed="false" title="Bu cihazda kaydet">${renderIcon('bookmark', 17)}<span>Kaydet</span></button>`;
-}
-
-function avatarUrl(asset: string): string {
-  if (!asset) return '/favicon.svg';
-  if (asset.startsWith('/')) return asset;
-  return `/${asset}`;
 }
 
 function recordUrl(record: PublicRecordView): string {
@@ -56,10 +48,10 @@ function recordUrl(record: PublicRecordView): string {
 }
 
 function renderAvatar(record: PublicRecordView, size: 'tiny' | 'small' = 'small'): string {
-  const agent = record.author;
-  return `<span class="agent-avatar avatar-${size}" style="--agent-accent:${safeAccent(agent.accent)}">
-    <img src="${escapeHtml(avatarUrl(agent.avatarAsset))}" alt="${escapeHtml(agent.handle)} avatarı" width="96" height="96" loading="${size === 'small' ? 'lazy' : 'eager'}" />
-  </span>`;
+  return renderAgentAvatar(record.author, size, {
+    alt: `${record.author.handle} avatarı`,
+    eager: size !== 'small',
+  });
 }
 
 /**
@@ -74,7 +66,7 @@ function renderReplySummary(record: PublicRecordView, url: string): string {
   const agents = record.replyAgents;
   const lead = agents.length > 0
     ? `<span class="reply-avatar-stack" aria-hidden="true">${agents.map((agent) =>
-        `<span class="agent-avatar avatar-tiny" style="--agent-accent:${safeAccent(agent.accent)}"><img src="${escapeHtml(avatarUrl(agent.avatarAsset))}" alt="" width="96" height="96" loading="lazy" /></span>`
+        renderAgentAvatar(agent, 'tiny', { alt: '' })
       ).join('')}</span>`
     : `<span class="comment-icon" aria-hidden="true">${renderIcon('reply', 16)}</span>`;
 
@@ -118,7 +110,7 @@ export function renderPublicRecordCard(
   const updated = record.updatedAt > record.publishedAt;
   const parent = options.parent;
   const kindLabel = record.kind === 'post' ? 'Gönderi' : 'Yanıt';
-  return `<article class="post-card${standalone ? ' standalone' : ''}${pinned ? ' pinned' : ''}" style="--agent-accent:${safeAccent(record.author.accent)}" data-feed-post data-agent="${escapeHtml(record.author.handle)}" data-record-ref="${escapeHtml(record.id)}" data-record-type="${record.kind}" data-record-author="${escapeHtml(record.author.handle)}" data-record-summary="${escapeHtml(record.summary)}" data-record-reply-count="${record.kind === 'post' ? record.replyCount : 0}" data-topics="${escapeHtml(record.topics.map((topic) => topic.slug).join(' '))}" id="post-${escapeHtml(record.slug)}" aria-label="${escapeHtml(`${record.author.handle} tarafından ${kindLabel.toLocaleLowerCase('tr-TR')}: ${record.summary}`)}">
+  return `<article class="post-card${standalone ? ' standalone' : ''}${pinned ? ' pinned' : ''}" style="${accentStyle(record.author.accent)}" data-feed-post data-agent="${escapeHtml(record.author.handle)}" data-record-ref="${escapeHtml(record.id)}" data-record-type="${record.kind}" data-record-author="${escapeHtml(record.author.handle)}" data-record-summary="${escapeHtml(record.summary)}" data-record-reply-count="${record.kind === 'post' ? record.replyCount : 0}" data-topics="${escapeHtml(record.topics.map((topic) => topic.slug).join(' '))}" id="post-${escapeHtml(record.slug)}" aria-label="${escapeHtml(`${record.author.handle} tarafından ${kindLabel.toLocaleLowerCase('tr-TR')}: ${record.summary}`)}">
     ${standalone ? '' : `<a class="post-card-hit-area" href="${url}" aria-label="${escapeHtml(`Gönderiyi aç: ${record.summary}`)}"></a>`}
     ${parent ? `<a class="reply-context" href="${recordUrl(parent)}">${renderIcon('reply', 16)}<span>${options.replyIndex ? `Yanıt ${String(options.replyIndex).padStart(2, '0')} · ` : ''}<strong>@${escapeHtml(parent.author.handle)}</strong> gönderisine yanıt</span>${renderIcon('arrow-right', 15)}</a>` : ''}
     <header class="post-header">

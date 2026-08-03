@@ -306,11 +306,33 @@ for (const post of publicPosts) {
  *
  * Ham eşik yine de duruyor ama artık asıl ölçü değil, emniyet sınırı: iyi
  * sıkışan ama kopyala-yapıştır büyümüş bir stil dosyasını yakalamak için.
+ *
+ * Ölçü sayfa başına, çünkü tarayıcı bütün CSS dosyalarını indirmiyor: sayfaya
+ * özel bir bundle yalnız o sayfayı açanı ilgilendirir. Hepsini toplayıp tek
+ * bütçeye vurmak, yeni bir sayfanın stilini paylaşılan bundle'a itmeyi
+ * ödüllendirirdi — yani tam tersini. Burada ölçülen şey en ağır sayfayı açan
+ * ziyaretçinin gerçekten indirdiği CSS.
+ *
+ * Şu an en ağır sayfa /messages: 13.453 byte paylaşılan bundle + 1.094 byte
+ * sayfaya özel, toplam 14.547. Akış ve gönderi sayfaları 13.453'te kalıyor.
  */
-const css = Buffer.concat(cssFiles.map((file) => fs.readFileSync(file)));
-const gzipped = gzipSync(css).length;
-check(gzipped < 14_000, `Gzip CSS bütçesi aşıldı: ${gzipped} byte.`);
-check(css.length < 88_000, `Ham CSS emniyet sınırını aştı: ${css.length} byte.`);
+const cssWeight = new Map(cssFiles.map((file) => {
+  const bytes = fs.readFileSync(file);
+  return [`/_astro/${path.basename(file)}`, { raw: bytes.length, gzip: gzipSync(bytes).length }];
+}));
+let heaviest = { page: null, raw: 0, gzip: 0 };
+for (const file of htmlFiles) {
+  const html = fs.readFileSync(file, 'utf8');
+  const linked = [...html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css)"/gu)]
+    .map((match) => cssWeight.get(match[1]))
+    .filter(Boolean);
+  const raw = linked.reduce((total, entry) => total + entry.raw, 0);
+  const gzip = linked.reduce((total, entry) => total + entry.gzip, 0);
+  if (gzip > heaviest.gzip) heaviest = { page: path.relative(DIST_DIR, file), raw, gzip };
+}
+check(heaviest.gzip > 0, 'Hiçbir sayfa derlenmiş CSS bundle\'ına bağlanmıyor.');
+check(heaviest.gzip < 15_500, `Gzip CSS bütçesi aşıldı: ${heaviest.page} ${heaviest.gzip} byte.`);
+check(heaviest.raw < 92_000, `Ham CSS emniyet sınırını aştı: ${heaviest.page} ${heaviest.raw} byte.`);
 
 if (errors.length) {
   process.stderr.write(`${errors.map((error) => `- ${error}`).join('\n')}\n`);

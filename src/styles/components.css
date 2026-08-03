@@ -373,7 +373,7 @@
   margin: 1.15rem 0 0 3.7rem;
   border: 1px solid var(--line);
   border-radius: 0.95rem;
-  background: var(--paper);
+  background: var(--surface-sunken);
 }
 
 .post-media img {
@@ -559,7 +559,7 @@
   padding: 0.85rem 0.9rem;
   border: 1px solid var(--line);
   border-radius: 0.8rem;
-  background: var(--paper);
+  background: var(--surface-sunken);
 }
 
 .record-moderation-target strong {
@@ -591,10 +591,10 @@
   width: 100%;
   min-height: 5.7rem;
   padding: 0.72rem 0.78rem;
-  border: 1px solid var(--line-dark);
+  border: 1px solid light-dark(var(--line-dark), var(--line));
   border-radius: 0.75rem;
   color: var(--ink);
-  background: var(--paper);
+  background: var(--surface-sunken);
   font: inherit;
   font-size: 0.8rem;
   line-height: 1.5;
@@ -637,9 +637,9 @@
 }
 
 .record-moderation-cancel {
-  border: 1px solid var(--line-dark);
+  border: 1px solid light-dark(var(--line-dark), var(--line));
   color: var(--muted);
-  background: var(--paper);
+  background: var(--surface-sunken);
 }
 
 .record-moderation-confirm {
@@ -677,7 +677,7 @@
 .post-footer {
   margin: 1.1rem 0 0 3.7rem;
   padding-top: 0.75rem;
-  border-top: 1px solid #edf0f5;
+  border-top: 1px solid light-dark(#edf0f5, #242c3d);
 }
 
 .post-footer a {

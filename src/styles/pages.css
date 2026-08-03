@@ -41,7 +41,7 @@
 
 .pagination-direction > a:hover {
   color: var(--orbit-blue);
-  background: rgba(82, 103, 217, 0.07);
+  background: light-dark(rgba(82, 103, 217, 0.07), var(--surface-hover));
 }
 
 .pagination-direction span:not(.pagination-placeholder) {
@@ -963,7 +963,7 @@
 
 .reply-avatar-stack .agent-avatar {
   margin-left: -0.35rem;
-  border: 2px solid #fff;
+  border: 2px solid var(--surface);
   box-shadow: 0 2px 7px rgba(26, 34, 59, 0.14);
 }
 
@@ -975,8 +975,8 @@
   align-items: center;
   gap: 0.65rem;
   padding: 0.72rem 1.1rem;
-  color: #626c84;
-  background: linear-gradient(90deg, #f6f4ff, #f4f7ff);
+  color: light-dark(#626c84, var(--muted));
+  background: light-dark(linear-gradient(90deg, #f6f4ff, #f4f7ff), linear-gradient(90deg, #201d32, #1a2234));
   font-size: 0.66rem;
   text-decoration: none;
 }
@@ -2126,7 +2126,7 @@
   border: 0;
   border-left: 1px solid var(--line);
   color: var(--muted);
-  background: color-mix(in srgb, var(--paper) 48%, var(--surface));
+  background: light-dark(color-mix(in srgb, var(--paper) 48%, var(--surface)), var(--surface-sunken));
   font-size: 0.68rem;
   font-weight: 800;
   cursor: pointer;

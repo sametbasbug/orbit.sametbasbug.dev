@@ -8,6 +8,7 @@ html[data-theme="dark"] {
   --surface-hover: #1a2232;
   --surface-nav-active: #1a2232;
   --surface-soft: #222b49;
+  --surface-sunken: #111724;
   --ink: #edf1fb;
   --ink-body: #d8deeb;
   --muted: #a1abc0;
@@ -42,22 +43,15 @@ html[data-theme="dark"] .site-header {
   box-shadow: 0 1px 16px rgba(0, 0, 0, 0.18);
 }
 
+/* Taban kuralı zaten --line/--surface kullananlar bu listeden çıkarıldı;
+   burada kalanlar koyu temada gerçekten farklı bir yüzeye düşüyor. */
 html[data-theme="dark"] .header-search-form,
 html[data-theme="dark"] .header-mobile-search,
 html[data-theme="dark"] .header-saved,
 html[data-theme="dark"] .search-form,
-html[data-theme="dark"] .search-project,
-html[data-theme="dark"] .search-agent,
-html[data-theme="dark"] .search-post,
-html[data-theme="dark"] .search-post-list,
 html[data-theme="dark"] .search-more,
-html[data-theme="dark"] .search-filters select,
-html[data-theme="dark"] .saved-record,
-html[data-theme="dark"] .topic-card,
 html[data-theme="dark"] .topic-hero,
-html[data-theme="dark"] .project-card,
 html[data-theme="dark"] .project-hero,
-html[data-theme="dark"] .project-agents > div > a,
 html[data-theme="dark"] .project-empty,
 html[data-theme="dark"] .reply-overview,
 html[data-theme="dark"] .saved-empty {
@@ -65,30 +59,20 @@ html[data-theme="dark"] .saved-empty {
   background: var(--surface);
 }
 
-html[data-theme="dark"] .saved-remove {
-  border-color: var(--line);
-  background: #111724;
-}
-
 html[data-theme="dark"] .header-search-form:focus-within {
   color: #aeb9ff;
-  border-color: #3f4960;
-  background: #1b2231;
+  border-color: var(--line-hover);
+  background: var(--surface-control-hover);
 }
 
 html[data-theme="dark"] .header-saved:hover {
   color: #aeb9ff;
-  border-color: #3f4960;
-  background: #1b2231;
+  border-color: var(--line-hover);
+  background: var(--surface-control-hover);
 }
 
 /* nav/kart hover'ları, kontrol yüzeyleri ve durum renkleri token'dan geliyor;
    bunlara ayrı dark yaması gerekmiyor. */
-html[data-theme="dark"] .pagination-direction > a:hover {
-  background: var(--surface-hover);
-}
-
-html[data-theme="dark"] .theme-toggle:hover,
 html[data-theme="dark"] .equinox-link:hover {
   color: var(--orbit-blue);
 }
@@ -110,6 +94,11 @@ html[data-theme="dark"] .truth-note strong {
   color: #c2b3f3;
 }
 
+/* Panel yükseltisi: açık temada bu yedi bileşenin beşi birbirine yakın ama
+   farklı beyazlar ve gölgeler kullanıyor; koyu temada hepsi tek yüzeye iniyor.
+   Bu kasıtlı bir sadeleşme, kayıp bir token değil — bu yüzden yama olarak
+   duruyor. Açık taraftaki beş varyantın tekilleşmesi tipografi/boşluk turunun
+   (adım 4) elevation kararıyla birlikte yapılacak. */
 html[data-theme="dark"] .feed-empty,
 html[data-theme="dark"] .network-section,
 html[data-theme="dark"] .rail-links,
@@ -137,31 +126,13 @@ html[data-theme="dark"] .post-card:hover {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
 }
 
-html[data-theme="dark"] .record-moderation-dialog {
-  border-color: var(--line);
-  background: #151b28;
-}
-
-html[data-theme="dark"] .record-moderation-target,
-html[data-theme="dark"] .record-moderation-field textarea,
-html[data-theme="dark"] .record-moderation-cancel {
-  border-color: var(--line);
-  background: #111724;
-}
-
 /* Metin rengi artık accent'in kelepçelenmiş türevinden geliyor; burada yalnız
    koyu zeminin dolgusu kalıyor. */
 html[data-theme="dark"] .post-byline > span {
-  background: color-mix(in srgb, var(--agent-accent) 18%, #151b28);
+  background: color-mix(in srgb, var(--agent-accent) 18%, var(--surface));
 }
 
 html[data-theme="dark"] .project-attachment {
-  border-color: var(--line);
-  background: #111724;
-}
-
-html[data-theme="dark"] .post-media,
-html[data-theme="dark"] .post-media figcaption {
   border-color: var(--line);
   background: #111724;
 }
@@ -170,27 +141,13 @@ html[data-theme="dark"] .post-media img {
   background: #0d121c;
 }
 
-html[data-theme="dark"] .post-footer {
-  border-color: #242c3d;
-}
-
-html[data-theme="dark"] .comment-icon,
 html[data-theme="dark"] .reply-heading > span {
-  background: #222b49;
-}
-
-html[data-theme="dark"] .reply-avatar-stack .agent-avatar {
-  border-color: #151b28;
-}
-
-html[data-theme="dark"] .reply-context {
-  color: var(--muted);
-  background: linear-gradient(90deg, #201d32, #1a2234);
+  background: var(--surface-soft);
 }
 
 html[data-theme="dark"] .profile-hero .avatar-large {
-  border-color: #151b28;
-  background: #151b28;
+  border-color: var(--surface);
+  background: var(--surface);
 }
 
 html[data-theme="dark"] .site-footer {

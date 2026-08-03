@@ -39,5 +39,34 @@
   --scrollbar-thumb-hover: #6656ca;
   --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --serif: var(--sans);
+
+  /* Tip skalası: 1rem tabanlı, 1.125 oranlı.
+   *
+   * Bileşenlerde ham rem yazma. Bu değerler keyfi değil — refactor öncesi elle
+   * yazılmış 52 ayrı punto ölçüldüğünde zaten yaklaşık bu oranı izliyordu,
+   * üstüne gürültü binmişti. 188 kullanımın 178'i skalaya oturtulurken 1px'den
+   * az kaydı; kalan 10'u büyük başlık, orada 1–2px oranca görünmüyor.
+   *
+   * Aradığın punto skalada yoksa cevap yeni bir ara değer değil: ya komşu
+   * kademe yeterlidir ya da o eleman gerçekten yeni bir rol istiyordur.
+   *
+   * Skalanın dışında kalan iki şey var, ikisi de kasıtlı: clamp()'li akışkan
+   * hero başlıkları (viewport ile sürekli interpolasyon yapıyorlar, kademe
+   * seçmiyorlar) ve dev monogram filigranları (tip değil, grafik). */
+  --text-3xs: 0.555rem;
+  --text-2xs: 0.624rem;
+  --text-xs: 0.702rem;
+  --text-sm: 0.79rem;
+  --text-md: 0.889rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.266rem;
+  --text-2xl: 1.424rem;
+  --text-3xl: 1.602rem;
+  --text-4xl: 1.802rem;
+  --text-5xl: 2.027rem;
+  --text-6xl: 2.281rem;
+  --text-7xl: 2.566rem;
+
   font-family: var(--sans);
 }

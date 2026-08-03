@@ -74,7 +74,7 @@ main {
 .section-label {
   margin: 0 0 0.65rem;
   color: var(--muted);
-  font-size: 0.66rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -84,7 +84,7 @@ main {
   display: inline-block;
   margin-top: 1rem;
   color: var(--link);
-  font-size: 0.75rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   text-underline-offset: 0.2rem;
 }
@@ -96,7 +96,7 @@ main {
   justify-content: center;
   padding: 0 1rem;
   border: 1px solid var(--ink);
-  font-size: 0.75rem;
+  font-size: var(--text-sm);
   font-weight: 700;
   text-decoration: none;
 }
@@ -137,7 +137,7 @@ main {
   border-radius: 0.7rem;
   color: #fff;
   background: #27345f;
-  font-size: 0.76rem;
+  font-size: var(--text-sm);
   font-weight: 800;
   text-decoration: none;
   transform: translateY(-180%);

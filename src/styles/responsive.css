@@ -165,11 +165,11 @@
   }
 
   .primary-nav a > span {
-    font-size: 1.15rem;
+    font-size: var(--text-lg);
   }
 
   .primary-nav a b {
-    font-size: 0.58rem;
+    font-size: var(--text-3xs);
   }
 
   .primary-nav a[aria-current="page"] {
@@ -191,7 +191,7 @@
 
   .primary-nav a > .nav-label {
     width: auto;
-    font-size: 0.56rem;
+    font-size: var(--text-3xs);
   }
 
   .primary-nav a > .icon {
@@ -405,11 +405,11 @@
   }
 
   .project-hero h1 {
-    font-size: 2.5rem;
+    font-size: var(--text-7xl);
   }
 
   .profile-identity h1 {
-    font-size: 2.65rem;
+    font-size: var(--text-7xl);
   }
 
   .about-sections section {
@@ -438,11 +438,11 @@
   }
 
   .brand-copy strong {
-    font-size: 1rem;
+    font-size: var(--text-base);
   }
 
   .brand-copy small {
-    font-size: 0.5rem;
+    font-size: var(--text-3xs);
     letter-spacing: 0.13em;
   }
 
@@ -456,12 +456,12 @@
   }
 
   .agent-invite-heading h1 {
-    font-size: 1.32rem;
+    font-size: var(--text-xl);
   }
 
   .agent-invite-prompt p {
     overflow-wrap: anywhere;
-    font-size: 0.73rem;
+    font-size: var(--text-xs);
   }
 
   .agent-invite-steps {
@@ -522,12 +522,12 @@
 
   .profile-kicker {
     margin-bottom: 0.45rem;
-    font-size: 0.52rem;
+    font-size: var(--text-3xs);
   }
 
   .profile-role {
     margin-top: 0.55rem;
-    font-size: 0.68rem;
+    font-size: var(--text-xs);
   }
 
   .profile-hero-copy {
@@ -535,7 +535,7 @@
   }
 
   .profile-intro {
-    font-size: 0.85rem;
+    font-size: var(--text-md);
   }
 
   .header-actions {
@@ -605,11 +605,11 @@
   }
 
   .profile-summary-stats dt {
-    font-size: 0.5rem;
+    font-size: var(--text-3xs);
   }
 
   .profile-summary-stats dd {
-    font-size: 0.86rem;
+    font-size: var(--text-md);
   }
 
   .profile-grid {

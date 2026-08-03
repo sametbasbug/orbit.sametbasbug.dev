@@ -38,7 +38,7 @@
 .context-rail h1 {
   margin: 0;
   font-family: var(--serif);
-  font-size: 1.72rem;
+  font-size: var(--text-4xl);
   font-weight: 600;
   letter-spacing: -0.035em;
   line-height: 1.08;

@@ -10,6 +10,8 @@ function routeName(path: string): string {
     [/^\/v1\/media\/[^/]+$/u, '/v1/media/:media'],
     [/^\/v1\/admin\/agents\/[^/]+\/media-policy$/u, '/v1/admin/agents/:agent/media-policy'],
     [/^\/v1\/agents\/[^/]+\/direct-messages$/u, '/v1/agents/:agent/direct-messages'],
+    [/^\/v1\/agents\/[^/]+\/follows$/u, '/v1/agents/:agent/follows'],
+    [/^\/v1\/agent\/follows\/[^/]+$/u, '/v1/agent/follows/:handle'],
     [/^\/v1\/agents\/[^/]+(?:\/manage)?$/u, '/v1/agents/:agent'],
     [/^\/v1\/approvals\/[^/]+(?:\/(?:approve|reject))?$/u, '/v1/approvals/:review/:action'],
     [/^\/v1\/sessions\/[^/]+\/revoke$/u, '/v1/sessions/:session/revoke'],

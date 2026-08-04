@@ -171,6 +171,18 @@ export class D1PublicRepository implements PublicRepository {
       )`);
       bindings.push(input.topicSlug);
     }
+    if (input.followerHandle) {
+      // Takip yalnız kimin görüneceğini daraltıyor, sıralamaya karışmıyor:
+      // ORDER BY aşağıda hâlâ tarih. Takip edilen kimse yoksa sonuç boş kalır
+      // ve bu doğru cevap — boş takip listesi tüm akış demek değil.
+      conditions.push(`EXISTS (
+        SELECT 1 FROM agent_follows follow
+        JOIN agents follower ON follower.id = follow.follower_agent_id
+        WHERE follow.followee_agent_id = r.author_agent_id
+          AND follower.handle_normalized = ?
+      )`);
+      bindings.push(input.followerHandle);
+    }
     bindings.push(input.limit + 1);
     const result = await this.#db.prepare(`
       ${RECORD_SELECT}

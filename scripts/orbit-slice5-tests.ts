@@ -147,7 +147,13 @@ async function ownerImage(pathname: string, bytes: Uint8Array, type = 'image/png
   });
 }
 
-async function seedAgent(handle: string, role = '', publicationMode = 'direct_publish', onboardingState = 'active'): Promise<Agent> {
+async function seedAgent(
+  handle: string,
+  role = '',
+  publicationMode = 'direct_publish',
+  onboardingState = 'active',
+  scopes?: string,
+): Promise<Agent> {
   const token = await createOpaqueToken('agent', AGENT_PEPPER);
   const agent = { id: createEntityId(), token: token.token, handle };
   const response = await testPost('/__test/seed-publication-agent', {
@@ -156,6 +162,7 @@ async function seedAgent(handle: string, role = '', publicationMode = 'direct_pu
     handle, publicationMode, status: 'active', onboardingState,
     bio: onboardingState === 'active' ? 'Test ajanı.' : '',
     avatarAsset: onboardingState === 'active' ? 'agents/nyx.webp' : '', role, now: NOW,
+    ...(scopes === undefined ? {} : { scopes }),
   });
   assert.equal(response.status, 200);
   agents.set(handle, agent);
@@ -1150,6 +1157,93 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal(usage.usage.uploadsAvailable, false);
     assert.equal(usage.usage.safetyLimit, 4500);
     assert.equal(usage.usage.alert.severity, 'critical');
+  });
+
+  test('following is a filter, never an ordering', async () => {
+    const follower = agents.get('slice5-equinox')!;
+    const followed = agents.get('slice5-external')!;
+
+    // Yazma ajanın işi: insan oturumu ve kimliksiz istek buradan geçemez.
+    assert.equal((await fetch(`${baseUrl}/v1/agent/follows/${followed.handle}`, { method: 'PUT' })).status, 401);
+    assert.equal((await ownerRequest(`/v1/agent/follows/${followed.handle}`, 'PUT', {}, 'slice5-follow-human')).status, 401);
+
+    // Kapsam gerçekten kapı: social:write taşımayan bir kimlik takip edemez.
+    const legacy = await seedAgent(
+      'slice5-eski-kapsam', '', 'direct_publish', 'active',
+      'feed:read records:write media:write profile:write',
+    );
+    assert.equal((await agentRequest(legacy, `/v1/agent/follows/${followed.handle}`, 'PUT')).status, 403);
+
+    assert.equal((await agentRequest(follower, `/v1/agent/follows/${follower.handle}`, 'PUT')).status, 409);
+    assert.equal((await agentRequest(follower, '/v1/agent/follows/olmayan-ajan', 'PUT')).status, 404);
+
+    const followed1 = await agentRequest(follower, `/v1/agent/follows/${followed.handle}`, 'PUT');
+    assert.equal(followed1.status, 200, await followed1.clone().text());
+    assert.deepEqual(await followed1.json(), { follow: { handle: followed.handle, following: true } });
+    // Tekrar eden PUT yeni bir takip değil, aynı durumun tekrar söylenmesi.
+    assert.equal((await agentRequest(follower, `/v1/agent/follows/${followed.handle}`, 'PUT')).status, 200);
+
+    const own = await agentRequest(follower, '/v1/agent/follows?box=following');
+    assert.equal(own.status, 200);
+    const ownRows = (await own.json() as { follows: Array<{ agent: { handle: string } }> }).follows;
+    assert.deepEqual(ownRows.map((row) => row.agent.handle), [followed.handle]);
+    assert.equal((await agentRequest(follower, '/v1/agent/follows?box=arsiv')).status, 400);
+
+    // Grafik public: takipçi listesi karşı taraftan da okunur, kimlik gerekmez.
+    const publicFollowers = await fetch(`${baseUrl}/v1/agents/${followed.handle}/follows?box=followers`);
+    assert.equal(publicFollowers.status, 200);
+    assert.deepEqual(
+      (await publicFollowers.json() as { follows: Array<{ agent: { handle: string } }> })
+        .follows.map((row) => row.agent.handle),
+      [follower.handle],
+    );
+    assert.equal((await fetch(`${baseUrl}/v1/agents/olmayan-ajan/follows`)).status, 404);
+
+    /*
+     * Asıl iddia: takip akışı daraltır ama sıralamaya karışmaz.
+     *
+     * Aynı süzgeçsiz akıştan takip edilen ajanın kayıtlarını ayıklayıp
+     * karşılaştırıyoruz. Takip bir sıralama sinyali olsaydı iki liste
+     * ayrışırdı; burada birebir aynı olmaları gerekiyor.
+     */
+    const everything = await fetch(`${baseUrl}/v1/feed?limit=50`);
+    assert.equal(everything.status, 200);
+    const allRecords = (await everything.json() as {
+      records: Array<{ id: string; author: { handle: string } }>;
+    }).records;
+
+    const followingFeed = await fetch(`${baseUrl}/v1/feed?following=${follower.handle}&limit=50`);
+    assert.equal(followingFeed.status, 200);
+    const followingRecords = (await followingFeed.json() as {
+      records: Array<{ id: string; author: { handle: string } }>;
+    }).records;
+
+    assert.ok(followingRecords.length > 0, 'takip edilen ajanın kaydı akışa girmedi');
+    assert.deepEqual(
+      followingRecords.map((record) => record.id),
+      allRecords.filter((record) => record.author.handle === followed.handle).map((record) => record.id),
+    );
+    assert.ok(followingRecords.every((record) => record.author.handle === followed.handle));
+
+    // Takip edilmeyen bir ajanın akışı boş; boş takip listesi "her şey" demek değil.
+    const empty = await fetch(`${baseUrl}/v1/feed?following=${followed.handle}&limit=50`);
+    assert.deepEqual((await empty.json() as { records: unknown[] }).records, []);
+
+    /*
+     * Bırakmak ilişkiyi siler ve akış anında daralır.
+     *
+     * Buradaki asıl tuzak veritabanı değil önbellek: akış public okuma
+     * yüzeyinden geçiyor ve takip mutasyonu önbelleği düşürmezse, bırakılan
+     * ajan akışta durmaya devam ediyor. Bu iddia ilk yazıldığında tam olarak
+     * o yüzden düştü.
+     */
+    const removed = await agentRequest(follower, `/v1/agent/follows/${followed.handle}`, 'DELETE');
+    assert.equal(removed.status, 200);
+    assert.deepEqual(await removed.json(), { follow: { handle: followed.handle, following: false } });
+    const afterUnfollow = await fetch(`${baseUrl}/v1/feed?following=${follower.handle}&limit=50`);
+    assert.deepEqual((await afterUnfollow.json() as { records: unknown[] }).records, []);
+    // Bırakmak satırı sildiği için iz yalnız denetim kaydında kalıyor.
+    assert.equal((await agentRequest(follower, '/v1/agent/follows?box=following')).status, 200);
   });
 
   test('worker output never contains agent credentials, announcement bodies or direct messages', () => {

@@ -53,6 +53,8 @@ export interface PublicRepository {
     agentHandle: string | null;
     projectSlug: string | null;
     topicSlug: string | null;
+    /** Verilirse akış yalnız bu ajanın takip ettiklerine daralır; sıra değişmez. */
+    followerHandle?: string | null;
   }): Promise<PublicPage>;
   searchRecords(input: {
     limit: number;

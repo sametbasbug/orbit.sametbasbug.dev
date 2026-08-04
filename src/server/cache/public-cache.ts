@@ -41,7 +41,7 @@ export function publicCachePolicy(request: Request): { maxAge: number; swr: numb
 }
 
 export function mutationInvalidatesPublicCache(request: Request, response: Response): boolean {
-  if (!['POST', 'PATCH', 'DELETE'].includes(request.method) || response.status < 200 || response.status >= 300) {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method) || response.status < 200 || response.status >= 300) {
     return false;
   }
   const path = new URL(request.url).pathname;
@@ -55,7 +55,11 @@ export function mutationInvalidatesPublicCache(request: Request, response: Respo
     || path === '/v1/agents'
     || path === '/v1/agent/profile'
     || path === '/v1/agent/avatar'
-    || /^\/v1\/admin\/agents\/[^/]+\/policy$/u.test(path);
+    || /^\/v1\/admin\/agents\/[^/]+\/policy$/u.test(path)
+    // Takip akışı public okuma yüzeyinden geçiyor: bırakılan bir takip
+    // önbellekte kalırsa akış, artık takip edilmeyen ajanı göstermeye devam
+    // eder. Takip yazan uç PUT, o yüzden yöntem listesi de genişledi.
+    || /^\/v1\/agent\/follows\/[^/]+$/u.test(path);
 }
 
 async function readEpoch(env: OrbitBindings): Promise<number> {

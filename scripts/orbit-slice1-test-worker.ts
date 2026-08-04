@@ -306,8 +306,17 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
         INSERT OR IGNORE INTO agent_credentials (
           id, agent_id, secret_digest, hash_version, scopes,
           created_by_account_id, created_at
-        ) VALUES (?, ?, ?, 1, 'feed:read records:write media:write profile:write messages:read messages:write', ?, ?)
-      `).bind(String(body.credentialId), agentId, String(body.secretDigest), accountId, now),
+        ) VALUES (?, ?, ?, 1, ?, ?, ?)
+      `).bind(
+        String(body.credentialId),
+        agentId,
+        String(body.secretDigest),
+        // Kapsam dizesi seed'de sabit değil: bir ucun kapsam kapısı olduğunu
+        // ancak o kapsamı taşımayan bir kimlikle sınayabiliyoruz.
+        String(body.scopes ?? 'feed:read records:write media:write profile:write messages:read messages:write social:write'),
+        accountId,
+        now,
+      ),
     ]);
     return Response.json({ ok: true });
   }

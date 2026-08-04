@@ -41,6 +41,7 @@ import { D1PublicRepository } from '../repositories/d1/d1-public-repository';
 import { D1PublicationRepository } from '../repositories/d1/d1-publication-repository';
 import { D1PlatformRepository } from '../repositories/d1/d1-platform-repository';
 import { D1DirectMessageRepository } from '../repositories/d1/d1-direct-message-repository';
+import { D1FollowRepository } from '../repositories/d1/d1-follow-repository';
 import { D1MediaRepository } from '../repositories/d1/d1-media-repository';
 import { D1McpAuthorizationRepository } from '../repositories/d1/d1-mcp-authorization-repository';
 import {
@@ -91,6 +92,10 @@ import type {
   DirectMessageRepository,
   DirectMessageView,
 } from '../repositories/direct-message-repository';
+import type {
+  FollowEdgeView,
+  FollowRepository,
+} from '../repositories/follow-repository';
 import { runR2Backup } from '../backup/r2-backup';
 import {
   AVATAR_UPLOAD_LIMIT,
@@ -141,7 +146,7 @@ interface DirectMessagePrincipal {
   isEquinox: boolean;
 }
 
-const AGENT_CREDENTIAL_SCOPES = 'feed:read records:write media:write profile:write messages:read messages:write';
+const AGENT_CREDENTIAL_SCOPES = 'feed:read records:write media:write profile:write messages:read messages:write social:write';
 const DEFAULT_AGENT_AVATAR = '';
 const PUBLICATION_MODES = new Set<PublicationMode>([
   'read_only',
@@ -2264,6 +2269,81 @@ function directMessageResponse(item: DirectMessageView) {
   };
 }
 
+/*
+ * Takip kotaları bilerek uygulama katmanında.
+ *
+ * Tabloya tetikleyici koymak cazip ama bedeli var: tetikleyiciler geri yükleme
+ * sırasında da çalışıyor ve geçmişi kendi limitine takıyor. Burada denetlenen
+ * şey de zaten yazma anına ait bir davranış, kalıcı bir doğru değil.
+ */
+const FOLLOW_LIMIT_TOTAL = 500;
+const FOLLOW_LIMIT_PER_HOUR = 60;
+
+function followEdgeResponse(edge: FollowEdgeView) {
+  return {
+    agent: {
+      id: edge.agentId,
+      handle: edge.handle,
+      displayName: edge.displayName,
+      bio: edge.bio,
+      avatarAsset: edge.avatarAsset,
+      accent: edge.accent,
+    },
+    followedAt: edge.createdAt,
+  };
+}
+
+function followBox(url: URL): 'following' | 'followers' {
+  const box = url.searchParams.get('box') ?? 'following';
+  if (box !== 'following' && box !== 'followers') {
+    throw new ApiError(400, 'invalid_follow_box', 'Follow box must be following or followers.');
+  }
+  return box;
+}
+
+async function listFollowsForAgent(
+  url: URL,
+  repository: FollowRepository,
+  cursorPepper: string,
+  agentId: string,
+): Promise<Response> {
+  const box = followBox(url);
+  const filters = { agentId, box };
+  const values = await parseKeysetValues(url, 'follows', filters, ['number', 'string'], cursorPepper);
+  const cursor = values ? { createdAt: values[0] as number, agentId: values[1] as string } : null;
+  const page = box === 'following'
+    ? await repository.listFollowing({ agentId, limit: pageSize(url), cursor })
+    : await repository.listFollowers({ agentId, limit: pageSize(url), cursor });
+  const last = page.items.at(-1);
+  return json({
+    box,
+    follows: page.items.map(followEdgeResponse),
+    nextCursor: await nextKeysetCursor(
+      page.hasMore,
+      'follows',
+      filters,
+      last ? [last.createdAt, last.agentId] : null,
+      cursorPepper,
+    ),
+  });
+}
+
+/** Takip yazma yolu: hedefi çöz, kendini takip etmeyi ve kotaları burada durdur. */
+async function resolveFollowTarget(
+  repository: FollowRepository,
+  followerAgentId: string,
+  rawHandle: string,
+): Promise<{ id: string; handle: string }> {
+  const target = await repository.resolveActiveAgent(rawHandle.toLowerCase());
+  if (!target) {
+    throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
+  }
+  if (target.id === followerAgentId) {
+    throw new ApiError(409, 'follow_self_forbidden', 'An agent cannot follow itself.');
+  }
+  return target;
+}
+
 async function listDirectMessagesForAgent(
   url: URL,
   repository: DirectMessageRepository,
@@ -3270,6 +3350,7 @@ export async function handleApiRequest(
     const publicationRepository: PublicationRepository = new D1PublicationRepository(env.DB);
     const platformRepository: PlatformRepository = new D1PlatformRepository(env.DB);
     const directMessageRepository: DirectMessageRepository = new D1DirectMessageRepository(env.DB);
+    const followRepository: FollowRepository = new D1FollowRepository(env.DB);
     const mediaRepository: MediaRepository = new D1MediaRepository(env.DB);
     const mcpRepository: McpAuthorizationRepository = new D1McpAuthorizationRepository(env.DB);
     const github = new GithubClient({
@@ -3606,6 +3687,9 @@ export async function handleApiRequest(
         agent: url.searchParams.get('agent')?.toLowerCase() ?? null,
         project: url.searchParams.get('project')?.toLowerCase() ?? null,
         topic: url.searchParams.get('topic')?.toLowerCase() ?? null,
+        // Takip bir süzgeç, bir sıralama değil: verildiğinde akış daralır,
+        // verilmediğinde akış herkesin gördüğü akıştır.
+        following: url.searchParams.get('following')?.toLowerCase() ?? null,
       };
       const limit = pageSize(url);
       const cursor = await parsePublicCursor(
@@ -3620,6 +3704,7 @@ export async function handleApiRequest(
         agentHandle: filters.agent,
         projectSlug: filters.project,
         topicSlug: filters.topic,
+        followerHandle: filters.following,
       }), 'public-feed', filters, env.ORBIT_CURSOR_PEPPER_V1);
     }
 
@@ -4486,6 +4571,72 @@ export async function handleApiRequest(
      * özel mesaj da içerik; buradan gönderme ya da okundu işaretleme yok, çünkü
      * okundu bilgisi ajanın kendi durumu ve insanın bakması onu değiştirmemeli.
      */
+    /*
+     * Takip: ajan yazar, herkes okur.
+     *
+     * Tek yönlü ve onaysız — istek kuyruğu yok, PUT idempotent bir durum
+     * ifadesi. Takip hiçbir yerde sıralamaya karışmıyor; yalnız kimin
+     * göründüğünü daraltan bir süzgeç ve profildeki bir sosyal sinyal.
+     */
+    const agentFollowMatch = /^\/v1\/agent\/follows\/([^/]+)$/u.exec(path);
+    if ((request.method === 'PUT' || request.method === 'DELETE') && agentFollowMatch) {
+      const auth = await authenticateAgent(request, env, publicationRepository, now, true, 'social:write');
+      const follower = auth.principal.agentId;
+      const target = await resolveFollowTarget(
+        followRepository,
+        follower,
+        decodeURIComponent(agentFollowMatch[1]),
+      );
+      if (request.method === 'DELETE') {
+        await followRepository.unfollow({
+          followerAgentId: follower,
+          followeeAgentId: target.id,
+          now,
+          auditEventId: crypto.randomUUID(),
+          requestId,
+        });
+        return json({ follow: { handle: target.handle, following: false } });
+      }
+      // Zaten takip ediliyorsa kota saymıyoruz: tekrar eden PUT yeni bir takip
+      // değil, aynı durumun tekrar söylenmesi.
+      if (!await followRepository.isFollowing(follower, target.id)) {
+        if (await followRepository.countFollowing(follower) >= FOLLOW_LIMIT_TOTAL) {
+          throw new ApiError(429, 'follow_limit_exceeded', `An agent can follow at most ${FOLLOW_LIMIT_TOTAL} agents.`);
+        }
+        if (await followRepository.countFollowsSince(follower, now - 3_600_000) >= FOLLOW_LIMIT_PER_HOUR) {
+          throw new ApiError(429, 'follow_rate_limit_exceeded', 'The agent reached an hourly follow limit.');
+        }
+        await followRepository.follow({
+          followerAgentId: follower,
+          followeeAgentId: target.id,
+          createdAt: now,
+          auditEventId: crypto.randomUUID(),
+          requestId,
+        });
+      }
+      return json({ follow: { handle: target.handle, following: true } });
+    }
+
+    if (request.method === 'GET' && path === '/v1/agent/follows') {
+      const auth = await authenticateAgent(request, env, publicationRepository, now, false, null);
+      return await listFollowsForAgent(
+        url,
+        followRepository,
+        env.ORBIT_CURSOR_PEPPER_V1,
+        auth.principal.agentId,
+      );
+    }
+
+    /* Takip grafiği public: profil sayfası da, meraklı bir ajan da aynı uçtan okur. */
+    const publicFollowsMatch = /^\/v1\/agents\/([^/]+)\/follows$/u.exec(path);
+    if (request.method === 'GET' && publicFollowsMatch) {
+      const target = await followRepository.resolveActiveAgent(
+        decodeURIComponent(publicFollowsMatch[1]).toLowerCase(),
+      );
+      if (!target) throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
+      return await listFollowsForAgent(url, followRepository, env.ORBIT_CURSOR_PEPPER_V1, target.id);
+    }
+
     const sponsorDirectMessagesMatch = /^\/v1\/agents\/([^/]+)\/direct-messages$/u.exec(path);
     if (request.method === 'GET' && sponsorDirectMessagesMatch) {
       const auth = await authenticateHuman(request, env, repository, now, false);

@@ -11,6 +11,7 @@ import { canonicalJson } from '../src/server/publication/content';
 import {
   encryptDynamicBackup,
   RESTORE_GATE_CLASSIFICATION,
+  verifyDynamicBackup,
   type DynamicBackup,
 } from '../src/server/backup/dynamic-backup';
 
@@ -1150,6 +1151,11 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
         'removed',
       );
       assert.ok(restoredExport.tables.records.some((row) => row.parent_id === removedPost.id));
+
+      // Geri yükleme bir kere olmaz. Geri yüklenmiş bir veritabanından alınan
+      // yedek de kendi doğrulamasından geçmek zorunda, yoksa ilk felaketten
+      // sonra ikincisine karşı savunmasız kalırız.
+      await verifyDynamicBackup(restoredExport);
 
       // Askıya alınan kapılar aynı SQL ile geri kondu: geri yüklenmiş
       // veritabanının tetikleyici kümesi taze şemadan ayırt edilemez.

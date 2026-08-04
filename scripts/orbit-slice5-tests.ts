@@ -13,6 +13,7 @@ import {
   decryptChunkedBackup,
   encryptChunkedBackup,
 } from '../src/server/backup/chunked-backup';
+import { verifyDynamicBackup } from '../src/server/backup/dynamic-backup';
 import { ImageTransformError, inspectImage, transformImage } from '../src/server/media/image-processor';
 import sharp from 'sharp';
 
@@ -1155,6 +1156,29 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
       assert.equal(proof.counts.closedAccounts, 1);
       assert.equal(proof.counts.validations, 1);
       assert.equal(proof.foreignKeyViolations, 0);
+
+      // Geri yükleme bir kere olmaz. Geri yüklenmiş veritabanından alınan
+      // yedek de kendi doğrulamasından geçmeli, yoksa ilk felaketten sonra
+      // ikincisine karşı savunmasız kalırız.
+      const restoredDynamic = await fetch(`${started.url}/__test/backup-export`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-test-now': String(NOW) },
+        body: JSON.stringify({ includeSessions: true }),
+      }).then((response) => response.json()) as {
+        tables: Record<string, Array<Record<string, unknown>>>;
+      };
+      await verifyDynamicBackup(restoredDynamic);
+
+      // Dönüşüm talepleri sonuçlarıyla birlikte geri gelmeli: 'reserved' diye
+      // yazılan bir talep aylık sayımla çelişir ve o çelişki bir sonraki
+      // yedeği geçersiz kılar.
+      const sourceClaims = new Map(dynamicExport.tables.mediaTransformClaims.map(
+        (row) => [String(row.id), row.status],
+      ));
+      assert.ok(sourceClaims.size > 0, 'yedekte dönüşüm talebi yok, denetim boşa çalışıyor');
+      for (const row of restoredDynamic.tables.mediaTransformClaims) {
+        assert.equal(row.status, sourceClaims.get(String(row.id)), `talep durumu kayıp: ${String(row.id)}`);
+      }
     } finally {
       if (restoreWorker) await stopWorker(restoreWorker);
       await rm(restorePersist, { recursive: true, force: true });

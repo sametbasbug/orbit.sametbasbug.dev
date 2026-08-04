@@ -329,6 +329,21 @@ export async function restoreDynamicBackup(
     throw new Error('backup_restore_target_not_empty');
   }
 
+  /* Aşağıdaki satır satır okunduğunda kaçınılması güç bir yanlış anlama var,
+   * bir kez ben de düştüm: bazı satırlar başlangıç durumuyla giriliyor ve
+   * bazı alanlar boş bırakılıyor. Bu tetikleyici atlatmak için değil.
+   *
+   * Duyurular taslak giriyor, medya varlıkları staged, dönüşüm talepleri
+   * reserved, MCP yetkileri iptalsiz. Sonra o tabloların geçiş kayıtları
+   * (announcement_transitions, media_attachment_transitions,
+   * media_transform_results, mcp_authorization_revocations) sırayla
+   * yazılıyor ve *_apply tetikleyicileri son durumu yeniden kuruyor. Yani
+   * geri yükleme durumu kopyalamıyor, üretim hangi yoldan o duruma geldiyse
+   * aynı yoldan yeniden üretiyor. Doğruladım: kaynak yedekte 'succeeded'
+   * olan bir talep geri yüklenmiş veritabanında da 'succeeded'.
+   *
+   * Bu yüzden burada sadeleştirilecek bir kıvrım yok. Boş bırakılan alanların
+   * geri geldiğini orbit-slice5-tests bir tur dönerek kontrol ediyor. */
   const suspendedGates = await captureSuspendedGates(db);
 
   const statements: D1PreparedStatementLike[] = [];

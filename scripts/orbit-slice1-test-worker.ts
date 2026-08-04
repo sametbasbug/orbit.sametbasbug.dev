@@ -575,6 +575,13 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     return Response.json({ counts, foreignKeyViolations: fk.results.length });
   }
 
+  if (url.pathname === '/__test/schema-triggers') {
+    const triggers = await env.DB.prepare(`
+      SELECT name, sql FROM sqlite_master WHERE type = 'trigger' ORDER BY name
+    `).all<{ name: string; sql: string }>();
+    return Response.json({ triggers: triggers.results });
+  }
+
   if (url.pathname === '/__test/media-objects') {
     return Response.json({ count: mediaBucket.objects.size });
   }

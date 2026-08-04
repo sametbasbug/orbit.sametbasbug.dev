@@ -2,12 +2,17 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createServer } from 'node:net';
 import path from 'node:path';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { after, before, describe, test } from 'node:test';
 import { createEntityId } from '../src/server/foundation/ids';
-import { createOpaqueToken, hmacDigest, randomBase64Url } from '../src/server/identity/tokens';
-import { encryptDynamicBackup, type DynamicBackup } from '../src/server/backup/dynamic-backup';
+import { createOpaqueToken, hmacDigest, randomBase64Url, sha256Base64Url } from '../src/server/identity/tokens';
+import { canonicalJson } from '../src/server/publication/content';
+import {
+  encryptDynamicBackup,
+  RESTORE_GATE_CLASSIFICATION,
+  type DynamicBackup,
+} from '../src/server/backup/dynamic-backup';
 
 const ROOT = process.cwd();
 const WRANGLER = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
@@ -1031,6 +1036,34 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     assert.deepEqual(await replay.json(), body);
   });
 
+  test('every insert gate on a backed-up table is classified for restore', async () => {
+    const files = (await readdir(path.join(ROOT, 'migrations'))).filter((name) => name.endsWith('.sql')).sort();
+    const sources = await Promise.all(
+      files.map((name) => readFile(path.join(ROOT, 'migrations', name), 'utf8')),
+    );
+    const pattern = /CREATE\s+TRIGGER\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s+(BEFORE|AFTER|INSTEAD\s+OF)\s+(INSERT|UPDATE|DELETE)[^;]*?\s+ON\s+(\w+)|DROP\s+TRIGGER\s+(?:IF\s+EXISTS\s+)?(\w+)/gi;
+    const live = new Map<string, string | null>();
+    for (const match of sources.join('\n').matchAll(pattern)) {
+      const [, created, timing, event, table, dropped] = match;
+      if (dropped) live.delete(dropped);
+      else live.set(created, /before/i.test(timing) && /insert/i.test(event) ? table : null);
+    }
+    const backedUp = new Set(RESTORE_GATE_CLASSIFICATION.tables);
+    const gates = [...live].filter(([, table]) => table !== null && backedUp.has(table))
+      .map(([name]) => name).sort();
+    const classified = [
+      ...RESTORE_GATE_CLASSIFICATION.suspended,
+      ...RESTORE_GATE_CLASSIFICATION.armed,
+    ].sort();
+    assert.deepEqual(
+      gates,
+      classified,
+      'Yedeklenen bir tabloya BEFORE INSERT kapısı eklendi ya da kalktı. '
+      + 'dynamic-backup.ts içindeki RESTORE_SUSPENDED_GATES / RESTORE_ARMED_GATES '
+      + 'listelerinden birine yaz: kapı geçmişi mi yargılıyor, satırı mı?',
+    );
+  });
+
   test('versioned application backup rejects corruption atomically and restores in two phases', async () => {
     const exported = await testPost('/__test/backup-export', { includeSessions: true }).then((response) => response.json()) as {
       schema: string; checksum: { value: string }; counts: Record<string, number>;
@@ -1048,12 +1081,44 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     assert.equal(encrypted.algorithm, 'AES-GCM-256');
     assert.ok(!encrypted.ciphertext.includes('slice4-direct'));
 
+    // Yedek, canlının bugünkü kurallarını değil geçmişin kendisini taşır:
+    // sonradan askıya alınmış bir ajanın mesajı, sonradan gizlenmiş bir
+    // başlığın altındaki yanıt. İkisi de bugün yapılamaz, ikisi de geri
+    // yüklenmek zorunda.
+    const history = structuredClone(exported) as DynamicBackup;
+    const suspended = history.tables.agents.find((row) => row.handle === 'slice4-direct');
+    assert.ok(suspended, 'yedekte slice4-direct yok');
+    suspended.status = 'suspended';
+    const partner = history.tables.agents.find((row) => row.id !== suspended.id);
+    assert.ok(partner, 'yedekte ikinci ajan yok');
+    const removedPost = history.tables.records.find((row) => (
+      row.kind === 'post' && history.tables.records.some((reply) => reply.parent_id === row.id)
+    ));
+    assert.ok(removedPost, 'yedekte yanıtı olan gönderi yok');
+    removedPost.moderation_state = 'removed';
+    removedPost.moderated_at = NOW;
+    for (const agent of history.tables.agents) {
+      if (agent.pinned_record_id === removedPost.id) agent.pinned_record_id = null;
+    }
+    history.tables.directMessages.push({
+      id: createEntityId(),
+      sender_agent_id: suspended.id,
+      recipient_agent_id: partner.id,
+      body_markdown: 'Arşivden bir mesaj.',
+      created_at: NOW - 1000,
+    });
+    history.counts.directMessages = history.tables.directMessages.length;
+    const { checksum: _replaced, ...unsigned } = history;
+    history.checksum = { algorithm: 'sha256', value: await sha256Base64Url(canonicalJson(unsigned)) };
+
     const restorePersist = await mkdtemp(path.join(tmpdir(), 'orbit-v6-slice4-restore-'));
     let restoreWorker: ChildProcessWithoutNullStreams | undefined;
     try {
       migrate(restorePersist);
       const started = await startWorker(restorePersist);
       restoreWorker = started.process;
+      const freshTriggers = await testPost('/__test/schema-triggers', {}, started.url)
+        .then((response) => response.json()) as { triggers: Array<{ name: string; sql: string }> };
       const corrupted = structuredClone(exported);
       corrupted.checksum.value = `${corrupted.checksum.value.slice(0, -1)}x`;
       const rejected = await testPost('/__test/backup-restore', { backup: corrupted, revokeSecurity: true }, started.url);
@@ -1067,15 +1132,30 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
       assert.equal(empty.counts.topics, 0);
       assert.equal(empty.counts.validations, 0);
 
-      const restored = await testPost('/__test/backup-restore', { backup: exported, revokeSecurity: true }, started.url);
+      const restored = await testPost('/__test/backup-restore', { backup: history, revokeSecurity: true }, started.url);
       assert.equal(restored.status, 200, await restored.clone().text());
       const proof = await restored.json() as { proof: { foreignKeyViolations: number; counts: Record<string, number> } };
       assert.equal(proof.proof.foreignKeyViolations, 0);
-      assert.equal(proof.proof.counts.records, exported.counts.records);
+      assert.equal(proof.proof.counts.records, history.counts.records);
       const restoredExport = await testPost('/__test/backup-export', { includeSessions: true }, started.url)
         .then((response) => response.json()) as { tables: Record<string, Array<Record<string, unknown>>> };
       assert.ok(restoredExport.tables.agentCredentials.every((row) => row.revoked_at !== null));
       assert.ok(restoredExport.tables.sessions.every((row) => row.revoked_at !== null));
+
+      // Geçmiş olduğu gibi geri geldi.
+      assert.equal(restoredExport.tables.directMessages.length, history.counts.directMessages);
+      assert.ok(restoredExport.tables.directMessages.some((row) => row.sender_agent_id === suspended.id));
+      assert.equal(
+        restoredExport.tables.records.find((row) => row.id === removedPost.id)?.moderation_state,
+        'removed',
+      );
+      assert.ok(restoredExport.tables.records.some((row) => row.parent_id === removedPost.id));
+
+      // Askıya alınan kapılar aynı SQL ile geri kondu: geri yüklenmiş
+      // veritabanının tetikleyici kümesi taze şemadan ayırt edilemez.
+      const afterTriggers = await testPost('/__test/schema-triggers', {}, started.url)
+        .then((response) => response.json()) as { triggers: Array<{ name: string; sql: string }> };
+      assert.deepEqual(afterTriggers.triggers, freshTriggers.triggers);
     } finally {
       if (restoreWorker) await stopWorker(restoreWorker);
       await rm(restorePersist, { recursive: true, force: true });

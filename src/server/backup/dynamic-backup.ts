@@ -196,6 +196,81 @@ function validateRelationships(backup: DynamicBackup): void {
   }
 }
 
+/* Geri yüklemede askıya alınan kapılar.
+ *
+ * Bu tetikleyiciler "bu satır geçerli mi" sorusunu sormuyor; "bu eylem şu an
+ * serbest mi" sorusunu soruyorlar — gönderim hızı, kota, o anki politika, o
+ * anki görünürlük. Geri yükleme bir eylem değil, geçmişin kendisi. Kapı açık
+ * kalırsa yedek kendi geçmişine takılıyor: askıya alınmış bir ajanın eski
+ * mesajı, sonradan gizlenmiş bir başlığın altındaki yanıt, sonradan
+ * düşürülmüş bir kota. Hepsi geçerli veri, hiçbiri geri yüklenemiyor.
+ *
+ * Kapılar sqlite_master'dan olduğu gibi okunup düşürülüyor ve geri yükleme
+ * biterken aynı SQL ile geri konuyor — burada tetikleyici gövdesi
+ * tekrarlanmadığı için göç ile kod arasında kayma olamaz. Tüm iş tek bir
+ * batch, yani tek bir işlem: geri yükleme yarıda kalırsa düşürme de geri
+ * alınır, veritabanı kapısız kalmaz. */
+const RESTORE_SUSPENDED_GATES = [
+  'agent_memberships_enforce_primary_sponsor_quota',
+  'agent_media_uploads_policy_validate',
+  'direct_messages_validate',
+  'mcp_authorization_grants_validate',
+  'mcp_authorization_revocations_validate',
+  'publication_reviews_pending_limits',
+  'reply_records_require_visible_thread',
+] as const;
+
+/* Geri yüklemede silahlı kalan kapılar.
+ *
+ * İkiye ayrılıyorlar. Birincisi gerçek yapı denetimleri: okundu bilgisi kendi
+ * mesajına mı ait, medya kendi kaydına mı bağlı. Bunlar geri yüklemede de
+ * doğru olmak zorunda. İkincisi geri yüklemenin satırı şekillendirerek zaten
+ * yatıştırdığı kapılar: hesaplar geçici olarak aktif geliyor, duyurular taslak
+ * olarak giriyor, moderasyon ters kayıtları önce boş geçilip sonra
+ * bağlanıyor. Onları düşürmeye gerek yok.
+ *
+ * Bu iki liste, yedeklenen tabloların üzerindeki tüm BEFORE INSERT
+ * tetikleyicilerini kapsamak zorunda; orbit-slice4-tests bunu kontrol ediyor.
+ * Yeni bir kapı eklersen test seni buraya yollar — hangi tarafta durduğuna
+ * karar vermeden geçemezsin. */
+const RESTORE_ARMED_GATES = [
+  'announcement_transitions_validate',
+  'avatar_upload_policies_target_validate',
+  'direct_message_reads_validate',
+  'media_attachment_validate',
+  'media_transform_claims_avatar_quota_validate',
+  'media_transform_claims_budget_validate',
+  'media_transform_claims_idempotency_validate',
+  'media_transform_claims_post_quota_validate',
+  'media_transform_results_validate',
+  'moderation_reversal_validate',
+  'sessions_require_active_account',
+] as const;
+
+export const RESTORE_GATE_CLASSIFICATION = {
+  suspended: RESTORE_SUSPENDED_GATES,
+  armed: RESTORE_ARMED_GATES,
+  tables: SPECS.map((item) => item.table),
+};
+
+interface RestoreGate {
+  name: string;
+  sql: string;
+}
+
+async function captureSuspendedGates(db: D1DatabaseLike): Promise<RestoreGate[]> {
+  const placeholders = RESTORE_SUSPENDED_GATES.map(() => '?').join(', ');
+  const result = await db.prepare(`
+    SELECT name, sql FROM sqlite_master
+    WHERE type = 'trigger' AND name IN (${placeholders})
+    ORDER BY name
+  `).bind(...RESTORE_SUSPENDED_GATES).all<RestoreGate>();
+  if (result.results.length !== RESTORE_SUSPENDED_GATES.length) {
+    throw new Error('backup_restore_gate_missing');
+  }
+  return result.results;
+}
+
 function insert(db: D1DatabaseLike, spec: TableSpec, row: BackupRow, orIgnore = false): D1PreparedStatementLike {
   const placeholders = spec.columns.map(() => '?').join(', ');
   return db.prepare(
@@ -254,7 +329,10 @@ export async function restoreDynamicBackup(
     throw new Error('backup_restore_target_not_empty');
   }
 
+  const suspendedGates = await captureSuspendedGates(db);
+
   const statements: D1PreparedStatementLike[] = [];
+  for (const gate of suspendedGates) statements.push(db.prepare(`DROP TRIGGER ${gate.name}`));
   const seedSafe = new Set(['accounts', 'authIdentities', 'accountRoles', 'accountQuotas', 'auditEvents']);
   const first = ['accounts','authIdentities','accountRoles','accountQuotas','invitations','agents','agentMemberships','mcpAuthorizationGrants','agentCredentials','sessions','projects','topics'];
   for (const name of first) {
@@ -485,6 +563,7 @@ export async function restoreDynamicBackup(
     mediaTransformResults: backup.counts.mediaTransformResults,
     platformAlerts: backup.counts.platformAlerts,
   };
+  for (const gate of suspendedGates) statements.push(db.prepare(gate.sql));
   statements.push(db.prepare(`
     INSERT INTO backup_restore_validations (
       id, schema_version, expected_counts_json, created_at

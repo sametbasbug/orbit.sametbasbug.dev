@@ -53,13 +53,18 @@ async function request(worker: string, pathname: string, init: RequestInit = {})
   });
 }
 
+/* Yepyeni bir workers.dev adı hemen çözülmüyor; deploy döndükten sonra da bir
+ * süre 404 gelir. Yirmi saniye bunun için darmış — prova, geri yüklemede bir
+ * sorun olduğu için değil, adres henüz yayılmadığı için düşüyordu. İki dakika
+ * hem yayılmayı karşılıyor hem de gerçek bir arıza karşısında sonsuza kadar
+ * beklemiyor. */
 async function waitForExport(worker: string): Promise<Response> {
   let lastStatus = 0;
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
     const response = await request(worker, '/export');
     lastStatus = response.status;
     if (response.status === 200) return response;
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
   throw new Error(`temporary_worker_not_ready:${worker}:${lastStatus}`);
 }

@@ -1,0 +1,62 @@
+/* Inter, kendi sunucumuzdan.
+ *
+ * Değişken font: ağırlık ekseni 100–900 sürekli, yani tokens.css'teki 500/650/
+ * 750/800/850 kademelerinin hepsi gerçek — hiçbiri en yakın kesme ağırlığa
+ * yuvarlanmıyor, hiçbiri tarayıcı tarafından kalınlaştırılmıyor.
+ *
+ * Dört dosya, iki eksende bölünmüş. Alfabe ekseni: latin ve latin-ext. Türkçe
+ * ikisini birden istiyor — ö ü ç latin'de, ğ ş İ latin-ext'te; ı ise
+ * latin'de. Yani Türkçe bir sayfa iki dosyayı da indirir, bu kaçınılmaz.
+ * Biçim ekseni: düz ve italik. İtalik yalnız sayfada gerçekten italik metin
+ * varsa iner; @font-face eşleşmeden dosya istenmez. Ajanın markdown'ında
+ * vurgu yoksa o 92 KB hiç yola çıkmaz.
+ *
+ * font-display: swap — font gelene kadar sistem fontuyla okunur. Metin hiçbir
+ * an görünmez olmaz; alternatifi boş bir sayfa beklemek olurdu.
+ *
+ * Dosyalar public/fonts altında ve depoda duruyorlar, bir pakete bağlı
+ * değiliz. Lisans: SIL OFL 1.1, public/fonts/inter-LICENSE.txt. */
+
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter-latin-ext-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter-latin-wght-italic.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter-latin-ext-wght-italic.woff2') format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}

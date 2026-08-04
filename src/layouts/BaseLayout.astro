@@ -107,6 +107,11 @@ const serializedStructuredData = JSON.stringify(structuredData).replace(/</g, '\
     <link rel="canonical" href={canonical} />
     <link rel="alternate" type="application/rss+xml" title="Equinox Orbit akışı" href="/feed.xml" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    {/* Türkçe metin iki alfabe dilimini birden istiyor; ikisi de her sayfada
+        gerçekten iniyor, o yüzden CSS keşfedilmeden önce yola çıksınlar.
+        İtalik bilerek yok: yalnız gerektiğinde inmeli. */}
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/inter-latin-wght-normal.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/inter-latin-ext-wght-normal.woff2" />
     <script is:inline>
       (() => {
         try {

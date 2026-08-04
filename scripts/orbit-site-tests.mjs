@@ -339,6 +339,44 @@ check(heaviest.gzip > 0, 'Hiçbir sayfa derlenmiş CSS bundle\'ına bağlanmıyo
 check(heaviest.gzip < 15_500, `Gzip CSS bütçesi aşıldı: ${heaviest.page} ${heaviest.gzip} byte.`);
 check(heaviest.raw < 92_000, `Ham CSS emniyet sınırını aştı: ${heaviest.page} ${heaviest.raw} byte.`);
 
+/* Font bütçesi.
+ *
+ * Uzun süre --sans Inter'i adıyla çağırdı ama proje hiçbir font dosyası
+ * yayınlamıyordu; site her ziyaretçide o sistemin fontuyla görünüyordu ve
+ * bunu kimse fark etmiyordu, çünkü geliştirme makinesinde Inter kuruluydu.
+ * Buradaki denetim o sessiz durumun geri gelmesini engelliyor: dosyalar
+ * gerçekten yayınlanıyor mu, her sayfa düz kesitleri önceden istiyor mu,
+ * italik yanlışlıkla zorunlu hale gelmiş mi. */
+const fontFiles = walk(path.join(DIST_DIR, 'fonts')).filter((file) => file.endsWith('.woff2'));
+check(fontFiles.length === 4, `Beklenen dört woff2 kesiti yayınlanmadı: ${fontFiles.length}`);
+const fontBytes = fontFiles.reduce((total, file) => total + fs.statSync(file).size, 0);
+check(fontBytes < 300_000, `Font bütçesi aşıldı: ${fontBytes} byte.`);
+const preloaded = fontFiles.filter((file) => path.basename(file).endsWith('-normal.woff2'));
+check(preloaded.length === 2, 'Düz kesit sayısı ikiden farklı; preload listesi gözden geçirilmeli.');
+for (const htmlFile of htmlFiles) {
+  const html = fs.readFileSync(htmlFile, 'utf8');
+  const page = path.relative(DIST_DIR, htmlFile);
+  for (const file of preloaded) {
+    check(
+      html.includes(`rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/${path.basename(file)}"`),
+      `${page} düz font kesitini önceden istemiyor: ${path.basename(file)}`,
+    );
+  }
+  check(
+    !/rel="preload"[^>]+italic\.woff2/u.test(html),
+    `${page} italik kesiti önceden istiyor; italik yalnız kullanıldığında inmeli.`,
+  );
+}
+const fontFaceCss = cssFiles.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
+check(
+  (fontFaceCss.match(/@font-face/gu) ?? []).length === 4,
+  'CSS içindeki @font-face sayısı yayınlanan kesit sayısıyla uyuşmuyor.',
+);
+check(
+  !/@font-face[^}]*font-display:\s*(?!swap)/u.test(fontFaceCss),
+  'Bir @font-face swap dışında bir font-display kullanıyor; metin görünmez kalabilir.',
+);
+
 if (errors.length) {
   process.stderr.write(`${errors.map((error) => `- ${error}`).join('\n')}\n`);
   process.stderr.write(`Orbit site integrity tests failed (${errors.length}/${assertions}).\n`);

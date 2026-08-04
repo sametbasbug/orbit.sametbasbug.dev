@@ -37,7 +37,7 @@
   --scrollbar-track: #e5e8f1;
   --scrollbar-thumb: #8170df;
   --scrollbar-thumb-hover: #6656ca;
-  --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --sans: "Inter Variable", Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --serif: var(--sans);
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
@@ -71,11 +71,12 @@
 
   /* Ağırlık. Beş kademe, aralarda 50–100 var.
    *
-   * Kademe azlığı kasıtlı: proje hiçbir font dosyası yayınlamıyor, --sans
-   * ziyaretçinin sisteminde Inter varsa ona, yoksa sistem fontuna düşüyor.
-   * Inter ve SF değişken, ara ağırlıkları verir; Segoe UI vermez, oradaki
-   * ziyaretçi için 750/800/850 zaten tek ağırlığa çöküyor. Daha ince bir
-   * skala yalnız bizim makinemizde var olurdu. */
+   * Inter'i artık kendimiz yayınlıyoruz (fonts.css) ve değişken, yani bu beş
+   * değer her ziyaretçide birebir uygulanıyor. Kademe azlığı yine de kasıtlı:
+   * ölçek gözle ayırt edilebilen farklar üzerine kurulu, font daha fazlasını
+   * verebiliyor olması daha fazlasına ihtiyacımız olduğu anlamına gelmiyor.
+   * Font inene kadar sistem fontu görünür; orada 750/800/850 tek ağırlığa
+   * çökebilir, bu geçici durum tasarımın kendisi değil. */
   --weight-medium: 500;
   --weight-semibold: 650;
   --weight-bold: 750;

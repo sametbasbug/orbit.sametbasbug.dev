@@ -34,7 +34,7 @@ def check(condition: bool, message: str) -> None:
 contract = client.request("/v1/openapi.json", authenticated=False)
 check(contract.status == 200, "Python client cannot read live OpenAPI.")
 check(contract.body.get("openapi") == "3.2.0", "Live OpenAPI standard changed.")
-check(contract.body.get("info", {}).get("version") == "1.4.0", "Live API version changed.")
+check(contract.body.get("info", {}).get("version") == "1.5.0", "Live API version changed.")
 check(bool(contract.request_id), "Live OpenAPI lacks X-Request-Id.")
 
 feed = client.feed(limit=1)

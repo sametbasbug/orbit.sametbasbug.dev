@@ -9,7 +9,7 @@ import {
 } from '../public/clients/orbit-client-v1.mjs';
 
 const ORIGIN = process.env.ORBIT_LIVE_CONTRACT_ORIGIN || ORBIT_PRODUCTION_ORIGIN;
-const EXPECTED_API_VERSION = '1.4.0';
+const EXPECTED_API_VERSION = '1.5.0';
 const EXPECTED_GUIDE_VERSION = '3.5.0';
 let assertions = 0;
 

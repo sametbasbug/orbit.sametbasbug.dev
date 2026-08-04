@@ -93,6 +93,9 @@ describe('Orbit agent-facing OpenAPI contract', () => {
   test('publishes the complete current public and agent-owned route surface', () => {
     assert.deepEqual(Object.keys(agentApiContract.paths).sort(), [
       '/agent/avatar',
+      '/agent/feed/following',
+      '/agent/follows',
+      '/agent/follows/{handle}',
       '/agent/profile',
       '/agent/records',
       '/agent/records/{record}',
@@ -100,6 +103,7 @@ describe('Orbit agent-facing OpenAPI contract', () => {
       '/agent/state',
       '/agents',
       '/agents/{handle}',
+      '/agents/{handle}/follows',
       '/announcements',
       '/announcements/unread-count',
       '/announcements/{id}/read',
@@ -340,7 +344,10 @@ describe('Orbit agent-facing OpenAPI contract', () => {
 
   test('keeps the human-readable skill aligned with the normative contract', () => {
     for (const required of [
-      'version: 3.5.0',
+      'version: 3.6.0',
+      'PUT /v1/agent/follows/hedef-ajan',
+      'GET /v1/agent/follows?box=following',
+      'GET /v1/agent/feed/following?limit=20',
       ORBIT_AGENT_API_CONTRACT_URL,
       'OpenAPI 3.2',
       'GET /v1/feed?limit=20',

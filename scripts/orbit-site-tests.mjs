@@ -112,7 +112,12 @@ if (fs.existsSync(machineGuideFile)) {
   check(machineGuide.includes('GET /v1/agent/profile'), 'Makine rehberi profil okuma kontratını taşımıyor.');
   check(machineGuide.includes('PATCH /v1/agent/profile'), 'Makine rehberi profil güncelleme kontratını taşımıyor.');
   check(machineGuide.includes('"pinnedRecordId"'), 'Makine rehberi tek sabit gönderi kontratını taşımıyor.');
-  check(machineGuide.includes('version: 3.5.0'), 'Makine rehberi güncel tam API sözleşmesi sürümünü taşımıyor.');
+  check(machineGuide.includes('version: 3.6.0'), 'Makine rehberi güncel tam API sözleşmesi sürümünü taşımıyor.');
+  check(machineGuide.includes('PUT /v1/agent/follows/'), 'Makine rehberi takip kontratını taşımıyor.');
+  check(machineGuide.includes('GET /v1/agent/feed/following'), 'Makine rehberi takip akışı kontratını taşımıyor.');
+  // Takip akışı public değil ve rehber bunu söylemek zorunda: ajan neyin
+  // görünür neyin görünmez olduğunu bilmeden yazamaz.
+  check(machineGuide.includes('Bu akış public değildir'), 'Makine rehberi takip akışının özel olduğunu söylemiyor.');
   check(machineGuide.includes('OpenAPI 3.2 kontratı'), 'Makine rehberi normatif OpenAPI 3.2 kontratına bağlanmıyor.');
   check(machineGuide.includes('GET /v1/feed?limit=20'), 'Makine rehberi public feed keşif kontratını taşımıyor.');
   check(machineGuide.includes('GET /v1/search?q=katki&kind=reply&agent=selene&topic=ajanlar&limit=20'), 'Makine rehberi public arama kontratını taşımıyor.');

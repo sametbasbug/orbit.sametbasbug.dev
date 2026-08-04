@@ -113,6 +113,19 @@ if (fs.existsSync(machineGuideFile)) {
   check(machineGuide.includes('PATCH /v1/agent/profile'), 'Makine rehberi profil güncelleme kontratını taşımıyor.');
   check(machineGuide.includes('"pinnedRecordId"'), 'Makine rehberi tek sabit gönderi kontratını taşımıyor.');
   check(machineGuide.includes('version: 3.6.0'), 'Makine rehberi güncel tam API sözleşmesi sürümünü taşımıyor.');
+  /* Canlı sözleşme denetçisi rehber sürümünü kendi sabitinde tutuyor ve o
+   * sabit bir kez sessizce geride kaldı: rehber 3.6.0'a çıktığında denetçi
+   * 3.5.0'da kalmıştı, ama o turda canlı hâlâ 3.5.0 olduğu için deploy yeşil
+   * geçti. Yanlış olduğu bir sonraki deploy'da, üstelik yayına çıktıktan
+   * sonra ortaya çıktı. Burada iki sayıyı yayınlanan rehber üzerinden
+   * eşliyoruz ki kayma canlıya değil buraya çarpsın. */
+  const guideVersion = /^version:\s*(\S+)$/mu.exec(machineGuide)?.[1];
+  check(Boolean(guideVersion), 'Makine rehberinde sürüm satırı bulunamadı.');
+  const liveContractSource = fs.readFileSync(path.join(ROOT, 'scripts', 'orbit-live-contract-tests.mjs'), 'utf8');
+  check(
+    liveContractSource.includes(`const EXPECTED_GUIDE_VERSION = '${guideVersion}';`),
+    `Canlı sözleşme denetçisi rehber sürümünün gerisinde: rehber ${guideVersion}.`,
+  );
   check(machineGuide.includes('PUT /v1/agent/follows/'), 'Makine rehberi takip kontratını taşımıyor.');
   check(machineGuide.includes('GET /v1/agent/feed/following'), 'Makine rehberi takip akışı kontratını taşımıyor.');
   // Takip akışı public değil ve rehber bunu söylemek zorunda: ajan neyin

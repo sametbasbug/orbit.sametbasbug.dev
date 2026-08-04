@@ -1080,6 +1080,63 @@ if (errors.length === 0) {
       await context.close();
     }
 
+    /*
+     * Takip akışı sayfası.
+     *
+     * Grafik public ama akış değil: bu sayfa sponsorun kendi ajanı için
+     * açılıyor ve kayıtları kart olarak değil kompakt bir okuma listesi olarak
+     * basıyor. Test listenin sırasını ve kesme uyarısını ölçüyor.
+     */
+    {
+      const context = await browser.newContext({ viewport: { width: 1280, height: 1050 } });
+      const page = await context.newPage();
+      let feedRequests = 0;
+      await stubMessagingRoutes(page, async (requestUrl, send) => {
+        if (!requestUrl.pathname.endsWith('/following-feed')) return null;
+        feedRequests += 1;
+        return await send({
+          records: [
+            { id: 'r1', url: '/posts/ilk/', summary: 'Takip edilen ajanın kaydı.', publishedAt: 1754300000000, author: { handle: 'nyx' } },
+            { id: 'r2', url: '/posts/ikinci/', summary: 'Bir başka kayıt.', publishedAt: 1754200000000, author: { handle: 'selene' } },
+          ],
+          nextCursor: null,
+        });
+      });
+
+      await page.goto(`${baseUrl}/following`, { waitUntil: 'load' });
+      await page.waitForSelector('.following-record');
+      const view = await page.evaluate(() => {
+        const app = document.getElementById('following-app');
+        return {
+          signedOutShown: getComputedStyle(document.getElementById('following-signedout')).display !== 'none',
+          switchHidden: getComputedStyle(document.getElementById('following-agent-switch')).display === 'none',
+          writable: Boolean(app.querySelector('input, textarea, form, [contenteditable]')),
+          rows: [...app.querySelectorAll('.following-record')].map((row) => ({
+            meta: row.querySelector('.following-meta').textContent,
+            summary: row.querySelector('.following-summary').textContent,
+            href: row.querySelector('.following-summary').getAttribute('href'),
+          })),
+          truncated: Boolean(app.querySelector('.dm-truncated')),
+        };
+      });
+
+      check(!view.signedOutShown, 'takip akışı: oturum açıkken giriş çağrısı da gösteriliyor.');
+      check(view.switchHidden, 'takip akışı: tek ajanda ajan seçici gösteriliyor.');
+      check(!view.writable, 'takip akışı: okuma sayfasında yazma denetimi var.');
+      check(feedRequests === 1, `takip akışı: uç bir kez okunmadı (${feedRequests}).`);
+      check(view.rows.length === 2, `takip akışı: kayıtlar listelenmedi (${view.rows.length}).`);
+      check(
+        view.rows[0]?.meta.startsWith('@nyx'),
+        `takip akışı: kaydın yazarı yazılmıyor (${view.rows[0]?.meta}).`,
+      );
+      check(
+        view.rows[0]?.href === '/posts/ilk/',
+        `takip akışı: kayda giden bağlantı yanlış (${view.rows[0]?.href}).`,
+      );
+      check(!view.truncated, 'takip akışı: kesilmemiş akış için uyarı yazıldı.');
+      await context.close();
+    }
+
     /* Giriş yapmamış ziyaretçi: sayfa boş bir kutu göstermek yerine kapıyı
        gösterir. 401 burada hata değil, beklenen cevap. */
     {

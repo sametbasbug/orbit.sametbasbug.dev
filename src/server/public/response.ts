@@ -1,6 +1,7 @@
 import type { AssetsBinding } from '../identity/bindings';
 import type { AgentRepository } from '../repositories/agent-repository';
 import type { PublicRecordView, PublicRepository } from '../repositories/public-repository';
+import type { FollowPage, FollowRepository } from '../repositories/follow-repository';
 import {
   renderAgentDirectory,
   renderAgentProfile,
@@ -9,6 +10,29 @@ import {
 import { renderPublicFeed, renderPublicRecordPage } from './html';
 
 type PublicAgentPageRepository = Pick<AgentRepository, 'listPublicAgents' | 'getPublicAgent'>;
+type PublicFollowRepository = Pick<FollowRepository, 'counts' | 'listFollowing' | 'listFollowers'>;
+
+/** Profilde gösterilen takip kesiti; tamamı değil, en yeni bu kadarı. */
+const PROFILE_FOLLOW_PREVIEW = 12;
+
+export interface ProfileFollowGraph {
+  counts: { following: number; followers: number };
+  following: FollowPage;
+  followers: FollowPage;
+}
+
+async function profileFollowGraph(
+  repository: PublicFollowRepository | undefined,
+  agentId: string,
+): Promise<ProfileFollowGraph | null> {
+  if (!repository) return null;
+  const [counts, following, followers] = await Promise.all([
+    repository.counts(agentId),
+    repository.listFollowing({ agentId, limit: PROFILE_FOLLOW_PREVIEW, cursor: null }),
+    repository.listFollowers({ agentId, limit: PROFILE_FOLLOW_PREVIEW, cursor: null }),
+  ]);
+  return { counts, following, followers };
+}
 
 const FEED_START = '<!-- ORBIT_DYNAMIC_FEED_START -->';
 const FEED_END = '<!-- ORBIT_DYNAMIC_FEED_END -->';
@@ -166,6 +190,7 @@ async function renderAgentProfileRoute(
   assets: AssetsBinding,
   agentRepository: PublicAgentPageRepository,
   publicRepository: PublicRepository,
+  followRepository: PublicFollowRepository | undefined,
   handle: string,
 ): Promise<Response> {
   const agent = await agentRepository.getPublicAgent(handle.toLowerCase());
@@ -195,7 +220,15 @@ async function renderAgentProfileRoute(
   html = html
     .replaceAll(AGENT_PROFILE_RUNTIME_PATH, canonicalPath)
     .replace(/__ORBIT_AGENT_(?:TITLE|DESCRIPTION|IMAGE_ALT)__/gu, (token) => metadata.get(token) ?? token)
-    .replace(AGENT_PROFILE_PLACEHOLDER, renderAgentProfile(agent, activity.items, activity.hasMore));
+    .replace(
+      AGENT_PROFILE_PLACEHOLDER,
+      renderAgentProfile(
+        agent,
+        activity.items,
+        activity.hasMore,
+        await profileFollowGraph(followRepository, agent.id),
+      ),
+    );
   return htmlResponse(shell, html, request.method === 'HEAD');
 }
 
@@ -214,6 +247,7 @@ export async function serveDynamicPublicPage(
   assets: AssetsBinding,
   repository: PublicRepository,
   agentRepository?: PublicAgentPageRepository,
+  followRepository?: PublicFollowRepository,
 ): Promise<Response | null> {
   if (request.method !== 'GET' && request.method !== 'HEAD') return null;
   const url = new URL(request.url);
@@ -251,7 +285,14 @@ export async function serveDynamicPublicPage(
 
   const agentMatch = url.pathname.match(/^\/agents\/([a-z0-9][a-z0-9-]{1,31})\/?$/u);
   if (agentMatch && agentRepository) {
-    return await renderAgentProfileRoute(request, assets, agentRepository, repository, agentMatch[1]);
+    return await renderAgentProfileRoute(
+      request,
+      assets,
+      agentRepository,
+      repository,
+      followRepository,
+      agentMatch[1],
+    );
   }
 
   return null;

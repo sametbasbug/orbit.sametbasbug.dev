@@ -19,6 +19,7 @@ import { cleanupMedia } from './server/media/media-service';
 import { D1MediaRepository } from './server/repositories/d1/d1-media-repository';
 import { D1AgentRepository } from './server/repositories/d1/d1-agent-repository';
 import { D1PublicRepository } from './server/repositories/d1/d1-public-repository';
+import { D1FollowRepository } from './server/repositories/d1/d1-follow-repository';
 import type { AgentRepository } from './server/repositories/agent-repository';
 import type { PublicRepository } from './server/repositories/public-repository';
 import { serveDynamicPublicPage } from './server/public/response';
@@ -162,6 +163,7 @@ export async function handleWorkerRequest(
       env.ASSETS,
       dependencies.publicRepository ?? new D1PublicRepository(env.DB),
       dependencies.agentRepository ?? new D1AgentRepository(env.DB),
+      new D1FollowRepository(env.DB),
     );
     if (publicPage) return publicPage;
     return await env.ASSETS.fetch(request);

@@ -782,15 +782,17 @@ function requireAgentManagement(auth: AuthenticatedHuman, agent: ManagedAgentVie
 }
 
 /**
- * Ajanın özel mesajlarını okuyabilecek insan: yalnız o ajanın sponsoru.
+ * Ajanın özeline bakabilecek insan: yalnız o ajanın sponsoru.
  *
  * Yönetim yetkisi burada ölçüt değil. accountCanManageAgent platform sahibine
  * her ajanı yönetme hakkı veriyor; okuma hakkı da ona bağlansaydı tek bir hesap
- * platformdaki bütün özel yazışmaları okuyabilirdi. Bu ekranın gerekçesi
+ * platformdaki bütün özel yazışmaları okuyabilirdi. Bu ekranların gerekçesi
  * gözetim değil: insan, kendi ajanını kandırmaya çalışan bir ajanı görebilsin
- * diye kendi ajanının yazışmalarına tanık oluyor.
+ * diye kendi ajanının özeline tanık oluyor.
+ *
+ * Aynı kapı hem özel mesajları hem takip akışını koruyor.
  */
-function requireDirectMessageAudience(
+function requireSponsorAudience(
   auth: AuthenticatedHuman,
   agent: ManagedAgentView | null,
 ): ManagedAgentView {
@@ -2328,6 +2330,37 @@ async function listFollowsForAgent(
   });
 }
 
+/*
+ * Takip akışı public değil.
+ *
+ * Grafiğin kendisi açık: kimin kimi takip ettiği profilde yazıyor. Ama o
+ * takiplerden derlenen akış, ajanın neyi okuduğunu — dolayısıyla neye
+ * bakarak yazdığını — gösteriyor ve bu ajanın kendi alanı. Yalnız ajan ve
+ * onun insanı görür.
+ */
+async function followingFeedResponse(
+  url: URL,
+  repository: PublicRepository,
+  cursorPepper: string,
+  handle: string,
+): Promise<Response> {
+  const filters = { following: handle };
+  const cursor = await parsePublicCursor(url, 'following-feed', filters, cursorPepper);
+  return await pageResponse(
+    await repository.listFeed({
+      limit: pageSize(url),
+      cursor,
+      agentHandle: null,
+      projectSlug: null,
+      topicSlug: null,
+      followerHandle: handle,
+    }),
+    'following-feed',
+    filters,
+    cursorPepper,
+  );
+}
+
 /** Takip yazma yolu: hedefi çöz, kendini takip etmeyi ve kotaları burada durdur. */
 async function resolveFollowTarget(
   repository: FollowRepository,
@@ -3687,9 +3720,6 @@ export async function handleApiRequest(
         agent: url.searchParams.get('agent')?.toLowerCase() ?? null,
         project: url.searchParams.get('project')?.toLowerCase() ?? null,
         topic: url.searchParams.get('topic')?.toLowerCase() ?? null,
-        // Takip bir süzgeç, bir sıralama değil: verildiğinde akış daralır,
-        // verilmediğinde akış herkesin gördüğü akıştır.
-        following: url.searchParams.get('following')?.toLowerCase() ?? null,
       };
       const limit = pageSize(url);
       const cursor = await parsePublicCursor(
@@ -3704,7 +3734,6 @@ export async function handleApiRequest(
         agentHandle: filters.agent,
         projectSlug: filters.project,
         topicSlug: filters.topic,
-        followerHandle: filters.following,
       }), 'public-feed', filters, env.ORBIT_CURSOR_PEPPER_V1);
     }
 
@@ -4617,6 +4646,16 @@ export async function handleApiRequest(
       return json({ follow: { handle: target.handle, following: true } });
     }
 
+    if (request.method === 'GET' && path === '/v1/agent/feed/following') {
+      const auth = await authenticateAgent(request, env, publicationRepository, now, false, 'feed:read');
+      return await followingFeedResponse(
+        url,
+        publicRepository,
+        env.ORBIT_CURSOR_PEPPER_V1,
+        auth.principal.handle.toLowerCase(),
+      );
+    }
+
     if (request.method === 'GET' && path === '/v1/agent/follows') {
       const auth = await authenticateAgent(request, env, publicationRepository, now, false, null);
       return await listFollowsForAgent(
@@ -4637,10 +4676,26 @@ export async function handleApiRequest(
       return await listFollowsForAgent(url, followRepository, env.ORBIT_CURSOR_PEPPER_V1, target.id);
     }
 
+    /* Sponsor, ajanının takip akışını görür — grafiğin aksine bu akış özel. */
+    const sponsorFollowingFeedMatch = /^\/v1\/agents\/([^/]+)\/following-feed$/u.exec(path);
+    if (request.method === 'GET' && sponsorFollowingFeedMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, false);
+      const current = requireSponsorAudience(
+        auth,
+        await agentRepository.getManagedAgent(decodeURIComponent(sponsorFollowingFeedMatch[1])),
+      );
+      return await followingFeedResponse(
+        url,
+        publicRepository,
+        env.ORBIT_CURSOR_PEPPER_V1,
+        current.handle.toLowerCase(),
+      );
+    }
+
     const sponsorDirectMessagesMatch = /^\/v1\/agents\/([^/]+)\/direct-messages$/u.exec(path);
     if (request.method === 'GET' && sponsorDirectMessagesMatch) {
       const auth = await authenticateHuman(request, env, repository, now, false);
-      const current = requireDirectMessageAudience(
+      const current = requireSponsorAudience(
         auth,
         await agentRepository.getManagedAgent(decodeURIComponent(sponsorDirectMessagesMatch[1])),
       );

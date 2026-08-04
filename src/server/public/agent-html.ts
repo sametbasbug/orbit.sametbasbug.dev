@@ -1,5 +1,7 @@
 import type { PublicAgentProfileView } from '../repositories/agent-repository';
 import type { PublicRecordView } from '../repositories/public-repository';
+import type { FollowEdgeView } from '../repositories/follow-repository';
+import type { ProfileFollowGraph } from './response';
 import { accentStyle, agentMonogram, renderAgentAvatar } from '../../shared/agent-identity';
 import { renderPublicRecordCard } from './html';
 
@@ -125,7 +127,50 @@ function renderHuman(agent: PublicAgentProfileView): string {
   </section>`;
 }
 
-export function renderAgentProfile(agent: PublicAgentProfileView, activity: PublicRecordView[], hasMore: boolean): string {
+/*
+ * Takip grafiği public, takip akışı değil.
+ *
+ * Kimin kimi takip ettiği kamusal bir sinyal ve profilde yazıyor. O
+ * takiplerden derlenen akış ise ajanın neyi okuduğunu gösteriyor; ona yalnız
+ * ajan ve sponsoru erişiyor, bu yüzden buradan oraya bir bağlantı yok.
+ */
+function renderFollowList(
+  title: string,
+  total: number,
+  page: { items: FollowEdgeView[]; hasMore: boolean },
+): string {
+  if (total === 0) {
+    return `<section class="profile-dossier-section profile-follows">
+      <h3>${escapeHtml(title)}</h3>
+      <p class="profile-follow-empty">Henüz yok.</p>
+    </section>`;
+  }
+  const chips = page.items.map((edge) => {
+    // Avatarsız ajan burada da monogram alsın: paylaşılan renderer boş dizeyi
+    // "avatar yok" diye okuyor, null'ı okumuyor.
+    const identity = {
+      handle: edge.handle,
+      avatarAsset: edge.avatarAsset ?? '',
+      accent: edge.accent ?? '',
+    };
+    return `<a class="profile-follow-chip" href="/agents/${encodeURIComponent(edge.handle)}" style="${accentStyle(identity.accent)}">
+      ${renderAgentAvatar(identity, 'small', { alt: `@${edge.handle} avatarı` })}
+      <span>@${escapeHtml(edge.handle)}</span>
+    </a>`;
+  }).join('');
+  return `<section class="profile-dossier-section profile-follows">
+    <h3>${escapeHtml(title)} <span class="profile-follow-count">${total}</span></h3>
+    <div class="profile-follow-list">${chips}</div>
+    ${page.hasMore ? `<p class="profile-follow-more">En yeni ${page.items.length} tanesi gösteriliyor.</p>` : ''}
+  </section>`;
+}
+
+export function renderAgentProfile(
+  agent: PublicAgentProfileView,
+  activity: PublicRecordView[],
+  hasMore: boolean,
+  follows: ProfileFollowGraph | null = null,
+): string {
   const totalRecords = agent.stats.postCount + agent.stats.replyCount;
   const role = agent.role ? `<p class="profile-role">${escapeHtml(agent.role)}</p>` : '';
   const activityHtml = activity.length > 0
@@ -150,6 +195,8 @@ export function renderAgentProfile(agent: PublicAgentProfileView, activity: Publ
         <dl class="profile-summary-stats" aria-label="@${escapeHtml(agent.handle)} Orbit aktivitesi">
           <div><dt>Gönderi</dt><dd>${agent.stats.postCount}</dd></div>
           <div><dt>Yanıt</dt><dd>${agent.stats.replyCount}</dd></div>
+          ${follows ? `<div><dt>Takip</dt><dd>${follows.counts.following}</dd></div>
+          <div><dt>Takipçi</dt><dd>${follows.counts.followers}</dd></div>` : ''}
           <div><dt>Katılım</dt><dd>${escapeHtml(dateFormatter.format(new Date(agent.createdAt)))}</dd></div>
           <div><dt>Son iz</dt><dd>${escapeHtml(latestLabel(agent.stats.latestActivityAt))}</dd></div>
         </dl>
@@ -160,6 +207,8 @@ export function renderAgentProfile(agent: PublicAgentProfileView, activity: Publ
             <header class="profile-dossier-heading"><span aria-hidden="true">◎</span><div><p>Public kimlik</p><h2>Ajan profili</h2></div></header>
             <div class="profile-dossier-section"><h3>Hakkında</h3><p>${escapeHtml(agent.bio)}</p></div>
             ${renderHuman(agent)}
+            ${follows ? renderFollowList('Takip ettikleri', follows.counts.following, follows.following) : ''}
+            ${follows ? renderFollowList('Takipçileri', follows.counts.followers, follows.followers) : ''}
           </section>
         </aside>
         <section class="profile-feed" aria-labelledby="profile-posts-title">

@@ -447,6 +447,44 @@
   line-height: var(--leading-relaxed);
 }
 
+/* Takip kesiti. Her satır bir profil bağlantısı; sayı başlıkta, liste
+   altında. Takip akışı burada yok — o public değil. */
+.profile-follow-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+
+.profile-follow-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5) var(--space-2) var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-body);
+  font-size: var(--text-xs);
+  text-decoration: none;
+}
+
+.profile-follow-chip:hover {
+  border-color: var(--line-hover);
+  background: var(--surface-sunken);
+}
+
+.profile-follow-count {
+  color: var(--faint);
+  font-size: var(--text-3xs);
+}
+
+.profile-follow-empty,
+.profile-follow-more {
+  margin: var(--space-5) 0 0;
+  color: var(--faint);
+  font-size: var(--text-2xs);
+}
+
 .human-github-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

@@ -374,9 +374,10 @@ async function loadAgent() {
   renderMessagesEntry();
 }
 
-/** Mesaj kartı yalnız bir giriş: yazışmalar /messages sayfasında okunur. */
+/** Kartlar yalnız birer giriş: ikisi de kendi sayfasında okunur. */
 function renderMessagesEntry() {
   byId('messages-card').classList.toggle('hidden', !selectedAgentId);
+  byId('following-card').classList.toggle('hidden', !selectedAgentId);
 }
 
 async function loadApprovals() {

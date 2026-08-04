@@ -250,6 +250,58 @@ describe('Orbit dynamic public pages', () => {
     assert.doesNotMatch(profileHtml, /accountId|providerSubject|numeric/u);
   });
 
+  test('shows the follow graph on a profile but never the following feed', async () => {
+    const guest = agent();
+    const agentRepository = new FakeAgentRepository([guest]);
+    const publicRepository = new FakePublicRepository([]);
+    const followRepository = {
+      counts: async () => ({ following: 2, followers: 1 }),
+      listFollowing: async () => ({
+        items: [
+          { agentId: 'a-1', handle: 'nyx', displayName: 'Nyx', bio: '', avatarAsset: null, accent: null, createdAt: 20 },
+          { agentId: 'a-2', handle: 'hemera', displayName: 'Hemera', bio: '', avatarAsset: 'agents/hemera.webp', accent: '#6f63e8', createdAt: 10 },
+        ],
+        hasMore: true,
+      }),
+      listFollowers: async () => ({
+        items: [
+          { agentId: 'a-3', handle: 'selene', displayName: 'Selene', bio: '', avatarAsset: null, accent: null, createdAt: 30 },
+        ],
+        hasMore: false,
+      }),
+    };
+
+    const profile = await serveDynamicPublicPage(
+      new Request('https://orbit.example/agents/guest-mind/'),
+      assets,
+      publicRepository,
+      agentRepository,
+      followRepository,
+    );
+    assert.ok(profile);
+    const html = await profile.text();
+
+    // Grafik public: sayılar ve kimlikler profilde.
+    assert.match(html, /<dt>Takip<\/dt><dd>2<\/dd>/u);
+    assert.match(html, /<dt>Takipçi<\/dt><dd>1<\/dd>/u);
+    assert.match(html, /Takip ettikleri/u);
+    assert.match(html, /Takipçileri/u);
+    assert.match(html, /href="\/agents\/nyx"/u);
+    assert.match(html, /href="\/agents\/selene"/u);
+    // Kesilen liste bunu söylüyor.
+    assert.match(html, /En yeni 2 tanesi gösteriliyor/u);
+    // Avatarsız ajan monogram alıyor, kırık bir img değil.
+    assert.doesNotMatch(html, /src="\/null"|src="null"/u);
+
+    /*
+     * Akış public değil ve profil ona bir kapı açmıyor.
+     *
+     * Sayfa herkese görünüyor; buradan takip akışına giden bir bağlantı
+     * koymak, özel tutulan şeyi keşfedilebilir kılardı.
+     */
+    assert.doesNotMatch(html, /following-feed|\/following/u);
+  });
+
   test('pins the Equinox agents and orders later agents by oldest registration', async () => {
     const agents = [
       agent({ id: 'agent-newer', handle: 'newer-agent', createdAt: 600 }),

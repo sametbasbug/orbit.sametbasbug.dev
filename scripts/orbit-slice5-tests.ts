@@ -759,6 +759,8 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal((await outsider(`/v1/agents/${sender.id}/manage`)).status, 200);
     assert.equal((await outsider(`/v1/agents/${sender.id}/direct-messages`)).status, 404);
     assert.equal((await outsider(`/v1/agents/${recipient.id}/direct-messages?box=inbox`)).status, 404);
+    // Aynı kapı takip akışını da koruyor; ayrı bir uç ayrı bir ölçüt kullanmasın.
+    assert.equal((await outsider(`/v1/agents/${sender.id}/following-feed`)).status, 404);
   });
 
   let allAnnouncementId = '';
@@ -1200,20 +1202,35 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal((await fetch(`${baseUrl}/v1/agents/olmayan-ajan/follows`)).status, 404);
 
     /*
-     * Asıl iddia: takip akışı daraltır ama sıralamaya karışmaz.
+     * Grafik public, akış değil.
      *
-     * Aynı süzgeçsiz akıştan takip edilen ajanın kayıtlarını ayıklayıp
-     * karşılaştırıyoruz. Takip bir sıralama sinyali olsaydı iki liste
-     * ayrışırdı; burada birebir aynı olmaları gerekiyor.
+     * Kimin kimi takip ettiği açık bilgi; ama o takiplerden derlenen akış
+     * ajanın neyi okuduğunu gösteriyor ve bu ajanın kendi alanı. Public akışta
+     * takip diye bir süzgeç yok, ve olmadığı test ediliyor: parametre sessizce
+     * yok sayılırsa akış daralmaz.
      */
     const everything = await fetch(`${baseUrl}/v1/feed?limit=50`);
     assert.equal(everything.status, 200);
     const allRecords = (await everything.json() as {
       records: Array<{ id: string; author: { handle: string } }>;
     }).records;
+    const publicAttempt = await fetch(`${baseUrl}/v1/feed?following=${follower.handle}&limit=50`);
+    assert.equal(publicAttempt.status, 200);
+    assert.deepEqual(
+      (await publicAttempt.json() as { records: Array<{ id: string }> }).records.map((record) => record.id),
+      allRecords.map((record) => record.id),
+    );
+    assert.equal((await fetch(`${baseUrl}/v1/agents/${follower.id}/following-feed`)).status, 401);
 
-    const followingFeed = await fetch(`${baseUrl}/v1/feed?following=${follower.handle}&limit=50`);
-    assert.equal(followingFeed.status, 200);
+    /*
+     * Asıl iddia: takip akışı daraltır ama sıralamaya karışmaz.
+     *
+     * Süzgeçli akışı, süzgeçsiz akışın aynı yazara daraltılmış haliyle
+     * karşılaştırıyoruz. Takip bir sıralama sinyali olsaydı iki liste
+     * ayrışırdı; burada birebir aynı olmaları gerekiyor.
+     */
+    const followingFeed = await agentRequest(follower, '/v1/agent/feed/following?limit=50');
+    assert.equal(followingFeed.status, 200, await followingFeed.clone().text());
     const followingRecords = (await followingFeed.json() as {
       records: Array<{ id: string; author: { handle: string } }>;
     }).records;
@@ -1225,8 +1242,17 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     );
     assert.ok(followingRecords.every((record) => record.author.handle === followed.handle));
 
+    // Sponsor aynı akışı görür; başka bir ajanın akışını göremez.
+    const sponsorFeed = await ownerRequest(`/v1/agents/${follower.id}/following-feed?limit=50`);
+    assert.equal(sponsorFeed.status, 200);
+    assert.deepEqual(
+      (await sponsorFeed.json() as { records: Array<{ id: string }> }).records.map((record) => record.id),
+      followingRecords.map((record) => record.id),
+    );
+    assert.equal((await ownerRequest('/v1/agents/missing-agent/following-feed')).status, 404);
+
     // Takip edilmeyen bir ajanın akışı boş; boş takip listesi "her şey" demek değil.
-    const empty = await fetch(`${baseUrl}/v1/feed?following=${followed.handle}&limit=50`);
+    const empty = await agentRequest(followed, '/v1/agent/feed/following?limit=50');
     assert.deepEqual((await empty.json() as { records: unknown[] }).records, []);
 
     /*
@@ -1240,7 +1266,7 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     const removed = await agentRequest(follower, `/v1/agent/follows/${followed.handle}`, 'DELETE');
     assert.equal(removed.status, 200);
     assert.deepEqual(await removed.json(), { follow: { handle: followed.handle, following: false } });
-    const afterUnfollow = await fetch(`${baseUrl}/v1/feed?following=${follower.handle}&limit=50`);
+    const afterUnfollow = await agentRequest(follower, '/v1/agent/feed/following?limit=50');
     assert.deepEqual((await afterUnfollow.json() as { records: unknown[] }).records, []);
     // Bırakmak satırı sildiği için iz yalnız denetim kaydında kalıyor.
     assert.equal((await agentRequest(follower, '/v1/agent/follows?box=following')).status, 200);

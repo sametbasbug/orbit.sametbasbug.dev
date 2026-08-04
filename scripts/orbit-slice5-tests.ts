@@ -689,6 +689,90 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     });
   });
 
+  /* Kotalar tetikleyicide değil yazma yolunda. Burst'ü yukarıdaki test zaten
+   * görüyordu — ama o test kota tetikleyicideyken de geçiyordu, yani taşımayı
+   * kanıtlamıyor. Saatlik ve günlük sınırlar ise hiç sınanmamıştı; artık
+   * benim yazdığım kodda yaşıyorlar. */
+  test('direct message quotas are enforced on the write path and write nothing when they reject', async () => {
+    // Kendi ajanları: bu test yüzden fazla mesaj yazıyor ve paylaşılan bir
+    // gönderenin kutusunu kullansa sonraki testlerin aradığı mesajı ilk
+    // sayfadan iterdi.
+    const sender = await seedAgent('slice5-dm-quota-sender');
+    const recipient = await seedAgent('slice5-dm-quota-recipient');
+    // Kendi penceresi: başka testlerin mesajları ne saatlik ne günlük sayıma
+    // karışsın.
+    const base = NOW + 48 * 60 * 60 * 1000;
+    const hour = 60 * 60 * 1000;
+
+    const send = async (at: number, key: string) => await fetch(`${baseUrl}/v1/direct-messages`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${sender.token}`,
+        'content-type': 'application/json',
+        'x-test-now': String(at),
+        'idempotency-key': key,
+      },
+      body: JSON.stringify({
+        recipientHandle: recipient.handle,
+        bodyMarkdown: `Kota penceresi mesajı ${key}.`,
+      }),
+    });
+    const sentCount = async () => {
+      const response = await fetch(`${baseUrl}/v1/direct-messages?box=sent&limit=50`, {
+        headers: { authorization: `Bearer ${sender.token}`, 'x-test-now': String(base) },
+      });
+      return (await response.json() as { directMessages: unknown[] }).directMessages.length;
+    };
+
+    // Beş saniyelik ara: reddedilen istek hiçbir şey yazmıyor ve kendi
+    // idempotency anahtarını da tüketmiyor.
+    assert.equal((await send(base, 'dm-window-1')).status, 201);
+    const before = await sentCount();
+    const tooSoon = await send(base + 4_999, 'dm-window-2');
+    assert.equal(tooSoon.status, 429);
+    assert.equal((await tooSoon.json() as { error: { code: string } }).error.code, 'direct_message_burst_limited');
+    assert.equal(await sentCount(), before);
+    assert.equal((await send(base + 5_000, 'dm-window-2')).status, 201);
+
+    // Saatlik sınır. İki mesaj gitti, on sekiz tane daha yirmiye tamamlıyor.
+    for (let index = 0; index < 18; index += 1) {
+      const at = base + 10_000 + index * 6_000;
+      assert.equal((await send(at, `dm-hour-${index}`)).status, 201, `saatlik dolum ${index}`);
+    }
+    const hourly = await send(base + 10_000 + 18 * 6_000, 'dm-hour-over');
+    assert.equal(hourly.status, 429);
+    const hourlyError = (await hourly.json() as { error: { code: string; details: { quota: unknown } } }).error;
+    assert.equal(hourlyError.code, 'direct_message_hourly_limit_exceeded');
+    assert.deepEqual(hourlyError.details.quota, {
+      key: 'direct_message.send.rolling_hour',
+      limit: 20,
+      remaining: 0,
+      windowSeconds: 3_600,
+      resetAt: base + hour,
+    });
+
+    // Günlük sınır. İki saat aralıklı bloklar: her blok başında bir önceki
+    // blok saatlik pencerenin dışında kalıyor, yani yalnız günlük sayım
+    // birikiyor. Dört blok daha yüze tamamlıyor.
+    for (let block = 1; block <= 4; block += 1) {
+      for (let index = 0; index < 20; index += 1) {
+        const at = base + block * 2 * hour + index * 6_000;
+        assert.equal((await send(at, `dm-day-${block}-${index}`)).status, 201, `günlük dolum ${block}/${index}`);
+      }
+    }
+    const daily = await send(base + 10 * hour, 'dm-day-over');
+    assert.equal(daily.status, 429);
+    const dailyError = (await daily.json() as { error: { code: string; details: { quota: unknown } } }).error;
+    assert.equal(dailyError.code, 'direct_message_daily_limit_exceeded');
+    assert.deepEqual(dailyError.details.quota, {
+      key: 'direct_message.send.rolling_day',
+      limit: 100,
+      remaining: 0,
+      windowSeconds: 86_400,
+      resetAt: base + 24 * hour,
+    });
+  });
+
   test('sponsor witnesses only their own agent and reading changes nothing', async () => {
     const sender = agents.get('slice5-equinox')!;
     const recipient = agents.get('slice5-external')!;

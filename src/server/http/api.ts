@@ -2461,19 +2461,35 @@ async function markDirectMessageReadForAgent(
   return json({ directMessage: { id: messageId, readAt } });
 }
 
-async function directMessageQuotaApiError(
+/* DM gönderim kotaları.
+ *
+ * Bunlar bir zamanlar direct_messages üzerinde tetikleyiciydi ve orada
+ * durmalarının bedelini yedeklerde ödedik: tetikleyici geri yüklemede de
+ * çalışıyor, yani geçmiş kendi limitine takılıyordu. Ama asıl sorun teknik
+ * değil, kavramsal — kota "bu satır geçerli mi" sorusunun cevabı değil, "bu
+ * ajan şu an bir mesaj daha gönderebilir mi" sorusunun cevabı. O soru yazma
+ * anına ait ve yazma yolunda sorulmalı. Takip limitleri de aynı yerde duruyor.
+ *
+ * Bunun kabul ettiğimiz bedeli şu: aynı ajandan tam eşzamanlı iki istek
+ * ikisi de sayımı geçebilir. Fazladan bir mesaj sızması bir güvenlik açığı
+ * değil, kotanın amacı sel basmasını önlemek ve onu önlüyor. Karşılığında
+ * yedek geri yüklenebiliyor.
+ */
+const DIRECT_MESSAGE_MIN_INTERVAL_MS = 5_000;
+const DIRECT_MESSAGE_LIMIT_PER_HOUR = 20;
+const DIRECT_MESSAGE_LIMIT_PER_DAY = 100;
+
+async function requireDirectMessageQuota(
   repository: DirectMessageRepository,
   agentId: string,
   now: number,
-  error: unknown,
-): Promise<ApiError | null> {
-  const message = error instanceof Error ? error.message : String(error);
-  if (!/direct_message_(?:burst|hourly|daily)_limit_exceeded/u.test(message)) {
-    return null;
-  }
+): Promise<void> {
   const state = await repository.getSendRecoveryState(agentId, now);
-  if (message.includes('burst')) {
-    return quotaError(
+  if (
+    state.lastMessageAt !== null
+    && now - state.lastMessageAt < DIRECT_MESSAGE_MIN_INTERVAL_MS
+  ) {
+    throw quotaError(
       now,
       'direct_message_burst_limited',
       'The agent reached a direct-message rate limit.',
@@ -2481,20 +2497,20 @@ async function directMessageQuotaApiError(
         key: 'direct_message.send.minimum_interval',
         limit: 1,
         remaining: 0,
-        windowSeconds: 5,
-        resetAt: Math.max(now + 1, (state.lastMessageAt ?? now) + 5000),
+        windowSeconds: DIRECT_MESSAGE_MIN_INTERVAL_MS / 1000,
+        resetAt: Math.max(now + 1, state.lastMessageAt + DIRECT_MESSAGE_MIN_INTERVAL_MS),
       },
     );
   }
-  if (message.includes('hourly')) {
-    return quotaError(
+  if (state.hourlyCount >= DIRECT_MESSAGE_LIMIT_PER_HOUR) {
+    throw quotaError(
       now,
       'direct_message_hourly_limit_exceeded',
       'The agent reached a direct-message rate limit.',
       {
         key: 'direct_message.send.rolling_hour',
-        limit: 20,
-        remaining: Math.max(0, 20 - state.hourlyCount),
+        limit: DIRECT_MESSAGE_LIMIT_PER_HOUR,
+        remaining: Math.max(0, DIRECT_MESSAGE_LIMIT_PER_HOUR - state.hourlyCount),
         windowSeconds: 60 * 60,
         resetAt: state.oldestHourlyMessageAt === null
           ? now + 60 * 60 * 1000
@@ -2502,20 +2518,22 @@ async function directMessageQuotaApiError(
       },
     );
   }
-  return quotaError(
-    now,
-    'direct_message_daily_limit_exceeded',
-    'The agent reached a direct-message rate limit.',
-    {
-      key: 'direct_message.send.rolling_day',
-      limit: 100,
-      remaining: Math.max(0, 100 - state.dailyCount),
-      windowSeconds: 24 * 60 * 60,
-      resetAt: state.oldestDailyMessageAt === null
-        ? now + 24 * 60 * 60 * 1000
-        : state.oldestDailyMessageAt + 24 * 60 * 60 * 1000,
-    },
-  );
+  if (state.dailyCount >= DIRECT_MESSAGE_LIMIT_PER_DAY) {
+    throw quotaError(
+      now,
+      'direct_message_daily_limit_exceeded',
+      'The agent reached a direct-message rate limit.',
+      {
+        key: 'direct_message.send.rolling_day',
+        limit: DIRECT_MESSAGE_LIMIT_PER_DAY,
+        remaining: Math.max(0, DIRECT_MESSAGE_LIMIT_PER_DAY - state.dailyCount),
+        windowSeconds: 24 * 60 * 60,
+        resetAt: state.oldestDailyMessageAt === null
+          ? now + 24 * 60 * 60 * 1000
+          : state.oldestDailyMessageAt + 24 * 60 * 60 * 1000,
+      },
+    );
+  }
 }
 
 async function handleSendDirectMessageForPrincipal(
@@ -2550,6 +2568,10 @@ async function handleSendDirectMessageForPrincipal(
   );
   if (idem.replay) return replayResponse(idem.replay);
   await requireCriticalAnnouncementsRead(platformRepository, principal, now);
+  // Kota tekrar oynatmadan sonra bakılıyor: aynı isteğin tekrarı yeni bir
+  // mesaj değil, zaten gönderilmiş olanın tekrar söylenmesi. Önce baksaydık
+  // her başarılı gönderimin kendi tekrarını beş saniye boyunca reddederdik.
+  await requireDirectMessageQuota(directMessageRepository, principal.agentId, now);
 
   const message: DirectMessageView = {
     id: createEntityId(),
@@ -2562,37 +2584,25 @@ async function handleSendDirectMessageForPrincipal(
     readAt: null,
   };
   const responseBody = { directMessage: directMessageResponse(message) };
-  let concurrentReplay: Response | null;
-  try {
-    concurrentReplay = await runIdempotentMutation(
-      publicationRepository,
-      'agent',
-      principal.agentId,
-      idem.keyDigest,
-      idem.requestDigest,
-      () => directMessageRepository.sendMessage({
-        message,
-        idempotency: {
-          ...idem.row,
-          principalType: 'agent',
-          principalId: principal.agentId,
-          responseStatus: 201,
-          responseJson: canonicalJson(responseBody),
-        },
-        auditEventId: createEntityId(),
-        requestId,
-      }),
-    );
-  } catch (error) {
-    const mapped = await directMessageQuotaApiError(
-      directMessageRepository,
-      principal.agentId,
-      now,
-      error,
-    );
-    if (mapped) throw mapped;
-    throw error;
-  }
+  const concurrentReplay = await runIdempotentMutation(
+    publicationRepository,
+    'agent',
+    principal.agentId,
+    idem.keyDigest,
+    idem.requestDigest,
+    () => directMessageRepository.sendMessage({
+      message,
+      idempotency: {
+        ...idem.row,
+        principalType: 'agent',
+        principalId: principal.agentId,
+        responseStatus: 201,
+        responseJson: canonicalJson(responseBody),
+      },
+      auditEventId: createEntityId(),
+      requestId,
+    }),
+  );
   if (concurrentReplay) return concurrentReplay;
   return idempotentJson(responseBody, 201, idem.row.expiresAt);
 }

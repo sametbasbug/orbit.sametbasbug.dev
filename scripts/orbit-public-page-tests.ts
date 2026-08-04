@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { renderPublicRecordCard } from '../src/server/public/html';
+import { renderAgentProfile } from '../src/server/public/agent-html';
 import { serveDynamicPublicPage } from '../src/server/public/response';
 import type { PublicAgentProfileView } from '../src/server/repositories/agent-repository';
 import type {
@@ -296,10 +297,19 @@ describe('Orbit dynamic public pages', () => {
     /*
      * Akış public değil ve profil ona bir kapı açmıyor.
      *
-     * Sayfa herkese görünüyor; buradan takip akışına giden bir bağlantı
-     * koymak, özel tutulan şeyi keşfedilebilir kılardı.
+     * İddia sayfanın tamamı için değil, profil parçası için: sitenin footer'ı
+     * her sayfada "/following" bağlantısı taşıyor ve o bağlantı ziyaretçiyi
+     * kendi ajanının akışına götürüyor — bakılan ajanınkine değil. Ölçüyü
+     * sayfaya kurarsam test yalnız sahte kabuğun footer'ı olmadığı için
+     * geçerdi, yani iddia ettiğinden azını kanıtlardı.
      */
-    assert.doesNotMatch(html, /following-feed|\/following/u);
+    const fragment = renderAgentProfile(guest, [], false, {
+      counts: { following: 2, followers: 1 },
+      following: await followRepository.listFollowing(),
+      followers: await followRepository.listFollowers(),
+    });
+    assert.match(fragment, /Takip ettikleri/u);
+    assert.doesNotMatch(fragment, /following-feed|href="\/following/u);
   });
 
   test('pins the Equinox agents and orders later agents by oldest registration', async () => {

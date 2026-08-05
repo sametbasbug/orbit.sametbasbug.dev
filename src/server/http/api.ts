@@ -163,6 +163,8 @@ const REGISTRATION_CODE_TTL_MS = 10 * 60 * 1000;
 const MCP_AUTHORIZATION_TICKET_TTL_MS = 10 * 60 * 1000;
 const MCP_DELEGATION_CODE_TTL_MS = 5 * 60 * 1000;
 const MCP_AUTHORIZATION_GRANT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+const MCP_NATIVE_ONBOARDING_TTL_MS = 60 * 60 * 1000;
+const MCP_PENDING_HANDLE_PREFIX = 'mcp-pending-';
 
 class ApiError extends Error {
   readonly status: number;
@@ -655,7 +657,7 @@ function decodeOptionalUploadHeader(request: Request, name: string, maximumLengt
 
 function normalizeAgentHandle(value: unknown): string {
   const handle = requiredString(value, 'handle', 32).toLowerCase();
-  if (!/^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/u.test(handle)) {
+  if (!/^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/u.test(handle) || handle.startsWith(MCP_PENDING_HANDLE_PREFIX)) {
     throw new ApiError(400, 'invalid_agent_handle', 'Agent handle must be 3–32 lowercase ASCII characters.');
   }
   return handle;
@@ -3299,6 +3301,57 @@ function mcpGrantResponse(grant: McpAuthorizationGrantView, now: number) {
   };
 }
 
+function isMcpPendingAgent(agent: AgentProfileView): boolean {
+  return agent.status === 'active'
+    && agent.onboardingState === 'pending'
+    && agent.handle.startsWith(MCP_PENDING_HANDLE_PREFIX);
+}
+
+function canCreateSponsoredAgent(account: AccountView, agents: AgentProfileView[], now: number): boolean {
+  if (account.agentQuota < 0) return true;
+  const activeReservations = agents.filter((agent) => (
+    agent.status !== 'retired'
+    && !(isMcpPendingAgent(agent) && agent.createdAt + MCP_NATIVE_ONBOARDING_TTL_MS <= now)
+  )).length;
+  return activeReservations < account.agentQuota;
+}
+
+async function cleanupAbandonedMcpOnboarding(
+  account: AccountView,
+  agentRepository: AgentRepository,
+  mcpRepository: McpAuthorizationRepository,
+  now: number,
+  requestId: string,
+): Promise<void> {
+  const abandoned = await mcpRepository.listAbandonedPendingGrants({
+    accountId: account.id,
+    createdBefore: now - MCP_NATIVE_ONBOARDING_TTL_MS,
+  });
+  for (const item of abandoned) {
+    const retired = await agentRepository.retirePendingMcpAgent({
+      agentId: item.agentId,
+      sponsorAccountId: account.id,
+      auditEventId: createEntityId(),
+      requestId,
+      now,
+    });
+    if (!retired) continue;
+    try {
+      await mcpRepository.revokeGrant({
+        grantId: item.grantId,
+        actorAccountId: account.id,
+        reason: 'onboarding_expired',
+        auditEventId: createEntityId(),
+        requestId,
+        revokedAt: now,
+      });
+    } catch {
+      const grant = await mcpRepository.getGrant(item.grantId);
+      if (grant?.revokedAt === null) throw new Error('mcp_onboarding_cleanup_failed');
+    }
+  }
+}
+
 async function resolveActiveMcpGrant(
   grantId: string,
   identityRepository: IdentityRepository,
@@ -3306,6 +3359,7 @@ async function resolveActiveMcpGrant(
   mcpRepository: McpAuthorizationRepository,
   now: number,
   touch: boolean,
+  allowPendingOnboarding = false,
 ): Promise<{
   grant: McpAuthorizationGrantView;
   account: AccountView;
@@ -3323,17 +3377,30 @@ async function resolveActiveMcpGrant(
   }
   const account = await identityRepository.getAccount(grant.accountId);
   const agent = await agentRepository.getManagedAgent(grant.agentId);
+  const pendingOnboarding = Boolean(
+    agent?.onboardingState === 'pending'
+    && agent.handle.startsWith(MCP_PENDING_HANDLE_PREFIX)
+  );
+  const pendingExpired = pendingOnboarding
+    && grant.createdAt + MCP_NATIVE_ONBOARDING_TTL_MS <= now;
+  const pendingAllowed = allowPendingOnboarding && pendingOnboarding && !pendingExpired;
   if (
     !account
     || !agent
     || !accountCanManageAgent(account, agent)
     || agent.status !== 'active'
-    || agent.onboardingState !== 'active'
+    || (agent.onboardingState !== 'active' && !pendingAllowed)
   ) {
     throw new ApiError(
       401,
-      'mcp_authorization_invalid',
-      'The Orbit MCP authorization no longer has access to this agent.',
+      pendingOnboarding
+        ? pendingExpired ? 'mcp_agent_onboarding_expired' : 'mcp_agent_onboarding_incomplete'
+        : 'mcp_authorization_invalid',
+      pendingOnboarding
+        ? pendingExpired
+          ? 'The Orbit MCP agent onboarding window expired. Start a new connection.'
+          : 'Complete Orbit agent registration before using this capability.'
+        : 'The Orbit MCP authorization no longer has access to this agent.',
       {},
       { 'www-authenticate': 'Bearer' },
     );
@@ -3350,6 +3417,7 @@ async function resolveActiveMcpGrant(
         mcpRepository,
         now,
         false,
+        allowPendingOnboarding,
       );
       if (refreshed.grant.lastUsedAt === null || refreshed.grant.lastUsedAt < now) {
         throw new ApiError(
@@ -3509,6 +3577,7 @@ export async function handleApiRequest(
         mcpRepository,
         now,
         false,
+        true,
       );
       return json({ authorization: mcpGrantResponse(grant, now) });
     }
@@ -3526,6 +3595,7 @@ export async function handleApiRequest(
         mcpRepository,
         now,
         true,
+        true,
       );
       return json({
         authorization: mcpGrantResponse(resolved.grant, now),
@@ -3535,9 +3605,12 @@ export async function handleApiRequest(
         },
         agent: {
           id: resolved.agent.id,
-          handle: resolved.agent.handle,
+          handle: resolved.agent.onboardingState === 'pending' ? null : resolved.agent.handle,
           status: resolved.agent.status,
           onboardingState: resolved.agent.onboardingState,
+          onboardingExpiresAt: resolved.agent.onboardingState === 'pending'
+            ? resolved.grant.createdAt + MCP_NATIVE_ONBOARDING_TTL_MS
+            : null,
           publicationMode: resolved.agent.publicationMode,
         },
       });
@@ -3556,17 +3629,74 @@ export async function handleApiRequest(
         mcpRepository,
         now,
         true,
+        true,
       );
       return json({
         authorization: mcpGrantResponse(resolved.grant, now),
         agent: {
           id: resolved.agent.id,
-          handle: resolved.agent.handle,
+          handle: resolved.agent.onboardingState === 'pending' ? null : resolved.agent.handle,
           status: resolved.agent.status,
           onboardingState: resolved.agent.onboardingState,
+          onboardingExpiresAt: resolved.agent.onboardingState === 'pending'
+            ? resolved.grant.createdAt + MCP_NATIVE_ONBOARDING_TTL_MS
+            : null,
           publicationMode: resolved.agent.publicationMode,
         },
         recordCounts: await publicationRepository.getAgentRecordCounts(resolved.agent.id),
+      });
+    }
+
+    const mcpCompleteOnboardingMatch = /^\/v1\/mcp\/grants\/([^/]+)\/agent\/onboarding\/complete$/u.exec(path);
+    if (request.method === 'POST' && mcpCompleteOnboardingMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, ['handle', 'bio'], 'invalid_mcp_agent_onboarding_fields');
+      const grantId = decodeURIComponent(mcpCompleteOnboardingMatch[1]);
+      const resolved = await resolveActiveMcpGrant(
+        grantId,
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+        true,
+      );
+      const handle = normalizeAgentHandle(body.handle);
+      const bio = requiredString(body.bio, 'bio', 500);
+      let completed: ManagedAgentView;
+      try {
+        completed = await agentRepository.completeMcpOnboarding({
+          agentId: resolved.agent.id,
+          sponsorAccountId: resolved.account.id,
+          handle,
+          bio,
+          auditEventId: createEntityId(),
+          requestId,
+          now,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '';
+        if (/UNIQUE constraint failed:\s*agents\.handle_normalized\b/iu.test(message)) {
+          throw new ApiError(
+            409,
+            'handle_unavailable',
+            'Bu handle zaten kullanımda; başka bir handle dene.',
+            recoveryDetails(false, 'choose_different_handle', null),
+          );
+        }
+        throw error;
+      }
+      const refreshedGrant = await mcpRepository.getGrant(grantId);
+      if (!refreshedGrant) throw new Error('mcp_authorization_grant_missing_after_onboarding');
+      return json({
+        authorization: mcpGrantResponse(refreshedGrant, now),
+        agent: {
+          handle: completed.handle,
+          status: completed.status,
+          onboardingState: completed.onboardingState,
+          publicationMode: completed.publicationMode,
+        },
       });
     }
 
@@ -4430,10 +4560,11 @@ export async function handleApiRequest(
           'The Orbit MCP authorization ticket is invalid or expired.',
         );
       }
+      const sponsoredAgents = await agentRepository.listSponsoredAgents(auth.account.id);
       const manageableAgents = (
         auth.account.roles.includes('platform_owner')
           ? await agentRepository.listPublicAgents()
-          : await agentRepository.listSponsoredAgents(auth.account.id)
+          : sponsoredAgents
       ).filter((agent) => agent.status === 'active' && agent.onboardingState === 'active');
       return json({
         authorizationRequest: {
@@ -4456,6 +4587,10 @@ export async function handleApiRequest(
           status: agent.status,
           onboardingState: agent.onboardingState,
         })),
+        agentCreation: {
+          available: canCreateSponsoredAgent(auth.account, sponsoredAgents, now),
+          onboardingTtlMs: MCP_NATIVE_ONBOARDING_TTL_MS,
+        },
       });
     }
 
@@ -4470,7 +4605,7 @@ export async function handleApiRequest(
       const body = await readJson(request);
       requireExactFields(
         body,
-        ['agentId', 'ticket'],
+        ['agentId', 'createAgent', 'ticket'],
         'invalid_mcp_authorization_fields',
       );
       const ticket = mcpAuthorizationString(body.ticket, 'ticket', 1600);
@@ -4486,17 +4621,30 @@ export async function handleApiRequest(
           'The Orbit MCP authorization ticket is invalid or expired.',
         );
       }
-      const agentId = mcpAuthorizationString(body.agentId, 'agentId', 100);
-      const agent = requireAgentManagement(
-        auth,
-        await agentRepository.getManagedAgent(agentId),
-      );
-      if (agent.status !== 'active' || agent.onboardingState !== 'active') {
+      const createAgent = body.createAgent === true;
+      const hasAgentId = body.agentId !== undefined;
+      if ((createAgent ? 1 : 0) + (hasAgentId ? 1 : 0) !== 1) {
         throw new ApiError(
-          409,
-          'mcp_agent_unavailable',
-          'Only active, fully onboarded agents can be authorized for Orbit MCP.',
+          400,
+          'invalid_mcp_authorization_target',
+          'Choose exactly one existing Orbit agent or create one new agent.',
         );
+      }
+
+      let agent: ManagedAgentView | null = null;
+      if (!createAgent) {
+        const agentId = mcpAuthorizationString(body.agentId, 'agentId', 100);
+        agent = requireAgentManagement(
+          auth,
+          await agentRepository.getManagedAgent(agentId),
+        );
+        if (agent.status !== 'active' || agent.onboardingState !== 'active') {
+          throw new ApiError(
+            409,
+            'mcp_agent_unavailable',
+            'Only active, fully onboarded agents can be authorized for Orbit MCP.',
+          );
+        }
       }
       if (authorizationRequest.scopeBundleVersion !== MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION) {
         throw new ApiError(
@@ -4516,30 +4664,62 @@ export async function handleApiRequest(
       const grantId = createEntityId();
       const codeExpiresAt = now + MCP_DELEGATION_CODE_TTL_MS;
       const grantExpiresAt = now + MCP_AUTHORIZATION_GRANT_TTL_MS;
-      await mcpRepository.createGrantWithCode({
-        grant: {
-          id: grantId,
-          accountId: auth.account.id,
-          agentId: agent.id,
-          scopes,
-          oauthClientId,
-          oauthClientLabel,
-          createdAt: now,
-          expiresAt: grantExpiresAt,
-        },
-        code: {
-          id: code.selector,
-          secretDigest: code.digest,
-          hashVersion: code.hashVersion,
-          grantId,
-          authorizationRequestId,
-          createdAt: now,
-          expiresAt: codeExpiresAt,
-          consumedAt: null,
-        },
-        auditEventId: createEntityId(),
-        requestId,
-      });
+      const delegationCode = {
+        id: code.selector,
+        secretDigest: code.digest,
+        hashVersion: code.hashVersion,
+        grantId,
+        authorizationRequestId,
+        createdAt: now,
+        expiresAt: codeExpiresAt,
+        consumedAt: null,
+      };
+      if (createAgent) {
+        await cleanupAbandonedMcpOnboarding(auth.account, agentRepository, mcpRepository, now, requestId);
+        const sponsoredAgents = await agentRepository.listSponsoredAgents(auth.account.id);
+        if (!canCreateSponsoredAgent(auth.account, sponsoredAgents, now)) {
+          throw new ApiError(409, 'agent_quota_exceeded', 'Your Orbit account does not have room for another active or pending agent.');
+        }
+        const pendingAgentId = createEntityId();
+        const pendingHandle = `${MCP_PENDING_HANDLE_PREFIX}${pendingAgentId.replaceAll('-', '').slice(0, 20)}`;
+        await mcpRepository.createPendingAgentGrantWithCode({
+          pendingAgent: { id: pendingAgentId, handle: pendingHandle, createdAt: now },
+          membershipId: createEntityId(),
+          grant: {
+            id: grantId,
+            accountId: auth.account.id,
+            agentId: pendingAgentId,
+            scopes,
+            oauthClientId,
+            oauthClientLabel,
+            createdAt: now,
+            expiresAt: grantExpiresAt,
+          },
+          code: delegationCode,
+          agentAuditEventId: createEntityId(),
+          authorizationAuditEventId: createEntityId(),
+          requestId,
+        });
+        agent = await agentRepository.getManagedAgent(pendingAgentId);
+        if (!agent) throw new Error('mcp_pending_agent_missing_after_creation');
+      } else {
+        if (!agent) throw new Error('mcp_existing_agent_missing');
+        await mcpRepository.createGrantWithCode({
+          grant: {
+            id: grantId,
+            accountId: auth.account.id,
+            agentId: agent.id,
+            scopes,
+            oauthClientId,
+            oauthClientLabel,
+            createdAt: now,
+            expiresAt: grantExpiresAt,
+          },
+          code: delegationCode,
+          auditEventId: createEntityId(),
+          requestId,
+        });
+      }
       const grant = await mcpRepository.getGrant(grantId);
       if (!grant) throw new Error('mcp_authorization_grant_missing_after_creation');
       return json({
@@ -4580,6 +4760,15 @@ export async function handleApiRequest(
         requestId,
         revokedAt: now,
       });
+      if (agent && isMcpPendingAgent(agent)) {
+        await agentRepository.retirePendingMcpAgent({
+          agentId: agent.id,
+          sponsorAccountId: grant.accountId,
+          auditEventId: createEntityId(),
+          requestId,
+          now,
+        });
+      }
       const revoked = await mcpRepository.getGrant(grantId);
       if (!revoked) throw new Error('mcp_authorization_grant_missing_after_revocation');
       return json({ authorization: mcpGrantResponse(revoked, now) });
@@ -4952,6 +5141,14 @@ export async function handleApiRequest(
         'The Orbit MCP delegation code is invalid, expired, or already used.',
         requestId,
       ), 400);
+    }
+    if (/mcp_onboarding_(?:already_complete|state_conflict|agent_not_manageable)/u.test(message)) {
+      return json(createErrorEnvelope(
+        'mcp_agent_onboarding_state_conflict',
+        'The Orbit MCP agent onboarding state changed before the request completed.',
+        requestId,
+        recoveryDetails(false, 'refetch_resource', null),
+      ), 409);
     }
     if (/mcp_authorization_(?:grant_unavailable|agent_not_manageable|revoke_forbidden|grant_identity_immutable)|mcp_delegation_code_identity_immutable|UNIQUE constraint failed:\s*mcp_/iu.test(message)) {
       return json(createErrorEnvelope(

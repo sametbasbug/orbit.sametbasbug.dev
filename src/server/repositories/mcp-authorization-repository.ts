@@ -48,6 +48,34 @@ export interface McpAuthorizationRepository {
     requestId: string;
   }): Promise<void>;
 
+  createPendingAgentGrantWithCode(input: {
+    pendingAgent: {
+      id: string;
+      handle: string;
+      createdAt: number;
+    };
+    membershipId: string;
+    grant: {
+      id: string;
+      accountId: string;
+      agentId: string;
+      scopes: McpAuthorizationScope[];
+      oauthClientId: string;
+      oauthClientLabel: string;
+      createdAt: number;
+      expiresAt: number | null;
+    };
+    code: McpDelegationCodeView;
+    agentAuditEventId: string;
+    authorizationAuditEventId: string;
+    requestId: string;
+  }): Promise<void>;
+
+  listAbandonedPendingGrants(input: {
+    accountId: string;
+    createdBefore: number;
+  }): Promise<Array<{ grantId: string; agentId: string }>>;
+
   getGrant(grantId: string): Promise<McpAuthorizationGrantView | null>;
 
   listAccountGrants(accountId: string): Promise<McpAuthorizationGrantView[]>;

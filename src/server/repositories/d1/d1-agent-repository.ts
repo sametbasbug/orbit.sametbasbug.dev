@@ -6,7 +6,7 @@ import type {
   PublicAgentProfileView,
   PublicationMode,
 } from '../agent-repository';
-import type { D1DatabaseLike } from './d1-foundation-repository';
+import type { D1DatabaseLike, D1RunResultLike } from './d1-foundation-repository';
 
 interface AgentSqlRow {
   id: string;
@@ -472,6 +472,113 @@ export class D1AgentRepository implements AgentRepository {
         input.agent.createdAt,
       ),
     ]);
+  }
+
+  async completeMcpOnboarding(
+    input: Parameters<AgentRepository['completeMcpOnboarding']>[0],
+  ): Promise<ManagedAgentView> {
+    const before = await this.getManagedAgent(input.agentId);
+    if (!before || before.primarySponsorAccountId !== input.sponsorAccountId) {
+      throw new Error('mcp_onboarding_agent_not_manageable');
+    }
+    if (before.onboardingState === 'active') {
+      if (before.handle === input.handle && before.bio === input.bio) return before;
+      throw new Error('mcp_onboarding_already_complete');
+    }
+
+    await this.#db.batch([
+      this.#db.prepare(`
+        UPDATE agents
+        SET handle = ?, handle_normalized = ?, display_name = ?, bio = ?,
+            onboarding_state = 'active', onboarding_completed_at = ?,
+            updated_at = ?, version = version + 1
+        WHERE id = ?
+          AND status = 'active'
+          AND onboarding_state = 'pending'
+          AND handle_normalized LIKE 'mcp-pending-%'
+          AND EXISTS (
+            SELECT 1 FROM agent_memberships membership
+            WHERE membership.agent_id = agents.id
+              AND membership.account_id = ?
+              AND membership.role = 'primary_sponsor'
+              AND membership.revoked_at IS NULL
+          )
+      `).bind(
+        input.handle,
+        input.handle,
+        input.handle,
+        input.bio,
+        input.now,
+        input.now,
+        input.agentId,
+        input.sponsorAccountId,
+      ),
+      this.#db.prepare(`
+        INSERT INTO audit_events (
+          id, event_type, actor_type, actor_id, subject_type,
+          subject_id, request_id, metadata_json, created_at
+        )
+        SELECT ?, 'agent.mcp_onboarding_completed', 'agent', ?, 'agent', ?, ?, ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM agents
+          WHERE id = ? AND onboarding_state = 'active'
+            AND handle_normalized = ? AND bio = ? AND updated_at = ?
+        )
+      `).bind(
+        input.auditEventId,
+        input.agentId,
+        input.agentId,
+        input.requestId,
+        auditMetadata({ handle: input.handle, sponsorAccountId: input.sponsorAccountId }),
+        input.now,
+        input.agentId,
+        input.handle,
+        input.bio,
+        input.now,
+      ),
+    ]);
+
+    const completed = await this.getManagedAgent(input.agentId);
+    if (!completed || completed.onboardingState !== 'active' || completed.handle !== input.handle || completed.bio !== input.bio) {
+      throw new Error('mcp_onboarding_state_conflict');
+    }
+    return completed;
+  }
+
+  async retirePendingMcpAgent(
+    input: Parameters<AgentRepository['retirePendingMcpAgent']>[0],
+  ): Promise<boolean> {
+    const result = await this.#db.prepare(`
+      UPDATE agents
+      SET status = 'retired', updated_at = ?, version = version + 1
+      WHERE id = ?
+        AND status = 'active'
+        AND onboarding_state = 'pending'
+        AND handle_normalized LIKE 'mcp-pending-%'
+        AND EXISTS (
+          SELECT 1 FROM agent_memberships membership
+          WHERE membership.agent_id = agents.id
+            AND membership.account_id = ?
+            AND membership.role = 'primary_sponsor'
+            AND membership.revoked_at IS NULL
+        )
+    `).bind(input.now, input.agentId, input.sponsorAccountId).run<D1RunResultLike>();
+    const changed = (result.meta?.changes ?? 0) === 1;
+    if (changed) {
+      await this.#db.prepare(`
+        INSERT INTO audit_events (
+          id, event_type, actor_type, actor_id, subject_type,
+          subject_id, request_id, metadata_json, created_at
+        ) VALUES (?, 'agent.mcp_onboarding_abandoned', 'account', ?, 'agent', ?, ?, '{}', ?)
+      `).bind(
+        input.auditEventId,
+        input.sponsorAccountId,
+        input.agentId,
+        input.requestId,
+        input.now,
+      ).run();
+    }
+    return changed;
   }
 
   async updateOwnProfile(input: Parameters<AgentRepository['updateOwnProfile']>[0]): Promise<void> {

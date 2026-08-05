@@ -217,6 +217,7 @@ if (errors.length === 0) {
             status: 'active',
             onboardingState: 'active',
           })),
+          agentCreation: { available: true, onboardingTtlMs: 60 * 60 * 1000 },
         } : { error: { code: 'authentication_required', message: 'A valid session is required.' } }));
       }).catch(() => {
         response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
@@ -707,8 +708,12 @@ if (errors.length === 0) {
       check(consentState.scopeCard === null, 'MCP consent izin kartını göstermeye devam ediyor.');
       check(consentState.scopeSummary === null, 'MCP consent izin özeti alanını göstermeye devam ediyor.');
       check(consentState.scopeOptions === null, 'MCP consent izin seçeneklerini göstermeye devam ediyor.');
-      check(consentState.options.length === browserAgents.length, 'MCP consent yönetilebilir ajan listesini eksik gösteriyor.');
+      check(consentState.options.length === browserAgents.length + 1, 'MCP consent mevcut ajanlarla yeni ajan seçeneğini eksik gösteriyor.');
       check(consentState.options.some((option) => option.value === 'agent-selene'), 'MCP consent Selene seçimini sunmuyor.');
+      check(
+        consentState.options.some((option) => option.value === '__create_new_orbit_agent__' && option.label === 'Yeni bir Orbit ajanı kaydet'),
+        'MCP consent yeni Orbit ajanı oluşturma seçeneğini sunmuyor.',
+      );
       check(consentState.approveDisabled === false, 'MCP consent onay düğmesi kullanılabilir değil.');
 
       await page.locator('#mcp-agent-select').selectOption('agent-selene');
@@ -728,6 +733,42 @@ if (errors.length === 0) {
         'MCP consent istemci kontrollü scopes alanı göndermeye devam ediyor.',
       );
       check(pageErrors.length === 0, `MCP owner consentinde sayfa hatası: ${pageErrors.join(' | ')}`);
+      await context.close();
+    }
+
+    {
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: 'light' });
+      await context.addCookies([{
+        name: 'orbit-owner-test',
+        value: '1',
+        url: baseUrl,
+      }]);
+      await context.route('https://mcp.orbit.sametbasbug.dev/**', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/html; charset=utf-8',
+          body: '<!doctype html><title>Orbit MCP callback</title>',
+        });
+      });
+      const page = await context.newPage();
+      const pageErrors = [];
+      page.on('pageerror', (error) => pageErrors.push(error.message));
+      await page.goto(
+        `${baseUrl}/dashboard#mcp_authorization=${encodeURIComponent(browserMcpTicket)}`,
+        { waitUntil: 'load' },
+      );
+      await page.waitForSelector('#mcp-consent:not(.hidden)');
+      await page.locator('#mcp-agent-select').selectOption('__create_new_orbit_agent__');
+      await page.locator('#mcp-approve').click();
+      await page.waitForURL((url) => (
+        url.origin === 'https://mcp.orbit.sametbasbug.dev'
+        && url.pathname === '/oauth/orbit/callback'
+      ));
+      check(browserMcpAuthorizationBodies.length === 2, 'MCP yeni ajan consent isteğini tam bir kez göndermedi.');
+      check(browserMcpAuthorizationBodies[1]?.createAgent === true, 'MCP yeni ajan seçimini createAgent olarak göndermedi.');
+      check(!Object.hasOwn(browserMcpAuthorizationBodies[1] ?? {}, 'agentId'), 'MCP yeni ajan seçimi mevcut agentId göndermemeli.');
+      check(browserMcpAuthorizationBodies[1]?.ticket === browserMcpTicket, 'MCP yeni ajan seçimi imzalı ticketı taşımadı.');
+      check(pageErrors.length === 0, `MCP yeni ajan consentinde sayfa hatası: ${pageErrors.join(' | ')}`);
       await context.close();
     }
 

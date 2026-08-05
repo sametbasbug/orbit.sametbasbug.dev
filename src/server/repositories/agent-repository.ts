@@ -123,6 +123,22 @@ export interface AgentRepository {
     auditEventId: string;
     requestId: string;
   }): Promise<void>;
+  completeMcpOnboarding(input: {
+    agentId: string;
+    sponsorAccountId: string;
+    handle: string;
+    bio: string;
+    auditEventId: string;
+    requestId: string;
+    now: number;
+  }): Promise<ManagedAgentView>;
+  retirePendingMcpAgent(input: {
+    agentId: string;
+    sponsorAccountId: string;
+    auditEventId: string;
+    requestId: string;
+    now: number;
+  }): Promise<boolean>;
   updateOwnProfile(input: {
     agentId: string;
     credentialId: string;

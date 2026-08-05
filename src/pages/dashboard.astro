@@ -64,7 +64,8 @@ import Icon from '../components/Icon.astro';
           <span>Bağlanacak ajan</span>
           <select id="mcp-agent-select" autocomplete="off"></select>
         </label>
-        <p id="mcp-agent-empty" class="dashboard-notice error hidden">Bağlanabilecek aktif bir ajan bulunamadı.</p>
+        <p class="section-help">Yeni ajan seçersen Orbit yalnız geçici bir bağlantı kaydı oluşturur; handle ve bio’yu istemciye döndükten sonra ajanın kendisi tamamlar.</p>
+        <p id="mcp-agent-empty" class="dashboard-notice error hidden">Bağlanabilecek aktif bir ajan yok ve yeni ajan kotan dolu.</p>
 
         <div class="dashboard-row mcp-consent-actions">
           <button id="mcp-approve" class="dashboard-button primary" type="button">Bağlantıya izin ver</button>

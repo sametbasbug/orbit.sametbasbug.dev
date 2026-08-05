@@ -158,6 +158,132 @@ export class D1McpAuthorizationRepository implements McpAuthorizationRepository 
     ]);
   }
 
+  async createPendingAgentGrantWithCode(
+    input: Parameters<McpAuthorizationRepository['createPendingAgentGrantWithCode']>[0],
+  ): Promise<void> {
+    if (input.code.grantId !== input.grant.id || input.pendingAgent.id !== input.grant.agentId) {
+      throw new Error('mcp_pending_agent_grant_mismatch');
+    }
+    const scopes = serializeScopes(input.grant.scopes);
+    await this.#db.batch([
+      this.#db.prepare(`
+        INSERT INTO agents (
+          id, handle, handle_normalized, display_name, bio, avatar_asset,
+          publication_mode, status, onboarding_state, onboarding_completed_at,
+          created_at, updated_at, version,
+          role, short_bio, motto, accent, responsibility, links_json
+        ) VALUES (?, ?, ?, ?, '', '', 'approval_required', 'active', 'pending', NULL, ?, ?, 1,
+          '', '', '', '#6f63e8', '', '[]')
+      `).bind(
+        input.pendingAgent.id,
+        input.pendingAgent.handle,
+        input.pendingAgent.handle,
+        input.pendingAgent.handle,
+        input.pendingAgent.createdAt,
+        input.pendingAgent.createdAt,
+      ),
+      this.#db.prepare(`
+        INSERT INTO agent_memberships (
+          id, agent_id, account_id, role, created_by_account_id, created_at
+        ) VALUES (?, ?, ?, 'primary_sponsor', ?, ?)
+      `).bind(
+        input.membershipId,
+        input.pendingAgent.id,
+        input.grant.accountId,
+        input.grant.accountId,
+        input.pendingAgent.createdAt,
+      ),
+      this.#db.prepare(`
+        INSERT INTO mcp_authorization_grants (
+          id, account_id, agent_id, scopes, oauth_client_id,
+          oauth_client_label, created_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        input.grant.id,
+        input.grant.accountId,
+        input.grant.agentId,
+        scopes,
+        input.grant.oauthClientId.trim(),
+        input.grant.oauthClientLabel.trim(),
+        input.grant.createdAt,
+        input.grant.expiresAt,
+      ),
+      this.#db.prepare(`
+        INSERT INTO mcp_delegation_codes (
+          id, secret_digest, hash_version, grant_id,
+          authorization_request_id, created_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        input.code.id,
+        input.code.secretDigest,
+        input.code.hashVersion,
+        input.code.grantId,
+        input.code.authorizationRequestId,
+        input.code.createdAt,
+        input.code.expiresAt,
+      ),
+      this.#db.prepare(`
+        INSERT INTO audit_events (
+          id, event_type, actor_type, actor_id, subject_type,
+          subject_id, request_id, metadata_json, created_at
+        ) VALUES (?, 'agent.mcp_onboarding_started', 'account', ?, 'agent', ?, ?, ?, ?)
+      `).bind(
+        input.agentAuditEventId,
+        input.grant.accountId,
+        input.pendingAgent.id,
+        input.requestId,
+        auditMetadata({ oauthClientId: input.grant.oauthClientId }),
+        input.pendingAgent.createdAt,
+      ),
+      this.#db.prepare(`
+        INSERT INTO audit_events (
+          id, event_type, actor_type, actor_id, subject_type,
+          subject_id, request_id, metadata_json, created_at
+        ) VALUES (?, 'mcp.authorization_created', 'account', ?,
+          'mcp_authorization_grant', ?, ?, ?, ?)
+      `).bind(
+        input.authorizationAuditEventId,
+        input.grant.accountId,
+        input.grant.id,
+        input.requestId,
+        auditMetadata({
+          agentId: input.grant.agentId,
+          onboardingState: 'pending',
+          scopes: input.grant.scopes,
+          oauthClientId: input.grant.oauthClientId,
+          oauthClientLabel: input.grant.oauthClientLabel,
+          authorizationRequestId: input.code.authorizationRequestId,
+        }),
+        input.grant.createdAt,
+      ),
+    ]);
+  }
+
+  async listAbandonedPendingGrants(
+    input: Parameters<McpAuthorizationRepository['listAbandonedPendingGrants']>[0],
+  ): Promise<Array<{ grantId: string; agentId: string }>> {
+    const result = await this.#db.prepare(`
+      SELECT grant_row.id AS grant_id, agent.id AS agent_id
+      FROM mcp_authorization_grants grant_row
+      JOIN agents agent ON agent.id = grant_row.agent_id
+      JOIN agent_memberships membership ON membership.agent_id = agent.id
+      WHERE grant_row.account_id = ?
+        AND membership.account_id = ?
+        AND membership.role = 'primary_sponsor'
+        AND membership.revoked_at IS NULL
+        AND agent.status = 'active'
+        AND agent.onboarding_state = 'pending'
+        AND agent.handle_normalized LIKE 'mcp-pending-%'
+        AND agent.created_at <= ?
+        AND grant_row.revoked_at IS NULL
+      ORDER BY agent.created_at ASC, agent.id ASC
+    `).bind(input.accountId, input.accountId, input.createdBefore).all<{
+      grant_id: string;
+      agent_id: string;
+    }>();
+    return result.results.map((row) => ({ grantId: row.grant_id, agentId: row.agent_id }));
+  }
+
   async getGrant(grantId: string): Promise<McpAuthorizationGrantView | null> {
     const row = await this.#db.prepare(`
       ${GRANT_SELECT}

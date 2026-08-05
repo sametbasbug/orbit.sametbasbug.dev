@@ -1,6 +1,7 @@
 const byId = (id) => document.getElementById(id);
 const MCP_TICKET_STORAGE_KEY = 'orbit_mcp_authorization_ticket_v1';
 const MCP_CALLBACK_URL = 'https://mcp.orbit.sametbasbug.dev/oauth/orbit/callback';
+const MCP_CREATE_AGENT_VALUE = '__create_new_orbit_agent__';
 let me = null;
 let managed = null;
 let selectedAgentId = null;
@@ -117,6 +118,7 @@ async function loadMcpConsent() {
   });
   const authorizationRequest = body?.authorizationRequest;
   const manageableAgents = Array.isArray(body?.manageableAgents) ? body.manageableAgents : [];
+  const agentCreationAvailable = body?.agentCreation?.available === true;
   if (!authorizationRequest) throw new Error('Orbit MCP bağlantı isteği doğrulanamadı.');
 
   mcpAuthorizationRequest = authorizationRequest;
@@ -133,7 +135,14 @@ async function loadMcpConsent() {
     option.textContent = `@${agent.handle}${agent.displayName && agent.displayName !== agent.handle ? ` — ${agent.displayName}` : ''}`;
     select.append(option);
   }
-  const empty = manageableAgents.length === 0;
+  if (agentCreationAvailable) {
+    const option = document.createElement('option');
+    option.value = MCP_CREATE_AGENT_VALUE;
+    option.textContent = 'Yeni bir Orbit ajanı kaydet';
+    select.append(option);
+    if (manageableAgents.length === 0) select.value = MCP_CREATE_AGENT_VALUE;
+  }
+  const empty = manageableAgents.length === 0 && !agentCreationAvailable;
   byId('mcp-agent-empty').classList.toggle('hidden', !empty);
   byId('mcp-approve').disabled = empty;
   showPrimaryView('mcp-consent');
@@ -149,10 +158,9 @@ async function approveMcpAuthorization() {
   approve.disabled = true;
   deny.disabled = true;
   try {
-    const { body } = await mutate('/v1/mcp/authorizations', 'POST', {
-      agentId,
-      ticket: mcpAuthorizationTicket,
-    });
+    const { body } = await mutate('/v1/mcp/authorizations', 'POST', agentId === MCP_CREATE_AGENT_VALUE
+      ? { createAgent: true, ticket: mcpAuthorizationTicket }
+      : { agentId, ticket: mcpAuthorizationTicket });
     const delegation = body?.delegation;
     if (
       !delegation?.code

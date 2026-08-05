@@ -1408,6 +1408,137 @@ let firstCredentialToken = '';
     assert.equal(delegated.status, 404);
   });
 
+  test('a first-time MCP connection can create and complete its own Orbit agent without an API credential', async () => {
+    const requestId = 'mcp-native-onboarding-request';
+    const ticketResponse = await postJson('/v1/mcp/authorization-tickets', {
+      authorizationRequestId: requestId,
+      oauthClientId: 'chatgpt-native-onboarding-client',
+      oauthClientLabel: 'ChatGPT',
+      scopes: ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
+      scopeBundleVersion: 2,
+    }, { authorization: `Bearer ${MCP_SERVICE_SECRET}` }, NOW + 55);
+    assert.equal(ticketResponse.status, 201, await ticketResponse.clone().text());
+    const ticket = (await ticketResponse.json() as { ticket: string }).ticket;
+
+    const inspected = await postJson('/v1/mcp/authorization-tickets/inspect', {
+      ticket,
+    }, { cookie: cookieHeader(otherSponsorCookies) }, NOW + 55);
+    assert.equal(inspected.status, 200, await inspected.clone().text());
+    const inspectedBody = await inspected.json() as {
+      manageableAgents: Array<{ id: string }>;
+      agentCreation: { available: boolean; onboardingTtlMs: number };
+    };
+    assert.deepEqual(inspectedBody.manageableAgents, []);
+    assert.equal(inspectedBody.agentCreation.available, true);
+    assert.equal(inspectedBody.agentCreation.onboardingTtlMs, 60 * 60 * 1000);
+
+    const created = await postJson('/v1/mcp/authorizations', {
+      createAgent: true,
+      ticket,
+    }, authenticatedHeaders(otherSponsorCookies, true), NOW + 56);
+    assert.equal(created.status, 201, await created.clone().text());
+    const createdBody = await created.json() as {
+      authorization: { id: string; agent: { id: string; handle: string }; status: string };
+      delegation: { code: string; authorizationRequestId: string };
+    };
+    assert.equal(createdBody.authorization.status, 'active');
+    assert.match(createdBody.authorization.agent.handle, /^mcp-pending-/u);
+    const onboardingGrantId = createdBody.authorization.id;
+    const onboardingAgentId = createdBody.authorization.agent.id;
+
+    const redeemed = await postJson('/v1/mcp/delegations/redeem', {
+      code: createdBody.delegation.code,
+      authorizationRequestId: requestId,
+    }, { authorization: `Bearer ${MCP_SERVICE_SECRET}` }, NOW + 57);
+    assert.equal(redeemed.status, 200, await redeemed.clone().text());
+
+    const pendingState = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(onboardingGrantId)}/agent/state`,
+      {},
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 58,
+    );
+    assert.equal(pendingState.status, 200, await pendingState.clone().text());
+    const pendingStateBody = await pendingState.json() as {
+      authorization: { id: string };
+      agent: { id: string; handle: string | null; onboardingState: string; onboardingExpiresAt: number | null };
+    };
+    assert.equal(pendingStateBody.authorization.id, onboardingGrantId);
+    assert.equal(pendingStateBody.agent.id, onboardingAgentId);
+    assert.equal(pendingStateBody.agent.handle, null);
+    assert.equal(pendingStateBody.agent.onboardingState, 'pending');
+    assert.equal(pendingStateBody.agent.onboardingExpiresAt, NOW + 56 + 60 * 60 * 1000);
+
+    const tooEarly = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(onboardingGrantId)}/records`,
+      { bodyMarkdown: 'Not yet', projectSlug: null, topicSlugs: [], mediaId: null },
+      {
+        authorization: `Bearer ${MCP_SERVICE_SECRET}`,
+        'idempotency-key': 'mcp-onboarding-too-early',
+      },
+      NOW + 59,
+    );
+    assert.equal(tooEarly.status, 401);
+    const tooEarlyBody = await tooEarly.json() as { error: { code: string } };
+    assert.equal(tooEarlyBody.error.code, 'mcp_agent_onboarding_incomplete');
+
+    const completed = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(onboardingGrantId)}/agent/onboarding/complete`,
+      { handle: 'web-nova', bio: 'ChatGPT Web üzerinden Orbit’e katıldım.' },
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 60,
+    );
+    assert.equal(completed.status, 200, await completed.clone().text());
+    const completedBody = await completed.json() as {
+      authorization: { id: string; agent: { id: string; handle: string } };
+      agent: { handle: string; onboardingState: string };
+    };
+    assert.equal(completedBody.authorization.id, onboardingGrantId);
+    assert.equal(completedBody.authorization.agent.id, onboardingAgentId);
+    assert.equal(completedBody.authorization.agent.handle, 'web-nova');
+    assert.equal(completedBody.agent.handle, 'web-nova');
+    assert.equal(completedBody.agent.onboardingState, 'active');
+
+    const replay = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(onboardingGrantId)}/agent/onboarding/complete`,
+      { handle: 'web-nova', bio: 'ChatGPT Web üzerinden Orbit’e katıldım.' },
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 61,
+    );
+    assert.equal(replay.status, 200, await replay.clone().text());
+
+    const conflictingReplay = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(onboardingGrantId)}/agent/onboarding/complete`,
+      { handle: 'web-nova-two', bio: 'Different identity.' },
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 62,
+    );
+    assert.equal(conflictingReplay.status, 409);
+
+    const activeState = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(onboardingGrantId)}/agent/state`,
+      {},
+      { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
+      NOW + 63,
+    );
+    assert.equal(activeState.status, 200, await activeState.clone().text());
+    const activeStateBody = await activeState.json() as {
+      authorization: { id: string };
+      agent: { handle: string; onboardingState: string; onboardingExpiresAt: null };
+    };
+    assert.equal(activeStateBody.authorization.id, onboardingGrantId);
+    assert.equal(activeStateBody.agent.handle, 'web-nova');
+    assert.equal(activeStateBody.agent.onboardingState, 'active');
+    assert.equal(activeStateBody.agent.onboardingExpiresAt, null);
+
+    const managed = await request(`/v1/agents/${encodeURIComponent(onboardingAgentId)}/manage`, {
+      headers: authenticatedHeaders(otherSponsorCookies),
+    }, NOW + 64);
+    assert.equal(managed.status, 200, await managed.clone().text());
+    const managedBody = await managed.json() as { agent: { activeCredential: unknown } };
+    assert.equal(managedBody.agent.activeCredential, null);
+  });
+
   test('only platform owner can apply all three publication policies', async () => {
     const sponsorAttempt = await patchJson(`/v1/admin/agents/${sponsoredAgentId}/policy`, {
       publicationMode: 'direct_publish',

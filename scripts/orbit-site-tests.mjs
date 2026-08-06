@@ -11,6 +11,7 @@ import {
   readAllPosts,
 } from './orbit-content-utils.mjs';
 
+const ORIGIN = 'https://orbit.sametbasbug.dev';
 const errors = [];
 let assertions = 0;
 
@@ -101,6 +102,20 @@ check(!fs.existsSync(path.join(DIST_DIR, 'join', 'index.html')), 'Kaldırılan i
 check(!fs.existsSync(path.join(DIST_DIR, 'agent-guide.md')), 'Eski agent-guide.md rotası build çıktısında kaldı.');
 check(homeHtml.includes('Ajanını yörüngeye getir.'), 'Ana sayfadaki ajan katılım çağrısı eksik.');
 check(homeHtml.includes('href="/skill.md"'), 'Ana sayfa skill.md sözleşmesine bağlanmıyor.');
+// Banner tek talimat olarak kalır; MCP ikincil bir kısayoldur, eşit ağırlıkta
+// bir çatal değil. Hangi yüzeyin doğru olduğuna rehberi okuyan ajan karar
+// verir, ana sayfaya gelen insan değil.
+check(homeHtml.includes('href="/mcp"'), 'Ana sayfa MCP kurulum sayfasına bağlanmıyor.');
+const mcpPageFile = path.join(DIST_DIR, 'mcp', 'index.html');
+check(fs.existsSync(mcpPageFile), 'İnsan yüzlü MCP kurulum sayfası build çıktısında yok.');
+if (fs.existsSync(mcpPageFile)) {
+  const mcpPage = fs.readFileSync(mcpPageFile, 'utf8');
+  check(mcpPage.includes('mcp.orbit.sametbasbug.dev/mcp'), 'MCP kurulum sayfası sunucu adresini göstermiyor.');
+  check(mcpPage.includes('href="/mcp.md"'), 'MCP kurulum sayfası ajan rehberine bağlanmıyor.');
+  check(mcpPage.includes('href="/skill.md"'), 'MCP kurulum sayfası doğrudan API yolunu göstermiyor.');
+  // İnsanın bu sayfadan çıkarken bilmesi gereken tek güvenlik kuralı.
+  check(mcpPage.includes('anahtar'), 'MCP kurulum sayfası anahtar taşınmadığını söylemiyor.');
+}
 check(!homeHtml.includes('Farklı zihinler.'), 'Kaldırılan ana sayfa sloganı build çıktısında kaldı.');
 check(!homeHtml.includes('>Ajan rehberi<'), 'Ajan rehberi navigasyon bağlantısı build çıktısında kaldı.');
 const machineGuideFile = path.join(DIST_DIR, 'skill.md');
@@ -133,6 +148,40 @@ if (fs.existsSync(machineGuideFile)) {
     liveContractSource.includes(`const EXPECTED_GUIDE_VERSION = '${guideVersion}';`),
     `Canlı sözleşme denetçisi rehber sürümünün gerisinde: rehber ${guideVersion}.`,
   );
+  // Rehber MCP yüzeyini tanımak zorunda: tanımazsa MCP ile bağlı bir ajan
+  // sahip olmadığı ve verilmeyecek olan bir credential'ın peşine düşer.
+  check(machineGuide.includes('## Önce: hangi yüzey senin'), 'Makine rehberi iki yüzeyi ayıran yönlendirme bölümünü taşımıyor.');
+  check(machineGuide.includes(`${ORIGIN}/mcp.md`), 'Makine rehberi MCP rehberine bağlanmıyor.');
+  check(machineGuide.includes('credential arama'), 'Makine rehberi MCP yolunda credential aranmayacağını söylemiyor.');
+
+  const mcpGuideFile = path.join(DIST_DIR, 'mcp.md');
+  check(fs.existsSync(mcpGuideFile), 'MCP rehberi build çıktısında yok.');
+  if (fs.existsSync(mcpGuideFile)) {
+    const mcpGuide = fs.readFileSync(mcpGuideFile, 'utf8');
+    check(
+      /^version:\s*(\d+\.\d+\.\d+)$/mu.exec(mcpGuide)?.[1] === guideVersion,
+      'MCP rehberi ile API rehberi ayrı sürümlerde: ikisi aynı sözleşmenin iki yüzü.',
+    );
+    check(mcpGuide.includes(`${ORIGIN}/skill.md`), 'MCP rehberi doğrudan API rehberine geri bağlanmıyor.');
+    check(mcpGuide.includes('mcp.orbit.sametbasbug.dev/mcp'), 'MCP rehberi bağlantı adresini taşımıyor.');
+    check(mcpGuide.includes('completeAgentRegistration'), 'MCP rehberi ilk kayıt işlemini adlandırmıyor.');
+    check(mcpGuide.includes('orbit_read') && mcpGuide.includes('orbit_action'), 'MCP rehberi iki kalıcı aracı tanıtmıyor.');
+
+    /* Asıl kilit burada. MCP ile bağlı bir ajan işlemleri `orbit_read` ile
+     * canlı keşfeder; operasyon sözleşmesinin kanonik kaynağı çalışan
+     * sunucudur. Aynı sözleşmeyi bu belgeye de yazmak üçüncü bir kopya
+     * üretir ve kopyalar sessizce ayrışır — bugün rehber sürümünün dört
+     * kopyasını teke indirmemizin sebebi tam olarak buydu.
+     *
+     * Bu yüzden mcp.md'de endpoint bloğu bulunmamalı. Belge zamanla
+     * skill.md'nin ikizine dönüşmeye başlarsa build burada düşsün. */
+    const endpointBlocks = mcpGuide.match(/\b(GET|POST|PATCH|PUT|DELETE)\s+\/v1\//gu) ?? [];
+    check(
+      endpointBlocks.length === 0,
+      `MCP rehberi operasyon referansını kopyalamaya başlamış (${endpointBlocks.length} endpoint). İşlemler orbit_read ile keşfedilir.`,
+    );
+  }
+
   check(machineGuide.includes('PUT /v1/agent/follows/'), 'Makine rehberi takip kontratını taşımıyor.');
   check(machineGuide.includes('GET /v1/agent/feed/following'), 'Makine rehberi takip akışı kontratını taşımıyor.');
   // Takip akışı public değil ve rehber bunu söylemek zorunda: ajan neyin

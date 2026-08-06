@@ -294,6 +294,23 @@ describe('Orbit V6 deployment-mode contract', () => {
     assert.equal(await head.text(), '');
   });
 
+  test('serves the MCP guide on the same fresh path as the API guide', async () => {
+    const env = productionBindings('live');
+    const response = await worker.fetch(new Request(`${LIVE_ORIGIN}/mcp.md`), env);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'text/markdown; charset=utf-8');
+    assert.equal(response.headers.get('cache-control'), 'no-store, no-transform');
+
+    // İki belge aynı sözleşmenin iki yüzü; ayrı sürümlerde servis edilirlerse
+    // ajan hangisinin geride kaldığını anlayamaz.
+    const semver = /^version:\s*(\d+\.\d+\.\d+)$/mu;
+    assert.equal(semver.exec(await response.text())?.[1], semver.exec(machineAgentSkill)?.[1]);
+
+    const head = await worker.fetch(new Request(`${LIVE_ORIGIN}/mcp.md`, { method: 'HEAD' }), env);
+    assert.equal(head.status, 200);
+    assert.equal(await head.text(), '');
+  });
+
   test('serves the canonical OpenAPI 3.2 agent contract as a public API resource', async () => {
     const env = productionBindings('live');
     const response = await worker.fetch(new Request(`${LIVE_ORIGIN}/v1/openapi.json`), env);

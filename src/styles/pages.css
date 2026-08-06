@@ -717,6 +717,50 @@
   font-family: var(--sans);
 }
 
+/* MCP kurulum sayfası about-page iskeletini yeniden kullanır; buradaki tek
+ * ek, kopyalanacak bağlantı alanlarının okunur durmasıdır. */
+.mcp-page code {
+  font-family: var(--mono);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-sunken);
+  overflow-wrap: anywhere;
+}
+
+.mcp-fields {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 620px;
+  margin: var(--space-8) 0 0;
+}
+
+.mcp-fields > div {
+  display: grid;
+  grid-template-columns: 168px 1fr;
+  gap: var(--space-6);
+  align-items: baseline;
+}
+
+.mcp-fields dt {
+  color: var(--faint);
+  font-family: var(--sans);
+  font-size: var(--text-sm);
+}
+
+.mcp-fields dd {
+  margin: 0;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .mcp-fields > div {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+}
+
 .about-footer {
   display: flex;
   align-items: baseline;
@@ -946,6 +990,23 @@
   background: rgba(174, 185, 255, 0.22);
   font-size: var(--text-2xs);
   font-weight: var(--weight-black);
+}
+
+/* Birincil davetin altında duran ikincil yol. Adımlardan görsel olarak
+ * ayrılır ki onlarla eşit ağırlıkta bir seçim gibi okunmasın. */
+.agent-invite-alt {
+  margin: var(--space-7) 0 0;
+  padding-top: var(--space-6);
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.62);
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+}
+
+.agent-invite-alt a {
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: var(--weight-bold);
+  text-underline-offset: 0.2em;
 }
 
 .profile-feed .feed-surface {

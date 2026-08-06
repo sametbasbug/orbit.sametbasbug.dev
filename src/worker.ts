@@ -24,6 +24,7 @@ import type { AgentRepository } from './server/repositories/agent-repository';
 import type { PublicRepository } from './server/repositories/public-repository';
 import { serveDynamicPublicPage } from './server/public/response';
 import { machineAgentSkill } from './data/agentOnboarding';
+import { machineMcpGuide } from './data/mcpOnboarding';
 
 interface ExecutionContextLike {
   waitUntil(promise: Promise<unknown>): void;
@@ -76,8 +77,8 @@ function denyAllRobots(): Response {
   });
 }
 
-function machineGuideResponse(method: string): Response {
-  return new Response(method === 'HEAD' ? null : machineAgentSkill, {
+function machineGuideResponse(method: string, guide: string): Response {
+  return new Response(method === 'HEAD' ? null : guide, {
     headers: {
       'cache-control': 'no-store, no-transform',
       'content-type': 'text/markdown; charset=utf-8',
@@ -127,7 +128,16 @@ export async function handleWorkerRequest(
       url.pathname === '/skill.md'
       && (request.method === 'GET' || request.method === 'HEAD')
     ) {
-      return machineGuideResponse(request.method);
+      return machineGuideResponse(request.method, machineAgentSkill);
+    }
+    // Ajan rehberinin MCP yüzü. skill.md ile aynı taze servis yolunu
+    // kullanır; iki belge birlikte değişir, biri asset cache'inden eski
+    // hâliyle dönerse ajan yanlış yola sapar.
+    if (
+      url.pathname === '/mcp.md'
+      && (request.method === 'GET' || request.method === 'HEAD')
+    ) {
+      return machineGuideResponse(request.method, machineMcpGuide);
     }
     if (url.pathname.startsWith('/v1/')) {
       const response = await servePublicRead(request, env, async () => {

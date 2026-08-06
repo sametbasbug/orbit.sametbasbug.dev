@@ -18,6 +18,19 @@ function check(condition, message) {
   if (!condition) errors.push(message);
 }
 
+async function waitForStoredInviteState(page, expected) {
+  try {
+    await page.waitForFunction(
+      (value) => localStorage.getItem('orbit-agent-invite') === value,
+      expected,
+      { timeout: 2_000 },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function chromeExecutable() {
   const candidates = [
     process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
@@ -419,6 +432,47 @@ if (errors.length === 0) {
       await page.locator('[data-theme-toggle]').click();
       check(await page.locator('html').getAttribute('data-theme') === 'light', `${label}: tema light durumuna geri dönmedi.`);
       check(await page.evaluate(() => localStorage.getItem('orbit-theme')) === 'light', `${label}: light tema localStorage'a yazılmadı.`);
+
+      /* Ajan daveti katlanabilir ama varsayılan açık: sitenin birincil
+       * çağrısını ilk kez gelenden saklamıyoruz. Kapatan biri ise bir daha
+       * görmemeli, ve kapalı durum ilk boyamadan önce uygulanmalı ki panel
+       * açılıp kapanan bir sıçrama yaşamasın. */
+      await page.goto(baseUrl, { waitUntil: 'load' });
+      const invite = page.locator('#agent-invite');
+      check(await invite.count() === 1, `${label}: ajan daveti paneli bulunamadı.`);
+      check(await invite.evaluate((el) => el.open), `${label}: ajan daveti ilk ziyarette kapalı geldi.`);
+      const openHeight = await invite.evaluate((el) => el.getBoundingClientRect().height);
+
+      await invite.locator('summary').click();
+      check(!(await invite.evaluate((el) => el.open)), `${label}: ajan daveti başlığa tıklanınca kapanmadı.`);
+      const closedHeight = await invite.evaluate((el) => el.getBoundingClientRect().height);
+      check(closedHeight < openHeight, `${label}: panel kapandı ama yüksekliği küçülmedi.`);
+      check(
+        await invite.locator('h1').isVisible(),
+        `${label}: kapalı panelde başlık görünmez oldu; kalıcı kalması gereken tek parça o.`,
+      );
+      /* `toggle` olayı senkron değil: tıklama çözüldüğünde panel çoktan
+       * kapanmış olur ama yazma sırası henüz gelmemiş olabilir. Değeri
+       * beklemeden okumak testi zamanlamaya bağlı hâle getirir. */
+      check(
+        await waitForStoredInviteState(page, 'collapsed'),
+        `${label}: kapalı durum localStorage'a yazılmadı.`,
+      );
+
+      await page.reload({ waitUntil: 'load' });
+      check(!(await invite.evaluate((el) => el.open)), `${label}: kapalı durum reload sonrasında korunmadı.`);
+      // Kapalıyken bile bağlantılar DOM'da kalmalı: site testleri ve
+      // tarayıcılar bu sayfadan skill.md ve /mcp adreslerini görüyor.
+      check(await invite.locator('a[href="/skill.md"]').count() === 1, `${label}: kapalı panelde skill.md bağlantısı DOM'dan düştü.`);
+      check(await invite.locator('a[href="/mcp"]').count() === 1, `${label}: kapalı panelde MCP bağlantısı DOM'dan düştü.`);
+
+      await invite.locator('summary').click();
+      check(await invite.evaluate((el) => el.open), `${label}: kapalı panel yeniden açılmadı.`);
+      check(
+        await waitForStoredInviteState(page, 'expanded'),
+        `${label}: açık durum localStorage'a yazılmadı.`,
+      );
+      await page.evaluate(() => localStorage.removeItem('orbit-agent-invite'));
 
       if (viewport.width === 1440) {
         await page.goto(baseUrl, { waitUntil: 'load' });

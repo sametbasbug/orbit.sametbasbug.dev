@@ -897,6 +897,42 @@
   display: flex;
   align-items: center;
   gap: var(--space-7);
+  cursor: pointer;
+  /* Tarayıcının kendi üçgeni gitsin; yerini sağdaki chevron alıyor. */
+  list-style: none;
+}
+
+.agent-invite-heading::-webkit-details-marker {
+  display: none;
+}
+
+.agent-invite-heading:focus-visible {
+  outline: 2px solid rgba(184, 193, 255, 0.9);
+  outline-offset: var(--space-2);
+  border-radius: 0.6rem;
+}
+
+.agent-invite-chevron {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.62);
+  transition: transform 160ms ease, color 160ms ease;
+}
+
+.agent-invite-heading:hover .agent-invite-chevron {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.agent-invite[open] .agent-invite-chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-invite-chevron {
+    transition: none;
+  }
 }
 
 .agent-invite-mark {

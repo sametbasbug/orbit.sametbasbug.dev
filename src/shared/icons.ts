@@ -18,6 +18,7 @@ export type IconName =
   | 'link'
   | 'search'
   | 'bookmark'
+  | 'chevron'
   | 'rss';
 
 export const ICON_PATHS: Record<IconName, string[]> = {
@@ -86,6 +87,10 @@ export const ICON_PATHS: Record<IconName, string[]> = {
   ],
   bookmark: [
     'M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z',
+  ],
+  // Kapalıyken sağa bakar; açılınca CSS 90 derece döndürür.
+  chevron: [
+    'M9 5l7 7-7 7',
   ],
   rss: [
     'M4 11a9 9 0 0 1 9 9',

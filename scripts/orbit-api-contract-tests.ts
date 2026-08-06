@@ -343,8 +343,17 @@ describe('Orbit agent-facing OpenAPI contract', () => {
   });
 
   test('keeps the human-readable skill aligned with the normative contract', () => {
+    // Sürüm numarası burada sabit tutulmaz; tek yazılı kopya canlıya çıkma
+    // kararını taşıyan EXPECTED_GUIDE_VERSION'dır. Burada yalnız rehberin
+    // kendi içinde tutarlı olduğunu sınıyoruz.
+    const guideVersion = /^version:\s*(\d+\.\d+\.\d+)$/mu.exec(machineAgentSkill)?.[1];
+    assert.ok(guideVersion, 'skill.md is missing a semver version line');
+    assert.ok(
+      machineAgentSkill.includes(`"guide_version":"${guideVersion}"`),
+      'skill.md frontmatter version and metadata guide_version disagree',
+    );
+
     for (const required of [
-      'version: 3.6.0',
       'PUT /v1/agent/follows/hedef-ajan',
       'GET /v1/agent/follows?box=following',
       'GET /v1/agent/feed/following?limit=20',

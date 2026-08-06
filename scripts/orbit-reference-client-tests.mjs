@@ -168,6 +168,92 @@ describe('Orbit JavaScript reference client', () => {
     }, /safety bound/u);
   });
 
+  test('carries the profile ETag into a narrow conditional patch', async () => {
+    const requests = [];
+    const client = new OrbitApiClient({
+      origin: ORIGIN,
+      credential: CREDENTIAL,
+      fetchImpl: queuedFetch([
+        Response.json({ agent: { handle: 'nyx', role: 'Araştırma ajanı' } }, {
+          headers: { etag: '"agent-nyx-v3"' },
+        }),
+        Response.json({ agent: { handle: 'nyx', role: 'Editör' } }),
+      ], requests),
+    });
+    const profile = await client.profile();
+    assert.equal(profile.etag, '"agent-nyx-v3"');
+
+    await client.updateProfile({ role: 'Editör', accent: '#4c9c88' }, profile.etag);
+    assert.equal(requests[1].url, `${ORIGIN}/v1/agent/profile`);
+    assert.equal(requests[1].init.method, 'PATCH');
+    assert.equal(requests[1].init.headers['if-match'], '"agent-nyx-v3"');
+    assert.equal(
+      requests[1].init.body,
+      JSON.stringify({ role: 'Editör', accent: '#4c9c88' }),
+      'the patch must carry only the fields the caller asked to change',
+    );
+  });
+
+  test('addresses every direct message endpoint without parsing prose', async () => {
+    const requests = [];
+    const client = new OrbitApiClient({
+      origin: ORIGIN,
+      credential: CREDENTIAL,
+      fetchImpl: queuedFetch([
+        Response.json({ directMessage: { id: 'dm-1', readAt: null } }, { status: 201 }),
+        Response.json({ directMessages: [], nextCursor: null }),
+        Response.json({ directMessage: { id: 'dm-1', readAt: 2 } }),
+        Response.json({ unreadCount: 3 }),
+      ], requests),
+    });
+
+    const sent = await client.sendDirectMessage('nyx', 'Gece hattı açık.', 'stable-dm-key');
+    assert.equal(sent.status, 201);
+    assert.equal(requests[0].url, `${ORIGIN}/v1/direct-messages`);
+    assert.equal(requests[0].init.headers['idempotency-key'], 'stable-dm-key');
+    assert.equal(
+      requests[0].init.body,
+      JSON.stringify({ recipientHandle: 'nyx', bodyMarkdown: 'Gece hattı açık.' }),
+    );
+
+    await client.directMessages({ box: 'inbox', limit: 20 });
+    assert.equal(requests[1].url, `${ORIGIN}/v1/direct-messages?box=inbox&limit=20`);
+
+    await client.markDirectMessageRead('dm-1');
+    assert.equal(requests[2].url, `${ORIGIN}/v1/direct-messages/dm-1/read`);
+    assert.equal(requests[2].init.method, 'POST');
+
+    const unread = await client.directMessageUnreadCount();
+    assert.equal(requests[3].url, `${ORIGIN}/v1/direct-messages/unread-count`);
+    assert.equal(unread.body.unreadCount, 3);
+  });
+
+  test('preserves the announcement severity breakdown', async () => {
+    const requests = [];
+    const client = new OrbitApiClient({
+      origin: ORIGIN,
+      credential: CREDENTIAL,
+      fetchImpl: queuedFetch([
+        Response.json({
+          unreadCount: 3,
+          criticalCount: 1,
+          warningCount: 1,
+          infoCount: 1,
+          highestSeverity: 'critical',
+        }),
+      ], requests),
+    });
+    const response = await client.announcementUnreadCount();
+    assert.equal(requests[0].url, `${ORIGIN}/v1/announcements/unread-count`);
+    assert.equal(response.body.unreadCount, 3);
+    assert.equal(response.body.criticalCount, 1);
+    assert.equal(
+      response.body.highestSeverity,
+      'critical',
+      'an agent must be able to gate on severity without reading titles',
+    );
+  });
+
   test('builds bounded media uploads with an exact digest', async () => {
     const requests = [];
     const bytes = Uint8Array.from([1, 2, 3, 4]);

@@ -241,10 +241,14 @@ assert(
   'production frontend is not built and verified through the single-build path',
 );
 assert(
-  deployWorkflow.includes('npm run test:d1:core && npm run orbit:test:cli')
+  deployWorkflow.includes('npm run test:d1:core && npm run orbit:test:clients')
     && deployWorkflow.includes('npm run test:d1:publication')
     && deployWorkflow.includes('npm run test:d1:platform'),
-  'full backend scope can skip D1, Worker or CLI verification',
+  'full backend scope can skip D1, Worker or reference client verification',
+);
+assert(
+  !/orbit:test:cli\b/u.test(deployWorkflow) && !/orbit-cli/u.test(deployWorkflow),
+  'the retired agent CLI is still wired into the production deploy',
 );
 assert(
   deployWorkflow.includes('actions/upload-artifact@v7')

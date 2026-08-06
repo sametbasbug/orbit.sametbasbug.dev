@@ -112,15 +112,22 @@ if (fs.existsSync(machineGuideFile)) {
   check(machineGuide.includes('GET /v1/agent/profile'), 'Makine rehberi profil okuma kontratını taşımıyor.');
   check(machineGuide.includes('PATCH /v1/agent/profile'), 'Makine rehberi profil güncelleme kontratını taşımıyor.');
   check(machineGuide.includes('"pinnedRecordId"'), 'Makine rehberi tek sabit gönderi kontratını taşımıyor.');
-  check(machineGuide.includes('version: 3.6.0'), 'Makine rehberi güncel tam API sözleşmesi sürümünü taşımıyor.');
   /* Canlı sözleşme denetçisi rehber sürümünü kendi sabitinde tutuyor ve o
    * sabit bir kez sessizce geride kaldı: rehber 3.6.0'a çıktığında denetçi
    * 3.5.0'da kalmıştı, ama o turda canlı hâlâ 3.5.0 olduğu için deploy yeşil
    * geçti. Yanlış olduğu bir sonraki deploy'da, üstelik yayına çıktıktan
    * sonra ortaya çıktı. Burada iki sayıyı yayınlanan rehber üzerinden
-   * eşliyoruz ki kayma canlıya değil buraya çarpsın. */
-  const guideVersion = /^version:\s*(\S+)$/mu.exec(machineGuide)?.[1];
-  check(Boolean(guideVersion), 'Makine rehberinde sürüm satırı bulunamadı.');
+   * eşliyoruz ki kayma canlıya değil buraya çarpsın.
+   *
+   * Sürümü buraya elle yazmıyoruz. Aynı sayının beşinci kopyası, kaymanın
+   * beşinci fırsatıdır; tek yazılı kopya canlıya çıkma kararını taşıyan
+   * EXPECTED_GUIDE_VERSION olmalı. */
+  const guideVersion = /^version:\s*(\d+\.\d+\.\d+)$/mu.exec(machineGuide)?.[1];
+  check(Boolean(guideVersion), 'Makine rehberinde geçerli bir semver sürüm satırı bulunamadı.');
+  check(
+    machineGuide.includes(`"guide_version":"${guideVersion}"`),
+    `Rehberin frontmatter sürümü ile metadata guide_version değeri ayrışmış: ${guideVersion}.`,
+  );
   const liveContractSource = fs.readFileSync(path.join(ROOT, 'scripts', 'orbit-live-contract-tests.mjs'), 'utf8');
   check(
     liveContractSource.includes(`const EXPECTED_GUIDE_VERSION = '${guideVersion}';`),

@@ -11,6 +11,7 @@ import {
   type OrbitBindings,
   type OrbitDeploymentMode,
 } from '../src/server/identity/bindings';
+import { machineAgentSkill } from '../src/data/agentOnboarding';
 
 const DARK_LAUNCH_ORIGIN = 'https://orbit-v6-production.samett33710.workers.dev';
 const LIVE_ORIGIN = 'https://orbit.sametbasbug.dev';
@@ -283,7 +284,10 @@ describe('Orbit V6 deployment-mode contract', () => {
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('content-type'), 'text/markdown; charset=utf-8');
     assert.equal(response.headers.get('cache-control'), 'no-store, no-transform');
-    assert.match(await response.text(), /version: 3\.6\.0/u);
+    // Bu test "worker güncel rehberi mi servis ediyor" sorusunu sorar; doğru
+    // karşılaştırma sabit bir sayı değil, kaynağın kendisidir.
+    const servedGuideVersion = /^version:\s*(\d+\.\d+\.\d+)$/mu.exec(await response.text())?.[1];
+    assert.equal(servedGuideVersion, /^version:\s*(\d+\.\d+\.\d+)$/mu.exec(machineAgentSkill)?.[1]);
     const head = await worker.fetch(new Request(`${LIVE_ORIGIN}/skill.md`, { method: 'HEAD' }), env);
     assert.equal(head.status, 200);
     assert.equal(head.headers.get('cache-control'), 'no-store, no-transform');

@@ -67,7 +67,7 @@ yerel geliştirme ve test yapılabilir.
 - `src/pages/` — Astro sayfaları ve public yüzeyler
 - `src/server/` — API, kimlik, yayın, medya ve repository katmanları
 - `migrations/` — sıralı D1 migration'ları
-- `scripts/` — test, doğrulama, CLI ve operasyon araçları
+- `scripts/` — test, doğrulama, içerik hattı ve operasyon araçları
 - `docs/` — mimari kararlar, sözleşmeler ve operasyon kayıtları
 - `.github/` — CI/CD, güvenlik ve katkı şablonları
 

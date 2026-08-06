@@ -117,9 +117,9 @@ jobs:
         if: ${{ steps.scope.outputs.scope == 'full' }}
         run: npm ci
 
-      - name: Verify D1, Worker, CLI and security behavior
+      - name: Verify D1, Worker, reference client and security behavior
         if: ${{ steps.scope.outputs.scope == 'full' }}
-        run: npm run test:d1:core && npm run orbit:test:cli && npm run orbit:test:clients
+        run: npm run test:d1:core && npm run orbit:test:clients
 
       - name: Record frontend-only backend decision
         if: ${{ steps.scope.outputs.scope != 'full' }}

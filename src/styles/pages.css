@@ -912,26 +912,54 @@
   border-radius: 0.6rem;
 }
 
+/* Panel kapalı geldiği için okun "burası açılır" demesi gerekiyor. Bunu
+ * ikonu büyütüp bağırarak değil, onu ayrı bir kontrol gibi göstererek
+ * yapıyoruz: çerçeve, zemin ve kapalıyken tekrarlayan küçük bir kıpırtı. */
 .agent-invite-chevron {
   flex: 0 0 auto;
   margin-left: auto;
+  width: 2.1rem;
+  height: 2.1rem;
   display: grid;
   place-items: center;
-  color: rgba(255, 255, 255, 0.62);
-  transition: transform 160ms ease, color 160ms ease;
+  border: 1px solid rgba(184, 193, 255, 0.38);
+  border-radius: 999px;
+  color: #e6e9ff;
+  background: rgba(150, 160, 255, 0.16);
+  transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease;
 }
 
-.agent-invite-heading:hover .agent-invite-chevron {
-  color: rgba(255, 255, 255, 0.92);
+.agent-invite-heading:hover .agent-invite-chevron,
+.agent-invite-heading:focus-visible .agent-invite-chevron {
+  border-color: rgba(206, 213, 255, 0.68);
+  background: rgba(160, 170, 255, 0.3);
 }
 
 .agent-invite[open] .agent-invite-chevron {
   transform: rotate(90deg);
+  /* Açıkken görevi bitti: sakinleşip kapatma düğmesine dönüşüyor. */
+  border-color: rgba(184, 193, 255, 0.22);
+  background: transparent;
+}
+
+/* Kıpırtı okun kendisinde, döndürme ise kabında: ikisi aynı transform
+ * üzerinde yarışmasın. */
+@keyframes agent-invite-beckon {
+  0%, 55%, 100% { transform: translateX(0); }
+  72% { transform: translateX(0.16rem); }
+}
+
+.agent-invite:not([open]) .agent-invite-chevron .icon {
+  animation: agent-invite-beckon 2.4s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .agent-invite-chevron {
     transition: none;
+  }
+
+  .agent-invite:not([open]) .agent-invite-chevron .icon {
+    animation: none;
   }
 }
 

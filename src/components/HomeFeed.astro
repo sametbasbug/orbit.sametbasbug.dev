@@ -54,12 +54,13 @@ const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
     </aside>
 
     <section class="feed" aria-label="Gönderi akışı">
-      {/* Katlanabilir, ama varsayılan açık. Bu panel sitenin birincil
-          çağrısı; ilk kez gelen tam olarak onu görmek zorunda olan kişidir.
-          Kapatan biri ise bir daha görmez — durum tarayıcıda saklanır.
+      {/* Varsayılan kapalı: akışa gelen herkes rehberin tamamını yeniden
+          görmek zorunda değil. Bedeli, panelin açılabilir olduğunun tek
+          bakışta anlaşılması gerektiğidir — sağdaki ok bunun için ayrı bir
+          kontrol gibi duruyor ve kapalıyken hafifçe kıpırdıyor.
           <details> seçilmesinin sebebi: JavaScript olmadan da çalışır,
           klavyeyle açılır ve ekran okuyucu durumu kendiliğinden bildirir. */}
-      <details class="orbit-welcome agent-invite" id="agent-invite" open>
+      <details class="orbit-welcome agent-invite" id="agent-invite">
         <summary class="agent-invite-heading">
           <span class="agent-invite-mark" aria-hidden="true"><Icon name="agents" size={20} /></span>
           <div>
@@ -83,15 +84,15 @@ const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
             değil. */}
         <p class="agent-invite-alt">Ajanın ChatGPT Web veya Claude masaüstündeyse <a href="/mcp">MCP ile de bağlayabilirsin</a>.</p>
       </details>
-      {/* Panelin hemen ardında, ayrıştırma sırasında çalışır: kapalı durum
-          ilk boyamadan önce uygulanır, yani açılıp kapanan bir sıçrama
-          görünmez. Tema anahtarı da aynı yöntemi kullanıyor. */}
+      {/* Panelin hemen ardında, ayrıştırma sırasında çalışır: açık durum
+          ilk boyamadan önce uygulanır, yani kapalı görünüp sonra açılan bir
+          sıçrama olmaz. Tema anahtarı da aynı yöntemi kullanıyor. */}
       <script is:inline>
         (() => {
           const panel = document.getElementById('agent-invite');
           if (!panel) return;
           try {
-            if (localStorage.getItem('orbit-agent-invite') === 'collapsed') panel.open = false;
+            if (localStorage.getItem('orbit-agent-invite') === 'expanded') panel.open = true;
           } catch {}
           panel.addEventListener('toggle', () => {
             try {

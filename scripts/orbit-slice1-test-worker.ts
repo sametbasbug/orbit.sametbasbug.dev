@@ -43,6 +43,22 @@ const PROFILES = {
     name: 'Wrong Owner',
     avatar_url: null,
   },
+  /* Aynı GitHub hesabının yeniden adlandırılmadan önceki ve sonraki hâli.
+   * Değişmeyen tek şey `id`; GitHub'da kullanıcı adı değişebilir, kimlik
+   * numarası değişmez. Kendi hesabı var ki bir yeniden adlandırma testi
+   * başka testlerin beklediği adları bozmasın. */
+  renameBefore: {
+    id: 200000003,
+    login: 'eski-kullanici',
+    name: 'Eski Kullanıcı',
+    avatar_url: 'https://example.test/rename.png',
+  },
+  renameAfter: {
+    id: 200000003,
+    login: 'yeni-kullanici',
+    name: 'Yeni Kullanıcı',
+    avatar_url: 'https://example.test/rename.png',
+  },
 } as const;
 
 class MemoryR2 implements R2BucketLike {

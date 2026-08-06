@@ -450,18 +450,22 @@ export class D1IdentityRepository implements IdentityRepository {
   async getAccount(accountId: string): Promise<AccountView | null> {
     const row = await this.#db.prepare(`
       SELECT a.id, a.handle, a.display_name, a.avatar_url,
+             identity.provider_login_snapshot AS github_login,
              COALESCE(GROUP_CONCAT(DISTINCT ar.role), '') AS roles,
              COALESCE(MAX(aq.limit_value), 0) AS agent_quota
       FROM accounts a
+      LEFT JOIN auth_identities identity
+        ON identity.account_id = a.id AND identity.provider = 'github'
       LEFT JOIN account_roles ar
         ON ar.account_id = a.id AND ar.revoked_at IS NULL
       LEFT JOIN account_quotas aq
         ON aq.account_id = a.id AND aq.quota_key = 'agents.max_active'
       WHERE a.id = ? AND a.status = 'active'
-      GROUP BY a.id, a.handle, a.display_name, a.avatar_url
+      GROUP BY a.id, a.handle, a.display_name, a.avatar_url, identity.provider_login_snapshot
     `).bind(accountId).first<{
       id: string;
       handle: string;
+      github_login: string | null;
       display_name: string;
       avatar_url: string | null;
       roles: string;
@@ -470,6 +474,7 @@ export class D1IdentityRepository implements IdentityRepository {
     return row ? {
       id: row.id,
       handle: row.handle,
+      githubLogin: row.github_login,
       displayName: row.display_name,
       avatarUrl: row.avatar_url,
       roles: row.roles ? row.roles.split(',').sort() : [],

@@ -159,7 +159,7 @@ async function startOAuth(
 }
 
 async function callback(
-  code: 'owner' | 'selene' | 'mismatch',
+  code: 'owner' | 'selene' | 'mismatch' | 'renameBefore' | 'renameAfter',
   flow: { state: string; oauthCookie: string },
   now = NOW + 1,
 ): Promise<Response> {
@@ -346,6 +346,44 @@ let firstCredentialToken = '';
       invitationToken: body.invitation.token,
     }, { origin: ORIGIN }, NOW + 17);
     assert.equal(reused.status, 400);
+  });
+
+  test('a GitHub rename reaches the dashboard on the next login', async () => {
+    /* GitHub kullanıcı adı değişebilir; kimlik numarası değişmez. Hesap
+     * kayıt anındaki adı `accounts.handle` içinde saklıyor ve orası bir daha
+     * değişmiyor — değişemez de, benzersizlik kısıtı var ve o alan Orbit'in
+     * kendi tanımlayıcısı. Dashboard bir zamanlar onu "GitHub hesabın" diye
+     * gösteriyordu, bu yüzden yeniden adlandırma hiç görünmüyordu.
+     * Gösterilmesi gereken, her girişte tazelenen `githubLogin`. */
+    const created = await postJson('/v1/admin/invitations', {}, authenticatedHeaders(ownerCookies, true), NOW + 60);
+    const invitation = await created.json() as { invitation: { token: string } };
+
+    const registration = await callback('renameBefore', await startOAuth(invitation.invitation.token, NOW + 61), NOW + 62);
+    assert.equal(registration.status, 302, await registration.clone().text());
+    const firstCookies = cookieValues(registration);
+    const before = await (await request('/v1/me', {
+      headers: authenticatedHeaders(firstCookies),
+    }, NOW + 63)).json() as { account: { id: string; handle: string; githubLogin: string | null } };
+    assert.equal(before.account.handle, 'eski-kullanici');
+    assert.equal(before.account.githubLogin, 'eski-kullanici');
+
+    // İnsan GitHub'da adını değiştirdi ve tekrar giriş yaptı.
+    const relogin = await callback('renameAfter', await startOAuth(undefined, NOW + 64), NOW + 65);
+    assert.equal(relogin.status, 302, await relogin.clone().text());
+    const secondCookies = cookieValues(relogin);
+    const after = await (await request('/v1/me', {
+      headers: authenticatedHeaders(secondCookies),
+    }, NOW + 66)).json() as {
+      account: { id: string; handle: string; githubLogin: string | null; displayName: string };
+    };
+
+    // Yeni bir hesap açılmadı: aynı GitHub kimlik numarası aynı hesaba düştü.
+    assert.equal(after.account.id, before.account.id);
+    assert.equal(after.account.githubLogin, 'yeni-kullanici', 'dashboard yeni GitHub adını göstermiyor');
+    assert.equal(after.account.displayName, 'Yeni Kullanıcı');
+    // Orbit'in kendi tanımlayıcısı kasten sabit kalır: benzersizlik kısıtı
+    // taşıyor ve her girişte yeniden yazmak girişi çökertme riski demek.
+    assert.equal(after.account.handle, 'eski-kullanici');
   });
 
   test('ordinary sponsors cannot create platform invitations', async () => {

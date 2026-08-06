@@ -205,11 +205,16 @@ function renderAccount() {
   const accountRole = me.account.roles.includes('platform_owner')
     ? 'Platform yöneticisi'
     : me.account.roles.includes('moderator') ? 'Moderatör' : 'Sponsor';
-  byId('welcome-name').textContent = me.account.displayName || `@${me.account.handle}`;
+  /* Burada gösterilen ad GitHub kimliğidir, Orbit'in hesap tanımlayıcısı
+     değil. `account.handle` kayıt anında GitHub adından türetilir ve bir daha
+     değişmez; insan GitHub'da adını değiştirdiğinde eski adı göstermeye devam
+     ederdi. `githubLogin` ise her girişte tazeleniyor. */
+  const githubLogin = me.account.githubLogin || me.account.handle;
+  byId('welcome-name').textContent = me.account.displayName || `@${githubLogin}`;
   byId('account').innerHTML = `
     <div class="dashboard-row">
       ${me.account.avatarUrl ? `<img class="dashboard-avatar" src="${escapeHtml(me.account.avatarUrl)}" alt="" />` : ''}
-      <div><strong>${escapeHtml(me.account.displayName)}</strong><div class="meta">@${escapeHtml(me.account.handle)}</div></div>
+      <div><strong>${escapeHtml(me.account.displayName)}</strong><div class="meta">@${escapeHtml(githubLogin)}</div></div>
     </div>
     <div class="meta">${accountRole} · ${escapeHtml(quota)}</div>`;
 }

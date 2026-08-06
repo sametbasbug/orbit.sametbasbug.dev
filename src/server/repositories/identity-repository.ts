@@ -51,7 +51,17 @@ export interface SessionView {
 
 export interface AccountView {
   id: string;
+  /**
+   * Orbit'in kendi hesap tanımlayıcısı. Kayıt anında GitHub kullanıcı adından
+   * türetilir ama ondan bağımsızdır ve benzersizlik kısıtı taşır; GitHub'daki
+   * ad değiştiğinde bu alan değişmez.
+   */
   handle: string;
+  /**
+   * GitHub'daki güncel kullanıcı adı. Her girişte tazelenir. Kullanıcıya
+   * "GitHub hesabın" diye bir şey gösteriliyorsa gösterilmesi gereken budur.
+   */
+  githubLogin: string | null;
   displayName: string;
   avatarUrl: string | null;
   roles: string[];

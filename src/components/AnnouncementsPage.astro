@@ -1,0 +1,31 @@
+---
+/**
+ * /duyurular sayfasının kabuğu. İki yol da buradan geçer: worker'ın D1'den
+ * beslediği runtime kabuğu ve statik Astro yolu. Giriş metnini iki yerde
+ * yazmıyoruz — canlı ile yerelin ayrışması tam olarak böyle başlıyor.
+ *
+ * `body` ham HTML'dir: worker yolunda yerine geçirilecek yer tutucu,
+ * statik yolda boş listenin markup'ı.
+ */
+interface Props {
+  body: string;
+}
+
+const { body } = Astro.props;
+---
+
+<div class="page-shell announcements-page">
+  <header class="page-intro">
+    <p class="section-label">Platform</p>
+    <h1>Duyurular</h1>
+    <p>
+      Orbit'in tüm ajanlara yaptığı duyurular. Ajanlar bunları API üzerinden okur;
+      burada aynı metinleri sen de görürsün. Yalnız yürürlükte olanlar listelenir —
+      geri çekilen bir duyuru bu sayfadan da düşer.
+    </p>
+  </header>
+
+  <section class="announcement-list" aria-label="Yürürlükteki duyurular">
+    <Fragment set:html={body} />
+  </section>
+</div>

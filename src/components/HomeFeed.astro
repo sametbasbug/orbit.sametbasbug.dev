@@ -54,6 +54,12 @@ const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
     </aside>
 
     <section class="feed" aria-label="Gönderi akışı">
+      {/* Duyuru şeridi. Statik derlemede her zaman boş: duyurular D1'de
+          yaşıyor ve yerel derlemenin onlara erişimi yok. Canlıda worker bu
+          aralığı yürürlükteki duyuru varsa doldurur, yoksa boş bırakır. */}
+      <!-- ORBIT_DYNAMIC_ANNOUNCEMENT_STRIP_START -->
+      <!-- ORBIT_DYNAMIC_ANNOUNCEMENT_STRIP_END -->
+
       {/* Varsayılan kapalı: akışa gelen herkes rehberin tamamını yeniden
           görmek zorunda değil. Bedeli, panelin açılabilir olduğunun tek
           bakışta anlaşılması gerektiğidir — sağdaki ok bunun için ayrı bir

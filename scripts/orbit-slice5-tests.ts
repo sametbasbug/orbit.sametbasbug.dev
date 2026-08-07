@@ -1003,6 +1003,55 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal(rows.find((item) => item.id === id)?.status, 'expired');
   });
 
+  /**
+   * Geri çekme bugüne kadar hiç test edilmemişti — bunu bu değişikliği
+   * yazarken fark ettim. Artık geri çekme bir durum değişikliği değil,
+   * silme; ve silmenin gerçekten sildiğini kanıtlamak için her yüzeyi tek
+   * tek sormak gerekiyor. Platform sahibinin paneli de bir yüzey: talebin
+   * özü "biz adminler de dahil kimse okuyamasın" idi.
+   */
+  test('withdrawing an announcement erases it from every surface, owners included', async () => {
+    const agent = agents.get('slice5-external')!;
+    const created = await ownerRequest('/v1/admin/announcements', 'POST', {
+      title: 'Geri çekilecek duyuru', bodyMarkdown: 'Bu metin hiçbir yerde kalmamalı.',
+      severity: 'critical', audienceType: 'all_agents', targetAgentId: null,
+      startsAt: NOW - 1000, expiresAt: null,
+    });
+    assert.equal(created.status, 201);
+    const id = (await created.json() as { announcement: { id: string } }).announcement.id;
+    assert.equal((await ownerRequest(`/v1/admin/announcements/${id}/publish`, 'POST', {})).status, 200);
+
+    // Okundu kaydı da bırakalım: silme ona bağlı satırları da temizlemeli,
+    // yoksa yabancı anahtar yüzünden silme hiç çalışmaz.
+    assert.equal((await agentRequest(agent, `/v1/announcements/${id}/read`, 'POST', {})).status, 200);
+
+    const beforeOwner = await (await ownerRequest('/v1/admin/announcements')).text();
+    assert.match(beforeOwner, /Geri çekilecek duyuru/u, 'duyuru silinmeden önce panelde görünmüyor');
+
+    const withdrawn = await ownerRequest(`/v1/admin/announcements/${id}/withdraw`, 'POST', {});
+    assert.equal(withdrawn.status, 200);
+    assert.equal(
+      (await withdrawn.json() as { announcement: { status: string } }).announcement.status,
+      'deleted',
+      'cevap hâlâ geride okunabilir bir şey kaldığını ima ediyor',
+    );
+
+    const ownerRows = await (await ownerRequest('/v1/admin/announcements')).text();
+    assert.doesNotMatch(ownerRows, new RegExp(id, 'u'), 'geri çekilen duyuru yönetici panelinde duruyor');
+    assert.doesNotMatch(ownerRows, /Bu metin hiçbir yerde kalmamalı/u, 'geri çekilen duyurunun gövdesi panelde okunabiliyor');
+
+    const agentRows = await (await agentRequest(agent, '/v1/announcements')).text();
+    assert.doesNotMatch(agentRows, new RegExp(id, 'u'), 'geri çekilen duyuru ajan kutusunda duruyor');
+
+    const publicPage = await fetch(`${baseUrl}/v1/feed`).then((response) => response.text());
+    assert.doesNotMatch(publicPage, /Geri çekilecek duyuru/u);
+
+    // Silinen bir duyuru ikinci kez geri çekilemez; durum makinesi geçiş
+    // tablosuna yazmayı bıraktığımızda da ayakta kalmalı.
+    const secondWithdraw = await ownerRequest(`/v1/admin/announcements/${id}/withdraw`, 'POST', {});
+    assert.equal(secondWithdraw.status, 409, 'silinmiş duyuru tekrar geri çekilebiliyor');
+  });
+
   test('only anonymous public reads are cached and successful mutations invalidate the epoch', async () => {
     const url = `${baseUrl}/v1/feed?topic=orbit&limit=1`;
     const first = await fetch(url);

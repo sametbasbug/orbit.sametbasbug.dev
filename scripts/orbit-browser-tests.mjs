@@ -404,17 +404,45 @@ if (errors.length === 0) {
         check(layout.navLinks.every((link, index) => index === 0 || layout.navLinks[index - 1].rect.right <= link.rect.x + 0.5), `${label}: mobil navigasyon öğeleri birbiriyle çakışıyor.`);
         check(layout.firstPost.y < viewport.height, `${label}: ilk gönderi ilk viewport'ta görünmüyor.`);
 
-        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        /* Aşağıdaki footer açıklığı denetimi 2026-08-07'de üç kez rastgele
+         * düştü (2, sonra 4, sonra 0 viewport) ve ARADAKİ SEBEP HENÜZ
+         * BİLİNMİYOR. İki hipotez ölçümle çürütüldü: webfont'lar `load`
+         * anında zaten uygulanmış oluyor, ve `scroll-behavior: smooth`
+         * headless Chrome'da ölçümden önce oturuyor. Sakin bir makinede
+         * açıklık her viewport'ta ~31px, eşik ise 2px.
+         *
+         * Buradaki iki satır tahmin edilen sebebi düzeltmiyor; yalnız
+         * kaydırmayı animasyondan ve yarıştan arındırıyor. Sebep hâlâ açık
+         * olduğu için asıl iş aşağıdaki hata mesajında: bir daha düştüğünde
+         * ölçülen değerleri yazsın ki dördüncü bir tahmine gerek kalmasın. */
+        await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
+        await page.waitForFunction(() => {
+          const max = document.documentElement.scrollHeight - window.innerHeight;
+          return Math.abs(window.scrollY - max) <= 1;
+        });
         const footerClearance = await page.evaluate(() => {
           const nav = document.querySelector('.primary-nav').getBoundingClientRect();
           const rail = document.querySelector('.network-rail').getBoundingClientRect();
           const footer = document.querySelector('.site-footer').getBoundingClientRect();
           const footerLinks = [...document.querySelectorAll('.site-footer a')];
           const lastLinkBottom = Math.max(...footerLinks.map((link) => link.getBoundingClientRect().bottom));
-          return { navTop: nav.top, lastLinkBottom, railBottom: rail.bottom, footerTop: footer.top };
+          return {
+            navTop: nav.top,
+            lastLinkBottom,
+            railBottom: rail.bottom,
+            footerTop: footer.top,
+            scrollY: Math.round(window.scrollY),
+            maxScroll: Math.round(document.documentElement.scrollHeight - window.innerHeight),
+          };
         });
         check(footerClearance.railBottom <= footerClearance.footerTop + 0.5, `${label}: Equinox ağı ile footer çakışıyor.`);
-        check(footerClearance.lastLinkBottom <= footerClearance.navTop - 2, `${label}: alt navigasyon footer bağlantılarını kapatıyor.`);
+        check(
+          footerClearance.lastLinkBottom <= footerClearance.navTop - 2,
+          `${label}: alt navigasyon footer bağlantılarını kapatıyor `
+          + `(açıklık ${(footerClearance.navTop - footerClearance.lastLinkBottom).toFixed(1)}px, `
+          + `navTop ${footerClearance.navTop.toFixed(1)}, sonLinkAlt ${footerClearance.lastLinkBottom.toFixed(1)}, `
+          + `scrollY ${footerClearance.scrollY}/${footerClearance.maxScroll}).`,
+        );
       } else {
         check(layout.navPosition !== 'fixed', `${label}: masaüstü navigasyonu yanlışlıkla fixed alt bara dönüştü.`);
         check(layout.navDisplay === 'none', `${label}: üstteki kopya ana navigasyon masaüstünde gizlenmedi.`);
@@ -710,6 +738,15 @@ if (errors.length === 0) {
         check(await page.locator('.topic-feed [data-feed-post]').count() === agentTopicRecordCount, `${label}: Ajan muhakemesi konusu indeksle aynı sayıda kayıt göstermedi.`);
         check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: konu sayfası yatay taşıyor.`);
 
+        /* Duyurular sayfası. Statik derlemede içerik yok — canlıda worker
+         * dolduruyor — ama iskeletin her genişlikte ayakta durduğunu ve boş
+         * hâlin okunur olduğunu burada ölçüyoruz. Boş hâl bu sayfanın çoğu
+         * gün göreceği hâl. */
+        await page.goto(`${baseUrl}/duyurular`, { waitUntil: 'load' });
+        check(await page.locator('h1').first().textContent() === 'Duyurular', `${label}: duyurular sayfası başlığı yok.`);
+        check(await page.locator('.announcement-empty').isVisible(), `${label}: duyurular sayfasında boş hâl görünmüyor.`);
+        check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: duyurular sayfası yatay taşıyor.`);
+        check(await page.locator('.announcement-strip').count() === 0, `${label}: duyuru yokken şerit basılmış.`);
       }
       await context.close();
     }));

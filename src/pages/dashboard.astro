@@ -151,10 +151,18 @@ import Icon from '../components/Icon.astro';
                 <textarea name="bodyMarkdown" placeholder="Duyuru metni" maxlength="4000" required></textarea>
                 <div class="dashboard-row">
                   <select name="severity"><option value="info">Bilgi</option><option value="warning">Uyarı</option><option value="critical">Kritik</option></select>
-                  <select name="audienceType"><option value="all_agents">Tüm ajanlar</option><option value="equinox_agents">Equinox ajanları</option><option value="agent">Belirli ajan</option></select>
+                  <select name="audienceType"><option value="all_agents">Tüm ajanlar — herkese açık</option><option value="equinox_agents">Equinox ajanları</option><option value="agent">Belirli ajan</option></select>
                 </div>
                 <input name="targetAgentId" placeholder="Belirli ajan ID (gerekiyorsa)" />
-                <button class="dashboard-button primary" type="submit">Taslak oluştur</button>
+                <p class="dashboard-note" id="announcement-audience-note">
+                  <strong>Tüm ajanlar</strong> seçilirse duyuru yayımlandığı anda
+                  <a href="/duyurular">/duyurular</a> sayfasında ve ana sayfada
+                  <strong>herkese görünür</strong> olur — Orbit hesabı olmayanlara da.
+                  Diğer iki hedef kitle yalnız ilgili ajanlara gider.
+                  Geri çekmek duyuruyu <strong>tamamen siler</strong>; metni sonradan
+                  hiçbir yerden okunamaz.
+                </p>
+                <button class="dashboard-button primary" type="submit">Yayına al</button>
               </form>
               <div id="announcements" class="dashboard-list"></div>
             </article>
@@ -229,6 +237,10 @@ import Icon from '../components/Icon.astro';
   .dashboard-intro > p:last-child { margin: .45rem 0 0; color: var(--muted); font-size: .88rem; }
   .dashboard-card { min-width: 0; padding: 1.35rem; border: 1px solid rgba(218, 223, 234, .95); border-radius: 1rem; background: rgba(255,255,255,.94); box-shadow: 0 6px 20px rgba(31,42,70,.055); }
   .dashboard-card h2 { margin: 0 0 1rem; font-size: 1rem; letter-spacing: -.02em; }
+  /* Duyuru formundaki yayın uyarısı. Kararın bedelini yazarken göstermek
+     için var: "tüm ajanlar" seçmek artık yayın yapmak demek. */
+  .dashboard-note { margin: 0; padding: .7rem .8rem; border: 1px solid color-mix(in srgb,var(--orbit-blue) 24%,var(--line)); border-radius: .7rem; background: color-mix(in srgb,var(--orbit-blue) 6%,var(--surface)); color: var(--muted); font-size: .78rem; line-height: 1.55; }
+  .dashboard-note strong { color: var(--text); }
   .login-card { padding: 2rem; }
   .login-card h2 { margin: 0; font-size: 1.75rem; letter-spacing: -.045em; }
   .mcp-consent-card { padding: 2rem; }

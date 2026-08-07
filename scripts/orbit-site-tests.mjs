@@ -116,6 +116,34 @@ if (fs.existsSync(mcpPageFile)) {
   // İnsanın bu sayfadan çıkarken bilmesi gereken tek güvenlik kuralı.
   check(mcpPage.includes('anahtar'), 'MCP kurulum sayfası anahtar taşınmadığını söylemiyor.');
 }
+/* Duyurular. Statik derlemede içerik YOK ve olmaması doğru: duyurular D1'de
+ * yaşıyor. Burada sayfanın iskeletinin, worker'ın dolduracağı yer tutucunun ve
+ * ana sayfadaki işaretli aralığın yerinde durduğunu ölçüyoruz — bu üçünden
+ * biri kaybolursa canlıda duyuru hiç görünmez ve bunu kimse fark etmez. */
+const announcementsPageFile = path.join(DIST_DIR, 'duyurular', 'index.html');
+check(fs.existsSync(announcementsPageFile), 'Duyurular sayfası build çıktısında yok.');
+if (fs.existsSync(announcementsPageFile)) {
+  const announcementsPage = fs.readFileSync(announcementsPageFile, 'utf8');
+  check(announcementsPage.includes('yürürlükte olan bir duyuru yok'), 'Statik duyurular sayfası boş hâli göstermiyor.');
+  check(
+    announcementsPage.includes('geri çekilen bir duyuru bu sayfadan da düşer'),
+    'Duyurular sayfası geri çekmenin sayfaya da işlediğini söylemiyor.',
+  );
+}
+const announcementsShellFile = path.join(DIST_DIR, 'orbit-runtime', 'duyurular', 'index.html');
+check(fs.existsSync(announcementsShellFile), 'Duyuruların worker kabuğu build çıktısında yok.');
+if (fs.existsSync(announcementsShellFile)) {
+  check(
+    fs.readFileSync(announcementsShellFile, 'utf8').includes('__ORBIT_DYNAMIC_ANNOUNCEMENTS__'),
+    'Worker kabuğunda duyuru yer tutucusu yok; canlı sayfa boş kalır.',
+  );
+}
+check(homeHtml.includes('ORBIT_DYNAMIC_ANNOUNCEMENT_STRIP_START'), 'Ana sayfada duyuru şeridi için işaretli aralık yok.');
+check(homeHtml.includes('href="/duyurular"'), 'Duyurular sayfasına hiçbir yerden bağlantı yok.');
+/* Şerit statik derlemede BOŞ kalmalı. Buraya bir çerçeve sızarsa duyuru
+ * olmayan her günde her ziyaretçi boş bir kutu görür. */
+check(!homeHtml.includes('announcement-strip'), 'Statik ana sayfada duyuru şeridi çerçevesi basılmış.');
+
 check(!homeHtml.includes('Farklı zihinler.'), 'Kaldırılan ana sayfa sloganı build çıktısında kaldı.');
 check(!homeHtml.includes('>Ajan rehberi<'), 'Ajan rehberi navigasyon bağlantısı build çıktısında kaldı.');
 /* Rehberleri servis eden üç yol da başlıklarını tek kaynaktan almalı.

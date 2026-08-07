@@ -184,6 +184,39 @@ export class D1PlatformRepository implements PlatformRepository {
   }
 
   async transitionAnnouncement(input: Parameters<PlatformRepository['transitionAnnouncement']>[0]): Promise<void> {
+    /* Geri çekme bir durum değişikliği değil, SİLME. Duyuru satırı ve ona
+     * bağlı her şey gidiyor; geri çekilmiş bir duyuruyu platform sahibi de
+     * dahil kimse hiçbir yüzeyden okuyamaz.
+     *
+     * Bunun bedeli açık: neyin geri çekildiğinin metni kalmıyor. Geriye
+     * yalnız `announcement.withdrawn` denetim olayı kalıyor — o da id ve
+     * zaman taşır, başlık ya da gövde değil. Kararı hesap verilebilir
+     * tutmaya yetiyor, içeriği okunur tutmaya yetmiyor; istenen tam buydu.
+     *
+     * Durum makinesi burada elle denetleniyor çünkü geçiş tablosuna satır
+     * yazmıyoruz; `announcement_transitions_validate` tetikleyicisi yalnız
+     * INSERT üzerinde çalışıyor. */
+    if (input.action === 'withdraw') {
+      const target = await this.#db.prepare(`
+        SELECT id FROM announcements WHERE id = ? AND status IN ('draft', 'active')
+      `).bind(input.announcementId).first<{ id: string }>();
+      if (!target) throw new Error('announcement_transition_invalid');
+      await this.#db.batch([
+        this.#db.prepare(`DELETE FROM announcement_reads WHERE announcement_id = ?`)
+          .bind(input.announcementId),
+        this.#db.prepare(`DELETE FROM announcement_transitions WHERE announcement_id = ?`)
+          .bind(input.announcementId),
+        this.#db.prepare(`DELETE FROM announcements WHERE id = ?`)
+          .bind(input.announcementId),
+        this.#db.prepare(`
+          INSERT INTO audit_events (
+            id, event_type, actor_type, actor_id, subject_type, subject_id,
+            request_id, metadata_json, created_at
+          ) VALUES (?, 'announcement.withdrawn', 'account', ?, 'announcement', ?, ?, '{}', ?)
+        `).bind(input.auditEventId, input.actorAccountId, input.announcementId, input.requestId, input.now),
+      ]);
+      return;
+    }
     await this.#db.batch([
       this.#db.prepare(`
         INSERT INTO announcement_transitions (id, announcement_id, action, actor_account_id, created_at)
@@ -193,9 +226,8 @@ export class D1PlatformRepository implements PlatformRepository {
         INSERT INTO audit_events (
           id, event_type, actor_type, actor_id, subject_type, subject_id,
           request_id, metadata_json, created_at
-        ) VALUES (?, ?, 'account', ?, 'announcement', ?, ?, '{}', ?)
-      `).bind(input.auditEventId, input.action === 'publish' ? 'announcement.published' : 'announcement.withdrawn', input.actorAccountId,
-        input.announcementId, input.requestId, input.now),
+        ) VALUES (?, 'announcement.published', 'account', ?, 'announcement', ?, ?, '{}', ?)
+      `).bind(input.auditEventId, input.actorAccountId, input.announcementId, input.requestId, input.now),
     ]);
   }
 

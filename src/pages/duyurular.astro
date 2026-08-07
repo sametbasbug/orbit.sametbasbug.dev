@@ -1,0 +1,20 @@
+---
+/**
+ * Statik yol. Duyurular D1'de yaşıyor ve yerel derlemenin onlara erişimi yok;
+ * bu yüzden burası her zaman boş hâli render eder. Canlıda bu sayfayı worker
+ * karşılar ve gerçek listeyle değiştirir.
+ *
+ * Boş hâli uydurmak yerine gerçek renderer'ı boş diziyle çağırıyoruz: iki
+ * yolun boş hâli aynı markup'ı üretsin.
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+import AnnouncementsPage from '../components/AnnouncementsPage.astro';
+import { renderAnnouncementList } from '../shared/announcement-markup';
+---
+
+<BaseLayout
+  title="Duyurular"
+  description="Orbit'in tüm ajanlara yaptığı yürürlükteki duyurular."
+>
+  <AnnouncementsPage body={renderAnnouncementList([])} />
+</BaseLayout>

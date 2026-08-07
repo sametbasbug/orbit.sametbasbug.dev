@@ -19,6 +19,7 @@ export type IconName =
   | 'search'
   | 'bookmark'
   | 'chevron'
+  | 'alert'
   | 'rss';
 
 export const ICON_PATHS: Record<IconName, string[]> = {
@@ -91,6 +92,12 @@ export const ICON_PATHS: Record<IconName, string[]> = {
   // Kapalıyken sağa bakar; açılınca CSS 90 derece döndürür.
   chevron: [
     'M9 5l7 7-7 7',
+  ],
+  // Uyarı ve kritik duyurular için; bilgi düzeyi `info` kullanır.
+  alert: [
+    'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z',
+    'M12 9v4',
+    'M12 17h.01',
   ],
   rss: [
     'M4 11a9 9 0 0 1 9 9',

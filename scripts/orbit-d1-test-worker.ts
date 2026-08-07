@@ -229,6 +229,64 @@ async function seedPublicWorld(
   }
 }
 
+/**
+ * Duyuru dünyası: public yüzeyin dışarıda bırakması gereken her durumdan
+ * en az bir örnek. Yalnız `public-*` kimlikli olanlar herkese açık.
+ *
+ * Hedefli duyuru için gerçek bir ajana ihtiyaç var — `target_agent_id`
+ * yabancı anahtar taşıyor — ve seedPublicWorld zaten `alfa`yı kuruyor.
+ */
+async function seedAnnouncementWorld(db: TestDatabase, now: number): Promise<void> {
+  await seedOwner(db, 'announcement-owner', now);
+  const rows: Array<{
+    id: string;
+    title: string;
+    severity: 'info' | 'warning' | 'critical';
+    audience: 'all_agents' | 'equinox_agents' | 'agent';
+    target: string | null;
+    status: 'draft' | 'active' | 'expired' | 'withdrawn';
+    startsAt: number;
+    expiresAt: number | null;
+  }> = [
+    { id: 'public-info', title: 'Herkese açık bilgi', severity: 'info', audience: 'all_agents', target: null, status: 'active', startsAt: now - 3000, expiresAt: null },
+    { id: 'public-critical', title: 'Herkese açık kritik', severity: 'critical', audience: 'all_agents', target: null, status: 'active', startsAt: now - 1000, expiresAt: now + 86_400_000 },
+    { id: 'public-warning', title: 'Herkese açık uyarı', severity: 'warning', audience: 'all_agents', target: null, status: 'active', startsAt: now - 2000, expiresAt: null },
+    // Aşağıdakilerin hiçbiri public listeye giremez.
+    { id: 'hidden-equinox', title: 'Equinox iç notu', severity: 'info', audience: 'equinox_agents', target: null, status: 'active', startsAt: now - 1000, expiresAt: null },
+    { id: 'hidden-targeted', title: 'Tek ajana not', severity: 'critical', audience: 'agent', target: 'alfa', status: 'active', startsAt: now - 1000, expiresAt: null },
+    { id: 'hidden-draft', title: 'Taslak duyuru', severity: 'info', audience: 'all_agents', target: null, status: 'draft', startsAt: now - 1000, expiresAt: null },
+    { id: 'hidden-withdrawn', title: 'Geri çekilmiş duyuru', severity: 'critical', audience: 'all_agents', target: null, status: 'withdrawn', startsAt: now - 1000, expiresAt: null },
+    { id: 'hidden-expired-status', title: 'Süresi dolmuş duyuru', severity: 'info', audience: 'all_agents', target: null, status: 'expired', startsAt: now - 5000, expiresAt: now - 4000 },
+    // Durumu hâlâ 'active' ama yürürlük penceresi kapanmış: cron duyuruyu
+    // 'expired' yapana kadar geçen sürede de görünmemeli.
+    { id: 'hidden-lapsed', title: 'Penceresi kapanmış duyuru', severity: 'warning', audience: 'all_agents', target: null, status: 'active', startsAt: now - 5000, expiresAt: now - 10 },
+    // Yayımlanmış ama başlangıcı gelecekte: sıraya girmeden görünmemeli.
+    { id: 'hidden-future', title: 'Henüz başlamamış duyuru', severity: 'info', audience: 'all_agents', target: null, status: 'active', startsAt: now + 60_000, expiresAt: null },
+  ];
+  for (const row of rows) {
+    await db.prepare(`
+      INSERT INTO announcements (
+        id, title, body_markdown, severity, audience_type, target_agent_id,
+        status, starts_at, expires_at, created_by_account_id,
+        created_at, updated_at, published_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'announcement-owner', ?, ?, ?)
+    `).bind(
+      row.id,
+      row.title,
+      `${row.title} gövdesi. **Kalın** metin markdown yolundan geçmeli.`,
+      row.severity,
+      row.audience,
+      row.target,
+      row.status,
+      row.startsAt,
+      row.expiresAt,
+      now,
+      now,
+      row.status === 'draft' ? null : row.startsAt,
+    ).run();
+  }
+}
+
 async function handleAction(body: ActionRequest, env: Environment): Promise<Response> {
   const data = body.data ?? {};
   const repository = new D1FoundationRepository(env.DB);
@@ -637,6 +695,16 @@ async function handleAction(body: ActionRequest, env: Environment): Promise<Resp
     case 'seedPublicWorld': {
       await seedPublicWorld(env.DB, repository, numberValue(data, 'now'));
       return json({ ok: true });
+    }
+
+    case 'seedAnnouncementWorld': {
+      await seedAnnouncementWorld(env.DB, numberValue(data, 'now'));
+      return json({ ok: true });
+    }
+
+    case 'publicAnnouncements': {
+      const announcements = await publicRepository.listPublicAnnouncements(numberValue(data, 'now'));
+      return json({ announcements });
     }
 
     case 'publicFeed': {

@@ -246,22 +246,22 @@ async function loadMcpAuthorizations() {
     return;
   }
   for (const authorization of rows) {
-    const statusLabel = authorization.status === 'active'
-      ? 'Aktif'
-      : authorization.status === 'revoked' ? 'İptal edildi' : 'Süresi doldu';
+    /* Uç yalnız yürürlükteki bağlantıları döndürüyor, o yüzden durum etiketi
+       kaldırıldı: hepsi aktif olduğunda "Aktif" yazmak bilgi taşımıyor.
+       Yerine bağlantının ne zaman kurulduğu duruyor — listede birden fazla
+       bağlantı varken ayırt edici olan bu. */
     const item = document.createElement('div');
     item.className = 'dashboard-item';
-    item.innerHTML = `<strong>${escapeHtml(authorization.oauthClient.label)} · @${escapeHtml(authorization.agent.handle)}</strong><div class="meta">${escapeHtml(statusLabel)} · ${escapeHtml(authorization.scopes.join(', '))}${authorization.expiresAt ? ` · ${new Date(authorization.expiresAt).toLocaleDateString('tr-TR')} tarihine kadar` : ''}</div>`;
-    if (authorization.status === 'active') {
-      item.append(actionButton('Bağlantıyı iptal et', async () => {
-        if (!window.confirm(`@${authorization.agent.handle} için bu MCP bağlantısı iptal edilsin mi?`)) return;
-        try {
-          await mutate(`/v1/mcp/authorizations/${encodeURIComponent(authorization.id)}/revoke`);
-          await loadMcpAuthorizations();
-          flash('MCP bağlantısı iptal edildi.');
-        } catch (error) { flash(error.message, 'error'); }
-      }, 'danger'));
-    }
+    const since = new Date(authorization.createdAt).toLocaleDateString('tr-TR');
+    item.innerHTML = `<strong>${escapeHtml(authorization.oauthClient.label)} · @${escapeHtml(authorization.agent.handle)}</strong><div class="meta">${escapeHtml(since)} tarihinden beri · ${escapeHtml(authorization.scopes.join(', '))}${authorization.expiresAt ? ` · ${new Date(authorization.expiresAt).toLocaleDateString('tr-TR')} tarihine kadar` : ''}</div>`;
+    item.append(actionButton('Bağlantıyı iptal et', async () => {
+      if (!window.confirm(`@${authorization.agent.handle} için bu MCP bağlantısı iptal edilsin mi?`)) return;
+      try {
+        await mutate(`/v1/mcp/authorizations/${encodeURIComponent(authorization.id)}/revoke`);
+        await loadMcpAuthorizations();
+        flash('MCP bağlantısı iptal edildi.');
+      } catch (error) { flash(error.message, 'error'); }
+    }, 'danger'));
     host.append(item);
   }
 }
@@ -486,8 +486,11 @@ async function loadAnnouncements() {
       try { await mutate(`/v1/admin/announcements/${encodeURIComponent(announcement.id)}/publish`); await loadAnnouncements(); }
       catch (error) { flash(error.message, 'error'); }
     }));
-    if (announcement.status === 'draft' || announcement.status === 'active') item.append(actionButton('Geri çek', async () => {
-      try { await mutate(`/v1/admin/announcements/${encodeURIComponent(announcement.id)}/withdraw`); await loadAnnouncements(); }
+    /* Geri çekme artık silme. Onay istiyoruz çünkü geri dönüşü yok: duyuru
+       metniyle birlikte gidiyor, yönetici panelinde de kalmıyor. */
+    if (announcement.status === 'draft' || announcement.status === 'active') item.append(actionButton('Geri çek ve sil', async () => {
+      if (!window.confirm(`"${announcement.title}" geri çekilip tamamen silinsin mi? Metni hiçbir yerden okunamaz.`)) return;
+      try { await mutate(`/v1/admin/announcements/${encodeURIComponent(announcement.id)}/withdraw`); await loadAnnouncements(); flash('Duyuru geri çekildi ve silindi.'); }
       catch (error) { flash(error.message, 'error'); }
     }, 'danger'));
     host.append(item);
@@ -565,15 +568,28 @@ byId('announcement-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const data = new FormData(event.currentTarget);
   const audienceType = data.get('audienceType');
+  const form = event.currentTarget;
+  /* Tek tuş. API hâlâ önce taslak kurup sonra yayımlıyor — durum makinesi
+     orada kalıyor — ama bu iki adımı yazan kişiye yaptırmanın bir karşılığı
+     yoktu. İkinci çağrı düşerse taslak ortada kalır; bunu susmak yerine
+     söylüyoruz, çünkü listede duran yayımlanmamış bir taslak sessizce
+     "yayımladım" sanılmaktan iyidir. */
+  let created;
   try {
-    await mutate('/v1/admin/announcements', 'POST', {
+    created = (await mutate('/v1/admin/announcements', 'POST', {
       title: data.get('title'), bodyMarkdown: data.get('bodyMarkdown'), severity: data.get('severity'), audienceType,
       targetAgentId: audienceType === 'agent' ? data.get('targetAgentId') : null, startsAt: Date.now(), expiresAt: null,
-    });
-    event.currentTarget.reset();
+    })).body.announcement;
+  } catch (error) { flash(error.message, 'error'); return; }
+  try {
+    await mutate(`/v1/admin/announcements/${encodeURIComponent(created.id)}/publish`);
+    form.reset();
     await loadAnnouncements();
-    flash('Duyuru taslağı oluşturuldu.');
-  } catch (error) { flash(error.message, 'error'); }
+    flash(audienceType === 'all_agents' ? 'Duyuru yayımlandı — herkese görünür.' : 'Duyuru yayımlandı.');
+  } catch (error) {
+    await loadAnnouncements();
+    flash(`Duyuru oluşturuldu ama YAYIMLANMADI: ${error.message} Listeden Yayımla ile tamamlayabilirsin.`, 'error');
+  }
 });
 
 load();

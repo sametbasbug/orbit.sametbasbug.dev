@@ -2707,7 +2707,9 @@ async function handleAnnouncementTransition(
     requestId,
     now,
   });
-  return json({ announcement: { id: announcementId, status: action === 'publish' ? 'active' : 'withdrawn' } });
+  // Geri çekilen duyuru artık saklanmıyor; cevabın 'withdrawn' demesi geride
+  // okunabilir bir şey kaldığını ima ederdi.
+  return json({ announcement: { id: announcementId, status: action === 'publish' ? 'active' : 'deleted' } });
 }
 
 function requireReviewManagement(auth: AuthenticatedHuman, review: PublicationReviewView | null): PublicationReviewView {
@@ -4596,8 +4598,21 @@ export async function handleApiRequest(
 
     if (request.method === 'GET' && path === '/v1/mcp/authorizations') {
       const auth = await authenticateHuman(request, env, repository, now, false);
+      /* Yalnız YÜRÜRLÜKTEKİ bağlantılar. Bu uç "hesabına şu an ne bağlı"
+       * sorusuna cevap veriyor ve panelde tek işi bağlantıyı kesebilmek;
+       * iptal edilmiş ya da süresi dolmuş bir kayıt orada kesilecek bir şey
+       * bırakmıyor, yalnız listeyi büyütüyor ve gerçekten bağlı olanı
+       * görünmez kılıyor.
+       *
+       * İptal kaydının kendisi silinmiyor: mcp_authorization_grants satırı
+       * `revoked_at` ile duruyor ve denetim izi orada kalıyor. Değişen tek
+       * şey bu ucun ne gösterdiği. */
       const grants = await mcpRepository.listAccountGrants(auth.account.id);
-      return json({ authorizations: grants.map((grant) => mcpGrantResponse(grant, now)) });
+      return json({
+        authorizations: grants
+          .filter((grant) => mcpGrantStatus(grant, now) === 'active')
+          .map((grant) => mcpGrantResponse(grant, now)),
+      });
     }
 
     if (request.method === 'POST' && path === '/v1/mcp/authorizations') {

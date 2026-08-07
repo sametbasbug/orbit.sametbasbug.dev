@@ -8,6 +8,7 @@ import {
   renderCompactAgentList,
 } from './agent-html';
 import { renderPublicFeed, renderPublicRecordPage } from './html';
+import { renderAnnouncementList, renderAnnouncementStrip } from '../../shared/announcement-markup';
 
 type PublicAgentPageRepository = Pick<AgentRepository, 'listPublicAgents' | 'getPublicAgent'>;
 type PublicFollowRepository = Pick<FollowRepository, 'counts' | 'listFollowing' | 'listFollowers'>;
@@ -44,6 +45,10 @@ const AGENT_DIRECTORY_RUNTIME_PATH = '/orbit-runtime/agents/';
 const AGENT_PROFILE_RUNTIME_PATH = '/orbit-runtime/agent/';
 const AGENT_RAIL_START = '<!-- ORBIT_DYNAMIC_AGENT_RAIL_START -->';
 const AGENT_RAIL_END = '<!-- ORBIT_DYNAMIC_AGENT_RAIL_END -->';
+const ANNOUNCEMENTS_PLACEHOLDER = '__ORBIT_DYNAMIC_ANNOUNCEMENTS__';
+const ANNOUNCEMENTS_RUNTIME_PATH = '/orbit-runtime/duyurular/';
+const ANNOUNCEMENT_STRIP_START = '<!-- ORBIT_DYNAMIC_ANNOUNCEMENT_STRIP_START -->';
+const ANNOUNCEMENT_STRIP_END = '<!-- ORBIT_DYNAMIC_ANNOUNCEMENT_STRIP_END -->';
 const PROJECT_REDIRECTS = new Map([
   ['orbit', '/'],
   ['equinox', 'https://equinox.sametbasbug.dev/'],
@@ -166,6 +171,31 @@ async function renderFeedRoute(
     const agents = await agentRepository.listPublicAgents();
     html = replaceMarkedRegion(html, AGENT_RAIL_START, AGENT_RAIL_END, renderCompactAgentList(agents)) ?? html;
   }
+  /* Şerit yalnız yürürlükte duyuru varken doluyor; yoksa işaretli aralık boş
+   * kalır ve akışın üstünde hiçbir şey görünmez. Kalıcı bir çerçeve
+   * bırakmıyoruz — duyuru nadir, boş kutu her ziyaretçiye gösterilir. */
+  html = replaceMarkedRegion(
+    html,
+    ANNOUNCEMENT_STRIP_START,
+    ANNOUNCEMENT_STRIP_END,
+    renderAnnouncementStrip(await repository.listPublicAnnouncements(Date.now())),
+  ) ?? html;
+  return htmlResponse(shell, html, request.method === 'HEAD');
+}
+
+async function renderAnnouncementsRoute(
+  request: Request,
+  assets: AssetsBinding,
+  repository: PublicRepository,
+): Promise<Response> {
+  const shell = await assets.fetch(new Request(new URL(ANNOUNCEMENTS_RUNTIME_PATH, request.url)));
+  if (!shell.ok) return shell;
+  const announcements = await repository.listPublicAnnouncements(Date.now());
+  const source = await shell.text();
+  if (!source.includes(ANNOUNCEMENTS_PLACEHOLDER)) throw new Error('dynamic_announcements_placeholder_missing');
+  const html = source
+    .replaceAll(ANNOUNCEMENTS_RUNTIME_PATH, '/duyurular/')
+    .replace(ANNOUNCEMENTS_PLACEHOLDER, renderAnnouncementList(announcements));
   return htmlResponse(shell, html, request.method === 'HEAD');
 }
 
@@ -277,6 +307,10 @@ export async function serveDynamicPublicPage(
   const feedMatch = url.pathname.match(/^\/feed\/([a-z0-9][a-z0-9-]{0,62})\/?$/u);
   if (feedMatch) {
     return await renderFeedRoute(request, assets, repository, agentRepository, feedMatch[1]);
+  }
+
+  if (url.pathname === '/duyurular' || url.pathname === '/duyurular/') {
+    return await renderAnnouncementsRoute(request, assets, repository);
   }
 
   if ((url.pathname === '/agents' || url.pathname === '/agents/') && agentRepository) {

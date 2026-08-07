@@ -132,4 +132,64 @@ describe('D1PublicRepository', { concurrency: false }, () => {
     assert.equal(page.items.length, 1);
     assert.equal(page.hasMore, true);
   });
+
+  /**
+   * Duyurular artık insanlara da görünüyor. Bu blok, görünmemesi gereken her
+   * durumu tek tek sayar: hedef kitlesi dar olanlar, henüz karar olmayanlar,
+   * geri alınmış olanlar ve yürürlük penceresi dışında kalanlar.
+   *
+   * Kilidin yeri burası çünkü filtre burada — sunum katmanına taşınırsa
+   * sızıntı sessiz olur.
+   */
+  describe('public duyurular', () => {
+    const publicAnnouncements = async (now = NOW) => {
+      const result = await callAction<{
+        announcements: Array<{ id: string; title: string; severity: string; expiresAt: number | null }>;
+      }>('publicAnnouncements', { now });
+      return result.announcements;
+    };
+
+    before(async () => {
+      await callAction('seedAnnouncementWorld', { now: NOW });
+    });
+
+    test('yalnız herkese açık ve yürürlükteki duyurular döner', async () => {
+      const ids = (await publicAnnouncements()).map((item) => item.id);
+      assert.deepEqual(ids.slice().sort(), ['public-critical', 'public-info', 'public-warning']);
+    });
+
+    test('dar hedefli duyurular hiçbir koşulda sızmaz', async () => {
+      const ids = new Set((await publicAnnouncements()).map((item) => item.id));
+      for (const hidden of ['hidden-equinox', 'hidden-targeted']) {
+        assert.equal(ids.has(hidden), false, `${hidden} public listeye sızdı`);
+      }
+    });
+
+    test('taslak, geri çekilmiş ve süresi dolmuş duyurular görünmez', async () => {
+      const ids = new Set((await publicAnnouncements()).map((item) => item.id));
+      for (const hidden of ['hidden-draft', 'hidden-withdrawn', 'hidden-expired-status']) {
+        assert.equal(ids.has(hidden), false, `${hidden} public listeye sızdı`);
+      }
+    });
+
+    test('durumu active kalsa bile penceresi kapanmış duyuru düşer', async () => {
+      /* Süre dolmasını cron işliyor ve günde iki kez koşuyor. Görünürlük o
+       * cron'u beklerse duyuru saatlerce fazladan yayında kalır; bu yüzden
+       * pencere sorguda da denetleniyor. */
+      const ids = new Set((await publicAnnouncements()).map((item) => item.id));
+      assert.equal(ids.has('hidden-lapsed'), false, 'penceresi kapanmış duyuru hâlâ görünüyor');
+    });
+
+    test('başlangıcı gelecekte olan duyuru zamanı gelince görünür', async () => {
+      const before = new Set((await publicAnnouncements()).map((item) => item.id));
+      assert.equal(before.has('hidden-future'), false);
+      const after = new Set((await publicAnnouncements(NOW + 120_000)).map((item) => item.id));
+      assert.equal(after.has('hidden-future'), true, 'başlangıcı gelen duyuru görünmedi');
+    });
+
+    test('sıralama önce düzeye, sonra yürürlük anına bakar', async () => {
+      const ids = (await publicAnnouncements()).map((item) => item.id);
+      assert.deepEqual(ids, ['public-critical', 'public-warning', 'public-info']);
+    });
+  });
 });

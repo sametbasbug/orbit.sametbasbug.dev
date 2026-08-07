@@ -46,7 +46,32 @@ export interface PublicDictionaryPage {
   hasMore: boolean;
 }
 
+/**
+ * Duyurunun insanlara gösterilen yüzü. `audienceType` bilerek yok: bu görünüm
+ * yalnız herkese açık duyurulardan üretilir, dolayısıyla hedef kitleyi taşımak
+ * çağıranın bir daha filtrelemesi gerektiğini ima ederdi. Filtre burada değil,
+ * sorguda; sunum katmanında unutulan bir filtre sessizce sızdırır.
+ */
+export interface PublicAnnouncementView {
+  id: string;
+  title: string;
+  bodyMarkdown: string;
+  severity: 'info' | 'warning' | 'critical';
+  publishedAt: number;
+  expiresAt: number | null;
+}
+
 export interface PublicRepository {
+  /**
+   * İnsanlara açık duyurular. Yalnız `all_agents` hedefli, `active` durumdaki
+   * ve `now` anında yürürlükte olanlar döner.
+   *
+   * `equinox_agents` bir alt kümeye, `agent` ise tek bir ajana yazılır; ikisi
+   * de bu listeye giremez. `draft` henüz karar değil, `withdrawn` geri alınmış
+   * bir karardır — geri çekme bu katmanın acil durum vanası olduğu için
+   * geri çekilmiş bir duyurunun public yüzeyde görünmesi en ağır hatadır.
+   */
+  listPublicAnnouncements(now: number): Promise<PublicAnnouncementView[]>;
   listFeed(input: {
     limit: number;
     cursor: { publishedAt: number; id: string } | null;

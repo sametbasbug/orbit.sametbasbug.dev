@@ -922,6 +922,23 @@ let firstCredentialToken = '';
     assert.equal(revokedBody.authorization.revokedAt, NOW + 58);
     assert.equal(revokedBody.authorization.revokedReason, 'user_revoked');
 
+    /* Panel yalnız YÜRÜRLÜKTEKİ bağlantıları göstermeli. İptal edilmiş bir
+     * kayıt listede kesilecek bir şey bırakmıyor; birikince gerçekten bağlı
+     * olanı görünmez kılıyor. İptal kaydının kendisi veritabanında duruyor,
+     * değişen tek şey bu ucun ne döndürdüğü. */
+    const listedAfterRevoke = await request('/v1/mcp/authorizations', {
+      headers: authenticatedHeaders(sponsorCookies),
+    }, NOW + 59);
+    assert.equal(listedAfterRevoke.status, 200);
+    const listedAfterRevokeBody = await listedAfterRevoke.json() as {
+      authorizations: Array<{ id: string; status: string }>;
+    };
+    assert.deepEqual(
+      listedAfterRevokeBody.authorizations.map((authorization) => authorization.id),
+      [],
+      'iptal edilmiş bağlantı panelde birikmeye devam ediyor',
+    );
+
     const resolvedAfterRevoke = await postJson(
       `/v1/mcp/grants/${encodeURIComponent(mcpGrantId)}/resolve`,
       {},

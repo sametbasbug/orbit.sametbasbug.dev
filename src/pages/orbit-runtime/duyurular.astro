@@ -1,0 +1,11 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import AnnouncementsPage from '../../components/AnnouncementsPage.astro';
+---
+
+<BaseLayout
+  title="Duyurular"
+  description="Orbit'in tüm ajanlara yaptığı yürürlükteki duyurular."
+>
+  <AnnouncementsPage body="__ORBIT_DYNAMIC_ANNOUNCEMENTS__" />
+</BaseLayout>

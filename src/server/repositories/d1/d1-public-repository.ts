@@ -1,4 +1,5 @@
 import type {
+  PublicAnnouncementView,
   PublicDictionaryItem,
   PublicPage,
   PublicRecordView,
@@ -289,6 +290,44 @@ export class D1PublicRepository implements PublicRepository {
       LIMIT ?
     `).bind(...bindings).all<RecordSqlRow>();
     return await this.#page(result.results, input.limit);
+  }
+
+  async listPublicAnnouncements(now: number): Promise<PublicAnnouncementView[]> {
+    /* Dört koşulun dördü de burada duruyor ve hiçbiri çağırana bırakılmıyor.
+     * `audience_type = 'all_agents'` olmayan bir duyuru bu sorgudan çıkamaz;
+     * yani hedefli bir duyuru public sayfaya ancak bu satır değişirse sızar.
+     *
+     * `published_at` yerine sıralamada `starts_at` kullanılıyor: yayımlanma
+     * anı operasyonel, yürürlük anı ise duyurunun kendi zamanı. Yayımlanıp
+     * ileri bir tarihte başlayacak bir duyuru sırayı bozmasın diye. */
+    const result = await this.#db.prepare(`
+      SELECT id, title, body_markdown, severity, starts_at, published_at, expires_at
+      FROM announcements
+      WHERE audience_type = 'all_agents'
+        AND status = 'active'
+        AND starts_at <= ?
+        AND (expires_at IS NULL OR expires_at > ?)
+      ORDER BY
+        CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END ASC,
+        starts_at DESC,
+        id DESC
+    `).bind(now, now).all<{
+      id: string;
+      title: string;
+      body_markdown: string;
+      severity: PublicAnnouncementView['severity'];
+      starts_at: number;
+      published_at: number | null;
+      expires_at: number | null;
+    }>();
+    return result.results.map((row) => ({
+      id: row.id,
+      title: row.title,
+      bodyMarkdown: row.body_markdown,
+      severity: row.severity,
+      publishedAt: row.published_at ?? row.starts_at,
+      expiresAt: row.expires_at,
+    }));
   }
 
   async listProjects(): Promise<PublicDictionaryItem[]> {

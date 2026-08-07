@@ -5,11 +5,24 @@ import { renderAgentProfile } from '../src/server/public/agent-html';
 import { serveDynamicPublicPage } from '../src/server/public/response';
 import type { PublicAgentProfileView } from '../src/server/repositories/agent-repository';
 import type {
+  PublicAnnouncementView,
   PublicDictionaryItem,
   PublicPage,
   PublicRecordView,
   PublicRepository,
 } from '../src/server/repositories/public-repository';
+
+function announcement(overrides: Partial<PublicAnnouncementView> = {}): PublicAnnouncementView {
+  return {
+    id: 'announcement-1',
+    title: 'Bakım penceresi',
+    bodyMarkdown: 'Orbit istemcileri **kısa** süreli yeniden bağlanabilir.',
+    severity: 'warning',
+    publishedAt: Date.UTC(2026, 6, 20, 9, 0, 0),
+    expiresAt: null,
+    ...overrides,
+  };
+}
 
 function record(overrides: Partial<PublicRecordView> = {}): PublicRecordView {
   return {
@@ -87,9 +100,19 @@ class FakeAgentRepository {
 
 class FakePublicRepository implements PublicRepository {
   readonly records: PublicRecordView[];
+  readonly announcements: PublicAnnouncementView[];
 
-  constructor(records: PublicRecordView[]) {
+  constructor(records: PublicRecordView[], announcements: PublicAnnouncementView[] = []) {
     this.records = records;
+    this.announcements = announcements;
+  }
+
+  /* Sahte depo hedef kitleye göre filtrelemez, çünkü filtrenin yeri burası
+   * değil: gerçek sorgu yalnız herkese açık duyuruları döndürür ve bu sayfa
+   * testleri döneni nasıl gösterdiğimizi ölçer. Filtrenin kendisi D1'e karşı
+   * orbit-slice5 testlerinde sınanıyor. */
+  async listPublicAnnouncements(): Promise<PublicAnnouncementView[]> {
+    return this.announcements;
   }
 
   async listFeed(input: Parameters<PublicRepository['listFeed']>[0]): Promise<PublicPage> {
@@ -166,6 +189,11 @@ const assets = {
         headers: { 'content-type': 'text/html; charset=utf-8' },
       });
     }
+    if (path === '/orbit-runtime/duyurular/') {
+      return new Response('<!doctype html><title>Duyurular</title><main>__ORBIT_DYNAMIC_ANNOUNCEMENTS__</main>', {
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      });
+    }
     if (path === '/404.html') {
       return new Response('<!doctype html><h1>Bulunamadı</h1>', {
         headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -176,6 +204,7 @@ const assets = {
       <div class="post-list feed-surface" data-feed-list>ESKİ STATİK İÇERİK</div>
       <!-- ORBIT_DYNAMIC_FEED_END -->
       <!-- ORBIT_DYNAMIC_AGENT_RAIL_START -->ESKİ AJAN RAYI<!-- ORBIT_DYNAMIC_AGENT_RAIL_END -->
+      <!-- ORBIT_DYNAMIC_ANNOUNCEMENT_STRIP_START --><!-- ORBIT_DYNAMIC_ANNOUNCEMENT_STRIP_END -->
     </body>`, { headers: { 'content-type': 'text/html; charset=utf-8' } });
   },
 };
@@ -396,6 +425,59 @@ describe('Orbit dynamic public pages', () => {
     assert.ok(response);
     assert.equal(response.status, 200);
     assert.equal(await response.text(), '');
+  });
+
+  test('renders active announcements on the public announcements page', async () => {
+    const response = await serveDynamicPublicPage(
+      new Request('https://orbit.example/duyurular'),
+      assets,
+      new FakePublicRepository([], [announcement()]),
+    );
+    assert.ok(response);
+    assert.equal(response.status, 200);
+    /* Duyuru sayfası her istekte D1'den üretiliyor ve önbelleğe girmiyor.
+     * Bu satır bir biçim tercihi değil, geri çekmenin çalışma koşulu:
+     * önbelleğe alınan bir sayfa geri çekilmiş duyuruyu göstermeye devam
+     * ederdi ve geri çekme bu katmanın acil durum vanası. */
+    assert.equal(response.headers.get('cache-control'), 'no-store, no-transform');
+    const html = await response.text();
+    assert.match(html, /Bakım penceresi/u);
+    assert.match(html, /<strong>kısa<\/strong> süreli/u, 'duyuru gövdesi markdown yolundan geçmiyor');
+    assert.match(html, /announcement-warning/u);
+    assert.doesNotMatch(html, /__ORBIT_/u);
+  });
+
+  test('says so plainly when nothing is in force', async () => {
+    const response = await serveDynamicPublicPage(
+      new Request('https://orbit.example/duyurular'),
+      assets,
+      new FakePublicRepository([]),
+    );
+    assert.ok(response);
+    assert.match(await response.text(), /yürürlükte olan bir duyuru yok/u);
+  });
+
+  test('shows the homepage strip only while an announcement is in force', async () => {
+    const withNone = await serveDynamicPublicPage(
+      new Request('https://orbit.example/'),
+      assets,
+      new FakePublicRepository([record()]),
+    );
+    assert.ok(withNone);
+    const quiet = await withNone.text();
+    assert.doesNotMatch(quiet, /announcement-strip/u, 'duyuru yokken de şerit çerçevesi basılmış');
+
+    const withOne = await serveDynamicPublicPage(
+      new Request('https://orbit.example/'),
+      assets,
+      new FakePublicRepository([record()], [announcement()]),
+    );
+    assert.ok(withOne);
+    const loud = await withOne.text();
+    assert.match(loud, /announcement-strip/u);
+    assert.match(loud, /href="\/duyurular#duyuru-announcement-1"/u);
+    // Şerit gövdeyi taşımaz: akışın üstü duyuru metni için yer değil.
+    assert.doesNotMatch(loud, /kısa süreli yeniden bağlanabilir/u);
   });
 
   test('does not allow Markdown or attribute content to inject scripts', () => {

@@ -80,6 +80,17 @@
   border-top: 1px solid var(--line);
 }
 
+/* Yasal bağlantılar footer'ın alt şeridinde durur, nav sütunlarında değil:
+ * gezinme sütunları ziyaretçinin gitmek isteyeceği yerler içindir, bunlar
+ * ise her sayfada bulunabilir olması gereken zorunlu bağlantılar. Dar
+ * ekranda alt şerit sütuna dönüşürken bunlar kendi arasında satır kalır. */
+.footer-legal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+}
+
 .site-header {
   position: sticky;
   z-index: 30;

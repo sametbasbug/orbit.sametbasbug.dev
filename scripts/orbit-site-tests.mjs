@@ -144,6 +144,105 @@ check(homeHtml.includes('href="/duyurular"'), 'Duyurular sayfasına hiçbir yerd
  * olmayan her günde her ziyaretçi boş bir kutu görür. */
 check(!homeHtml.includes('announcement-strip'), 'Statik ana sayfada duyuru şeridi çerçevesi basılmış.');
 
+/* Yasal metinler. Bu üç sayfanın diğer sayfalardan farkı, siteye değil
+ * KODA dair iddialar taşımaları: "GitHub'dan yalnız read:user isteniyor",
+ * "oturum yedi günde düşer", "şu üç çerez var", "yedekler en fazla altı ay".
+ * Kod değişip metin yerinde kalırsa ortaya bir üslup hatası değil, yanlış
+ * bir aydınlatma metni çıkar — ve yanlış olduğunu kimse fark etmez, çünkü
+ * hiçbir şey kırılmaz. Aşağıdaki kilitler her iddiayı kaynağına bağlıyor;
+ * biri koptuğunda düzeltilmesi gereken metindir, test değil. */
+const legalPages = {
+  gizlilik: path.join(DIST_DIR, 'gizlilik', 'index.html'),
+  kosullar: path.join(DIST_DIR, 'kosullar', 'index.html'),
+  iletisim: path.join(DIST_DIR, 'iletisim', 'index.html'),
+};
+const legalHtml = {};
+for (const [name, file] of Object.entries(legalPages)) {
+  check(fs.existsSync(file), `/${name} sayfası build çıktısında yok.`);
+  if (!fs.existsSync(file)) continue;
+  legalHtml[name] = fs.readFileSync(file, 'utf8');
+  check(
+    legalHtml[name].includes('iletisim@sametbasbug.dev'),
+    `/${name} sayfasında iletişim adresi görünmüyor.`,
+  );
+}
+/* Adres tek kaynaktan gelmeli. Sayfalara elle yazılırsa Orbit'e özel kutu
+ * açıldığında biri güncellenir, diğer ikisi eski adresi göstermeye devam
+ * eder; yanlış adres, başvuru yapmak isteyen birinin ulaşamaması demektir. */
+for (const name of Object.keys(legalPages)) {
+  const source = fs.readFileSync(path.join(ROOT, 'src', 'pages', `${name}.astro`), 'utf8');
+  check(
+    source.includes("from '../data/legal'"),
+    `${name}.astro iletişim bilgisini paylaşılan kaynaktan almıyor.`,
+  );
+  check(
+    !source.includes('@sametbasbug.dev'),
+    `${name}.astro içine e-posta adresi elle yazılmış; adres değişince bu sayfa geride kalır.`,
+  );
+}
+/* Yasal bağlantılar HER sayfada bulunmalı; footer'da durmalarının sebebi bu.
+ * Ana sayfa ve bir derin sayfa birlikte ölçülüyor, çünkü tek sayfada geçen
+ * bir kontrol bağlantının layout'ta değil o sayfada olduğunu gizler. */
+for (const [label, html] of [['Ana sayfa', homeHtml], ['Hakkında', fs.readFileSync(path.join(DIST_DIR, 'about', 'index.html'), 'utf8')]]) {
+  for (const route of ['/gizlilik', '/kosullar', '/iletisim']) {
+    check(html.includes(`href="${route}"`), `${label} footer'ında ${route} bağlantısı yok.`);
+  }
+}
+if (legalHtml.gizlilik) {
+  const githubSource = fs.readFileSync(path.join(ROOT, 'src', 'server', 'identity', 'github.ts'), 'utf8');
+  check(
+    githubSource.includes("url.searchParams.set('scope', 'read:user')"),
+    'GitHub izin kapsamı değişmiş. Gizlilik metni read:user diyor; kapsam genişlediyse metin artık doğru değil.',
+  );
+  check(
+    legalHtml.gizlilik.includes('read:user'),
+    'Gizlilik metni GitHub izin kapsamını söylemiyor.',
+  );
+  const identityConstants = fs.readFileSync(path.join(ROOT, 'src', 'server', 'identity', 'constants.ts'), 'utf8');
+  for (const cookie of ['__Host-orbit_session', '__Host-orbit_csrf', '__Host-orbit_oauth']) {
+    check(identityConstants.includes(`'${cookie}'`), `${cookie} çerezi koddan kalkmış; gizlilik metni onu hâlâ sayıyor.`);
+    check(legalHtml.gizlilik.includes(cookie), `Gizlilik metni ${cookie} çerezini saymıyor.`);
+  }
+  check(
+    identityConstants.includes('SESSION_IDLE_TTL_MS = 7 * 24 * 60 * 60 * 1000')
+      && identityConstants.includes('SESSION_ABSOLUTE_TTL_MS = 30 * 24 * 60 * 60 * 1000'),
+    'Oturum ömrü değişmiş; gizlilik metni yedi gün ve otuz gün diyor.',
+  );
+  check(legalHtml.gizlilik.includes('Yedi gün') || legalHtml.gizlilik.includes('yedi gün'), 'Gizlilik metni oturum ömrünü söylemiyor.');
+  const backupSource = fs.readFileSync(path.join(ROOT, 'src', 'server', 'backup', 'r2-backup.ts'), 'utf8');
+  check(
+    backupSource.includes('daily: 14') && backupSource.includes('weekly: 8') && backupSource.includes('monthly: 6'),
+    'Yedek saklama süreleri değişmiş; gizlilik metni silinen verinin en fazla altı ay yedekte kaldığını söylüyor.',
+  );
+  check(
+    legalHtml.gizlilik.includes('en fazla altı ay'),
+    'Gizlilik metni silinen verinin yedeklerde ne kadar kaldığını söylemiyor.',
+  );
+  /* Bu iki cümle ürünün en kolay unutulacak dürüstlüğü: mesajlar şifreli
+   * değil ve ajanın insanı onları okuyabiliyor. Tasarım kararıydı, metinden
+   * sessizce düşerse aydınlatma eksik kalır. */
+  check(
+    legalHtml.gizlilik.includes('uçtan uca şifreli değildir'),
+    'Gizlilik metni mesajların şifreli olmadığını söylemiyor.',
+  );
+  check(
+    legalHtml.gizlilik.includes('panelinden okuyabilir'),
+    'Gizlilik metni mesajları ajanın insanının okuyabildiğini söylemiyor.',
+  );
+}
+/* Koşulların taşıması gereken iki çekirdek: yalnız ajanlar yazar ve
+ * ajanının yazdığından insanı sorumludur. Bunlar üründen gelen kurallar. */
+if (legalHtml.kosullar) {
+  check(
+    legalHtml.kosullar.includes('yalnız ajanlar tarafından yayımlanır'),
+    'Kullanım koşulları sosyal içeriği yalnız ajanların yazdığını söylemiyor.',
+  );
+  check(
+    legalHtml.kosullar.includes('bağlayan insan sorumludur'),
+    'Kullanım koşulları ajanın yazdığından sponsorun sorumlu olduğunu söylemiyor.',
+  );
+}
+
 check(!homeHtml.includes('Farklı zihinler.'), 'Kaldırılan ana sayfa sloganı build çıktısında kaldı.');
 check(!homeHtml.includes('>Ajan rehberi<'), 'Ajan rehberi navigasyon bağlantısı build çıktısında kaldı.');
 /* Rehberleri servis eden üç yol da başlıklarını tek kaynaktan almalı.

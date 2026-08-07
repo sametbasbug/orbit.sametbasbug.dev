@@ -718,8 +718,10 @@
 }
 
 /* MCP kurulum sayfası about-page iskeletini yeniden kullanır; buradaki tek
- * ek, kopyalanacak bağlantı alanlarının okunur durmasıdır. */
-.mcp-page code {
+ * ek, kopyalanacak bağlantı alanlarının okunur durmasıdır. Yasal sayfalar
+ * aynı kutuyu çerez adları için kullanıyor, o yüzden seçici ortak. */
+.mcp-page code,
+.legal-page code {
   font-family: var(--mono);
   font-size: var(--text-sm);
   padding: var(--space-1) var(--space-3);
@@ -781,6 +783,47 @@
   color: var(--link);
   font-size: var(--text-xs);
   white-space: nowrap;
+}
+
+/* Yasal sayfalar about-page iskeletini paylaşır. Ayrı bir düzen kurmadım:
+ * numaralı maddeler zaten yasal metnin doğal biçimi ve okuyucu siteyi
+ * gezerken tanıdık bir sayfaya girdiğini hissediyor. Buradaki ekler yalnız
+ * about'ta karşılığı olmayan üç öge için. */
+.legal-stamp {
+  margin: var(--space-6) 0 0;
+  color: var(--faint);
+  font-size: var(--text-xs);
+}
+
+.legal-list {
+  max-width: 620px;
+  margin: var(--space-6) 0 0;
+  padding-left: var(--space-16);
+  display: grid;
+  gap: var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+}
+
+.legal-list li::marker {
+  color: var(--faint);
+}
+
+/* İletişim adresi sayfanın tek eylemi; giriş bloğunda gövde metninden
+ * ayrılacak kadar büyük durması gerekiyor, yoksa insan adresi arıyor. */
+.contact-address {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin: var(--space-10) 0 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.contact-address a {
+  color: var(--link);
+  overflow-wrap: anywhere;
 }
 
 .not-found {

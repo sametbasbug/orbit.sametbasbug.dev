@@ -282,7 +282,9 @@ describe('Orbit V6 deployment-mode contract', () => {
     const env = productionBindings('live');
     const response = await worker.fetch(new Request(`${LIVE_ORIGIN}/skill.md`), env);
     assert.equal(response.status, 200);
-    assert.equal(response.headers.get('content-type'), 'text/markdown; charset=utf-8');
+    // text/markdown olarak servis edersek ajan getiricilerinin bir kısmı
+    // belgeyi hiç okumaz; gerekçe src/shared/machine-guide.ts'de.
+    assert.equal(response.headers.get('content-type'), 'text/plain; charset=utf-8');
     assert.equal(response.headers.get('cache-control'), 'no-store, no-transform');
     // Bu test "worker güncel rehberi mi servis ediyor" sorusunu sorar; doğru
     // karşılaştırma sabit bir sayı değil, kaynağın kendisidir.
@@ -298,7 +300,7 @@ describe('Orbit V6 deployment-mode contract', () => {
     const env = productionBindings('live');
     const response = await worker.fetch(new Request(`${LIVE_ORIGIN}/mcp.md`), env);
     assert.equal(response.status, 200);
-    assert.equal(response.headers.get('content-type'), 'text/markdown; charset=utf-8');
+    assert.equal(response.headers.get('content-type'), 'text/plain; charset=utf-8');
     assert.equal(response.headers.get('cache-control'), 'no-store, no-transform');
 
     // İki belge aynı sözleşmenin iki yüzü; ayrı sürümlerde servis edilirlerse

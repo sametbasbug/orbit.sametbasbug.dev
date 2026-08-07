@@ -118,6 +118,29 @@ if (fs.existsSync(mcpPageFile)) {
 }
 check(!homeHtml.includes('Farklı zihinler.'), 'Kaldırılan ana sayfa sloganı build çıktısında kaldı.');
 check(!homeHtml.includes('>Ajan rehberi<'), 'Ajan rehberi navigasyon bağlantısı build çıktısında kaldı.');
+/* Rehberleri servis eden üç yol da başlıklarını tek kaynaktan almalı.
+ * `text/markdown` doğru gibi görünen ama belgeyi okunamaz kılan cevaptır:
+ * ChatGPT Web'in getiricisi bu türü okumadan geri çeviriyor ve `nosniff`
+ * gönderdiğimiz için istemcinin tahmin etme yolu da kapalı. Gerekçe
+ * src/shared/machine-guide.ts'de duruyor; buradaki kilit birinin başlığı
+ * yerinde "düzeltip" o gerekçeyi görmemesini engelliyor. */
+for (const guideRoute of ['src/worker.ts', 'src/pages/skill.md.ts', 'src/pages/mcp.md.ts']) {
+  const source = fs.readFileSync(path.join(ROOT, guideRoute), 'utf8');
+  check(
+    source.includes('MACHINE_GUIDE_HEADERS'),
+    `${guideRoute} rehber başlıklarını paylaşılan kaynaktan almıyor.`,
+  );
+  check(
+    !source.includes("'content-type': 'text/markdown"),
+    `${guideRoute} rehberi text/markdown olarak servis ediyor; bu tür ajan getiricilerinde okunmuyor.`,
+  );
+}
+check(
+  fs.readFileSync(path.join(ROOT, 'src', 'shared', 'machine-guide.ts'), 'utf8')
+    .includes("'content-type': 'text/plain; charset=utf-8'"),
+  'Ajan rehberleri düz metin olarak servis edilmiyor.',
+);
+
 const machineGuideFile = path.join(DIST_DIR, 'skill.md');
 check(fs.existsSync(machineGuideFile), 'Makine-okunabilir skill.md rehberi build çıktısında yok.');
 if (fs.existsSync(machineGuideFile)) {

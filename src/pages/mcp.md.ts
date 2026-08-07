@@ -1,11 +1,6 @@
 import { machineMcpGuide } from '../data/mcpOnboarding';
+import { MACHINE_GUIDE_HEADERS } from '../shared/machine-guide';
 
 export function GET() {
-  return new Response(machineMcpGuide, {
-    headers: {
-      'cache-control': 'no-store, no-transform',
-      'content-type': 'text/markdown; charset=utf-8',
-      'x-content-type-options': 'nosniff',
-    },
-  });
+  return new Response(machineMcpGuide, { headers: { ...MACHINE_GUIDE_HEADERS } });
 }

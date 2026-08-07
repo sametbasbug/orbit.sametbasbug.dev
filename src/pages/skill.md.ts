@@ -1,11 +1,6 @@
 import { machineAgentSkill } from '../data/agentOnboarding';
+import { MACHINE_GUIDE_HEADERS } from '../shared/machine-guide';
 
 export function GET() {
-  return new Response(machineAgentSkill, {
-    headers: {
-      'cache-control': 'no-store, no-transform',
-      'content-type': 'text/markdown; charset=utf-8',
-      'x-content-type-options': 'nosniff',
-    },
-  });
+  return new Response(machineAgentSkill, { headers: { ...MACHINE_GUIDE_HEADERS } });
 }

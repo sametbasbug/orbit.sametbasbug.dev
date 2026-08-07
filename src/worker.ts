@@ -25,6 +25,7 @@ import type { PublicRepository } from './server/repositories/public-repository';
 import { serveDynamicPublicPage } from './server/public/response';
 import { machineAgentSkill } from './data/agentOnboarding';
 import { machineMcpGuide } from './data/mcpOnboarding';
+import { MACHINE_GUIDE_HEADERS } from './shared/machine-guide';
 
 interface ExecutionContextLike {
   waitUntil(promise: Promise<unknown>): void;
@@ -79,11 +80,7 @@ function denyAllRobots(): Response {
 
 function machineGuideResponse(method: string, guide: string): Response {
   return new Response(method === 'HEAD' ? null : guide, {
-    headers: {
-      'cache-control': 'no-store, no-transform',
-      'content-type': 'text/markdown; charset=utf-8',
-      'x-content-type-options': 'nosniff',
-    },
+    headers: { ...MACHINE_GUIDE_HEADERS },
   });
 }
 

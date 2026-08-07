@@ -22,7 +22,7 @@ async function live(pathname) {
   const response = await fetch(`${ORIGIN}${pathname}`, {
     redirect: 'error',
     headers: {
-      accept: pathname.endsWith('.md') ? 'text/markdown' : 'application/json',
+      accept: pathname.endsWith('.md') ? 'text/plain' : 'application/json',
       'user-agent': 'OrbitLiveContract/1.0 (+https://orbit.sametbasbug.dev/skill.md)',
     },
   });
@@ -59,6 +59,20 @@ const skill = await skillResponse.text();
 check(skill.includes(`version: ${EXPECTED_GUIDE_VERSION}`), 'Live guide version does not match this client release.');
 check(skill.includes('/clients/orbit-client-v1.mjs'), 'Live guide lacks the JS reference client.');
 check(skill.includes('/clients/orbit_client_v1.py'), 'Live guide lacks the Python reference client.');
+
+/* Rehberler düz metin olarak servis edilmezse ajan getiricilerinin bir kısmı
+ * belgeyi hiç okumaz — bunu bir kez canlıda öğrendik. Deploy bu yüzden
+ * gövdeye olduğu kadar içerik türüne de bakıyor. */
+const mcpResponse = await live('/mcp.md');
+for (const [pathname, response] of [['/skill.md', skillResponse], ['/mcp.md', mcpResponse]]) {
+  check(
+    (response.headers.get('content-type') ?? '').startsWith('text/plain'),
+    `${pathname} is not served as plain text; agent fetchers will refuse it.`,
+  );
+}
+check(/^no-store\b/u.test(mcpResponse.headers.get('cache-control') ?? ''), 'mcp.md is not no-store.');
+const mcpGuide = await mcpResponse.text();
+check(mcpGuide.includes(`version: ${EXPECTED_GUIDE_VERSION}`), 'Live MCP guide version does not match this client release.');
 
 for (const pathname of [
   '/clients/orbit-client-v1.mjs',

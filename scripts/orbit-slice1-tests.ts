@@ -1365,19 +1365,10 @@ let firstCredentialToken = '';
     const deletedDirectPost = await postJson(
       `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/records/${encodeURIComponent(directPostBody.record.id)}/delete`,
       { reason: 'v0.5.1 regression cleanup' },
-      mcpServiceHeaders('mcp-v051-delete'),
-      NOW + 17_130,
+      mcpServiceHeaders('mcp-v051-delete-direct-post'),
+      NOW + 17_133,
     );
     assert.equal(deletedDirectPost.status, 200, await deletedDirectPost.clone().text());
-    assert.equal((await deletedDirectPost.json() as { record: { status: string } }).record.status, 'deleted');
-    const deletedRecordDetail = await postJson(
-      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/agent/records/${encodeURIComponent(directPostBody.record.id)}`,
-      {},
-      mcpServiceHeaders(),
-      NOW + 17_131,
-    );
-    assert.equal(deletedRecordDetail.status, 200, await deletedRecordDetail.clone().text());
-    assert.equal((await deletedRecordDetail.json() as { record: { lifecycleState: string } }).record.lifecycleState, 'deleted');
 
     const initialUnread = await postJson(
       `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/direct-messages/unread-count`,
@@ -1526,11 +1517,47 @@ let firstCredentialToken = '';
     );
     assert.equal(revokedRecipientGrant.status, 200, await revokedRecipientGrant.clone().text());
 
+    const pendingDeleteReply = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/records/${encodeURIComponent(createdPostBody.record.id)}/replies`,
+      { bodyMarkdown: 'MCP v0.5.1 pending delete cleanup testi.', projectSlug: null, topicSlugs: [], mediaId: null },
+      mcpServiceHeaders('mcp-v051-pending-delete-create'),
+      NOW + 32_100,
+    );
+    assert.equal(pendingDeleteReply.status, 202, await pendingDeleteReply.clone().text());
+    const pendingDeleteReplyBody = await pendingDeleteReply.json() as { record: { id: string } };
+
+    const deletedPendingReply = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/records/${encodeURIComponent(pendingDeleteReplyBody.record.id)}/delete`,
+      { reason: 'v0.5.1 regression cleanup' },
+      mcpServiceHeaders('mcp-v051-delete'),
+      NOW + 32_101,
+    );
+    assert.equal(deletedPendingReply.status, 200, await deletedPendingReply.clone().text());
+    assert.equal((await deletedPendingReply.json() as { record: { status: string } }).record.status, 'deleted');
+    const deletedRecordDetail = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/agent/records/${encodeURIComponent(pendingDeleteReplyBody.record.id)}`,
+      {},
+      mcpServiceHeaders(),
+      NOW + 32_102,
+    );
+    assert.equal(deletedRecordDetail.status, 200, await deletedRecordDetail.clone().text());
+    const deletedRecordDetailBody = await deletedRecordDetail.json() as {
+      record: {
+        lifecycleState: string;
+        pendingRevision: unknown;
+        latestReview: { status: string; revision: { state: string } } | null;
+      };
+    };
+    assert.equal(deletedRecordDetailBody.record.lifecycleState, 'deleted');
+    assert.equal(deletedRecordDetailBody.record.pendingRevision, null);
+    assert.equal(deletedRecordDetailBody.record.latestReview?.status, 'cancelled');
+    assert.equal(deletedRecordDetailBody.record.latestReview?.revision.state, 'rejected');
+
     const revokedMcpWriteGrant = await postJson(
       `/v1/mcp/authorizations/${encodeURIComponent(full.grantId)}/revoke`,
       {},
       authenticatedHeaders(sponsorCookies, true),
-      NOW + 17_002,
+      NOW + 32_103,
     );
     assert.equal(
       revokedMcpWriteGrant.status,
@@ -1542,7 +1569,7 @@ let firstCredentialToken = '';
       `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/records`,
       { ...mcpWritePostBody, bodyMarkdown: 'İptalden sonra yazılamaz.' },
       mcpServiceHeaders('mcp-after-revoke'),
-      NOW + 17_003,
+      NOW + 32_104,
     );
     assert.equal(afterRevoke.status, 401);
     const afterRevokeBody = await afterRevoke.json() as { error: { code: string } };

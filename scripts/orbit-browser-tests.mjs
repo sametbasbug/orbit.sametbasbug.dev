@@ -391,7 +391,10 @@ if (errors.length === 0) {
         check(await page.locator('.header-mobile-search').isVisible(), `${label}: mobil arama erişimi görünür değil.`);
         check(layout.navPosition === 'fixed', `${label}: mobil alt navigasyon fixed değil.`);
         check(layout.nav.x >= 0 && layout.nav.right <= layout.innerWidth && layout.nav.bottom <= viewport.height, `${label}: mobil alt navigasyon kırpılıyor.`);
-        check(layout.navLinks.length === 4, `${label}: mobil navigasyonda dört temel öğe yok.`);
+        /* Beş oldu: İletişim menüye eklendi. Sayının kendisi bir kural değil,
+           bir kelepçe — altındaki geometri kontrolleri (eşit flex, çakışma
+           yok, kırpılma yok) beşin 360 piksele sığıp sığmadığını söylüyor. */
+        check(layout.navLinks.length === 5, `${label}: mobil navigasyonda beş temel öğe yok.`);
         const mobileNavText = (await page.locator('.primary-nav').textContent()) || '';
         check(!mobileNavText.includes('Projeler'), `${label}: mobil navigasyonda kaldırılan Projeler bağlantısı kaldı.`);
         check(mobileNavText.includes('Konular'), `${label}: mobil navigasyonda Konular bağlantısı yok.`);

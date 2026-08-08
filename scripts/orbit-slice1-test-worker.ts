@@ -722,6 +722,80 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     return Response.json(await runIdentityCleanup(env, now));
   }
 
+  /* Giden posta testleri kurulumlarını BURADAN yapıyor, CLI'dan değil.
+   * wrangler dev veritabanını açık tutarken dışarıdan yazmaya kalkmak
+   * worker'ı ECONNRESET ile düşürüyor; bir kez ödeyerek öğrendim. */
+  if (url.pathname === '/__test/seed-email-world') {
+    /* Test kendi dünyasını TAMAMEN kuruyor: üç hesap, üç kimlik satırı.
+     * Fikstürdeki hesaplara yaslanmayı denedim ve testi boşa çıkardı —
+     * onların auth_identities satırı yok, dolayısıyla sorgudaki JOIN
+     * zaten eliyordu ve tercih süzgecini bozduğumda test yine geçiyordu.
+     *
+     *   wants      → adresi var, istiyor   → kuyruğa girmeli
+     *   refuses    → adresi var, istemiyor → girmemeli (tercih süzgeci)
+     *   no-email   → adresi yok, istiyor   → girmemeli (adres süzgeci)
+     */
+    const account = (id: string, handle: string) => env.DB.prepare(`
+      INSERT OR IGNORE INTO accounts (
+        id, handle, handle_normalized, display_name, avatar_url,
+        status, created_at, updated_at, last_login_at
+      ) VALUES (?, ?, ?, ?, NULL, 'active', ?, ?, ?)
+    `).bind(id, handle, handle, handle, now, now, now);
+    const identity = (id: string, accountId: string, providerId: string, email: string | null) =>
+      env.DB.prepare(`
+        INSERT OR IGNORE INTO auth_identities (
+          id, account_id, provider, provider_user_id,
+          provider_login_snapshot, provider_email_snapshot, created_at, last_seen_at
+        ) VALUES (?, ?, 'github', ?, ?, ?, ?, ?)
+      `).bind(id, accountId, providerId, accountId, email, now, now);
+
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM email_deliveries'),
+      account('acc-wants', 'posta-isteyen'),
+      account('acc-refuses', 'posta-istemeyen'),
+      account('acc-no-email', 'adressiz'),
+      identity('ident-wants', 'acc-wants', '900000001', null),
+      identity('ident-refuses', 'acc-refuses', '900000002', null),
+      identity('ident-no-email', 'acc-no-email', '900000003', null),
+      /* Önce herkesi adressiz yap: fikstürde adres taşıyan bir hesap
+       * kalırsa beklenen sayı tutmaz ve testin ne ölçtüğü belirsizleşir. */
+      env.DB.prepare('UPDATE auth_identities SET provider_email_snapshot = NULL'),
+      env.DB.prepare('UPDATE accounts SET announcement_emails_enabled = 1'),
+      env.DB.prepare("UPDATE auth_identities SET provider_email_snapshot = 'alan@example.test' WHERE account_id = 'acc-wants'"),
+      env.DB.prepare("UPDATE auth_identities SET provider_email_snapshot = 'istemeyen@example.test' WHERE account_id = 'acc-refuses'"),
+      env.DB.prepare("UPDATE accounts SET announcement_emails_enabled = 0 WHERE id = 'acc-refuses'"),
+    ]);
+    return Response.json({ wants: 'acc-wants', refuses: 'acc-refuses', withoutEmail: 'acc-no-email' });
+  }
+
+  /* Bir fikstür hesabına bildirim adresi verir. Yayın reddi testinin
+   * ihtiyacı bu: reddi veren moderatör ile ajanın sponsoru farklı olmalı
+   * ve sponsorun adresi bulunmalı, yoksa kuyruk boş kalır ve test hiçbir
+   * şey ölçmez. */
+  if (url.pathname === '/__test/set-account-email') {
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM email_deliveries'),
+      env.DB.prepare(`
+        INSERT INTO auth_identities (
+          id, account_id, provider, provider_user_id,
+          provider_login_snapshot, provider_email_snapshot, created_at, last_seen_at
+        ) VALUES (?, ?, 'github', ?, ?, ?, ?, ?)
+        ON CONFLICT (account_id, provider) DO UPDATE SET provider_email_snapshot = excluded.provider_email_snapshot
+      `).bind(
+        `ident-${String(body.accountId)}`, String(body.accountId), `95${String(body.accountId).slice(-7)}`,
+        String(body.accountId), String(body.email), now, now,
+      ),
+    ]);
+    return Response.json({ ok: true });
+  }
+
+  if (url.pathname === '/__test/email-deliveries') {
+    const rows = await env.DB.prepare(`
+      SELECT recipient, kind, status, subject FROM email_deliveries ORDER BY created_at ASC
+    `).all<{ recipient: string; kind: string; status: string; subject: string }>();
+    return Response.json({ deliveries: rows.results ?? [] });
+  }
+
   if (url.pathname === '/__test/seed-idempotency') {
     await env.DB.prepare(`
       INSERT INTO idempotency_keys (

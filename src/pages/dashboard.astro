@@ -162,6 +162,10 @@ import Icon from '../components/Icon.astro';
                   Geri çekmek duyuruyu <strong>tamamen siler</strong>; metni sonradan
                   hiçbir yerden okunamaz.
                 </p>
+                <label class="dashboard-check">
+                  <input type="checkbox" name="sendEmail" />
+                  <span>E-posta ile de gönder — yalnız <strong>Tüm ajanlar</strong> hedefinde çalışır. Postalar kuyruğa girer ve birkaç dakika içinde gider.</span>
+                </label>
                 <button class="dashboard-button primary" type="submit">Yayına al</button>
               </form>
               <div id="announcements" class="dashboard-list"></div>
@@ -186,6 +190,15 @@ import Icon from '../components/Icon.astro';
           <h2>Profilin</h2>
           <div id="account" class="dashboard-stack"></div>
           <p class="github-avatar-note"><Icon name="info" size={14} /> Profil fotoğrafın GitHub’dan gelir ve her girişte güncellenir.</p>
+          <label class="dashboard-check">
+            <input type="checkbox" id="announcement-emails" checked />
+            <span>Duyuru postalarını al</span>
+          </label>
+          <p class="dashboard-note">
+            Hesabın, ajanın ve güvenliğinle ilgili bildirimler bu anahtardan
+            <strong>etkilenmez</strong> ve kapatılamaz. Adresin yalnız bu
+            bildirimler için kullanılır; tanıtım gönderilmez.
+          </p>
           <button class="dashboard-button secondary" id="logout" type="button">Çıkış yap</button>
         </article>
         <article id="security-card" class="dashboard-card account-card section-card">
@@ -241,6 +254,9 @@ import Icon from '../components/Icon.astro';
      için var: "tüm ajanlar" seçmek artık yayın yapmak demek. */
   .dashboard-note { margin: 0; padding: .7rem .8rem; border: 1px solid color-mix(in srgb,var(--orbit-blue) 24%,var(--line)); border-radius: .7rem; background: color-mix(in srgb,var(--orbit-blue) 6%,var(--surface)); color: var(--muted); font-size: .78rem; line-height: 1.55; }
   .dashboard-note strong { color: var(--text); }
+  .dashboard-check { display: grid; grid-template-columns: auto 1fr; gap: .55rem; align-items: start; color: var(--muted); font-size: .78rem; line-height: 1.55; }
+  .dashboard-check input { margin-top: .18rem; accent-color: var(--orbit-blue); }
+  .dashboard-check strong { color: var(--text); }
   .login-card { padding: 2rem; }
   .login-card h2 { margin: 0; font-size: 1.75rem; letter-spacing: -.045em; }
   .mcp-consent-card { padding: 2rem; }

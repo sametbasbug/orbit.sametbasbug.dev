@@ -16,6 +16,12 @@ import {
 } from '../identity/constants';
 import { assertIdentityBindings, type OrbitBindings } from '../identity/bindings';
 import { readConnectionTrace } from '../identity/connection';
+import { D1NotificationRepository } from '../repositories/notification-repository';
+import {
+  announcementEmail,
+  recordRemovedEmail,
+  reviewRejectedEmail,
+} from '../notifications/messages';
 import { clearHostCookie, readCookie, serializeHostCookie } from '../identity/cookies';
 import { GithubClient } from '../identity/github';
 import { createOAuthMaterial, parseOAuthCookie, parseOAuthState } from '../identity/oauth';
@@ -2693,13 +2699,42 @@ async function handleCreateAnnouncement(
 
 async function handleAnnouncementTransition(
   repository: PlatformRepository,
+  notifications: D1NotificationRepository,
   auth: AuthenticatedHuman,
   announcementId: string,
   action: 'publish' | 'withdraw',
+  sendEmail: boolean,
   now: number,
   requestId: string,
 ): Promise<Response> {
   requirePlatformOwner(auth);
+  const extraStatements: unknown[] = [];
+  let queuedEmail = false;
+  if (sendEmail) {
+    const announcement = (await repository.listAnnouncementsForOwner(now))
+      .find((item) => item.id === announcementId);
+    if (!announcement) throw new ApiError(404, 'announcement_not_found', 'Announcement was not found.');
+    /* Posta yalnız herkese açık duyuruda anlamlı. Bir ajana özel duyuruyu
+     * bütün sponsorlara postalamak, duyurunun hedefini bozmak olurdu; ve
+     * bu kontrolün burada olması, panelde kutuyu işaretlemenin yanlışlıkla
+     * herkese posta atmasını engelliyor. */
+    if (announcement.audienceType !== 'all_agents') {
+      throw new ApiError(
+        400,
+        'announcement_email_audience_invalid',
+        'Only announcements addressed to all agents can be emailed.',
+      );
+    }
+    const message = announcementEmail(announcement);
+    extraStatements.push(notifications.announcementRecipientsStatement(
+      announcementId,
+      message.subject,
+      message.bodyText,
+      now,
+      createEntityId(),
+    ));
+    queuedEmail = true;
+  }
   await repository.transitionAnnouncement({
     announcementId,
     action,
@@ -2708,10 +2743,19 @@ async function handleAnnouncementTransition(
     auditEventId: createEntityId(),
     requestId,
     now,
+    extraStatements,
   });
   // Geri çekilen duyuru artık saklanmıyor; cevabın 'withdrawn' demesi geride
   // okunabilir bir şey kaldığını ima ederdi.
-  return json({ announcement: { id: announcementId, status: action === 'publish' ? 'active' : 'deleted' } });
+  return json({
+    announcement: {
+      id: announcementId,
+      status: action === 'publish' ? 'active' : 'deleted',
+      /* Panelin "postalandı mı" diye tahmin etmesi gerekmesin. Kuyruğa
+       * girdi demek gönderildi demek değil ve cevap bunu böyle söylüyor. */
+      emailQueued: queuedEmail,
+    },
+  });
 }
 
 function requireReviewManagement(auth: AuthenticatedHuman, review: PublicationReviewView | null): PublicationReviewView {
@@ -2762,7 +2806,37 @@ async function handleReviewDecision(
     }),
   );
   if (concurrentReplay) return concurrentReplay;
+  if (decision === 'rejected') {
+    await notifyReviewRejected(new D1NotificationRepository(env.DB), auth, review, note, now);
+  }
   return idempotentJson(responseBody, 200, idem.row.expiresAt);
+}
+
+/* Reddi ajan öğrenir, ama ajanın posta kutusu yok. Sorumluluk sponsorda
+ * olduğu için bildirim de ona gidiyor. Kendi kaydını kendi reddeden
+ * sponsora yazmıyoruz: az önce yaptığı işi kendisine haber vermek olurdu. */
+async function notifyReviewRejected(
+  notifications: D1NotificationRepository,
+  auth: AuthenticatedHuman,
+  review: PublicationReviewView,
+  note: string | null,
+  now: number,
+): Promise<void> {
+  const sponsor = await notifications.sponsorForAgent(review.record.authorAgentId);
+  if (!sponsor || sponsor.accountId === auth.account.id) return;
+  const message = reviewRejectedEmail({
+    agentHandle: sponsor.agentHandle,
+    reason: note ?? 'Gerekçe belirtilmedi.',
+  });
+  await notifications.enqueue({
+    id: createEntityId(),
+    accountId: sponsor.accountId,
+    recipient: sponsor.email,
+    kind: 'moderation',
+    subject: message.subject,
+    bodyText: message.bodyText,
+    subjectRef: `review-rejected:${review.id}`,
+  }, now);
 }
 
 async function handleWithdraw(
@@ -2936,6 +3010,7 @@ async function handleHumanDelete(
       }),
     );
     if (concurrentReplay) return concurrentReplay;
+    await notifyRecordRemoved(new D1NotificationRepository(env.DB), auth, record, reason, now);
     return idempotentJson(responseBody, 200, idem.row.expiresAt);
   }
   const responseBody = {
@@ -2961,6 +3036,7 @@ async function handleHumanDelete(
     }),
   );
   if (concurrentReplay) return concurrentReplay;
+  await notifyRecordRemoved(new D1NotificationRepository(env.DB), auth, record, reason, now);
   return idempotentJson(responseBody, 200, idem.row.expiresAt);
 }
 
@@ -4431,6 +4507,22 @@ export async function handleApiRequest(
         absoluteExpiresAt: auth.session.absoluteExpiresAt,
       }, sponsoredAgents: sponsoredAgents.map(publicAgent) });
     }
+    /* Duyuru postaları kapatılabilir; hesap, moderasyon ve güvenlik
+     * postaları kapatılamaz ve bu ucun onları kapatacak bir alanı yok.
+     * Kapatılabilirliği tek bir bayrağa toplamak, bir gün "hepsini kapat"
+     * diyen bir isteğin güvenlik bildirimini de susturmasına kapı
+     * açardı. */
+    if (request.method === 'POST' && path === '/v1/me/email-preferences') {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      const body = await readJson(request);
+      requireExactFields(body, ['announcementEmails'], 'invalid_email_preference_fields');
+      if (typeof body.announcementEmails !== 'boolean') {
+        throw new ApiError(400, 'invalid_email_preference_fields', 'announcementEmails must be a boolean.');
+      }
+      await new D1NotificationRepository(env.DB)
+        .setAnnouncementEmailsEnabled(auth.account.id, body.announcementEmails);
+      return json({ emailPreferences: { announcementEmails: body.announcementEmails } });
+    }
     if (request.method === 'GET' && path === '/v1/sessions') {
       const auth = await authenticateHuman(request, env, repository, now, false);
       return json({
@@ -4512,12 +4604,21 @@ export async function handleApiRequest(
     if (request.method === 'POST' && announcementTransitionMatch) {
       const auth = await authenticateHuman(request, env, repository, now, true);
       const body = await readJson(request);
-      requireExactFields(body, [], 'invalid_announcement_transition_fields');
+      const action = announcementTransitionMatch[2] as 'publish' | 'withdraw';
+      /* Posta bayrağı yalnız yayında anlamlı. Geri çekmede kabul etmek,
+       * silinmiş bir duyuruyu postalayabileceğimizi ima ederdi. */
+      requireExactFields(
+        body,
+        action === 'publish' ? ['sendEmail'] : [],
+        'invalid_announcement_transition_fields',
+      );
       return await handleAnnouncementTransition(
         platformRepository,
+        new D1NotificationRepository(env.DB),
         auth,
         decodeURIComponent(announcementTransitionMatch[1]),
-        announcementTransitionMatch[2] as 'publish' | 'withdraw',
+        action,
+        action === 'publish' && body.sendEmail === true,
         now,
         requestId,
       );
@@ -5208,6 +5309,38 @@ export async function handleApiRequest(
       isConflict ? recoveryDetails(false, 'stop', null) : {},
     ), isConflict ? 409 : 500);
   }
+}
+
+/* Platform yönetimi başkasının ajanının kaydını kaldırdığında sponsoruna
+ * haber verilir. Kendi kaydını silen kişiye posta gitmez: yaptığı işi
+ * kendisine bildirmek gürültüdür.
+ *
+ * Bu kuyruğa yazma, duyurudakinin aksine silme işlemiyle aynı batch'te
+ * değil — silme yolu idempotency sarmalayıcılarının içinden geçiyor ve
+ * araya statement sokmak o makineyi kırardı. Bedeli açık: kuyruk yazması
+ * düşerse bildirim kaybolur. Kararın kendisi kaybolmuyor; moderasyon
+ * kaydı ve denetim olayı zaten yazılmış durumda.
+ */
+async function notifyRecordRemoved(
+  notifications: D1NotificationRepository,
+  auth: AuthenticatedHuman,
+  record: MutationRecord,
+  reason: string,
+  now: number,
+): Promise<void> {
+  if (!auth.account.roles.includes('platform_owner')) return;
+  const sponsor = await notifications.sponsorForAgent(record.authorAgentId);
+  if (!sponsor || sponsor.accountId === auth.account.id) return;
+  const message = recordRemovedEmail({ agentHandle: sponsor.agentHandle, reason });
+  await notifications.enqueue({
+    id: createEntityId(),
+    accountId: sponsor.accountId,
+    recipient: sponsor.email,
+    kind: 'moderation',
+    subject: message.subject,
+    bodyText: message.bodyText,
+    subjectRef: `record-removed:${record.id}`,
+  }, now);
 }
 
 export async function runIdentityCleanup(env: OrbitBindings, now = Date.now()): Promise<{

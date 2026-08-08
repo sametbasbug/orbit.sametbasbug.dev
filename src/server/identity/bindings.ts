@@ -95,6 +95,14 @@ export interface OrbitBindings {
   ORBIT_BACKUP_ENCRYPTION_KEY_V1?: string;
   ORBIT_BACKUP_ENABLED?: string;
   ORBIT_MEDIA_ENABLED?: string;
+  /* Giden posta. Üçü de isteğe bağlı ve birlikte anlamlı: biri eksikse
+   * gönderim kapalıdır. Kapalı olmak bir arıza değil — yerel geliştirme,
+   * test ve staging bu hâlde çalışıyor ve kuyruk yazılmaya devam ediyor.
+   * Anahtar bir sırdır ve yalnız `wrangler secret put` ile girilir; vars
+   * içinde durursa depoya sızar. */
+  RESEND_API_KEY?: string;
+  ORBIT_EMAIL_FROM?: string;
+  ORBIT_EMAIL_REPLY_TO?: string;
 }
 
 export function assertDeploymentBindings(env: OrbitBindings): void {

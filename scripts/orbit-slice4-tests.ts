@@ -461,6 +461,64 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     assert.equal((await fetch(`${baseUrl}/v1/records/${pending.record.id}`)).status, 404);
   });
 
+  test('a rejection by someone else reaches the agent sponsor by email', async () => {
+    /* Reddi moderatör veriyor, ajanın sponsoru ise owner. Sponsor kendi
+     * reddini kendisi vermediği için haberi olmasının tek yolu posta.
+     * Adresi önce kuruyoruz: adressiz sponsorda kuyruk boş kalır ve bu
+     * test hiçbir şey ölçmezdi. */
+    await fetch(`${baseUrl}/__test/set-account-email`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accountId: OWNER_ID, email: 'sponsor@example.test' }),
+    });
+    const agent = agents.get('slice4-review')!;
+    const pending = await agentWrite(agent, '/v1/records', {
+      bodyMarkdown: 'Moderatör tarafından reddedilecek kayıt.',
+    }, 'review-reject-notify-create').then((response) => response.json()) as { record: { id: string } };
+    const queue = await moderatorRequest('/v1/approvals').then((response) => response.json()) as {
+      reviews: Array<{ id: string; record: { id: string } }>;
+    };
+    const review = queue.reviews.find((item) => item.record.id === pending.record.id);
+    assert.ok(review);
+    assert.equal((await moderatorRequest(`/v1/approvals/${review.id}/reject`, 'POST', {
+      note: 'Kaynak gösterilmemiş.',
+    }, 'reject-notify-1')).status, 200);
+
+    const queued = (await (await fetch(`${baseUrl}/__test/email-deliveries`)).json() as {
+      deliveries: Array<{ recipient: string; kind: string; subject: string; status: string }>;
+    }).deliveries;
+    assert.equal(queued.length, 1, 'red sponsora bildirilmedi');
+    assert.equal(queued[0].recipient, 'sponsor@example.test');
+    assert.equal(queued[0].kind, 'moderation');
+    assert.equal(queued[0].status, 'pending');
+    assert.match(queued[0].subject, /yayın isteği reddedildi$/u);
+  });
+
+  test('a sponsor who rejects their own agent is not emailed about it', async () => {
+    /* Az önce kendi verdiği kararı kendisine bildirmek gürültüdür; üstelik
+     * kapatılamayan bir posta türü olduğu için kaçış yolu da yok. */
+    await fetch(`${baseUrl}/__test/set-account-email`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accountId: OWNER_ID, email: 'sponsor@example.test' }),
+    });
+    const agent = agents.get('slice4-review')!;
+    const pending = await agentWrite(agent, '/v1/records', {
+      bodyMarkdown: 'Sponsorun kendi reddedeceği kayıt.',
+    }, 'review-self-reject-create').then((response) => response.json()) as { record: { id: string } };
+    const queue = await ownerRequest('/v1/approvals').then((response) => response.json()) as {
+      reviews: Array<{ id: string; record: { id: string } }>;
+    };
+    const review = queue.reviews.find((item) => item.record.id === pending.record.id);
+    assert.ok(review);
+    assert.equal((await ownerRequest(`/v1/approvals/${review.id}/reject`, 'POST', {
+      note: 'Kendi kararım.',
+    }, 'self-reject-1')).status, 200);
+
+    const queued = (await (await fetch(`${baseUrl}/__test/email-deliveries`)).json() as {
+      deliveries: unknown[];
+    }).deliveries;
+    assert.equal(queued.length, 0, 'sponsora kendi kararı postalandı');
+  });
+
   test('pending edit preserves current public revision until approval', async () => {
     const agent = agents.get('slice4-review')!;
     const before = await fetch(`${baseUrl}/v1/records/${reviewRecordId}`).then((response) => response.json()) as {

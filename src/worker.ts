@@ -16,6 +16,7 @@ import {
 } from './server/cache/public-cache';
 import { observeRequest } from './server/observability/telemetry';
 import { cleanupMedia } from './server/media/media-service';
+import { drainEmailQueue } from './server/notifications/drain';
 import { D1MediaRepository } from './server/repositories/d1/d1-media-repository';
 import { D1AgentRepository } from './server/repositories/d1/d1-agent-repository';
 import { D1PublicRepository } from './server/repositories/d1/d1-public-repository';
@@ -41,10 +42,16 @@ interface ScheduledDependencies {
   runScheduledBackups(env: OrbitBindings, now: number): Promise<unknown>;
   cleanupMedia(env: OrbitBindings, now: number): Promise<unknown>;
   reconcileStaleBackupRuns(env: OrbitBindings, now: number): Promise<unknown>;
+  drainEmailQueue(env: OrbitBindings, now: number): Promise<unknown>;
 }
 
 export const BACKUP_CRON = '17 3 * * *';
 export const BACKUP_RECONCILIATION_CRON = '0 4 * * *';
+/* Giden posta kuyruğu günlük bakıma bağlanamaz: bir güvenlik bildiriminin
+ * ertesi sabahı beklemesi, bildirimi anlamsız kılar. Beş dakika, kuyruk
+ * boşken neredeyse bedava (tek bir SELECT) ve dolu olduğunda yeterince
+ * hızlı. */
+export const EMAIL_DRAIN_CRON = '*/5 * * * *';
 
 const scheduledDependencies: ScheduledDependencies = {
   runIdentityCleanup,
@@ -55,6 +62,7 @@ const scheduledDependencies: ScheduledDependencies = {
     now,
   ),
   reconcileStaleBackupRuns,
+  drainEmailQueue,
 };
 
 interface WorkerDependencies extends Omit<ApiDependencies, 'requestId'> {
@@ -186,6 +194,13 @@ export async function runScheduledMaintenance(
   const now = controller.scheduledTime ?? Date.now();
   if (controller.cron === BACKUP_RECONCILIATION_CRON) {
     await dependencies.reconcileStaleBackupRuns(env, now);
+    return;
+  }
+  /* Posta turu kendi başına dönüyor: yedekleme ve temizlikle aynı sepete
+   * girseydi, biri düştüğünde diğeri de çalışmamış sayılırdı — ve o
+   * "diğeri" bir güvenlik bildirimi olabilir. */
+  if (controller.cron === EMAIL_DRAIN_CRON) {
+    await dependencies.drainEmailQueue(env, now);
     return;
   }
 

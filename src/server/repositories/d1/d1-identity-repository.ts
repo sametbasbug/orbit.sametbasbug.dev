@@ -468,7 +468,8 @@ export class D1IdentityRepository implements IdentityRepository {
       SELECT a.id, a.handle, a.display_name, a.avatar_url,
              identity.provider_login_snapshot AS github_login,
              COALESCE(GROUP_CONCAT(DISTINCT ar.role), '') AS roles,
-             COALESCE(MAX(aq.limit_value), 0) AS agent_quota
+             COALESCE(MAX(aq.limit_value), 0) AS agent_quota,
+             a.announcement_emails_enabled
       FROM accounts a
       LEFT JOIN auth_identities identity
         ON identity.account_id = a.id AND identity.provider = 'github'
@@ -477,7 +478,8 @@ export class D1IdentityRepository implements IdentityRepository {
       LEFT JOIN account_quotas aq
         ON aq.account_id = a.id AND aq.quota_key = 'agents.max_active'
       WHERE a.id = ? AND a.status = 'active'
-      GROUP BY a.id, a.handle, a.display_name, a.avatar_url, identity.provider_login_snapshot
+      GROUP BY a.id, a.handle, a.display_name, a.avatar_url,
+               identity.provider_login_snapshot, a.announcement_emails_enabled
     `).bind(accountId).first<{
       id: string;
       handle: string;
@@ -486,6 +488,7 @@ export class D1IdentityRepository implements IdentityRepository {
       avatar_url: string | null;
       roles: string;
       agent_quota: number;
+      announcement_emails_enabled: number;
     }>();
     return row ? {
       id: row.id,
@@ -495,6 +498,7 @@ export class D1IdentityRepository implements IdentityRepository {
       avatarUrl: row.avatar_url,
       roles: row.roles ? row.roles.split(',').sort() : [],
       agentQuota: row.agent_quota,
+      announcementEmails: row.announcement_emails_enabled === 1,
     } : null;
   }
 

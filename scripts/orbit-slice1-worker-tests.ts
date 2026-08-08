@@ -3,6 +3,7 @@ import { describe, test } from 'node:test';
 import worker, {
   BACKUP_CRON,
   BACKUP_RECONCILIATION_CRON,
+  EMAIL_DRAIN_CRON,
   runScheduledMaintenance,
 } from '../src/worker';
 import {
@@ -383,6 +384,7 @@ describe('Orbit V6 deployment-mode contract', () => {
           async reconcileStaleBackupRuns() {
             calls.push('reconciliation');
           },
+          async drainEmailQueue() { calls.push('email_drain'); },
         },
       ),
       /scheduled_maintenance_failed:identity_cleanup/u,
@@ -404,8 +406,33 @@ describe('Orbit V6 deployment-mode contract', () => {
           assert.equal(now, scheduledTime);
           calls.push('reconciliation');
         },
+        async drainEmailQueue() { calls.push('email_drain'); },
       },
     );
     assert.deepEqual(calls, ['reconciliation']);
+  });
+
+  test('the five-minute cron drains email and touches nothing else', async () => {
+    /* Posta turu kendi başına dönmeli. Günlük bakımla aynı sepete
+     * girseydi, yedekleme düştüğünde posta da gönderilmemiş sayılırdı — ve
+     * o posta bir güvenlik bildirimi olabilir. Ters yönü de önemli: beş
+     * dakikada bir yedek almaya kalkmak felaket olurdu. */
+    const calls: string[] = [];
+    const scheduledTime = 1_785_729_900_000;
+    await runScheduledMaintenance(
+      { cron: EMAIL_DRAIN_CRON, scheduledTime },
+      productionBindings('live'),
+      {
+        async runIdentityCleanup() { calls.push('identity_cleanup'); },
+        async runScheduledBackups() { calls.push('backup'); },
+        async cleanupMedia() { calls.push('media_cleanup'); },
+        async reconcileStaleBackupRuns() { calls.push('reconciliation'); },
+        async drainEmailQueue(_env, now) {
+          assert.equal(now, scheduledTime);
+          calls.push('email_drain');
+        },
+      },
+    );
+    assert.deepEqual(calls, ['email_drain']);
   });
 });

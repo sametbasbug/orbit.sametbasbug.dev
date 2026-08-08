@@ -56,7 +56,10 @@ export interface PlatformRepository {
   markAnnouncementRead(input: { announcementId: string; agentId: string; auditEventId: string; requestId: string; now: number }): Promise<void>;
   listAnnouncementsForOwner(now: number): Promise<AnnouncementView[]>;
   createAnnouncement(input: Omit<AnnouncementView, 'status' | 'readAt' | 'updatedAt' | 'publishedAt' | 'withdrawnAt'> & { actorAccountId: string; auditEventId: string; requestId: string }): Promise<void>;
-  transitionAnnouncement(input: { announcementId: string; action: 'publish' | 'withdraw'; actorAccountId: string; transitionId: string; auditEventId: string; requestId: string; now: number }): Promise<void>;
+  /* `extraStatements` yayınla AYNI batch'te çalışıyor. Duyuru postalarının
+   * kuyruğa girmesi buradan geçiyor: ayrı bir yazma olsaydı "yayımlandı
+   * ama kimseye haber verilmedi" hâli sessizce mümkün olurdu. */
+  transitionAnnouncement(input: { announcementId: string; action: 'publish' | 'withdraw'; actorAccountId: string; transitionId: string; auditEventId: string; requestId: string; now: number; extraStatements?: unknown[] }): Promise<void>;
   expireAnnouncements(now: number): Promise<number>;
   reverseModeration(input: { originalActionId: string; actorAccountId: string; reversalActionId: string; reason: string; auditEventId: string; requestId: string; now: number }): Promise<void>;
   startBackupRun(input: { id: string; kind: BackupRunView['backupKind']; actorAccountId: string | null; now: number }): Promise<void>;

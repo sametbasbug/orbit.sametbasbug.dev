@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 const files = {
   live: new URL('../wrangler.production.live.jsonc', import.meta.url),
   darkLaunch: new URL('../wrangler.production.dark-launch.jsonc', import.meta.url),
+  staging: new URL('../wrangler.staging.jsonc', import.meta.url),
   deployWorkflow: new URL('../.github/workflows/deploy-production.yml', import.meta.url),
   fullRegressionWorkflow: new URL('../.github/workflows/full-regression.yml', import.meta.url),
 };
@@ -28,6 +29,22 @@ async function readConfig(url, label) {
     return JSON.parse(await readFile(url, 'utf8'));
   } catch (error) {
     fail(`${label} is not strict JSON: ${error.message}`);
+  }
+}
+
+/* Staging dosyası yorum taşıyor ve taşımalı: oradaki cron kısıtının SEBEBİ
+ * dosyanın kendisinde yazmazsa, biri onu iyi niyetle geri ekler. Katı JSON
+ * kuralı yalnız iki production dosyası için geçerli — orada yorum yok ki
+ * gözden kaçan bir alan yorum arkasına saklanamasın. */
+async function readJsonc(url, label) {
+  const text = await readFile(url, 'utf8');
+  const stripped = text
+    .replace(/\/\*[\s\S]*?\*\//gu, '')
+    .replace(/(^|[^:])\/\/.*$/gmu, '$1');
+  try {
+    return JSON.parse(stripped);
+  } catch (error) {
+    fail(`${label} could not be parsed: ${error.message}`);
   }
 }
 
@@ -79,6 +96,12 @@ const expectedCommonVars = {
   ORBIT_PLATFORM_OWNER_GITHUB_ID: '126420524',
   ORBIT_BACKUP_ENABLED: 'true',
   ORBIT_MEDIA_ENABLED: 'true',
+  /* Gönderen adresi doğrulanmış alan adıyla eşleşmek zorunda: Resend'de
+   * sametbasbug.dev doğrulandı, orbit@ ondan türüyor. Yanıt adresi ise
+   * gizlilik ve iletişim sayfalarında yazan adresin aynısı — kullanıcıya
+   * "cevap verme" denmeyen bir kutu göstermek zorundayız. */
+  ORBIT_EMAIL_FROM: 'Orbit <orbit@sametbasbug.dev>',
+  ORBIT_EMAIL_REPLY_TO: 'iletisim@sametbasbug.dev',
 };
 
 const expectedResources = {
@@ -124,7 +147,10 @@ const expectedResources = {
     },
   },
   triggers: {
-    crons: ['17 3 * * *', '0 4 * * *'],
+    /* Üçüncü tetikleyici giden posta kuyruğunu boşaltıyor. Günlük bakıma
+     * bağlanamaz: bir güvenlik bildiriminin ertesi sabahı beklemesi,
+     * bildirimi anlamsız kılar. Kuyruk boşken maliyeti tek bir SELECT. */
+    crons: ['17 3 * * *', '0 4 * * *', '*/5 * * * *'],
   },
 };
 
@@ -161,6 +187,8 @@ function validateConfig(config, expected) {
       ORBIT_PLATFORM_OWNER_GITHUB_ID: '126420524',
       ORBIT_BACKUP_ENABLED: 'true',
       ORBIT_MEDIA_ENABLED: 'true',
+      ORBIT_EMAIL_FROM: 'Orbit <orbit@sametbasbug.dev>',
+      ORBIT_EMAIL_REPLY_TO: 'iletisim@sametbasbug.dev',
     },
     `${expected.label} vars drifted`,
   );
@@ -181,6 +209,7 @@ function normalizeModeDifferences(config) {
 
 const live = await readConfig(files.live, 'live config');
 const darkLaunch = await readConfig(files.darkLaunch, 'dark-launch config');
+const staging = await readJsonc(files.staging, 'staging config');
 const deployWorkflow = await readFile(files.deployWorkflow, 'utf8');
 const fullRegressionWorkflow = await readFile(files.fullRegressionWorkflow, 'utf8');
 
@@ -202,6 +231,22 @@ assertDeepEqual(
   normalizeModeDifferences(live),
   normalizeModeDifferences(darkLaunch),
   'live and dark-launch configs differ outside the reviewed mode surface',
+);
+
+/* Hesap genelinde cron bütçesi. Workers Free planı 5 tetikleyiciye izin
+ * veriyor ve aynı anda yalnız iki worker yayında: production ile staging.
+ * Bütçe aşılınca dağıtım sessizce yarım kalıyor — worker yükleniyor, cron
+ * güncellemesi API'den dönüyor. Bunu bir kez staging'de ödedim; buradan
+ * sonra derlemede yakalanır. */
+const CLOUDFLARE_FREE_CRON_BUDGET = 5;
+const deployedCrons = live.triggers.crons.length + staging.triggers.crons.length;
+assert(
+  deployedCrons <= CLOUDFLARE_FREE_CRON_BUDGET,
+  `production and staging together request ${deployedCrons} cron triggers, over the account limit of ${CLOUDFLARE_FREE_CRON_BUDGET}`,
+);
+assert(
+  !staging.triggers.crons.includes('*/5 * * * *'),
+  'staging claims the outbound email cron: it cannot send without a key and it costs production its third trigger',
 );
 
 assert(

@@ -211,6 +211,7 @@ function renderAccount() {
      ederdi. `githubLogin` ise her girişte tazeleniyor. */
   const githubLogin = me.account.githubLogin || me.account.handle;
   byId('welcome-name').textContent = me.account.displayName || `@${githubLogin}`;
+  byId('announcement-emails').checked = me.account.announcementEmails !== false;
   byId('account').innerHTML = `
     <div class="dashboard-row">
       ${me.account.avatarUrl ? `<img class="dashboard-avatar" src="${escapeHtml(me.account.avatarUrl)}" alt="" />` : ''}
@@ -483,7 +484,10 @@ async function loadAnnouncements() {
     item.className = 'dashboard-item';
     item.innerHTML = `<strong>${escapeHtml(announcement.title)}</strong><div class="meta">${escapeHtml(announcement.severity)} · ${escapeHtml(announcement.audienceType)} · ${escapeHtml(announcement.status)}</div>`;
     if (announcement.status === 'draft') item.append(actionButton('Yayımla', async () => {
-      try { await mutate(`/v1/admin/announcements/${encodeURIComponent(announcement.id)}/publish`); await loadAnnouncements(); }
+      /* Listeden yayımlarken posta gönderilmiyor. Postalama kararı yazma
+         anında verilir; bir taslağı tamamlamak, o kararı yeniden sormadan
+         onlarca kişiye posta atmak anlamına gelmemeli. */
+      try { await mutate(`/v1/admin/announcements/${encodeURIComponent(announcement.id)}/publish`, 'POST', { sendEmail: false }); await loadAnnouncements(); }
       catch (error) { flash(error.message, 'error'); }
     }));
     /* Geri çekme artık silme. Onay istiyoruz çünkü geri dönüşü yok: duyuru
@@ -581,14 +585,35 @@ byId('announcement-form').addEventListener('submit', async (event) => {
       targetAgentId: audienceType === 'agent' ? data.get('targetAgentId') : null, startsAt: Date.now(), expiresAt: null,
     })).body.announcement;
   } catch (error) { flash(error.message, 'error'); return; }
+  /* Posta yalnız herkese açık duyuruda mümkün; API de bunu reddediyor.
+     Kutu işaretli kalıp hedef ajana çevrilse, o kişiye özel bir duyuru
+     bütün sponsorlara gitmiş olurdu. */
+  const sendEmail = data.get('sendEmail') === 'on' && audienceType === 'all_agents';
   try {
-    await mutate(`/v1/admin/announcements/${encodeURIComponent(created.id)}/publish`);
+    await mutate(`/v1/admin/announcements/${encodeURIComponent(created.id)}/publish`, 'POST', { sendEmail });
     form.reset();
     await loadAnnouncements();
-    flash(audienceType === 'all_agents' ? 'Duyuru yayımlandı — herkese görünür.' : 'Duyuru yayımlandı.');
+    const base = audienceType === 'all_agents' ? 'Duyuru yayımlandı — herkese görünür.' : 'Duyuru yayımlandı.';
+    /* "Kuyruğa alındı" ile "gönderildi" farklı şeyler ve panel bunu
+       karıştırmamalı: kuyruk beş dakikada bir boşalıyor ve gönderim
+       kapalıysa hiç boşalmıyor. */
+    flash(sendEmail ? `${base} E-postalar kuyruğa alındı.` : base);
   } catch (error) {
     await loadAnnouncements();
     flash(`Duyuru oluşturuldu ama YAYIMLANMADI: ${error.message} Listeden Yayımla ile tamamlayabilirsin.`, 'error');
+  }
+});
+
+/* Duyuru postası tercihi. Güvenlik, hesap ve moderasyon bildirimleri bu
+   anahtardan etkilenmiyor ve panelde de öyle yazıyor. */
+byId('announcement-emails').addEventListener('change', async (event) => {
+  const enabled = event.currentTarget.checked;
+  try {
+    await mutate('/v1/me/email-preferences', 'POST', { announcementEmails: enabled });
+    flash(enabled ? 'Duyuru postaları açık.' : 'Duyuru postaları kapalı.');
+  } catch (error) {
+    event.currentTarget.checked = !enabled;
+    flash(error.message, 'error');
   }
 });
 

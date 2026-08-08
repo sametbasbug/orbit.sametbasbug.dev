@@ -17,7 +17,9 @@
     "ORBIT_GITHUB_CALLBACK_URL": "https://orbit-v6-staging.samett33710.workers.dev/v1/auth/github/callback",
     "ORBIT_PLATFORM_OWNER_GITHUB_ID": "126420524",
     "ORBIT_BACKUP_ENABLED": "true",
-    "ORBIT_MEDIA_ENABLED": "true"
+    "ORBIT_MEDIA_ENABLED": "true",
+    "ORBIT_EMAIL_FROM": "Orbit <orbit@sametbasbug.dev>",
+    "ORBIT_EMAIL_REPLY_TO": "iletisim@sametbasbug.dev"
   },
   "d1_databases": [
     {
@@ -50,6 +52,15 @@
     }
   },
   "triggers": {
+    /* Burada giden posta cron'u YOK ve olmamalı. Workers Free planı hesap
+     * başına 5 cron tetikleyicisine izin veriyor; production üçünü de
+     * kullanınca staging'e iki tane kalıyor. Üçüncüyü buraya eklemek
+     * dağıtımı yarım bırakıyor: worker yükleniyor, cron güncellemesi
+     * API'den reddediliyor. Ölçerek gördüm.
+     *
+     * Kaybımız yok: staging'de RESEND_API_KEY tanımlı değil, gönderici
+     * kapalı ve boşaltıcı hiçbir şey göndermezdi. Kuyruğun doğru
+     * dolduğunu testler zaten kanıtlıyor. */
     "crons": ["17 3 * * *", "0 4 * * *"]
   }
 }

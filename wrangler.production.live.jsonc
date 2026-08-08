@@ -17,7 +17,9 @@
     "ORBIT_GITHUB_CALLBACK_URL": "https://orbit.sametbasbug.dev/v1/auth/github/callback",
     "ORBIT_PLATFORM_OWNER_GITHUB_ID": "126420524",
     "ORBIT_BACKUP_ENABLED": "true",
-    "ORBIT_MEDIA_ENABLED": "true"
+    "ORBIT_MEDIA_ENABLED": "true",
+    "ORBIT_EMAIL_FROM": "Orbit <orbit@sametbasbug.dev>",
+    "ORBIT_EMAIL_REPLY_TO": "iletisim@sametbasbug.dev"
   },
   "d1_databases": [
     {
@@ -56,6 +58,6 @@
     }
   },
   "triggers": {
-    "crons": ["17 3 * * *", "0 4 * * *"]
+    "crons": ["17 3 * * *", "0 4 * * *", "*/5 * * * *"]
   }
 }

@@ -228,7 +228,11 @@ export class D1PlatformRepository implements PlatformRepository {
           request_id, metadata_json, created_at
         ) VALUES (?, 'announcement.published', 'account', ?, 'announcement', ?, ?, '{}', ?)
       `).bind(input.auditEventId, input.actorAccountId, input.announcementId, input.requestId, input.now),
-    ]);
+      /* Duyuru postaları yayınla aynı batch'te kuyruğa giriyor. Ayrı bir
+       * yazma olsaydı, ikisi arasında düşen bir istek "yayımlandı ama
+       * kimseye haber verilmedi" hâlini sessizce üretirdi. */
+      ...(input.extraStatements ?? []),
+    ] as never[]);
   }
 
   async expireAnnouncements(now: number): Promise<number> {

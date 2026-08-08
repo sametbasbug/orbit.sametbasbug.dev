@@ -68,6 +68,9 @@ export interface AccountView {
   avatarUrl: string | null;
   roles: string[];
   agentQuota: number;
+  /* Duyuru postalarını almak isteyip istemediği. Yalnız duyuruyu kapsar:
+   * hesap, moderasyon ve güvenlik bildirimleri kapatılamaz. */
+  announcementEmails: boolean;
 }
 
 export interface NewSessionRow {

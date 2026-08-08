@@ -1010,6 +1010,69 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
    * tek sormak gerekiyor. Platform sahibinin paneli de bir yüzey: talebin
    * özü "biz adminler de dahil kimse okuyamasın" idi.
    */
+  test('announcement email reaches only those who can and want to receive it', async () => {
+    /* Kuyruğun süzgeci SQL'de duruyor: adresi olmayan, hesabı aktif olmayan
+     * ve duyuru postalarını kapatmış olan dışarıda kalmalı. Süzgeci
+     * uygulama katmanına koymak, bir gün unutulan bir filtrenin tercihini
+     * kapatmış birine posta göndermesi demekti.
+     *
+     * Üç hâl birden kurulmalı, yoksa test kendini kandırır. Bir kez
+     * tercihi kapalı hesaplara adres vermeyi unuttum; süzgeci bozunca test
+     * yine geçti, çünkü o hesapları zaten adres süzgeci eliyordu.
+     *
+     *   1. adresi var, istiyor   → kuyruğa girer
+     *   2. adresi var, istemiyor → girmez (tercih süzgeci)
+     *   3. adresi yok, istiyor   → girmez (adres süzgeci)
+     */
+    const seeded = await fetch(`${baseUrl}/__test/seed-email-world`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    assert.equal(seeded.status, 200, await seeded.clone().text());
+
+    const created = await ownerRequest('/v1/admin/announcements', 'POST', {
+      title: 'Postalanacak duyuru', bodyMarkdown: 'Bu duyuru e-posta ile de gidiyor.',
+      severity: 'warning', audienceType: 'all_agents', targetAgentId: null,
+      startsAt: NOW - 1000, expiresAt: null,
+    });
+    assert.equal(created.status, 201);
+    const id = (await created.json() as { announcement: { id: string } }).announcement.id;
+
+    const published = await ownerRequest(`/v1/admin/announcements/${id}/publish`, 'POST', { sendEmail: true });
+    assert.equal(published.status, 200, await published.clone().text());
+    assert.equal(
+      (await published.json() as { announcement: { emailQueued: boolean } }).announcement.emailQueued,
+      true,
+      'cevap postanın kuyruğa girdiğini söylemiyor',
+    );
+
+    const queued = (await (await fetch(`${baseUrl}/__test/email-deliveries`)).json() as {
+      deliveries: Array<{ recipient: string; kind: string; status: string; subject: string }>;
+    }).deliveries;
+    assert.equal(queued.length, 1, 'kuyruğa yanlış sayıda alıcı yazıldı');
+    assert.equal(queued[0].recipient, 'alan@example.test');
+    assert.equal(queued[0].kind, 'announcement');
+    assert.equal(queued[0].status, 'pending', 'gönderim kapalıyken satır gönderilmiş sayılıyor');
+    assert.match(queued[0].subject, /^\[Uyarı\] Postalanacak duyuru$/u);
+  });
+
+  test('an announcement aimed at one agent can never be emailed to everyone', async () => {
+    /* Panelde kutu işaretliyken hedef kitleyi değiştirmek, o ajana özel bir
+     * duyuruyu bütün sponsorlara postalamak olurdu. Kapı sunucuda. */
+    await fetch(`${baseUrl}/__test/seed-email-world`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    const created = await ownerRequest('/v1/admin/announcements', 'POST', {
+      title: 'Equinox duyurusu', bodyMarkdown: 'Yalnız Equinox ajanlarına.',
+      severity: 'info', audienceType: 'equinox_agents', targetAgentId: null,
+      startsAt: NOW - 1000, expiresAt: null,
+    });
+    assert.equal(created.status, 201);
+    const id = (await created.json() as { announcement: { id: string } }).announcement.id;
+
+    const rejected = await ownerRequest(`/v1/admin/announcements/${id}/publish`, 'POST', { sendEmail: true });
+    assert.equal(rejected.status, 400, 'dar hedefli duyuru herkese postalanabiliyor');
+    const after = (await (await fetch(`${baseUrl}/__test/email-deliveries`)).json() as {
+      deliveries: unknown[];
+    }).deliveries;
+    assert.equal(after.length, 0, 'reddedilen istek yine de kuyruğa yazmış');
+  });
+
   test('withdrawing an announcement erases it from every surface, owners included', async () => {
     const agent = agents.get('slice5-external')!;
     const created = await ownerRequest('/v1/admin/announcements', 'POST', {

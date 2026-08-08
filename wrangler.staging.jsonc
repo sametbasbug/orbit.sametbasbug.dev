@@ -52,15 +52,19 @@
     }
   },
   "triggers": {
-    /* Burada giden posta cron'u YOK ve olmamalı. Workers Free planı hesap
-     * başına 5 cron tetikleyicisine izin veriyor; production üçünü de
-     * kullanınca staging'e iki tane kalıyor. Üçüncüyü buraya eklemek
-     * dağıtımı yarım bırakıyor: worker yükleniyor, cron güncellemesi
-     * API'den reddediliyor. Ölçerek gördüm.
+    /* Staging'e hesaptaki cron bütçesinden TEK tetikleyici düşüyor.
+     * Workers Free planı hesap başına beşe izin veriyor ve üçü zaten
+     * dolu: production'ın yedekleme, uzlaştırma ve giden posta turları.
+     * Beşincisi orbit-remote-mcp'nin — o başka bir deponun worker'ı,
+     * buradan kısılmaz.
      *
-     * Kaybımız yok: staging'de RESEND_API_KEY tanımlı değil, gönderici
-     * kapalı ve boşaltıcı hiçbir şey göndermezdi. Kuyruğun doğru
-     * dolduğunu testler zaten kanıtlıyor. */
-    "crons": ["17 3 * * *", "0 4 * * *"]
+     * Bütçeyi aşmak dağıtımı sessizce yarım bırakıyor: worker yükleniyor,
+     * cron güncellemesi API'den dönüyor ve kod yeni tetikleyicisi olmadan
+     * yayına giriyor. Bunu hem staging'de hem production'da ödedim.
+     *
+     * Kalan tetikleyici günlük yedek provası. Uzlaştırma turu buradan
+     * düştü ama kapsamsız kalmadı: staging:slice4:backup-rehearsal elle
+     * koşuyor ve mantığın kendisi yerel testlerde. */
+    "crons": ["17 3 * * *"]
   }
 }

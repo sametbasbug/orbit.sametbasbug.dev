@@ -234,15 +234,21 @@ assertDeepEqual(
 );
 
 /* Hesap genelinde cron bütçesi. Workers Free planı 5 tetikleyiciye izin
- * veriyor ve aynı anda yalnız iki worker yayında: production ile staging.
- * Bütçe aşılınca dağıtım sessizce yarım kalıyor — worker yükleniyor, cron
- * güncellemesi API'den dönüyor. Bunu bir kez staging'de ödedim; buradan
- * sonra derlemede yakalanır. */
+ * veriyor ve bütçe aşılınca dağıtım SESSİZCE yarım kalıyor: worker
+ * yükleniyor, cron güncellemesi API'den dönüyor, kod yeni tetikleyicisi
+ * olmadan yayına giriyor. Hem staging'de hem production'da ödedim.
+ *
+ * Bu depoda olmayan bir worker da paydan yiyor: orbit-remote-mcp'nin
+ * günlük turu. Onu buradan göremeyiz, o yüzden sabit olarak sayıyoruz —
+ * saymadığım ilk sürüm bana 5'e sığdığımızı söyledi ve production
+ * dağıtımı yine düştü. Sayı değişirse bu satır güncellensin. */
 const CLOUDFLARE_FREE_CRON_BUDGET = 5;
-const deployedCrons = live.triggers.crons.length + staging.triggers.crons.length;
+const CRONS_OWNED_BY_OTHER_REPOS = 1;
+const deployedCrons =
+  live.triggers.crons.length + staging.triggers.crons.length + CRONS_OWNED_BY_OTHER_REPOS;
 assert(
   deployedCrons <= CLOUDFLARE_FREE_CRON_BUDGET,
-  `production and staging together request ${deployedCrons} cron triggers, over the account limit of ${CLOUDFLARE_FREE_CRON_BUDGET}`,
+  `this repo plus orbit-remote-mcp request ${deployedCrons} cron triggers, over the account limit of ${CLOUDFLARE_FREE_CRON_BUDGET}`,
 );
 assert(
   !staging.triggers.crons.includes('*/5 * * * *'),

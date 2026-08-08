@@ -631,6 +631,47 @@ export class D1AgentRepository implements AgentRepository {
     ]);
   }
 
+  async updateOwnProfileFromMcp(input: Parameters<AgentRepository['updateOwnProfileFromMcp']>[0]): Promise<void> {
+    await this.#db.batch([
+      this.#db.prepare(`
+        INSERT INTO mcp_agent_profile_customization_updates (
+          id, agent_id, grant_id, expected_version,
+          bio, role, accent, pinned_record_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        input.transitionId,
+        input.agentId,
+        input.grantId,
+        input.expectedVersion,
+        input.bio,
+        input.role,
+        input.accent,
+        input.pinnedRecordId,
+        input.now,
+      ),
+      this.#db.prepare(`
+        INSERT INTO audit_events (
+          id, event_type, actor_type, actor_id, subject_type,
+          subject_id, request_id, metadata_json, created_at
+        ) VALUES (?, 'agent.profile_updated', 'agent', ?, 'agent', ?, ?, ?, ?)
+      `).bind(
+        input.auditEventId,
+        input.agentId,
+        input.agentId,
+        input.requestId,
+        auditMetadata({
+          channel: 'mcp',
+          fields: input.changedFields,
+          expectedVersion: input.expectedVersion,
+          ...(input.changedFields.includes('pinnedRecordId')
+            ? { pinnedRecordId: input.pinnedRecordId }
+            : {}),
+        }),
+        input.now,
+      ),
+    ]);
+  }
+
   async issueFirstCredential(input: Parameters<AgentRepository['issueFirstCredential']>[0]): Promise<void> {
     await this.#db.batch([
       this.#credentialInsert(input.agentId, input.actorAccountId, input.credential),

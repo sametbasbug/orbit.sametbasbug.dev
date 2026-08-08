@@ -135,6 +135,7 @@ import {
 } from '../media/media-service';
 import type { MediaRepository } from '../repositories/media-repository';
 import type {
+  McpAvatarUploadSessionView,
   McpAuthorizationGrantView,
   McpAuthorizationRepository,
 } from '../repositories/mcp-authorization-repository';
@@ -186,6 +187,7 @@ const MCP_AUTHORIZATION_TICKET_TTL_MS = 10 * 60 * 1000;
 const MCP_DELEGATION_CODE_TTL_MS = 5 * 60 * 1000;
 const MCP_AUTHORIZATION_GRANT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const MCP_NATIVE_ONBOARDING_TTL_MS = 60 * 60 * 1000;
+const MCP_AVATAR_UPLOAD_SESSION_TTL_MS = 15 * 60 * 1000;
 const MCP_PENDING_HANDLE_PREFIX = 'mcp-pending-';
 
 class ApiError extends Error {
@@ -3656,6 +3658,50 @@ async function resolveActiveMcpGrant(
   };
 }
 
+function mcpAvatarUploadUrl(env: OrbitBindings, sessionId: string): string {
+  const uploadUrl = new URL('/mcp/avatar-upload/', env.ORBIT_ALLOWED_ORIGIN);
+  uploadUrl.searchParams.set('session', sessionId);
+  return uploadUrl.toString();
+}
+
+function mcpAvatarUploadSessionResponse(env: OrbitBindings, session: McpAvatarUploadSessionView) {
+  return {
+    uploadUrl: mcpAvatarUploadUrl(env, session.id),
+    expiresAt: session.expiresAt,
+    acceptedTypes: ['image/png', 'image/jpeg', 'image/webp'],
+    maximumBytes: AVATAR_UPLOAD_LIMIT,
+  };
+}
+
+async function resolveHumanMcpAvatarUploadSession(
+  sessionId: string,
+  auth: AuthenticatedHuman,
+  identityRepository: IdentityRepository,
+  agentRepository: AgentRepository,
+  mcpRepository: McpAuthorizationRepository,
+  now: number,
+): Promise<{ session: McpAvatarUploadSessionView; agent: ManagedAgentView }> {
+  const session = await mcpRepository.getAvatarUploadSession(sessionId);
+  if (!session || session.accountId !== auth.account.id) {
+    throw new ApiError(404, 'avatar_upload_session_not_found', 'Avatar upload session was not found.');
+  }
+  if (session.expiresAt <= now) {
+    throw new ApiError(410, 'avatar_upload_session_expired', 'Avatar upload session expired. Start a new upload from ChatGPT.');
+  }
+  const resolved = await resolveActiveMcpGrant(
+    session.grantId,
+    identityRepository,
+    agentRepository,
+    mcpRepository,
+    now,
+    false,
+  );
+  if (resolved.account.id !== session.accountId || resolved.agent.id !== session.agentId) {
+    throw new ApiError(404, 'avatar_upload_session_not_found', 'Avatar upload session was not found.');
+  }
+  return { session, agent: resolved.agent };
+}
+
 function mcpPublicationPrincipal(agent: ManagedAgentView): PublicationPrincipal {
   return {
     agentId: agent.id,
@@ -3978,6 +4024,134 @@ export async function handleApiRequest(
       const updated = await agentRepository.getManagedAgent(resolved.agent.id);
       if (!updated) throw new Error('mcp_agent_profile_update_missing');
       return json(mcpOwnProfile(updated));
+    }
+
+    const mcpAvatarUploadSessionCreateMatch = /^\/v1\/mcp\/grants\/([^/]+)\/agent\/avatar-upload-session$/u.exec(path);
+    if (request.method === 'POST' && mcpAvatarUploadSessionCreateMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, ['idempotencyKey'], 'invalid_mcp_avatar_upload_session_fields');
+      if (
+        typeof body.idempotencyKey !== 'string'
+        || body.idempotencyKey.length < 1
+        || body.idempotencyKey.length > 128
+        || !/^[\x21-\x7E]+$/u.test(body.idempotencyKey)
+      ) {
+        throw new ApiError(400, 'idempotency_key_required', 'A printable idempotencyKey of at most 128 characters is required.');
+      }
+      const grantId = decodeURIComponent(mcpAvatarUploadSessionCreateMatch[1]);
+      const resolved = await resolveActiveMcpGrant(
+        grantId,
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      await mcpRepository.deleteExpiredAvatarUploadSessions({ deleteBefore: now });
+      const keyDigest = await hmacDigest(
+        `orbit:mcp-avatar-upload-session:v1:${grantId}:${body.idempotencyKey}`,
+        env.ORBIT_CSRF_PEPPER_V1,
+      );
+      let session = await mcpRepository.getAvatarUploadSessionByIdempotency({ grantId, keyDigest });
+      let replayed = session !== null;
+      if (!session) {
+        const candidate: McpAvatarUploadSessionView = {
+          id: createEntityId(),
+          grantId,
+          accountId: resolved.account.id,
+          agentId: resolved.agent.id,
+          keyDigest,
+          createdAt: now,
+          expiresAt: now + MCP_AVATAR_UPLOAD_SESSION_TTL_MS,
+          completedAt: null,
+        };
+        try {
+          await mcpRepository.createAvatarUploadSession({
+            session: candidate,
+            auditEventId: createEntityId(),
+            requestId,
+          });
+          session = candidate;
+        } catch (error) {
+          const raced = await mcpRepository.getAvatarUploadSessionByIdempotency({ grantId, keyDigest });
+          if (!raced) throw error;
+          session = raced;
+          replayed = true;
+        }
+      }
+      return json({
+        session: {
+          ...mcpAvatarUploadSessionResponse(env, session),
+          replayed,
+        },
+      }, replayed ? 200 : 201);
+    }
+
+    const mcpAvatarUploadSessionMatch = /^\/v1\/mcp\/avatar-upload-sessions\/([^/]+)$/u.exec(path);
+    if (request.method === 'GET' && mcpAvatarUploadSessionMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, false);
+      const { session, agent } = await resolveHumanMcpAvatarUploadSession(
+        decodeURIComponent(mcpAvatarUploadSessionMatch[1]),
+        auth,
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+      );
+      return json({
+        session: {
+          status: session.completedAt === null ? 'pending' : 'completed',
+          expiresAt: session.expiresAt,
+          acceptedTypes: ['image/png', 'image/jpeg', 'image/webp'],
+          maximumBytes: AVATAR_UPLOAD_LIMIT,
+          agent: {
+            handle: agent.handle,
+            avatarAsset: agent.avatarAsset || null,
+          },
+        },
+      });
+    }
+
+    const mcpAvatarUploadMatch = /^\/v1\/mcp\/avatar-upload-sessions\/([^/]+)\/upload$/u.exec(path);
+    if (request.method === 'POST' && mcpAvatarUploadMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      const sessionId = decodeURIComponent(mcpAvatarUploadMatch[1]);
+      const { session, agent } = await resolveHumanMcpAvatarUploadSession(
+        sessionId,
+        auth,
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+      );
+      const declaredLength = request.headers.get('x-orbit-upload-length') ?? '';
+      if (!/^[1-9][0-9]*$/u.test(declaredLength)) {
+        throw new ApiError(411, 'upload_length_required', 'X-Orbit-Upload-Length is required.');
+      }
+      const numericLength = Number(declaredLength);
+      if (!Number.isSafeInteger(numericLength) || numericLength > AVATAR_UPLOAD_LIMIT) {
+        throw new ApiError(413, 'image_too_large', 'Avatar image exceeds the upload limit.');
+      }
+      const headers = new Headers(request.headers);
+      headers.set('content-length', String(numericLength));
+      headers.set('idempotency-key', `mcp-avatar-session-${session.id}`);
+      headers.delete('x-orbit-upload-length');
+      const uploadRequest = new Request(request, { headers });
+      const response = await handleAvatarUpload(
+        uploadRequest,
+        env,
+        mediaRepository,
+        { type: 'agent', id: agent.id },
+        'agent',
+        agent.id,
+        now,
+        requestId,
+      );
+      if (response.ok) {
+        await mcpRepository.completeAvatarUploadSession({ sessionId: session.id, completedAt: now });
+      }
+      return response;
     }
 
     const mcpCompleteOnboardingMatch = /^\/v1\/mcp\/grants\/([^/]+)\/agent\/onboarding\/complete$/u.exec(path);

@@ -1437,7 +1437,7 @@ export const agentApiContract = {
         additionalProperties: false,
         properties: {
           bio: { type: 'string', minLength: 1, maxLength: 500 },
-          role: { type: 'string', minLength: 1, maxLength: 80 },
+          role: { type: 'string', maxLength: 80 },
           accent: { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' },
           pinnedRecordId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] },
         },

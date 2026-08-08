@@ -1,5 +1,6 @@
 import { normalizeMcpAuthorizationScopes } from '../../identity/mcp-authorization-scopes';
 import type {
+  McpAvatarUploadSessionView,
   McpAuthorizationGrantView,
   McpAuthorizationRepository,
   McpAuthorizationScope,
@@ -34,6 +35,17 @@ interface DelegationCodeSqlRow {
   created_at: number;
   expires_at: number;
   consumed_at: number | null;
+}
+
+interface AvatarUploadSessionSqlRow {
+  id: string;
+  grant_id: string;
+  account_id: string;
+  agent_id: string;
+  key_digest: string;
+  created_at: number;
+  expires_at: number;
+  completed_at: number | null;
 }
 
 const GRANT_SELECT = `
@@ -83,6 +95,19 @@ function delegationCodeFromSql(row: DelegationCodeSqlRow): McpDelegationCodeView
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     consumedAt: row.consumed_at,
+  };
+}
+
+function avatarUploadSessionFromSql(row: AvatarUploadSessionSqlRow): McpAvatarUploadSessionView {
+  return {
+    id: row.id,
+    grantId: row.grant_id,
+    accountId: row.account_id,
+    agentId: row.agent_id,
+    keyDigest: row.key_digest,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    completedAt: row.completed_at,
   };
 }
 
@@ -421,5 +446,83 @@ export class D1McpAuthorizationRepository implements McpAuthorizationRepository 
         input.revokedAt,
       ),
     ]);
+  }
+
+  async getAvatarUploadSession(sessionId: string): Promise<McpAvatarUploadSessionView | null> {
+    const row = await this.#db.prepare(`
+      SELECT id, grant_id, account_id, agent_id, key_digest,
+             created_at, expires_at, completed_at
+      FROM mcp_avatar_upload_sessions
+      WHERE id = ?
+    `).bind(sessionId).first<AvatarUploadSessionSqlRow>();
+    return row ? avatarUploadSessionFromSql(row) : null;
+  }
+
+  async getAvatarUploadSessionByIdempotency(
+    input: Parameters<McpAuthorizationRepository['getAvatarUploadSessionByIdempotency']>[0],
+  ): Promise<McpAvatarUploadSessionView | null> {
+    const row = await this.#db.prepare(`
+      SELECT id, grant_id, account_id, agent_id, key_digest,
+             created_at, expires_at, completed_at
+      FROM mcp_avatar_upload_sessions
+      WHERE grant_id = ? AND key_digest = ?
+    `).bind(input.grantId, input.keyDigest).first<AvatarUploadSessionSqlRow>();
+    return row ? avatarUploadSessionFromSql(row) : null;
+  }
+
+  async createAvatarUploadSession(
+    input: Parameters<McpAuthorizationRepository['createAvatarUploadSession']>[0],
+  ): Promise<void> {
+    await this.#db.batch([
+      this.#db.prepare(`
+        INSERT INTO mcp_avatar_upload_sessions (
+          id, grant_id, account_id, agent_id, key_digest,
+          created_at, expires_at, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        input.session.id,
+        input.session.grantId,
+        input.session.accountId,
+        input.session.agentId,
+        input.session.keyDigest,
+        input.session.createdAt,
+        input.session.expiresAt,
+        input.session.completedAt,
+      ),
+      this.#db.prepare(`
+        INSERT INTO audit_events (
+          id, event_type, actor_type, actor_id, subject_type,
+          subject_id, request_id, metadata_json, created_at
+        ) VALUES (?, 'mcp.avatar_upload_session_created', 'agent', ?,
+          'agent', ?, ?, ?, ?)
+      `).bind(
+        input.auditEventId,
+        input.session.agentId,
+        input.session.agentId,
+        input.requestId,
+        auditMetadata({ expiresAt: input.session.expiresAt }),
+        input.session.createdAt,
+      ),
+    ]);
+  }
+
+  async completeAvatarUploadSession(
+    input: Parameters<McpAuthorizationRepository['completeAvatarUploadSession']>[0],
+  ): Promise<void> {
+    await this.#db.prepare(`
+      UPDATE mcp_avatar_upload_sessions
+      SET completed_at = COALESCE(completed_at, ?)
+      WHERE id = ?
+    `).bind(input.completedAt, input.sessionId).run<D1RunResultLike>();
+  }
+
+  async deleteExpiredAvatarUploadSessions(
+    input: Parameters<McpAuthorizationRepository['deleteExpiredAvatarUploadSessions']>[0],
+  ): Promise<number> {
+    const result = await this.#db.prepare(`
+      DELETE FROM mcp_avatar_upload_sessions
+      WHERE expires_at < ?
+    `).bind(input.deleteBefore).run<D1RunResultLike>();
+    return result.meta?.changes ?? 0;
   }
 }

@@ -31,6 +31,17 @@ export interface McpDelegationCodeView {
   consumedAt: number | null;
 }
 
+export interface McpAvatarUploadSessionView {
+  id: string;
+  grantId: string;
+  accountId: string;
+  agentId: string;
+  keyDigest: string;
+  createdAt: number;
+  expiresAt: number;
+  completedAt: number | null;
+}
+
 export interface McpAuthorizationRepository {
   createGrantWithCode(input: {
     grant: {
@@ -104,4 +115,26 @@ export interface McpAuthorizationRepository {
     requestId: string;
     revokedAt: number;
   }): Promise<void>;
+
+  getAvatarUploadSession(sessionId: string): Promise<McpAvatarUploadSessionView | null>;
+
+  getAvatarUploadSessionByIdempotency(input: {
+    grantId: string;
+    keyDigest: string;
+  }): Promise<McpAvatarUploadSessionView | null>;
+
+  createAvatarUploadSession(input: {
+    session: McpAvatarUploadSessionView;
+    auditEventId: string;
+    requestId: string;
+  }): Promise<void>;
+
+  completeAvatarUploadSession(input: {
+    sessionId: string;
+    completedAt: number;
+  }): Promise<void>;
+
+  deleteExpiredAvatarUploadSessions(input: {
+    deleteBefore: number;
+  }): Promise<number>;
 }

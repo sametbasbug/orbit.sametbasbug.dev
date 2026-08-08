@@ -27,6 +27,8 @@ const NOW = Date.parse('2026-07-16T10:00:00Z');
 const AGENT_PEPPER = 'test-agent-pepper-at-least-32-bytes-long';
 const SESSION_PEPPER = 'test-session-pepper-at-least-32-bytes-long';
 const CSRF_PEPPER = 'test-csrf-pepper-at-least-32-bytes-long';
+const MCP_SERVICE_SECRET = 'test-mcp-service-secret-at-least-32-bytes-long';
+const MCP_AVATAR_GRANT_ID = '019f64d2-0a00-7000-8000-000000000001';
 
 let persistDirectory = '';
 let baseUrl = '';
@@ -148,6 +150,41 @@ async function ownerImage(pathname: string, bytes: Uint8Array, type = 'image/png
   });
 }
 
+async function mcpServicePost(pathname: string, body: Record<string, unknown>, now = NOW): Promise<Response> {
+  return await fetch(`${baseUrl}${pathname}`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${MCP_SERVICE_SECRET}`,
+      'content-type': 'application/json',
+      'x-test-now': String(now),
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+async function mcpAvatarSessionImage(
+  sessionId: string,
+  bytes: Uint8Array,
+  type = 'image/png',
+  now = NOW,
+  digest = undefined as string | undefined,
+  declaredLength = bytes.byteLength,
+): Promise<Response> {
+  return await fetch(`${baseUrl}/v1/mcp/avatar-upload-sessions/${encodeURIComponent(sessionId)}/upload`, {
+    method: 'POST',
+    headers: {
+      cookie: ownerCookie,
+      origin: 'http://localhost:4321',
+      'x-orbit-csrf': ownerCsrf,
+      'x-test-now': String(now),
+      'content-type': type,
+      'x-orbit-content-sha256': digest ?? await imageDigest(bytes),
+      'x-orbit-upload-length': String(declaredLength),
+    },
+    body: Uint8Array.from(bytes),
+  });
+}
+
 async function seedAgent(
   handle: string,
   role = '',
@@ -256,6 +293,13 @@ before(async () => {
   await seedAgent('slice5-pending', '', 'approval_required');
   await seedAgent('slice5-media-concurrent');
   await seedAgent('slice5-onboarding', '', 'approval_required', 'pending');
+  const mcpAvatarAgent = await seedAgent('slice5-mcp-avatar');
+  assert.equal((await testPost('/__test/seed-mcp-grant', {
+    grantId: MCP_AVATAR_GRANT_ID,
+    accountId: OWNER_ID,
+    agentId: mcpAvatarAgent.id,
+    now: NOW,
+  })).status, 200);
 });
 
 after(async () => {
@@ -314,6 +358,183 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal(completedBody.agent.onboardingState, 'active');
     assert.match(completedBody.agent.avatarAsset, /^\/v1\/media\//u);
     assert.equal((await fetch(`${baseUrl}/v1/agents/${agent.handle}`)).status, 200);
+  });
+
+  test('MCP avatar upload sessions keep bytes out of tool JSON and preserve media safety', async () => {
+    const agent = agents.get('slice5-mcp-avatar')!;
+    const createPath = `/v1/mcp/grants/${encodeURIComponent(MCP_AVATAR_GRANT_ID)}/agent/avatar-upload-session`;
+    const created = await mcpServicePost(createPath, { idempotencyKey: 'slice5-avatar-session-main' }, NOW + 100);
+    assert.equal(created.status, 201, await created.clone().text());
+    const createdText = await created.text();
+    assert.ok(!createdText.includes(MCP_AVATAR_GRANT_ID));
+    assert.ok(!createdText.includes(agent.id));
+    assert.ok(!createdText.includes(OWNER_ID));
+    const createdBody = JSON.parse(createdText) as {
+      session: {
+        uploadUrl: string;
+        expiresAt: number;
+        acceptedTypes: string[];
+        maximumBytes: number;
+        replayed: boolean;
+      };
+    };
+    assert.equal(createdBody.session.replayed, false);
+    assert.deepEqual(createdBody.session.acceptedTypes, ['image/png', 'image/jpeg', 'image/webp']);
+    assert.equal(createdBody.session.maximumBytes, 5 * 1024 * 1024);
+    const sessionUrl = new URL(createdBody.session.uploadUrl);
+    assert.equal(sessionUrl.origin, 'http://localhost:4321');
+    assert.equal(sessionUrl.pathname, '/mcp/avatar-upload/');
+    const sessionId = sessionUrl.searchParams.get('session');
+    assert.ok(sessionId);
+
+    const replay = await mcpServicePost(createPath, { idempotencyKey: 'slice5-avatar-session-main' }, NOW + 101);
+    assert.equal(replay.status, 200, await replay.clone().text());
+    const replayBody = await replay.json() as { session: { uploadUrl: string; replayed: boolean } };
+    assert.equal(replayBody.session.replayed, true);
+    assert.equal(replayBody.session.uploadUrl, createdBody.session.uploadUrl);
+
+    const unauthenticated = await fetch(`${baseUrl}/v1/mcp/avatar-upload-sessions/${encodeURIComponent(sessionId)}`, {
+      headers: { 'x-test-now': String(NOW + 102) },
+    });
+    assert.equal(unauthenticated.status, 401, await unauthenticated.clone().text());
+
+    const strangerAccountId = '019f64d2-0a00-7000-8000-000000000099';
+    assert.equal((await testPost('/__test/seed-account', {
+      accountId: strangerAccountId,
+      handle: 'slice5-stranger',
+      displayName: 'Slice 5 Stranger',
+      now: NOW + 102,
+    })).status, 200);
+    const strangerSession = await createOpaqueToken('session', SESSION_PEPPER);
+    const strangerCsrf = randomBase64Url(32);
+    const strangerCsrfDigest = await hmacDigest(
+      `orbit:csrf:v1:${strangerSession.selector}:${strangerCsrf}`,
+      CSRF_PEPPER,
+    );
+    assert.equal((await testPost('/__test/seed-human-session', {
+      sessionId: strangerSession.selector,
+      secretDigest: strangerSession.digest,
+      csrfDigest: strangerCsrfDigest,
+      accountId: strangerAccountId,
+      now: NOW + 102,
+    })).status, 200);
+    const stranger = await fetch(`${baseUrl}/v1/mcp/avatar-upload-sessions/${encodeURIComponent(sessionId)}`, {
+      headers: {
+        cookie: `__Host-orbit_session=${strangerSession.token}; __Host-orbit_csrf=${strangerCsrf}`,
+        'x-test-now': String(NOW + 102),
+      },
+    });
+    assert.equal(stranger.status, 404, await stranger.clone().text());
+
+    const pending = await ownerRequest(
+      `/v1/mcp/avatar-upload-sessions/${encodeURIComponent(sessionId)}`,
+      'GET',
+      undefined,
+      undefined,
+      NOW + 103,
+    );
+    assert.equal(pending.status, 200, await pending.clone().text());
+    assert.deepEqual(await pending.json(), {
+      session: {
+        status: 'pending',
+        expiresAt: createdBody.session.expiresAt,
+        acceptedTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        maximumBytes: 5 * 1024 * 1024,
+        agent: { handle: 'slice5-mcp-avatar', avatarAsset: 'agents/nyx.webp' },
+      },
+    });
+
+    const png = new Uint8Array(await sharp({
+      create: { width: 840, height: 620, channels: 4, background: '#6f63e8' },
+    }).png().toBuffer());
+    const uploaded = await mcpAvatarSessionImage(sessionId, png, 'image/png', NOW + 104);
+    assert.equal(uploaded.status, 201, await uploaded.clone().text());
+    const uploadedBody = await uploaded.json() as { media: { id: string; width: number; height: number } };
+    assert.deepEqual([uploadedBody.media.width, uploadedBody.media.height], [512, 512]);
+
+    const completed = await ownerRequest(
+      `/v1/mcp/avatar-upload-sessions/${encodeURIComponent(sessionId)}`,
+      'GET',
+      undefined,
+      undefined,
+      NOW + 105,
+    );
+    assert.equal(completed.status, 200, await completed.clone().text());
+    const completedBody = await completed.json() as { session: { status: string; agent: { avatarAsset: string } } };
+    assert.equal(completedBody.session.status, 'completed');
+    assert.match(completedBody.session.agent.avatarAsset, /^\/v1\/media\//u);
+
+    const sameFileReplay = await mcpAvatarSessionImage(sessionId, png, 'image/png', NOW + 106);
+    assert.equal(sameFileReplay.status, 201, await sameFileReplay.clone().text());
+    assert.equal(sameFileReplay.headers.get('idempotency-replayed'), 'true');
+    assert.equal((await sameFileReplay.json() as { media: { id: string } }).media.id, uploadedBody.media.id);
+
+    const differentPng = new Uint8Array(await sharp({
+      create: { width: 840, height: 620, channels: 4, background: '#ff4fd8' },
+    }).png().toBuffer());
+    const conflict = await mcpAvatarSessionImage(sessionId, differentPng, 'image/png', NOW + 107);
+    assert.equal(conflict.status, 409, await conflict.clone().text());
+
+    const invalidDigestSession = await mcpServicePost(createPath, { idempotencyKey: 'slice5-avatar-session-bad-digest' }, NOW + 108);
+    assert.equal(invalidDigestSession.status, 201, await invalidDigestSession.clone().text());
+    const invalidDigestUrl = new URL((await invalidDigestSession.json() as { session: { uploadUrl: string } }).session.uploadUrl);
+    const invalidDigestId = invalidDigestUrl.searchParams.get('session');
+    assert.ok(invalidDigestId);
+    const invalidDigest = await mcpAvatarSessionImage(
+      invalidDigestId,
+      png,
+      'image/png',
+      NOW + 109,
+      randomBase64Url(32),
+    );
+    assert.equal(invalidDigest.status, 400, await invalidDigest.clone().text());
+
+    const wrongTypeSession = await mcpServicePost(createPath, { idempotencyKey: 'slice5-avatar-session-wrong-type' }, NOW + 110);
+    assert.equal(wrongTypeSession.status, 201, await wrongTypeSession.clone().text());
+    const wrongTypeId = new URL((await wrongTypeSession.json() as { session: { uploadUrl: string } }).session.uploadUrl).searchParams.get('session');
+    assert.ok(wrongTypeId);
+    assert.equal((await mcpAvatarSessionImage(wrongTypeId, png, 'image/gif', NOW + 111)).status, 415);
+
+    const oversizedSession = await mcpServicePost(createPath, { idempotencyKey: 'slice5-avatar-session-oversized' }, NOW + 112);
+    assert.equal(oversizedSession.status, 201, await oversizedSession.clone().text());
+    const oversizedId = new URL((await oversizedSession.json() as { session: { uploadUrl: string } }).session.uploadUrl).searchParams.get('session');
+    assert.ok(oversizedId);
+    assert.equal((await mcpAvatarSessionImage(oversizedId, png, 'image/png', NOW + 113, undefined, 5 * 1024 * 1024 + 1)).status, 413);
+
+    const expiredSession = await mcpServicePost(createPath, { idempotencyKey: 'slice5-avatar-session-expired' }, NOW + 114);
+    assert.equal(expiredSession.status, 201, await expiredSession.clone().text());
+    const expiredBody = await expiredSession.json() as { session: { uploadUrl: string; expiresAt: number } };
+    const expiredId = new URL(expiredBody.session.uploadUrl).searchParams.get('session');
+    assert.ok(expiredId);
+    const expired = await ownerRequest(
+      `/v1/mcp/avatar-upload-sessions/${encodeURIComponent(expiredId)}`,
+      'GET',
+      undefined,
+      undefined,
+      expiredBody.session.expiresAt + 1,
+    );
+    assert.equal(expired.status, 410, await expired.clone().text());
+
+    const revokedSession = await mcpServicePost(createPath, { idempotencyKey: 'slice5-avatar-session-revoked' }, NOW + 115);
+    assert.equal(revokedSession.status, 201, await revokedSession.clone().text());
+    const revokedId = new URL((await revokedSession.json() as { session: { uploadUrl: string } }).session.uploadUrl).searchParams.get('session');
+    assert.ok(revokedId);
+    const revoked = await ownerRequest(
+      `/v1/mcp/authorizations/${encodeURIComponent(MCP_AVATAR_GRANT_ID)}/revoke`,
+      'POST',
+      {},
+      undefined,
+      NOW + 116,
+    );
+    assert.equal(revoked.status, 200, await revoked.clone().text());
+    const afterRevoke = await ownerRequest(
+      `/v1/mcp/avatar-upload-sessions/${encodeURIComponent(revokedId)}`,
+      'GET',
+      undefined,
+      undefined,
+      NOW + 117,
+    );
+    assert.equal(afterRevoke.status, 401, await afterRevoke.clone().text());
   });
 
   /* Medyanın tek kapsamı burası. Eskiden bir de staging provası vardı;

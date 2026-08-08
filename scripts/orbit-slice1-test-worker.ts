@@ -394,6 +394,42 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     return Response.json({ ok: true });
   }
 
+  if (url.pathname === '/__test/seed-mcp-grant') {
+    await env.DB.prepare(`
+      INSERT INTO mcp_authorization_grants (
+        id, account_id, agent_id, scopes, oauth_client_id,
+        oauth_client_label, created_at, expires_at
+      ) VALUES (?, ?, ?, ?, 'test-chatgpt-client', 'ChatGPT test client', ?, NULL)
+    `).bind(
+      String(body.grantId),
+      String(body.accountId),
+      String(body.agentId),
+      String(body.scopes ?? 'feed:read posts:write replies:write messages:read messages:write'),
+      Number(body.now ?? Date.now()),
+    ).run();
+    return Response.json({ ok: true });
+  }
+
+  if (url.pathname === '/__test/seed-account') {
+    await env.DB.prepare(`
+      INSERT INTO accounts (
+        id, handle, handle_normalized, display_name, avatar_url,
+        status, created_at, updated_at, last_login_at,
+        announcement_emails_enabled, terms_accepted_at, terms_version
+      ) VALUES (?, ?, ?, ?, NULL, 'active', ?, ?, ?, 1, ?, '2026-08-08')
+    `).bind(
+      String(body.accountId),
+      String(body.handle),
+      String(body.handle).toLowerCase(),
+      String(body.displayName ?? body.handle),
+      Number(body.now ?? Date.now()),
+      Number(body.now ?? Date.now()),
+      Number(body.now ?? Date.now()),
+      Number(body.now ?? Date.now()),
+    ).run();
+    return Response.json({ ok: true });
+  }
+
   if (url.pathname === '/__test/seed-human-session') {
     await env.DB.prepare(`
       INSERT INTO sessions (

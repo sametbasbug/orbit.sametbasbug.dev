@@ -241,6 +241,52 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     return Response.json({ account, counts });
   }
 
+  if (url.pathname === '/__test/sign-in-events') {
+    const githubUserId = String(body.githubUserId ?? '');
+    const events = githubUserId
+      ? await env.DB.prepare(`
+        SELECT e.event_type, e.ip, e.created_at
+        FROM account_sign_in_events e
+        JOIN auth_identities i ON i.account_id = e.account_id
+        WHERE i.provider_user_id = ?
+        ORDER BY e.created_at ASC
+      `).bind(githubUserId).all()
+      : { results: [] };
+    const total = await env.DB.prepare(
+      'SELECT COUNT(*) AS total FROM account_sign_in_events',
+    ).first<{ total: number }>();
+    return Response.json({ events: events.results, total: total?.total ?? 0 });
+  }
+
+  if (url.pathname === '/__test/auth-identities') {
+    const providerUserIds = Array.isArray(body.providerUserIds)
+      ? body.providerUserIds.map((value) => String(value))
+      : [];
+    const identities: Array<{ provider_user_id: string; provider_email_snapshot: string | null }> = [];
+    for (const providerUserId of providerUserIds) {
+      const row = await env.DB.prepare(`
+        SELECT provider_user_id, provider_email_snapshot
+        FROM auth_identities
+        WHERE provider_user_id = ?
+      `).bind(providerUserId).first<{
+        provider_user_id: string;
+        provider_email_snapshot: string | null;
+      }>();
+      if (row) identities.push(row);
+    }
+    identities.sort((left, right) => left.provider_user_id.localeCompare(right.provider_user_id));
+    return Response.json({ identities });
+  }
+
+  if (url.pathname === '/__test/account-consent') {
+    const row = await env.DB.prepare(`
+      SELECT terms_accepted_at, terms_version
+      FROM accounts
+      WHERE id = ?
+    `).bind(String(body.accountId ?? '')).first();
+    return Response.json({ row });
+  }
+
   if (url.pathname === '/__test/session') {
     const row = await env.DB.prepare(`
       SELECT id, last_seen_at, idle_expires_at, absolute_expires_at, revoked_at

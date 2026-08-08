@@ -1073,6 +1073,54 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal(after.length, 0, 'reddedilen istek yine de kuyruğa yazmış');
   });
 
+  test('an informational announcement is never emailed', async () => {
+    /* Gönderim kotası sınırlı ve her duyuruyu postalayan bir sistem
+     * okunmaz olur. Kapı sunucuda: panel kutuyu kapatıyor ama panele
+     * güvenemeyiz, istek elle de kurulabilir. */
+    await fetch(`${baseUrl}/__test/seed-email-world`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    const created = await ownerRequest('/v1/admin/announcements', 'POST', {
+      title: 'Sıradan bilgi', bodyMarkdown: 'Kimsenin kutusunu açmasını gerektirmiyor.',
+      severity: 'info', audienceType: 'all_agents', targetAgentId: null,
+      startsAt: NOW - 1000, expiresAt: null,
+    });
+    assert.equal(created.status, 201);
+    const id = (await created.json() as { announcement: { id: string } }).announcement.id;
+
+    const rejected = await ownerRequest(`/v1/admin/announcements/${id}/publish`, 'POST', { sendEmail: true });
+    assert.equal(rejected.status, 400, 'bilgi duyurusu postalanabiliyor');
+    assert.equal(
+      (await rejected.json() as { error: { code: string } }).error.code,
+      'announcement_email_severity_invalid',
+    );
+    const after = (await (await fetch(`${baseUrl}/__test/email-deliveries`)).json() as {
+      deliveries: unknown[];
+    }).deliveries;
+    assert.equal(after.length, 0, 'reddedilen bilgi duyurusu yine de kuyruğa yazmış');
+  });
+
+  test('a warning announcement still reaches the queue', async () => {
+    /* Kapıyı koyduktan sonra izin verilen yolun kapandığını fark etmemek
+     * kolay: bu test, sınırlamanın postayı tamamen kesmediğini söylüyor.
+     *
+     * Seviye bilerek 'warning'. Kritik denemiştim ve arkamdan üç test
+     * düştü: okunmamış kritik duyuru, ajan yazımını 428 ile durduruyor —
+     * kural doğru çalışıyordu, testim ortak durumu kirletiyordu. Kapı
+     * ikisini ayırmıyor, o yüzden yan etkisi olmayanı seçiyorum. */
+    await fetch(`${baseUrl}/__test/seed-email-world`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    const created = await ownerRequest('/v1/admin/announcements', 'POST', {
+      title: 'Bakım penceresi', bodyMarkdown: 'Yarın gece kısa bir kesinti olacak.',
+      severity: 'warning', audienceType: 'all_agents', targetAgentId: null,
+      startsAt: NOW - 1000, expiresAt: null,
+    });
+    const id = (await created.json() as { announcement: { id: string } }).announcement.id;
+    const published = await ownerRequest(`/v1/admin/announcements/${id}/publish`, 'POST', { sendEmail: true });
+    assert.equal(published.status, 200, await published.clone().text());
+    const queued = (await (await fetch(`${baseUrl}/__test/email-deliveries`)).json() as {
+      deliveries: unknown[];
+    }).deliveries;
+    assert.equal(queued.length, 1, 'kritik duyuru postalanamıyor');
+  });
+
   test('withdrawing an announcement erases it from every surface, owners included', async () => {
     const agent = agents.get('slice5-external')!;
     const created = await ownerRequest('/v1/admin/announcements', 'POST', {

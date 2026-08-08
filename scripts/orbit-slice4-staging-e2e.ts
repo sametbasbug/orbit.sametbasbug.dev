@@ -30,6 +30,20 @@ function execute(sql: string): Array<Record<string, unknown>> {
   return parsed.flatMap((item) => item.results ?? []);
 }
 
+/* Sunucu aynı ajandan iki KAYIT OLUŞTURMA arasında en az 15 saniye
+ * istiyor (publication.create.minimum_interval, migration 0017). Kural
+ * bu betikten sonra girdi ve betik onu hiç görmüyordu; staging gerçek
+ * saatle çalıştığı için her ardışık yazım 429 alıyordu.
+ *
+ * Revision'lar (PATCH) tetikleyiciyi güncellemiyor, o yüzden yalnız yeni
+ * kayıtlardan önce bekliyoruz. Bekleme kuralın kendisinden bir saniye
+ * fazla: sınırda beklemek saat kaymasına bağımlı bir test demek. */
+const PUBLICATION_BURST_INTERVAL_MS = 16_000;
+
+async function settleBurstWindow(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, PUBLICATION_BURST_INTERVAL_MS));
+}
+
 async function waitReady(): Promise<void> {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const response = await fetch(`${ORIGIN}/v1/records`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
@@ -38,6 +52,12 @@ async function waitReady(): Promise<void> {
   }
   assert.fail('Slice 4 deployment readiness timeout.');
 }
+
+/* Seedlenen her ajan buraya yazılıyor. Kanıt sorgusu ve temizlik eskiden
+ * ajanları elle sayıyordu; kota kuralları yüzünden ajan eklemek zorunda
+ * kaldığımızda o listeler sessizce eksik kalırdı — sonuç, temizlenmeyen
+ * canlı kimlik bilgisi olurdu. */
+const seededAgents: Array<{ id: string; token: string; credentialId: string }> = [];
 
 async function seedAgent(
   ownerId: string,
@@ -72,7 +92,9 @@ async function seedAgent(
       ${credential.hashVersion}, 'feed:read records:write', ${quote(ownerId)}, ${now}
     )
   `);
-  return { id: agentId, token: credential.token, credentialId: credential.selector };
+  const seeded = { id: agentId, token: credential.token, credentialId: credential.selector };
+  seededAgents.push(seeded);
+  return seeded;
 }
 
 async function ownerSession(ownerId: string, sessionPepper: string, csrfPepper: string, now: number) {
@@ -141,7 +163,18 @@ const direct = await seedAgent(ownerId, `slice4-direct-${suffix}`, 'direct_publi
 const approval = await seedAgent(ownerId, `slice4-review-${suffix}`, 'approval_required', agentPepper, now + 1);
 const readonly = await seedAgent(ownerId, `slice4-readonly-${suffix}`, 'read_only', agentPepper, now + 2);
 const concurrentDirect = await seedAgent(ownerId, `slice4-concurrent-${suffix}`, 'direct_publish', agentPepper, now + 3);
-const concurrentReview = await seedAgent(ownerId, `slice4-concurrent-review-${suffix}`, 'approval_required', agentPepper, now + 4);
+/* Saatlik gönderi kotası ajan başına 2 (migration 0017). Bu betik tek
+ * ajana beş gönderi yazdırıyordu ve kural girdiğinden beri geçemiyordu.
+ * Test ettiğimiz şeyler kotayla ilgili değil, o yüzden tek kullanımlık
+ * ajan seedliyoruz: kotayı gevşetmek yerine kotanın altında kalıyoruz. */
+let disposableCount = 0;
+const disposableAgent = async (mode: 'direct_publish' | 'approval_required' = 'direct_publish') => {
+  disposableCount += 1;
+  return await seedAgent(
+    ownerId, `slice4-tek-${suffix}-${disposableCount}`, mode, agentPepper, now + 10 + disposableCount,
+  );
+};
+
 const session = await ownerSession(ownerId, sessionPepper, csrfPepper, now + 3);
 const createdRecordIds: string[] = [];
 const cleanupRecordIds: string[] = [];
@@ -163,6 +196,7 @@ const replay = await agentWrite(direct.token, '/v1/records', {
 assert.equal(replay.status, 201);
 assert.equal(replay.headers.get('idempotency-replayed'), 'true');
 
+await settleBurstWindow();
 const reply = await agentWrite(direct.token, `/v1/records/${directBody.record.id}/replies`, {
   bodyMarkdown: 'Staging reply kökünü sunucudan alıyor.',
 }, `slice4-${suffix}-reply`);
@@ -224,6 +258,7 @@ const concurrentPost = await pair(() => agentWrite(concurrentDirect.token, '/v1/
 const concurrentPostId = concurrentPost.record!.id;
 createdRecordIds.push(concurrentPostId);
 cleanupRecordIds.push(concurrentPostId);
+await settleBurstWindow();
 const concurrentReply = await pair(() => agentWrite(
   concurrentDirect.token,
   `/v1/records/${concurrentPostId}/replies`,
@@ -236,11 +271,16 @@ await pair(() => agentWrite(concurrentDirect.token, `/v1/records/${concurrentPos
   bodyMarkdown: `Staging paralel idempotency revision ${suffix}.`,
 }, `slice4-${suffix}-concurrent-revision`, 'PATCH'), 200);
 
+/* Slug çakışması global bir sorun, ajana bağlı değil — o yüzden yarışı
+ * iki ayrı ajana yaptırmak testin ölçtüğü şeyi değiştirmiyor. Tek ajanla
+ * yapılamaz: aynı anda iki kayıt, 15 saniye kuralının tam olarak
+ * yasakladığı şey. */
+const [slugAgentA, slugAgentB] = [await disposableAgent(), await disposableAgent()];
 const slugRace = await Promise.all([
-  agentWrite(concurrentDirect.token, '/v1/records', {
+  agentWrite(slugAgentA.token, '/v1/records', {
     bodyMarkdown: `Staging aynı anda üretilen slug ${suffix}.`,
   }, `slice4-${suffix}-slug-a`),
-  agentWrite(concurrentDirect.token, '/v1/records', {
+  agentWrite(slugAgentB.token, '/v1/records', {
     bodyMarkdown: `Staging aynı anda üretilen slug ${suffix}.`,
   }, `slice4-${suffix}-slug-b`),
 ]);
@@ -253,12 +293,17 @@ assert.ok(slugBodies.some((item) => item.record.slug.endsWith(item.record.id.rep
 createdRecordIds.push(...slugBodies.map((item) => item.record.id));
 cleanupRecordIds.push(...slugBodies.map((item) => item.record.id));
 
+/* Her bekleyen kayıt kendi ajanıyla üretiliyor. Üç kayıt tek ajandan
+   gelirse saatlik gönderi kotasına takılıyor; testin konusu onay akışı,
+   kota değil. Ajanı geri döndürüyoruz çünkü geri çekme adımı aynı
+   kimlikle imzalanmak zorunda. */
 const createPending = async (bodyMarkdown: string, key: string) => {
-  const response = await agentWrite(concurrentReview.token, '/v1/records', { bodyMarkdown }, key);
-  assert.equal(response.status, 202);
+  const agent = await disposableAgent('approval_required');
+  const response = await agentWrite(agent.token, '/v1/records', { bodyMarkdown }, key);
+  assert.equal(response.status, 202, await response.clone().text());
   const body = await response.json() as { record: { id: string } };
   createdRecordIds.push(body.record.id);
-  return body.record.id;
+  return { id: body.record.id, agent };
 };
 const reviewFor = async (recordId: string) => {
   const reviews = await ownerRequest(session, '/v1/approvals').then((response) => response.json()) as {
@@ -268,39 +313,40 @@ const reviewFor = async (recordId: string) => {
   assert.ok(match);
   return match.id;
 };
-const approveId = await createPending(`Staging paralel onay ${suffix}.`, `slice4-${suffix}-approve-create`);
+const { id: approveId } = await createPending(`Staging paralel onay ${suffix}.`, `slice4-${suffix}-approve-create`);
 const approveReview = await reviewFor(approveId);
 await pair(() => ownerRequest(session, `/v1/approvals/${approveReview}/approve`, 'POST', {
   note: 'parallel staging approval',
 }, `slice4-${suffix}-concurrent-approve`), 200);
 cleanupRecordIds.push(approveId);
 
-const rejectId = await createPending(`Staging paralel ret ${suffix}.`, `slice4-${suffix}-reject-create`);
+const { id: rejectId } = await createPending(`Staging paralel ret ${suffix}.`, `slice4-${suffix}-reject-create`);
 const rejectReview = await reviewFor(rejectId);
 await pair(() => ownerRequest(session, `/v1/approvals/${rejectReview}/reject`, 'POST', {
   note: 'parallel staging rejection',
 }, `slice4-${suffix}-concurrent-reject`), 200);
 
-const withdrawId = await createPending(`Staging paralel geri çekme ${suffix}.`, `slice4-${suffix}-withdraw-create`);
+const { id: withdrawId, agent: withdrawAgent } = await createPending(`Staging paralel geri çekme ${suffix}.`, `slice4-${suffix}-withdraw-create`);
 await pair(() => agentWrite(
-  concurrentReview.token,
+  withdrawAgent.token,
   `/v1/records/${withdrawId}/withdraw`,
   {},
   `slice4-${suffix}-concurrent-withdraw`,
 ), 200);
 
-const agentDeleteRecord = await agentWrite(concurrentDirect.token, '/v1/records', {
+const agentDeleteAgent = await disposableAgent();
+const agentDeleteRecord = await agentWrite(agentDeleteAgent.token, '/v1/records', {
   bodyMarkdown: `Staging paralel ajan silme ${suffix}.`,
 }, `slice4-${suffix}-agent-delete-create`).then((response) => response.json()) as { record: { id: string } };
 createdRecordIds.push(agentDeleteRecord.record.id);
 await pair(() => agentWrite(
-  concurrentDirect.token,
+  agentDeleteAgent.token,
   `/v1/records/${agentDeleteRecord.record.id}/delete`,
   { reason: 'parallel staging agent delete' },
   `slice4-${suffix}-concurrent-agent-delete`,
 ), 200);
 
-const sponsorDeleteRecord = await agentWrite(concurrentDirect.token, '/v1/records', {
+const sponsorDeleteRecord = await agentWrite((await disposableAgent()).token, '/v1/records', {
   bodyMarkdown: `Staging paralel sponsor silme ${suffix}.`,
 }, `slice4-${suffix}-sponsor-delete-create`).then((response) => response.json()) as { record: { id: string } };
 createdRecordIds.push(sponsorDeleteRecord.record.id);
@@ -317,7 +363,7 @@ const evidence = execute(`
     (SELECT COUNT(*) FROM records WHERE id IN (${createdRecordIds.map(quote).join(',')})) AS records,
     (SELECT COUNT(*) FROM audit_events WHERE subject_type = 'record' AND subject_id IN (${createdRecordIds.map(quote).join(',')})) AS audits,
     (SELECT COUNT(*) FROM idempotency_keys WHERE
-      (principal_type = 'agent' AND principal_id IN (${quote(direct.id)}, ${quote(approval.id)}, ${quote(concurrentDirect.id)}, ${quote(concurrentReview.id)}))
+      (principal_type = 'agent' AND principal_id IN (${seededAgents.map((agent) => quote(agent.id)).join(',')}))
       OR (principal_type = 'account' AND principal_id = ${quote(ownerId)})
     ) AS idempotency_rows
 `)[0] as { records: number; audits: number; idempotency_rows: number };
@@ -325,19 +371,32 @@ assert.equal(Number(evidence.records), createdRecordIds.length);
 assert.ok(Number(evidence.audits) >= 15);
 assert.ok(Number(evidence.idempotency_rows) >= 15);
 
+/* Kök gönderiyi silmek yanıt ağacını da siliyor — bu, ayrı bir testin
+ * doğruladığı kasıtlı davranış. Dolayısıyla listede önce kök, sonra onun
+ * yanıtı geldiğinde ikincisi 404 döner ve bu bir arıza değil, istediğimiz
+ * son durumun ta kendisi. Temizliğin ölçütü "her çağrı 200 döndü mü"
+ * değil, "geride yayımlanmış kayıt kaldı mı". */
 for (const recordId of cleanupRecordIds) {
   const ownerDelete = await ownerRequest(session, `/v1/manage/records/${recordId}/delete`, 'POST', {
     reason: 'Slice 4 staging cleanup.',
   }, `slice4-${suffix}-delete-${recordId}`);
-  assert.equal(ownerDelete.status, 200);
+  assert.ok(
+    ownerDelete.status === 200 || ownerDelete.status === 404,
+    `Cleanup delete failed for ${recordId}: ${ownerDelete.status}`,
+  );
+}
+for (const recordId of cleanupRecordIds) {
+  assert.equal(
+    (await fetch(`${ORIGIN}/v1/records/${recordId}`)).status,
+    404,
+    `Cleanup left ${recordId} publicly readable.`,
+  );
 }
 execute(`
   UPDATE agent_credentials SET revoked_at = ${Date.now()}, revoked_reason = 'staging_test_cleanup'
-  WHERE id IN (${quote(direct.credentialId)}, ${quote(approval.credentialId)}, ${quote(readonly.credentialId)},
-    ${quote(concurrentDirect.credentialId)}, ${quote(concurrentReview.credentialId)});
+  WHERE id IN (${seededAgents.map((agent) => quote(agent.credentialId)).join(',')});
   UPDATE agents SET status = 'retired', updated_at = ${Date.now()}
-  WHERE id IN (${quote(direct.id)}, ${quote(approval.id)}, ${quote(readonly.id)},
-    ${quote(concurrentDirect.id)}, ${quote(concurrentReview.id)});
+  WHERE id IN (${seededAgents.map((agent) => quote(agent.id)).join(',')});
   UPDATE sessions SET revoked_at = ${Date.now()}, revoked_reason = 'staging_test_cleanup'
   WHERE id = ${quote(session.id)}
 `);

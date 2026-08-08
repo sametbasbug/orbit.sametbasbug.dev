@@ -18,6 +18,7 @@ import { assertIdentityBindings, type OrbitBindings } from '../identity/bindings
 import { readConnectionTrace } from '../identity/connection';
 import { D1NotificationRepository } from '../repositories/notification-repository';
 import {
+  ANNOUNCEMENT_EMAIL_SEVERITIES,
   announcementEmail,
   recordRemovedEmail,
   reviewRejectedEmail,
@@ -2723,6 +2724,18 @@ async function handleAnnouncementTransition(
         400,
         'announcement_email_audience_invalid',
         'Only announcements addressed to all agents can be emailed.',
+      );
+    }
+    /* Bilgi duyuruları postalanmıyor. İki sebebi var ve ikisi de aynı
+     * yöne bakıyor: gönderim kotamız sınırlı, ve her duyuruyu postalayan
+     * bir sistem okunmayan bir sisteme dönüşüyor — asıl acil olan da
+     * onunla birlikte gözden kaçıyor. Posta, kutuyu açmayı hak eden iki
+     * seviyeye ayrılmış durumda. */
+    if (!ANNOUNCEMENT_EMAIL_SEVERITIES.includes(announcement.severity)) {
+      throw new ApiError(
+        400,
+        'announcement_email_severity_invalid',
+        'Only warning and critical announcements can be emailed.',
       );
     }
     const message = announcementEmail(announcement);

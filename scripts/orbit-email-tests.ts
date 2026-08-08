@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { ResendSender, createEmailSender } from '../src/server/notifications/email';
-import { announcementEmail, recordRemovedEmail } from '../src/server/notifications/messages';
+import {
+  ANNOUNCEMENT_EMAIL_SEVERITIES,
+  announcementEmail,
+  recordRemovedEmail,
+} from '../src/server/notifications/messages';
 
 function sender(respond: (request: Request) => Response | Promise<Response>) {
   const seen: Request[] = [];
@@ -79,5 +84,20 @@ describe('giden posta', { concurrency: false }, () => {
      * arayıp bulamayan insan spam işaretler, o da teslim itibarını bozar. */
     assert.match(moderation.bodyText, /kapatılamaz/u);
     assert.doesNotMatch(moderation.bodyText, /kapatabilirsin/u);
+  });
+
+  test('panel ile sunucu aynı seviye listesini kullanır', () => {
+    /* Panel istemci tarafında olduğu için listeyi içe aktaramıyor, kopya
+     * tutuyor. Kopya ayrışırsa kutu açık kalır, kişi postalanacağını
+     * sanır ve sunucu 400 döner — yani kullanıcı hatası gibi görünen bir
+     * bizim hatamız. Kaynak dosyadan okuyup karşılaştırıyoruz. */
+    const client = readFileSync(new URL('../src/scripts/dashboard.js', import.meta.url), 'utf8');
+    const match = client.match(/const ANNOUNCEMENT_EMAIL_SEVERITIES = \[([^\]]*)\]/u);
+    assert.ok(match, 'panelde seviye listesi bulunamadı');
+    const clientList = match[1].split(',')
+      .map((part) => part.trim().replace(/^'|'$/gu, ''))
+      .filter((part) => part !== '');
+    assert.deepEqual(clientList, [...ANNOUNCEMENT_EMAIL_SEVERITIES]);
+    assert.ok(!clientList.includes('info'), 'bilgi duyuruları postalanabilir görünüyor');
   });
 });

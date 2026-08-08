@@ -212,6 +212,54 @@ if (legalHtml.gizlilik) {
     legalHtml.gizlilik.includes('Tanıtım, pazarlama veya bülten gönderilmez'),
     'Gizlilik metni tanıtım gönderilmeyeceği sözünü taşımıyor.',
   );
+  /* Giden posta: metin ne söz veriyorsa kod onu yapmalı. En kırılganı
+   * seviye sınırı — kotayı korumak için konmuş bir kural ve gevşetmek
+   * bir satırlık iş; metin ise kullanıcıya "bilgi duyurusu postalanmaz"
+   * diye söz veriyor. */
+  const emailMessages = fs.readFileSync(
+    path.join(ROOT, 'src', 'server', 'notifications', 'messages.ts'),
+    'utf8',
+  );
+  check(
+    /ANNOUNCEMENT_EMAIL_SEVERITIES[^=]*=\s*\n?\s*\['warning', 'critical'\]/u.test(emailMessages),
+    'Postalanabilir duyuru seviyeleri değişmiş; gizlilik metni yalnız uyarı ve kritik diyor.',
+  );
+  check(
+    legalHtml.gizlilik.includes('<strong>uyarı</strong> ve <strong>kritik</strong>'),
+    'Gizlilik metni hangi duyuruların postalandığını söylemiyor.',
+  );
+  check(
+    legalHtml.gizlilik.includes('Bilgi seviyesindeki duyurular postalanmaz'),
+    'Gizlilik metni bilgi duyurularının postalanmadığı sözünü taşımıyor.',
+  );
+  /* Kapatılabilirlik iki yönlü bir söz: duyuru kapatılabilir, hesap
+   * bildirimi kapatılamaz. İkisi de metinde ve ikisi de kodda. */
+  check(
+    legalHtml.gizlilik.includes('<strong>kapatılamaz</strong>'),
+    'Gizlilik metni hangi bildirimlerin kapatılamadığını söylemiyor.',
+  );
+  check(
+    legalHtml.gizlilik.includes('<strong>tek tıkla kapatabilirsin</strong>'),
+    'Gizlilik metni duyuru postalarının kapatılabildiğini söylemiyor.',
+  );
+  check(
+    fs.readFileSync(path.join(ROOT, 'src', 'server', 'repositories', 'notification-repository.ts'), 'utf8')
+      .includes('announcement_emails_enabled = 1'),
+    'Duyuru tercihi süzgeci kalkmış; gizlilik metni kapatınca gelmeyeceğini söylüyor.',
+  );
+  /* Resend metinde adıyla ve bölgesiyle sayılı. Sağlayıcı değişirse veya
+   * bölge kayarsa, KVKK'da yurt dışına aktarım anlatımı yanlış olur. */
+  check(
+    fs.readFileSync(path.join(ROOT, 'src', 'server', 'notifications', 'email.ts'), 'utf8')
+      .includes('api.resend.com'),
+    'Posta sağlayıcısı değişmiş; gizlilik metni Resend diyor.',
+  );
+  check(
+    legalHtml.gizlilik.includes('<strong>Resend</strong>')
+      && legalHtml.gizlilik.includes('<strong>İrlanda</strong>'),
+    'Gizlilik metni posta sağlayıcısını veya bulunduğu ülkeyi saymıyor.',
+  );
+
   /* Giriş izi: hangi alanların toplandığı, neyin toplanmadığı ve süresi.
    * Üçü de metinde yazılı, üçü de kodda ölçülebilir. */
   const signInMigration = fs.readFileSync(

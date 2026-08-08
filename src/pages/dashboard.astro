@@ -162,9 +162,9 @@ import Icon from '../components/Icon.astro';
                   Geri çekmek duyuruyu <strong>tamamen siler</strong>; metni sonradan
                   hiçbir yerden okunamaz.
                 </p>
-                <label class="dashboard-check">
+                <label class="dashboard-check" id="announcement-send-email">
                   <input type="checkbox" name="sendEmail" />
-                  <span>E-posta ile de gönder — yalnız <strong>Tüm ajanlar</strong> hedefinde çalışır. Postalar kuyruğa girer ve birkaç dakika içinde gider.</span>
+                  <span>E-posta ile de gönder — yalnız <strong>Tüm ajanlar</strong> hedefinde ve <strong>Uyarı</strong> ya da <strong>Kritik</strong> seviyesinde çalışır. Bilgi duyuruları postalanmaz: her duyuruyu postalayan bir sistem okunmaz olur, asıl acil olan da onunla birlikte kaybolur. Postalar kuyruğa girer ve birkaç dakika içinde gider.</span>
                 </label>
                 <button class="dashboard-button primary" type="submit">Yayına al</button>
               </form>
@@ -257,6 +257,10 @@ import Icon from '../components/Icon.astro';
   .dashboard-check { display: grid; grid-template-columns: auto 1fr; gap: .55rem; align-items: start; color: var(--muted); font-size: .78rem; line-height: 1.55; }
   .dashboard-check input { margin-top: .18rem; accent-color: var(--orbit-blue); }
   .dashboard-check strong { color: var(--text); }
+  /* Kutu kapalıyken sebebi okunur kalmalı: metni de soldurursak, kişi
+     neden işaretleyemediğini anlayamaz ve kapalılığı arıza sanır. */
+  .dashboard-check.is-disabled input { opacity: .45; }
+  .dashboard-check.is-disabled span { opacity: .7; }
   .login-card { padding: 2rem; }
   .login-card h2 { margin: 0; font-size: 1.75rem; letter-spacing: -.045em; }
   .mcp-consent-card { padding: 2rem; }

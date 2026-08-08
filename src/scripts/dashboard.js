@@ -568,6 +568,32 @@ byId('backup-run').addEventListener('click', async () => {
   try { await mutate('/v1/admin/backups', 'POST', {}); await loadBackups(); flash('Şifreli manuel yedek doğrulandı.'); }
   catch (error) { await loadBackups(); flash(error.message, 'error'); }
 });
+/* Sunucudaki ANNOUNCEMENT_EMAIL_SEVERITIES ile aynı liste. Panel istemci
+   tarafında olduğu için içe aktaramıyor; bir test iki listenin ayrışmadığını
+   kontrol ediyor. Buradaki kopya kapı değil, kolaylık — asıl kapı sunucuda,
+   çünkü panelin ne gönderdiğine güvenemeyiz. */
+const ANNOUNCEMENT_EMAIL_SEVERITIES = ['warning', 'critical'];
+
+/* Postalanamayan bir seviyede kutuyu açık bırakmak, işaretleyen kişiye
+   posta gideceğini söylemek olurdu. Kutu kapanıyor ve işaretiyse
+   temizleniyor: kapalı ama işaretli bir kutu, seviye geri değişince
+   kimsenin istemediği bir postayı geri getirirdi. */
+function syncAnnouncementEmailAvailability() {
+  const form = byId('announcement-form');
+  const box = form.querySelector('input[name="sendEmail"]');
+  const allowed = ANNOUNCEMENT_EMAIL_SEVERITIES.includes(form.querySelector('select[name="severity"]').value)
+    && form.querySelector('select[name="audienceType"]').value === 'all_agents';
+  box.disabled = !allowed;
+  if (!allowed) box.checked = false;
+  byId('announcement-send-email').classList.toggle('is-disabled', !allowed);
+}
+
+for (const name of ['severity', 'audienceType']) {
+  byId('announcement-form').querySelector(`select[name="${name}"]`)
+    .addEventListener('change', syncAnnouncementEmailAvailability);
+}
+syncAnnouncementEmailAvailability();
+
 byId('announcement-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const data = new FormData(event.currentTarget);
@@ -585,10 +611,13 @@ byId('announcement-form').addEventListener('submit', async (event) => {
       targetAgentId: audienceType === 'agent' ? data.get('targetAgentId') : null, startsAt: Date.now(), expiresAt: null,
     })).body.announcement;
   } catch (error) { flash(error.message, 'error'); return; }
-  /* Posta yalnız herkese açık duyuruda mümkün; API de bunu reddediyor.
-     Kutu işaretli kalıp hedef ajana çevrilse, o kişiye özel bir duyuru
-     bütün sponsorlara gitmiş olurdu. */
-  const sendEmail = data.get('sendEmail') === 'on' && audienceType === 'all_agents';
+  /* Posta yalnız herkese açık VE uyarı/kritik duyuruda mümkün; API de
+     ikisini birden reddediyor. Kutu işaretli kalıp hedef ajana çevrilse,
+     o kişiye özel bir duyuru bütün sponsorlara gitmiş olurdu; bilgi
+     seviyesine çevrilse kotayı önemsiz duyurulara harcardık. */
+  const sendEmail = data.get('sendEmail') === 'on'
+    && audienceType === 'all_agents'
+    && ANNOUNCEMENT_EMAIL_SEVERITIES.includes(data.get('severity'));
   try {
     await mutate(`/v1/admin/announcements/${encodeURIComponent(created.id)}/publish`, 'POST', { sendEmail });
     form.reset();

@@ -33,6 +33,14 @@ function footer(unsubscribable: boolean): string {
   return lines.join('\n');
 }
 
+/* Postalanabilir duyuru seviyeleri. Bilgi duyuruları dışarıda: gönderim
+ * kotası sınırlı ve her duyuruyu postalayan bir sistem, okunmayan bir
+ * sisteme dönüşür. Liste burada duruyor çünkü kararın sebebi posta
+ * tarafında; panel bu listeye uymak zorunda ve uyduğunu bir test
+ * kontrol ediyor. */
+export const ANNOUNCEMENT_EMAIL_SEVERITIES: ReadonlyArray<'info' | 'warning' | 'critical'> =
+  ['warning', 'critical'];
+
 export function announcementEmail(announcement: {
   title: string;
   bodyMarkdown: string;

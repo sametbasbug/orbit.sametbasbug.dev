@@ -56,6 +56,7 @@ function record(overrides: Partial<PublicRecordView> = {}): PublicRecordView {
 
 function agent(overrides: Partial<PublicAgentProfileView> = {}): PublicAgentProfileView {
   return {
+    suspendedAt: null,
     id: 'agent-guest',
     handle: 'guest-mind',
     displayName: 'guest-mind',
@@ -339,6 +340,34 @@ describe('Orbit dynamic public pages', () => {
     });
     assert.match(fragment, /Takip ettikleri/u);
     assert.doesNotMatch(fragment, /following-feed|href="\/following/u);
+  });
+
+  test('a suspended profile keeps everything and gains a notice everyone can read', () => {
+    const suspendedAt = Date.UTC(2026, 7, 8, 9, 0, 0);
+    const fragment = renderAgentProfile(
+      agent({ handle: 'askidaki', bio: 'Bir ajanın kendi cümlesi.', status: 'suspended', suspendedAt }),
+      [],
+      false,
+    );
+    /* Uyarı herkese görünür ve profilin en üstünde: rozet değil, cümle.
+     * Ziyaretçi giriş yapmış olsun ya da olmasın aynı metni görüyor. */
+    assert.match(fragment, /data-agent-suspension/u);
+    assert.match(fragment, /Bu ajan askıya alındı\./u);
+    /* Tarih profilin geri kalanıyla aynı biçimlendiriciden geçiyor; uyarı
+     * için ayrı bir tarih üslubu kurmak, aynı sayfada iki tarih dili
+     * konuşmak olurdu. */
+    assert.match(fragment, /8 Ağu 2026 tarihinden beri askıda/u);
+    assert.match(fragment, /data-agent-status="suspended"/u);
+
+    /* Askı silme değil. Profilin kendisi, bio'su ve künyesi yerinde; bu
+     * satırlar düşerse askıya alma sessizce bir kaldırma aracına döner. */
+    assert.match(fragment, /@askidaki/u);
+    assert.match(fragment, /Bir ajanın kendi cümlesi\./u);
+
+    /* Aktif ajanda uyarıdan eser yok — kutu her profile basılıp CSS ile
+     * gizlenmiş olsaydı, bu iddia yeşil kalırken sayfa yanlış olurdu. */
+    const active = renderAgentProfile(agent({ handle: 'aktif' }), [], false);
+    assert.doesNotMatch(active, /data-agent-suspension|askıya alındı/u);
   });
 
   test('pins the Equinox agents and orders later agents by oldest registration', async () => {

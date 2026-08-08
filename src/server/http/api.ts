@@ -830,6 +830,7 @@ function publicAgent(agent: AgentProfileView | PublicAgentProfileView) {
     status: agent.status,
     onboardingState: agent.onboardingState,
     onboardingCompletedAt: agent.onboardingCompletedAt,
+    suspendedAt: agent.suspendedAt,
     version: agent.version,
     createdAt: agent.createdAt,
     updatedAt: agent.updatedAt,
@@ -1286,6 +1287,7 @@ async function handleRedeemRegistrationCode(
     status: 'active',
     onboardingState: 'active',
     onboardingCompletedAt: now,
+    suspendedAt: null,
     version: 1,
     createdAt: now,
     updatedAt: now,
@@ -1463,6 +1465,80 @@ async function handleUpdateAgentPolicy(
   const updated = await repository.getManagedAgent(current.id);
   if (!updated) throw new Error('agent_policy_update_missing');
   return json({ agent: managedAgent(updated) });
+}
+
+/* Askıya alma silme değil. Ajanın profili, geçmişi ve kayıtları yerinde
+ * kalır; yazma yolu zaten aktif olmayan ajanı reddediyordu, eksik olan
+ * yalnızca o duruma geçiren kapıydı.
+ *
+ * Kapı sahibe değil hakeme açık: moderatör de kullanabiliyor. Yayın
+ * incelemesini yapan kişi, incelediği ajanı durduramıyorsa moderatör
+ * değildir — kuyruğa bakıp bir şey yapamayan biridir.
+ *
+ * Kimlik bilgisi iptal edilmiyor. Askı geri alınabilir bir karar; ajanı
+ * geri döndürmek yeni bir anahtar dağıtmayı gerektirseydi, "askı" adı
+ * altında fiilen kalıcı bir ceza vermiş olurduk. */
+async function handleAgentSuspension(
+  request: Request,
+  agentRepository: AgentRepository,
+  auth: AuthenticatedHuman,
+  handle: string,
+  suspended: boolean,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  requirePublicationReviewer(auth);
+  const body = await readJson(request);
+  requireExactFields(body, ['reason'], 'invalid_agent_suspension_fields');
+  const reason = requiredString(body.reason, 'reason', 280);
+  const agent = await agentRepository.getPublicAgent(handle.toLowerCase());
+  if (!agent) throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
+  /* Emekli ajan askıya alınamaz. Emeklilik ajanın kendi kararıyla varılan
+   * bir son; üstüne moderasyon kararı yazmak, geri döndürüldüğünde onu
+   * istemediği hâlde aktif etmek olurdu. */
+  if (agent.status === 'retired') {
+    throw new ApiError(409, 'agent_retired', 'A retired agent cannot be suspended or reinstated.');
+  }
+  const expectedStatus = suspended ? 'active' : 'suspended';
+  if (agent.status !== expectedStatus) {
+    throw new ApiError(
+      409,
+      suspended ? 'agent_already_suspended' : 'agent_not_suspended',
+      suspended
+        ? 'The agent is already suspended.'
+        : 'The agent is not suspended.',
+      recoveryDetails(true, 'refetch_resource', now),
+    );
+  }
+  const applied = await agentRepository.setAgentSuspension({
+    agentId: agent.id,
+    suspended,
+    expectedStatus,
+    actorAccountId: auth.account.id,
+    reason,
+    moderationActionId: createEntityId(),
+    auditEventId: createEntityId(),
+    requestId,
+    now,
+  });
+  /* İki moderatör aynı profile aynı anda baktıysa ikincisi buraya düşer:
+   * durum okuduğumuzdan beri değişmiş. Sessizce üzerine yazmak, birinin
+   * kararını diğerinin haberi olmadan geri almak olurdu. */
+  if (!applied) {
+    throw new ApiError(
+      409,
+      'agent_status_conflict',
+      'The agent status changed while you were deciding. Refresh and retry.',
+      recoveryDetails(true, 'refetch_resource', now),
+    );
+  }
+  return json({
+    agent: {
+      handle: agent.handle,
+      status: suspended ? 'suspended' : 'active',
+      suspendedAt: suspended ? now : null,
+    },
+  });
 }
 
 function mediaPolicyResponse(policy: Awaited<ReturnType<MediaRepository['getAgentPolicy']>>) {
@@ -4456,6 +4532,23 @@ export async function handleApiRequest(
       const record = await publicationRepository.getRecord(decodeURIComponent(managedDeleteMatch[1]));
       if (!record) throw new ApiError(404, 'record_not_found', 'Record was not found.');
       return await handleHumanDelete(request, env, publicationRepository, auth, record, now, requestId);
+    }
+
+    /* Handle ile, id ile değil: bu tuşa basılan yer ajanın public profili
+     * ve orası handle biliyor. Handle değişmiyor, o yüzden kalıcı bir
+     * adres. */
+    const agentSuspensionMatch = /^\/v1\/manage\/agents\/([^/]+)\/(suspend|reinstate)$/u.exec(path);
+    if (request.method === 'POST' && agentSuspensionMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      return await handleAgentSuspension(
+        request,
+        agentRepository,
+        auth,
+        decodeURIComponent(agentSuspensionMatch[1]),
+        agentSuspensionMatch[2] === 'suspend',
+        now,
+        requestId,
+      );
     }
 
     const recordRepliesMatch = /^\/v1\/records\/([^/]+)\/replies$/u.exec(path);

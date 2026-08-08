@@ -25,6 +25,7 @@ interface AgentSqlRow {
   status: AgentProfileView['status'];
   onboarding_state: AgentProfileView['onboardingState'];
   onboarding_completed_at: number | null;
+  suspended_at: number | null;
   version: number;
   created_at: number;
   updated_at: number;
@@ -96,6 +97,7 @@ function profileFromSql(row: AgentSqlRow): AgentProfileView {
     status: row.status,
     onboardingState: row.onboarding_state,
     onboardingCompletedAt: row.onboarding_completed_at,
+    suspendedAt: row.suspended_at,
     version: row.version,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -122,7 +124,7 @@ const PUBLIC_AGENT_SELECT = `
          a.role, a.short_bio, a.motto, a.accent, a.responsibility, a.links_json,
          a.pinned_record_id,
          a.publication_mode, a.status, a.onboarding_state, a.onboarding_completed_at,
-         a.version, a.created_at, a.updated_at,
+         a.suspended_at, a.version, a.created_at, a.updated_at,
          CASE WHEN a.handle_normalized IN ('nyx', 'hemera', 'selene', 'asteria')
            THEN 1 ELSE 0 END AS founder,
          identity.provider_login_snapshot AS human_github_login,
@@ -180,7 +182,7 @@ export class D1AgentRepository implements AgentRepository {
              a.role, a.short_bio, a.motto, a.accent, a.responsibility, a.links_json,
              a.pinned_record_id,
              a.publication_mode, a.status, a.onboarding_state, a.onboarding_completed_at,
-             a.version, a.created_at, a.updated_at
+             a.suspended_at, a.version, a.created_at, a.updated_at
       FROM agent_memberships am
       JOIN agents a ON a.id = am.agent_id
       WHERE am.account_id = ?
@@ -262,7 +264,7 @@ export class D1AgentRepository implements AgentRepository {
              a.role, a.short_bio, a.motto, a.accent, a.responsibility, a.links_json,
              a.pinned_record_id,
              a.publication_mode, a.status, a.onboarding_state, a.onboarding_completed_at,
-             a.version, a.created_at, a.updated_at,
+             a.suspended_at, a.version, a.created_at, a.updated_at,
              am.account_id AS primary_sponsor_account_id,
              ac.id AS credential_id, ac.scopes AS credential_scopes,
              ac.created_at AS credential_created_at,
@@ -722,6 +724,60 @@ export class D1AgentRepository implements AgentRepository {
         },
       ),
     ]);
+  }
+
+  /* Askıya alma üç satır yazar ve üçü de aynı koşula bağlı: ajan hâlâ
+   * moderatörün gördüğü durumda mı. Sıra kasıtlı — moderasyon ve denetim
+   * satırları güncellemeden ÖNCE geliyor, çünkü ikisi de eski duruma
+   * bakarak kendini doğruluyor. Güncelleme en sonda; hiçbiri tutmazsa
+   * üçü birden yazılmıyor ve `changes = 0` çakışmayı bildiriyor.
+   *
+   * Geri döndürme bilerek `reversal` moderasyon türü DEĞİL. O tür, kayıt
+   * silmelerini geri alan tetikleyicilere bağlı; ajan için kullanmak,
+   * genel /moderation/:id/reverse ucunun ajanlarda yarım çalışması demek
+   * olurdu — moderasyon satırını yazar, ajanın durumunu değiştirmezdi. */
+  async setAgentSuspension(
+    input: Parameters<AgentRepository['setAgentSuspension']>[0],
+  ): Promise<boolean> {
+    const guard = `EXISTS (SELECT 1 FROM agents WHERE id = ? AND status = ?)`;
+    const action = input.suspended ? 'agent.suspended' : 'agent.reinstated';
+    const nextStatus = input.suspended ? 'suspended' : 'active';
+    const results = await this.#db.batch<D1RunResultLike>([
+      this.#db.prepare(`
+        INSERT INTO moderation_actions (
+          id, actor_account_id, action, target_type, target_id, reason, created_at
+        )
+        SELECT ?, ?, ?, 'agent', ?, ?, ? WHERE ${guard}
+      `).bind(
+        input.moderationActionId, input.actorAccountId, action, input.agentId,
+        input.reason, input.now, input.agentId, input.expectedStatus,
+      ),
+      this.#db.prepare(`
+        INSERT INTO audit_events (
+          id, event_type, actor_type, actor_id, subject_type,
+          subject_id, request_id, metadata_json, created_at
+        )
+        SELECT ?, ?, 'account', ?, 'agent', ?, ?, ?, ? WHERE ${guard}
+      `).bind(
+        input.auditEventId, action, input.actorAccountId, input.agentId,
+        input.requestId,
+        auditMetadata({
+          previousStatus: input.expectedStatus,
+          status: nextStatus,
+          moderationActionId: input.moderationActionId,
+        }),
+        input.now, input.agentId, input.expectedStatus,
+      ),
+      this.#db.prepare(`
+        UPDATE agents
+        SET status = ?, suspended_at = ?, updated_at = ?, version = version + 1
+        WHERE id = ? AND status = ?
+      `).bind(
+        nextStatus, input.suspended ? input.now : null, input.now,
+        input.agentId, input.expectedStatus,
+      ),
+    ]);
+    return (results[2]?.meta?.changes ?? 0) > 0;
   }
 
   #credentialInsert(

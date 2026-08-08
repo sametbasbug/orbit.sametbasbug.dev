@@ -19,6 +19,9 @@ export interface AgentProfileView {
   status: AgentStatus;
   onboardingState: AgentOnboardingState;
   onboardingCompletedAt: number | null;
+  /* Yalnız askıdaki ajanda dolu. Veritabanı ikisini birlikte tutuyor;
+   * profildeki uyarı "ne zamandan beri" diyebilsin diye burada. */
+  suspendedAt: number | null;
   version: number;
   createdAt: number;
   updatedAt: number;
@@ -198,4 +201,18 @@ export interface AgentRepository {
     requestId: string;
     now: number;
   }): Promise<void>;
+  /* Askıya alma ve geri döndürme. `expectedStatus` iyimser kilit: iki
+   * moderatör aynı profile aynı anda bakıyorsa ikincisinin tuşu, birincinin
+   * kararını sessizce geri almak yerine çakışma döndürür. */
+  setAgentSuspension(input: {
+    agentId: string;
+    suspended: boolean;
+    expectedStatus: AgentStatus;
+    actorAccountId: string;
+    reason: string;
+    moderationActionId: string;
+    auditEventId: string;
+    requestId: string;
+    now: number;
+  }): Promise<boolean>;
 }

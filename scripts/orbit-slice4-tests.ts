@@ -261,6 +261,8 @@ before(async () => {
   await seedAgent('slice4-hourly', 'direct_publish');
   await seedAgent('slice4-burst', 'direct_publish');
   await seedAgent('slice4-pending-limits', 'approval_required');
+  await seedAgent('slice4-suspendable', 'direct_publish');
+  await seedAgent('slice4-retired', 'direct_publish', 'retired');
 });
 
 after(async () => {
@@ -1147,7 +1149,12 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     const history = structuredClone(exported) as DynamicBackup;
     const suspended = history.tables.agents.find((row) => row.handle === 'slice4-direct');
     assert.ok(suspended, 'yedekte slice4-direct yok');
+    /* Askı durumu ile askı tarihi veritabanında birbirine kilitli, yani
+     * geçmişte askıya alınmış bir ajan yedekte de tarihiyle duruyor. Elle
+     * yalnız durumu yazmak, geri yüklemenin asla göremeyeceği bir satır
+     * uydurmak olurdu. */
     suspended.status = 'suspended';
+    suspended.suspended_at = NOW - 5000;
     const partner = history.tables.agents.find((row) => row.id !== suspended.id);
     assert.ok(partner, 'yedekte ikinci ajan yok');
     const removedPost = history.tables.records.find((row) => (
@@ -1204,6 +1211,11 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
       // Geçmiş olduğu gibi geri geldi.
       assert.equal(restoredExport.tables.directMessages.length, history.counts.directMessages);
       assert.ok(restoredExport.tables.directMessages.some((row) => row.sender_agent_id === suspended.id));
+      // Askı geri yüklemeden sağ çıkıyor: durumu da, ne zamandan beri
+      // olduğu da. Yedek sütunu taşımasaydı ajan sessizce serbest kalırdı.
+      const restoredSuspended = restoredExport.tables.agents.find((row) => row.id === suspended.id);
+      assert.equal(restoredSuspended?.status, 'suspended');
+      assert.equal(restoredSuspended?.suspended_at, NOW - 5000);
       assert.equal(
         restoredExport.tables.records.find((row) => row.id === removedPost.id)?.moderation_state,
         'removed',
@@ -1224,6 +1236,124 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
       if (restoreWorker) await stopWorker(restoreWorker);
       await rm(restorePersist, { recursive: true, force: true });
     }
+  });
+
+  test('a moderator suspends an agent, the agent stops writing, and reinstating gives the ability back', async () => {
+    const agent = agents.get('slice4-suspendable')!;
+    const suspend = await moderatorRequest('/v1/manage/agents/slice4-suspendable/suspend', 'POST', {
+      reason: 'Test: kural dışı yayın.',
+    });
+    assert.equal(suspend.status, 200, await suspend.clone().text());
+    assert.equal((await suspend.json() as { agent: { status: string } }).agent.status, 'suspended');
+
+    const blocked = await agentWrite(agent, '/v1/records', {
+      bodyMarkdown: 'Askıdayken yazılmaya çalışılan gönderi.',
+      projectSlug: 'orbit', topicSlugs: ['sistemler'],
+    }, 'slice4-suspended-write');
+    assert.equal(blocked.status, 403);
+    assert.equal((await blocked.json() as { error: { code: string } }).error.code, 'agent_unavailable');
+
+    /* Askı silme değil: profil de geçmiş de duruyor. Bu satır kalkarsa
+     * askıya alma sessizce bir kaldırma aracına dönüşmüş olur. */
+    const profile = await fetch(`${baseUrl}/v1/agents/slice4-suspendable?limit=20`);
+    assert.equal(profile.status, 200);
+    const profileBody = await profile.json() as { agent: { status: string; suspendedAt: number | null } };
+    assert.equal(profileBody.agent.status, 'suspended');
+    assert.equal(profileBody.agent.suspendedAt, NOW);
+
+    const reinstate = await moderatorRequest('/v1/manage/agents/slice4-suspendable/reinstate', 'POST', {
+      reason: 'Test: askı kaldırıldı.',
+    });
+    assert.equal(reinstate.status, 200);
+    assert.equal((await reinstate.json() as { agent: { suspendedAt: number | null } }).agent.suspendedAt, null);
+
+    const allowed = await agentWrite(agent, '/v1/records', {
+      bodyMarkdown: 'Askı kalktıktan sonra yazılan gönderi.',
+      projectSlug: 'orbit', topicSlugs: ['sistemler'],
+    }, 'slice4-reinstated-write');
+    assert.equal(allowed.status, 201, await allowed.clone().text());
+  });
+
+  test('suspension is open to owners and moderators, and closed to everyone else', async () => {
+    assert.equal((await memberRequest('/v1/manage/agents/slice4-review/suspend', 'POST', {
+      reason: 'Yetkisiz deneme.',
+    })).status, 403);
+    assert.equal((await fetch(`${baseUrl}/v1/manage/agents/slice4-review/suspend`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'http://localhost:4321' },
+      body: JSON.stringify({ reason: 'Oturumsuz deneme.' }),
+    })).status, 401);
+    /* Karar rolden geliyor, sponsorluktan değil. Sıradan bir üye, ajanın
+     * sponsoru olsa bile bu tuşa basamaz; platform sahibi ise sponsoru
+     * olmadığı bir ajanı da durdurabilir. */
+    assert.equal((await ownerRequest('/v1/manage/agents/slice4-review/suspend', 'POST', {
+      reason: 'Sahip yetkisi.',
+    })).status, 200);
+    assert.equal((await ownerRequest('/v1/manage/agents/slice4-review/reinstate', 'POST', {
+      reason: 'Geri alındı.',
+    })).status, 200);
+  });
+
+  test('a second decision on the same agent conflicts instead of overwriting the first', async () => {
+    assert.equal((await moderatorRequest('/v1/manage/agents/slice4-readonly/suspend', 'POST', {
+      reason: 'İlk karar.',
+    })).status, 200);
+    const repeat = await moderatorRequest('/v1/manage/agents/slice4-readonly/suspend', 'POST', {
+      reason: 'İkinci karar.',
+    });
+    assert.equal(repeat.status, 409);
+    assert.equal((await repeat.json() as { error: { code: string } }).error.code, 'agent_already_suspended');
+    assert.equal((await moderatorRequest('/v1/manage/agents/slice4-readonly/reinstate', 'POST', {
+      reason: 'Geri alındı.',
+    })).status, 200);
+    const undone = await moderatorRequest('/v1/manage/agents/slice4-readonly/reinstate', 'POST', {
+      reason: 'Bir kez daha.',
+    });
+    assert.equal(undone.status, 409);
+    assert.equal((await undone.json() as { error: { code: string } }).error.code, 'agent_not_suspended');
+  });
+
+  test('a retired agent is out of moderation reach in both directions', async () => {
+    for (const action of ['suspend', 'reinstate'] as const) {
+      const response = await moderatorRequest(`/v1/manage/agents/slice4-retired/${action}`, 'POST', {
+        reason: 'Emekli ajana müdahale.',
+      });
+      assert.equal(response.status, 409);
+      assert.equal((await response.json() as { error: { code: string } }).error.code, 'agent_retired');
+    }
+    assert.equal((await moderatorRequest('/v1/manage/agents/olmayan-ajan/suspend', 'POST', {
+      reason: 'Yok.',
+    })).status, 404);
+  });
+
+  test('both directions of a suspension leave moderation and audit evidence', async () => {
+    assert.equal((await moderatorRequest('/v1/manage/agents/slice4-burst/suspend', 'POST', {
+      reason: 'Kanıt için askı.',
+    })).status, 200);
+    assert.equal((await moderatorRequest('/v1/manage/agents/slice4-burst/reinstate', 'POST', {
+      reason: 'Kanıt için geri alma.',
+    })).status, 200);
+    const target = agents.get('slice4-burst')!.id;
+    const exported = await testPost('/__test/backup-export', {}).then((response) => response.json()) as {
+      tables: {
+        moderationActions: Array<Record<string, unknown>>;
+        auditEvents: Array<Record<string, unknown>>;
+      };
+    };
+    const moderation = exported.tables.moderationActions.filter((row) => row.target_id === target);
+    assert.deepEqual(moderation.map((row) => row.action), ['agent.suspended', 'agent.reinstated']);
+    assert.deepEqual(moderation.map((row) => row.target_type), ['agent', 'agent']);
+    assert.deepEqual(moderation.map((row) => row.reason), ['Kanıt için askı.', 'Kanıt için geri alma.']);
+    assert.deepEqual(
+      exported.tables.auditEvents
+        .filter((row) => row.subject_id === target && String(row.event_type).startsWith('agent.'))
+        .map((row) => row.event_type),
+      ['agent.suspended', 'agent.reinstated'],
+    );
+    /* Gerekçe denetim kaydında değil moderasyon kaydında. Denetim olayı
+     * kararın olduğunu söyler, sebebini değil; ikisini birden taşımak aynı
+     * kişisel metni iki tabloya kopyalamak olurdu. */
+    assert.ok(!JSON.stringify(exported.tables.auditEvents).includes('Kanıt için askı.'));
   });
 
   test('agent credentials never enter Worker output', () => {

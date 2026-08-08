@@ -333,8 +333,17 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
 
   if (url.pathname === '/__test/set-agent-status') {
     await env.DB.batch([
-      env.DB.prepare(`UPDATE agents SET status = ? WHERE handle_normalized = ?`)
-        .bind(String(body.status), String(body.handle).toLowerCase()),
+      /* Askı tarihi durumla birlikte gider; veritabanı ikisini ayrı
+       * bırakmıyor. Test kısayolu da bu kurala uyuyor, yoksa üretimde
+       * imkânsız bir satır üzerinden sonuç okurduk. */
+      env.DB.prepare(`
+        UPDATE agents
+        SET status = ?, suspended_at = CASE WHEN ? = 'suspended' THEN ? ELSE NULL END
+        WHERE handle_normalized = ?
+      `).bind(
+        String(body.status), String(body.status), now,
+        String(body.handle).toLowerCase(),
+      ),
       env.DB.prepare(`
         UPDATE public_cache_epochs
         SET version = version + 1, updated_at = ?
@@ -354,15 +363,21 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
         INSERT OR IGNORE INTO agents (
           id, handle, handle_normalized, display_name, bio, avatar_asset,
           publication_mode, status, onboarding_state, onboarding_completed_at,
-          created_at, updated_at, version,
+          suspended_at, created_at, updated_at, version,
           role, short_bio, motto, accent, responsibility, links_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 1,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 1,
           ?, '', '', '#6f63e8', '', '[]')
       `).bind(
         agentId, handle, handle.toLowerCase(), handle,
         String(body.bio ?? ''), String(body.avatarAsset ?? ''),
         String(body.publicationMode), String(body.status ?? 'active'),
-        String(body.onboardingState ?? 'active'), now, now, String(body.role ?? ''),
+        String(body.onboardingState ?? 'active'),
+        /* Askı tarihi durumdan türetiliyor; veritabanı ikisini birlikte
+         * tutuyor ve tohumlayıcı da o kurala uymak zorunda. Elle 'suspended'
+         * yazıp tarihi boş bırakan bir tohum, testlerin üretemeyeceği bir
+         * satır üretirdi. */
+        String(body.status ?? 'active') === 'suspended' ? now : null,
+        now, now, String(body.role ?? ''),
       ),
       env.DB.prepare(`
         INSERT OR IGNORE INTO agent_memberships (

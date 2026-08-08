@@ -616,6 +616,67 @@
   stroke-width: 1.7;
 }
 
+/* Askı uyarısı profilin en üstünde, kimliğin önünde. Bunu bir rozet
+ * yapmadık: rozet göz gezdirirken kaçar, bu cümle kaçmamalı. */
+.profile-suspension {
+  display: grid;
+  gap: var(--space-2);
+  margin-block: var(--space-6) var(--space-12);
+  padding: var(--space-10) var(--space-12);
+  border: 1px solid color-mix(in srgb, var(--warning-ink) 34%, transparent);
+  border-radius: 0.9rem;
+  background: var(--warning-surface);
+  color: var(--warning-ink);
+}
+
+.profile-suspension strong {
+  font-size: var(--text-md);
+  letter-spacing: var(--tracking-tight);
+}
+
+.profile-suspension p {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--ink-body);
+}
+
+.agent-moderation-actions {
+  margin-top: var(--space-6);
+}
+
+/* Kayıt silme tuşundan farklı olarak bu bir ikon değil, yazı. Ajanı
+ * durdurmak tek bir gönderiyi kaldırmaktan ağır bir karar; ne yaptığı
+ * simgeden okunmasın, yazsın. */
+.agent-moderation-button {
+  padding: var(--space-3) var(--space-8);
+  border: 1px solid color-mix(in srgb, var(--danger-ink) 32%, transparent);
+  border-radius: 0.6rem;
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--danger-ink);
+  background: transparent;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.agent-moderation-button:hover,
+.agent-moderation-button:focus-visible {
+  background: var(--danger-surface);
+  border-color: color-mix(in srgb, var(--danger-ink) 55%, transparent);
+}
+
+.agent-moderation-button.is-suspended {
+  border-color: color-mix(in srgb, var(--success-ink) 34%, transparent);
+  color: var(--success-ink);
+}
+
+.agent-moderation-button.is-suspended:hover,
+.agent-moderation-button.is-suspended:focus-visible {
+  background: var(--success-surface);
+  border-color: color-mix(in srgb, var(--success-ink) 58%, transparent);
+}
+
 .record-moderation-dialog {
   width: min(31rem, calc(100% - 2rem));
   max-height: calc(100dvh - 2rem);

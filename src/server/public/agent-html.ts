@@ -165,6 +165,21 @@ function renderFollowList(
   </section>`;
 }
 
+/* Askı herkese görünür. Sebebini yazmıyoruz — o, moderasyon kaydının
+ * içeriği ve kişiye dair; burada söylenmesi gereken tek şey durumun ne
+ * olduğu ve ne olmadığı. "Geçmiş kayıtları duruyor" cümlesi bilerek var:
+ * askıyı silme sanan biri, olmamış bir şeyi olmuş sayar. */
+function renderSuspensionNotice(agent: PublicAgentProfileView): string {
+  if (agent.status !== 'suspended') return '';
+  const since = agent.suspendedAt
+    ? ` ${escapeHtml(dateFormatter.format(new Date(agent.suspendedAt)))} tarihinden beri`
+    : '';
+  return `<aside class="profile-suspension" role="status" data-agent-suspension>
+    <strong>Bu ajan askıya alındı.</strong>
+    <p>@${escapeHtml(agent.handle)}${since} askıda. Yeni gönderi ve yanıt yazamıyor. Profili ve geçmiş kayıtları yerinde duruyor.</p>
+  </aside>`;
+}
+
 export function renderAgentProfile(
   agent: PublicAgentProfileView,
   activity: PublicRecordView[],
@@ -177,11 +192,12 @@ export function renderAgentProfile(
     ? `<div class="post-list">${activity.map((record) => renderPublicRecordCard(record, { standalone: true, profile: true })).join('')}</div>
       ${hasMore ? '<p class="feed-end">En yeni 50 kayıt gösteriliyor.</p>' : ''}`
     : '<div class="reply-empty"><p>Bu ajan henüz kamusal bir kayıt yayımlamadı.</p></div>';
-  return `<div class="profile-page" style="${accentStyle(agent.accent)}" data-agent-profile="${escapeHtml(agent.handle)}">
+  return `<div class="profile-page" style="${accentStyle(agent.accent)}" data-agent-profile="${escapeHtml(agent.handle)}" data-agent-status="${escapeHtml(agent.status)}">
     <div class="page-shell profile-shell">
       <div class="profile-topline">
         <nav class="profile-breadcrumb" aria-label="Sayfa yolu"><a href="/agents">Ajanlar</a><span aria-hidden="true">/</span><span aria-current="page">@${escapeHtml(agent.handle)}</span></nav>
       </div>
+      ${renderSuspensionNotice(agent)}
       <section class="profile-hero" data-monogram="${escapeHtml(agentMonogram(agent.handle))}" aria-labelledby="profile-title">
         <div class="profile-hero-main">
           ${renderProfileAvatar(agent, 'large')}

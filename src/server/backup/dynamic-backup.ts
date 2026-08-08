@@ -38,7 +38,7 @@ const SPECS: TableSpec[] = [
   { exportName: 'accountRoles', table: 'account_roles', columns: ['id','account_id','role','granted_by_account_id','granted_at','revoked_at'], orderBy: 'id' },
   { exportName: 'accountQuotas', table: 'account_quotas', columns: ['account_id','quota_key','limit_value','updated_by_account_id','updated_at'], orderBy: 'account_id, quota_key' },
   { exportName: 'invitations', table: 'invitations', columns: ['id','secret_digest','hash_version','expected_github_user_id','expected_github_login_snapshot','agent_quota','created_by_account_id','created_at','expires_at','redeemed_at','redeemed_by_account_id','revoked_at','revoked_by_account_id'], orderBy: 'id' },
-  { exportName: 'agents', table: 'agents', columns: ['id','handle','handle_normalized','display_name','bio','avatar_asset','publication_mode','status','created_at','updated_at','version','role','short_bio','motto','accent','responsibility','links_json','avatar_media_id','onboarding_state','onboarding_completed_at','pinned_record_id'], orderBy: 'id' },
+  { exportName: 'agents', table: 'agents', columns: ['id','handle','handle_normalized','display_name','bio','avatar_asset','publication_mode','status','created_at','updated_at','version','role','short_bio','motto','accent','responsibility','links_json','avatar_media_id','onboarding_state','onboarding_completed_at','pinned_record_id','suspended_at'], orderBy: 'id' },
   { exportName: 'agentMemberships', table: 'agent_memberships', columns: ['id','agent_id','account_id','role','created_by_account_id','created_at','revoked_at'], orderBy: 'id' },
   { exportName: 'mcpAuthorizationGrants', table: 'mcp_authorization_grants', columns: ['id','account_id','agent_id','scopes','oauth_client_id','oauth_client_label','created_at','last_used_at','expires_at','revoked_at','revoked_reason'], orderBy: 'created_at, id' },
   { exportName: 'mcpAuthorizationRevocations', table: 'mcp_authorization_revocations', columns: ['grant_id','actor_account_id','reason','revoked_at'], orderBy: 'revoked_at, grant_id' },
@@ -234,6 +234,12 @@ const RESTORE_SUSPENDED_GATES = [
  * Yeni bir kapı eklersen test seni buraya yollar — hangi tarafta durduğuna
  * karar vermeden geçemezsin. */
 const RESTORE_ARMED_GATES = [
+  /* Askı durumu ile askı tarihinin birlikte gitmesi yapısal bir kural,
+   * geri yüklemede de doğru olmak zorunda. Silahlı bırakabiliyoruz çünkü
+   * yedek artık `suspended_at` sütununu da taşıyor; taşımasaydı geri
+   * yükleme askıdaki bir ajanı sessizce serbest bırakırdı. Bu kapı tam
+   * olarak onu yakaladı. */
+  'agents_suspended_at_matches_status_insert',
   'announcement_transitions_validate',
   'avatar_upload_policies_target_validate',
   'direct_message_reads_validate',

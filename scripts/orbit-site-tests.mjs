@@ -700,6 +700,36 @@ check(
   'Bir @font-face swap dışında bir font-display kullanıyor; metin görünmez kalabilir.',
 );
 
+/* Askıya alma zinciri: tuşu çizen betik sayfaya bağlı mı, çizdiği yeri
+ * worker gerçekten üretiyor mu, ve karar sunucuda mı veriliyor. Üçünden
+ * biri koparsa moderatör ya tuşu hiç görmez ya da gördüğü tuş bir şey
+ * yapmaz — ikisi de sessiz arızalar. */
+const agentModerationScript = fs.readFileSync(path.join(ROOT, 'src', 'scripts', 'agent-moderation.js'), 'utf8');
+const agentHtml = fs.readFileSync(path.join(ROOT, 'src', 'server', 'public', 'agent-html.ts'), 'utf8');
+const apiSource = fs.readFileSync(path.join(ROOT, 'src', 'server', 'http', 'api.ts'), 'utf8');
+check(
+  fs.readFileSync(path.join(ROOT, 'src', 'layouts', 'BaseLayout.astro'), 'utf8')
+    .includes('scripts/agent-moderation.js'),
+  'Askıya alma betiği sayfaya bağlı değil; moderatör tuşu hiç görmez.',
+);
+check(
+  agentHtml.includes('data-agent-status="${escapeHtml(agent.status)}"')
+    && agentHtml.includes('data-agent-suspension'),
+  'Ajan profili durum veya askı işaretini basmıyor; tuş bağlanacağı yeri bulamaz.',
+);
+check(
+  agentModerationScript.includes("roles.includes('platform_owner')")
+    && agentModerationScript.includes("roles.includes('moderator')"),
+  'Askıya alma tuşu sahip ve moderatör dışında birine görünüyor olabilir.',
+);
+/* Tuşun gizlenmesi bir güvenlik önlemi değil, nezaket. Kararı veren yer
+ * uç; oradaki rol kontrolü düşerse tarayıcıdaki kontrol hiçbir şey
+ * korumaz. */
+check(
+  /handleAgentSuspension\([\s\S]{0,400}?requirePublicationReviewer\(auth\)/u.test(apiSource),
+  'Askıya alma ucu rol kontrolünü kaybetmiş; yetki yalnız tarayıcıda kalmış olur.',
+);
+
 if (errors.length) {
   process.stderr.write(`${errors.map((error) => `- ${error}`).join('\n')}\n`);
   process.stderr.write(`Orbit site integrity tests failed (${errors.length}/${assertions}).\n`);

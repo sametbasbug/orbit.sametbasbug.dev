@@ -1,6 +1,8 @@
 import type { OrbitBindings } from '../identity/bindings';
 import {
   D1NotificationRepository,
+  EMAIL_BUDGET_WINDOW_MS,
+  EMAIL_DAILY_BUDGET,
   EMAIL_DRAIN_BATCH,
 } from '../repositories/notification-repository';
 import { createEmailSender, type EmailSender } from './email';
@@ -14,6 +16,10 @@ export interface EmailDrainResult {
    * "kuyruk boştu" hem "gönderim kapalıydı" anlamına gelir ve ikisi çok
    * farklı durumlar. */
   senderConfigured: boolean;
+  /* Bütçeden kalan. Sıfır olması, kuyrukta posta olabileceği halde bu turda
+   * hiçbirinin denenmediği anlamına geliyor — ve bunu görebilmem lazım,
+   * çünkü "attempted: 0" tek başına yine boş bir kuyruğa benziyor. */
+  budgetRemaining: number;
 }
 
 /* Kuyruğu boşaltır. Postalar SIRAYLA gidiyor, paralel değil: Resend'in
@@ -26,10 +32,26 @@ export async function drainEmailQueue(
   senderOverride?: EmailSender | null,
 ): Promise<EmailDrainResult> {
   const sender = senderOverride ?? createEmailSender(env);
-  if (!sender) return { attempted: 0, sent: 0, failed: 0, senderConfigured: false };
+  if (!sender) {
+    return { attempted: 0, sent: 0, failed: 0, senderConfigured: false, budgetRemaining: 0 };
+  }
 
   const repository = new D1NotificationRepository(env.DB);
-  const pending = await repository.listPending(EMAIL_DRAIN_BATCH);
+  /* Bütçe kapısı burada, kuyruğu okumadan önce. Sağlayıcının kotası
+   * bittiğinde sıradaki posta da gitmiyor — ve sıradaki posta bir güvenlik
+   * bildirimi olabilir. Yani kotayı bir duyuru dalgasına harcamanın bedeli
+   * duyurunun gitmemesi değil, ondan sonrakinin gidememesi. */
+  const spent = await repository.countAttemptsSince(now - EMAIL_BUDGET_WINDOW_MS);
+  const budgetRemaining = Math.max(0, EMAIL_DAILY_BUDGET - spent);
+  /* Bu erken dönüş bir kısayol, kapının kendisi değil: kapı aşağıdaki
+   * LIMIT. Ölçtüm — bu bloğu kaldırınca davranış değişmiyor, çünkü kalan
+   * sıfırken LIMIT 0 zaten boş liste döndürüyor. Duruyor olmasının sebebi
+   * bütçe dolduğunda gereksiz bir sorgudan kaçınmak. */
+  if (budgetRemaining === 0) {
+    return { attempted: 0, sent: 0, failed: 0, senderConfigured: true, budgetRemaining: 0 };
+  }
+
+  const pending = await repository.listPending(Math.min(EMAIL_DRAIN_BATCH, budgetRemaining));
   let sent = 0;
   let failed = 0;
 
@@ -47,9 +69,15 @@ export async function drainEmailQueue(
       sent += 1;
       continue;
     }
-    await repository.markAttemptFailed(email.id, result.error, result.outcome === 'permanent');
+    await repository.markAttemptFailed(email.id, result.error, result.outcome === 'permanent', now);
     failed += 1;
   }
 
-  return { attempted: pending.length, sent, failed, senderConfigured: true };
+  return {
+    attempted: pending.length,
+    sent,
+    failed,
+    senderConfigured: true,
+    budgetRemaining: budgetRemaining - pending.length,
+  };
 }

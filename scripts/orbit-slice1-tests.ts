@@ -8,7 +8,9 @@ import { after, before, describe, test } from 'node:test';
 import {
   CSRF_COOKIE,
   CSRF_HEADER,
+  DEFAULT_AGENT_QUOTA,
   OAUTH_COOKIE,
+  REGISTRATION_IP_MAX,
   SESSION_ACTIVITY_BUCKET_MS,
   SESSION_COOKIE,
 } from '../src/server/identity/constants';
@@ -16,13 +18,13 @@ import {
   createOpaqueToken,
   parseOpaqueToken,
 } from '../src/server/identity/tokens';
+import { LEGAL_LAST_UPDATED } from '../src/data/legal';
 
 const ROOT = process.cwd();
 const WRANGLER = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 const CONFIG = 'wrangler.slice1-test.jsonc';
 const ORIGIN = 'http://localhost:4321';
 const NOW = 1_784_103_600_000;
-const INVITATION_PEPPER = 'test-invitation-pepper-at-least-32-bytes-long';
 const MCP_SERVICE_SECRET = 'test-mcp-service-secret-at-least-32-bytes-long';
 
 let persistDirectory = '';
@@ -157,12 +159,15 @@ function cookieHeader(values: Map<string, string>, names?: string[]): string {
     .join('; ');
 }
 
+/* Her akış artık onayla başlıyor. Onaysız bir akış hiç kurulmuyor, o yüzden
+ * bunu varsayılan yapmak testleri gerçeğe yaklaştırıyor; onayın YOKLUĞUNU
+ * ölçen testler /v1/auth/github/start'ı kendileri çağırıyor. */
 async function startOAuth(
-  invitationToken?: string,
   now = NOW,
 ): Promise<{ state: string; oauthCookie: string }> {
   const response = await postJson('/v1/auth/github/start', {
-    ...(invitationToken ? { invitationToken } : {}),
+    acceptedTerms: true,
+    termsVersion: LEGAL_LAST_UPDATED,
   }, { origin: ORIGIN }, now);
   assert.equal(response.status, 201, await response.clone().text());
   const body = await response.json() as { authorizationUrl: string };
@@ -173,20 +178,31 @@ async function startOAuth(
   return { state, oauthCookie };
 }
 
+let callbackCount = 0;
+
 async function callback(
   code: 'owner' | 'selene' | 'mismatch' | 'renameBefore' | 'renameAfter'
-    | 'traced' | 'tracedUnverified' | 'tracedNoreply',
+    | 'traced' | 'tracedUnverified' | 'tracedNoreply' | `crowd-${number}`,
   flow: { state: string; oauthCookie: string },
   now = NOW + 1,
   ip?: string,
+  openRegistration?: 'true' | 'false',
 ): Promise<Response> {
   const headers: Record<string, string> = {
     cookie: `${OAUTH_COOKIE}=${encodeURIComponent(flow.oauthCookie)}`,
   };
+  if (openRegistration) headers['x-test-open-registration'] = openRegistration;
   /* Cloudflare bu başlığı kenarda kendisi yazar; testte onun yerine
-   * geçiyoruz. Varsayılanı boş bırakmak da kasıtlı: izsiz bir girişin de
-   * çalıştığını başka testlerin geçmesi zaten gösteriyor. */
-  if (ip) headers['cf-connecting-ip'] = ip;
+   * geçiyoruz.
+   *
+   * Varsayılan HER ÇAĞRIDA FARKLI bir adres, çünkü gerçekte farklı insanlar
+   * farklı bağlantılardan geliyor. Eskiden başlık hiç yazılmıyordu ve o
+   * hâlin "izsiz giriş" olduğunu sanıyordum; ölçünce görüldü ki yerel
+   * wrangler başlığı kendisi 127.0.0.1 olarak dolduruyor. Yani bütün test
+   * paketi tek bir bağlantıdan kayıt oluyormuş gibi görünüyordu ve kayıt
+   * hız tavanı geldiğinde alakasız testler düşmeye başladı. Tavanı gevşetmek
+   * yerine kurgu düzeltildi: paketin gerçeğe benzemesi gerekiyordu. */
+  headers['cf-connecting-ip'] = ip ?? `198.18.${Math.floor(callbackCount / 250) % 250}.${callbackCount++ % 250}`;
   return await request(`/v1/auth/github/callback?code=${code}&state=${encodeURIComponent(flow.state)}`, {
     headers,
   }, now);
@@ -302,7 +318,7 @@ let firstCredentialToken = '';
   }
 
   test('token families use a 128-bit selector and 256-bit secret', async () => {
-    for (const family of ['invitation', 'session', 'agent', 'registration', 'delegation'] as const) {
+    for (const family of ['session', 'agent', 'registration', 'delegation'] as const) {
       const generated = await createOpaqueToken(family, `${family}-pepper-at-least-32-random-bytes`);
       const parsed = parseOpaqueToken(generated.token);
       assert.equal(parsed?.family, family);
@@ -331,45 +347,29 @@ let firstCredentialToken = '';
     assert.equal(replay.status, 400);
   });
 
-  test('owner creates a bound invitation and secret is absent from list output', async () => {
-    const created = await postJson('/v1/admin/invitations', {
-      githubLogin: 'selene-owner',
-    }, authenticatedHeaders(ownerCookies, true), NOW + 10);
-    assert.equal(created.status, 201, await created.clone().text());
-    const body = await created.json() as { invitation: {
-      token: string;
-      id: string;
-      expectedGithubUserId: string;
-    } };
-    assert.ok(body.invitation.token.startsWith('orb_inv_v1_'));
-    assert.equal(body.invitation.expectedGithubUserId, '200000001');
-
-    const listed = await request('/v1/admin/invitations', {
-      headers: authenticatedHeaders(ownerCookies),
-    }, NOW + 11);
-    assert.equal(listed.status, 200);
-    const text = await listed.text();
-    assert.ok(!text.includes(body.invitation.token));
-    assert.ok(!text.includes('secretDigest'));
-
-    const registration = await callback('selene', await startOAuth(body.invitation.token, NOW + 12), NOW + 13);
+  /* Kayıt artık davetsiz. Eskiden burada bir davet üretilir, o davetle
+     kayıt olunur ve davetin listede sızmadığı ölçülürdü. Davet emekliye
+     ayrıldı; ölçülmesi gereken şey değişti: GitHub hesabı olan biri kendi
+     başına kayıt olabiliyor mu, doğru rolü ve ajan hakkını alıyor mu, ve
+     ikinci girişinde aynı hesaba mı düşüyor. */
+  test('anyone with a GitHub account registers themselves, lands as a member, and returns to the same account', async () => {
+    const registration = await callback('selene', await startOAuth(NOW + 12), NOW + 13);
     assert.equal(registration.status, 302, await registration.clone().text());
     sponsorCookies = cookieValues(registration);
     const me = await request('/v1/me', {
       headers: authenticatedHeaders(sponsorCookies),
     }, NOW + 14);
-    const sponsor = await me.json() as { account: { handle: string; roles: string[]; agentQuota: number } };
+    const sponsor = await me.json() as { account: { id: string; handle: string; roles: string[]; agentQuota: number } };
     assert.equal(sponsor.account.handle, 'selene-owner');
-    assert.deepEqual(sponsor.account.roles, ['member']);
-    assert.equal(sponsor.account.agentQuota, 1);
+    assert.deepEqual(sponsor.account.roles, ['member'], 'kendi kaydolan biri fazladan yetki almış');
+    assert.equal(sponsor.account.agentQuota, DEFAULT_AGENT_QUOTA);
 
-    const replay = await callback('selene', await startOAuth(undefined, NOW + 15), NOW + 16);
-    assert.equal(replay.status, 302, 'returning sponsor may log in without another invitation');
-
-    const reused = await postJson('/v1/auth/github/start', {
-      invitationToken: body.invitation.token,
-    }, { origin: ORIGIN }, NOW + 17);
-    assert.equal(reused.status, 400);
+    const replay = await callback('selene', await startOAuth(NOW + 15), NOW + 16);
+    assert.equal(replay.status, 302, 'dönen kullanıcı tekrar giremiyor');
+    const again = await (await request('/v1/me', {
+      headers: authenticatedHeaders(cookieValues(replay)),
+    }, NOW + 17)).json() as { account: { id: string } };
+    assert.equal(again.account.id, sponsor.account.id, 'ikinci giriş ikinci bir hesap açmış');
   });
 
   test('a GitHub rename reaches the dashboard on the next login', async () => {
@@ -379,10 +379,8 @@ let firstCredentialToken = '';
      * kendi tanımlayıcısı. Dashboard bir zamanlar onu "GitHub hesabın" diye
      * gösteriyordu, bu yüzden yeniden adlandırma hiç görünmüyordu.
      * Gösterilmesi gereken, her girişte tazelenen `githubLogin`. */
-    const created = await postJson('/v1/admin/invitations', {}, authenticatedHeaders(ownerCookies, true), NOW + 60);
-    const invitation = await created.json() as { invitation: { token: string } };
 
-    const registration = await callback('renameBefore', await startOAuth(invitation.invitation.token, NOW + 61), NOW + 62);
+    const registration = await callback('renameBefore', await startOAuth(NOW + 61), NOW + 62);
     assert.equal(registration.status, 302, await registration.clone().text());
     const firstCookies = cookieValues(registration);
     const before = await (await request('/v1/me', {
@@ -392,7 +390,7 @@ let firstCredentialToken = '';
     assert.equal(before.account.githubLogin, 'eski-kullanici');
 
     // İnsan GitHub'da adını değiştirdi ve tekrar giriş yaptı.
-    const relogin = await callback('renameAfter', await startOAuth(undefined, NOW + 64), NOW + 65);
+    const relogin = await callback('renameAfter', await startOAuth(NOW + 64), NOW + 65);
     assert.equal(relogin.status, 302, await relogin.clone().text());
     const secondCookies = cookieValues(relogin);
     const after = await (await request('/v1/me', {
@@ -415,18 +413,16 @@ let firstCredentialToken = '';
      * bağlayabilmek. Yalnız kayıt anını tutmak yetmezdi: CGNAT arkasındaki
      * tek gözlem aboneyi daraltmayabilir ve Cloudflare bize kaynak portu
      * vermiyor. Cevap çokluk — o yüzden burada iki ayrı giriş ölçülüyor. */
-    const created = await postJson('/v1/admin/invitations', {}, authenticatedHeaders(ownerCookies, true), NOW + 200);
-    const invitation = await created.json() as { invitation: { token: string } };
 
     const registration = await callback(
       'traced',
-      await startOAuth(invitation.invitation.token, NOW + 201),
+      await startOAuth(NOW + 201),
       NOW + 202,
       '203.0.113.7',
     );
     assert.equal(registration.status, 302, await registration.clone().text());
 
-    const relogin = await callback('traced', await startOAuth(undefined, NOW + 203), NOW + 204, '198.51.100.22');
+    const relogin = await callback('traced', await startOAuth(NOW + 203), NOW + 204, '198.51.100.22');
     assert.equal(relogin.status, 302, await relogin.clone().text());
 
     const rows = queryDatabase<{ event_type: string; ip: string | null; created_at: number }>(`
@@ -474,11 +470,9 @@ let firstCredentialToken = '';
     /* Adres yalnız hizmet bildirimi için: hesap, güvenlik, moderasyon,
      * yasal bildirim ve platform duyurusu. Doğrulanmamış bir adrese yazmak
      * başkasının kutusuna yazmak riskini taşıdığı için verified şartı var. */
-    const created = await postJson('/v1/admin/invitations', {}, authenticatedHeaders(ownerCookies, true), NOW + 220);
-    const invitation = await created.json() as { invitation: { token: string } };
     const unverified = await callback(
       'tracedUnverified',
-      await startOAuth(invitation.invitation.token, NOW + 221),
+      await startOAuth(NOW + 221),
       NOW + 222,
     );
     assert.equal(unverified.status, 302, await unverified.clone().text());
@@ -502,7 +496,7 @@ let firstCredentialToken = '';
      * kanalı sessizce yok ederdi. Owner profilinin adresi var, ama
      * `mismatch` profilinin hiç yok — burada ölçülen, izli hesabın
      * adresinin ikinci girişten sonra da yerinde durması. */
-    const relogin = await callback('traced', await startOAuth(undefined, NOW + 223), NOW + 224);
+    const relogin = await callback('traced', await startOAuth(NOW + 223), NOW + 224);
     assert.equal(relogin.status, 302);
     const afterRelogin = queryDatabase<{ provider_email_snapshot: string | null }>(
       "SELECT provider_email_snapshot FROM auth_identities WHERE provider_user_id = '200000004'",
@@ -517,11 +511,9 @@ let firstCredentialToken = '';
      * ulaşabildiğimizi sandığımız ama ulaşamadığımız bir adres olur ve
      * geri dönen her gönderim, gerçek adresi olan kullanıcılara ulaşma
      * ihtimalimizi de düşürür. */
-    const created = await postJson('/v1/admin/invitations', {}, authenticatedHeaders(ownerCookies, true), NOW + 230);
-    const invitation = await created.json() as { invitation: { token: string } };
     const registration = await callback(
       'tracedNoreply',
-      await startOAuth(invitation.invitation.token, NOW + 231),
+      await startOAuth(NOW + 231),
       NOW + 232,
     );
     assert.equal(registration.status, 302, await registration.clone().text());
@@ -536,107 +528,21 @@ let firstCredentialToken = '';
     );
   });
 
-  test('ordinary sponsors cannot create platform invitations', async () => {
-    const response = await postJson(
-      '/v1/admin/invitations',
-      {},
-      authenticatedHeaders(sponsorCookies, true),
-      NOW + 18,
-    );
-    assert.equal(response.status, 403);
-  });
-
-  test('bound invitation rejects a different GitHub identity without consuming it', async () => {
-    const created = await postJson('/v1/admin/invitations', {
-      githubLogin: 'selene-owner',
-    }, authenticatedHeaders(ownerCookies, true), NOW + 20);
-    const body = await created.json() as { invitation: { token: string; id: string } };
-    const failed = await callback('mismatch', await startOAuth(body.invitation.token, NOW + 21), NOW + 22);
-    assert.equal(failed.status, 403, await failed.clone().text());
-    const state = await postJson('/__test/state', {
-      githubUserId: '200000002',
-      invitationId: body.invitation.id,
-    }, {}, NOW + 23);
-    const snapshot = await state.json() as {
-      account: unknown;
-      invitation: { redeemed_at: number | null; revoked_at: number | null };
-    };
-    assert.equal(snapshot.account, null);
-    assert.equal(snapshot.invitation.redeemed_at, null);
-    assert.equal(snapshot.invitation.revoked_at, null);
-  });
-
-  test('an unbound invitation is claimed once by the first successful GitHub identity', async () => {
-    const created = await postJson('/v1/admin/invitations', {}, authenticatedHeaders(ownerCookies, true), NOW + 24);
-    const body = await created.json() as { invitation: { token: string; id: string } };
-    const registration = await callback('mismatch', await startOAuth(body.invitation.token, NOW + 25), NOW + 26);
-    assert.equal(registration.status, 302, await registration.clone().text());
-    const state = await postJson('/__test/state', {
-      githubUserId: '200000002',
-      invitationId: body.invitation.id,
-    }, {}, NOW + 27);
-    const snapshot = await state.json() as {
-      account: { status: string };
-      invitation: { redeemed_at: number | null };
-    };
-    assert.equal(snapshot.account.status, 'active');
-    assert.equal(snapshot.invitation.redeemed_at, NOW + 26);
-
-    const reused = await postJson('/v1/auth/github/start', {
-      invitationToken: body.invitation.token,
-    }, { origin: ORIGIN }, NOW + 28);
-    assert.equal(reused.status, 400);
-  });
-
-  test('expired and revoked invitations are rejected before OAuth redirect', async () => {
-    const expired = await createOpaqueToken('invitation', INVITATION_PEPPER);
-    await postJson('/__test/seed-invitation', {
-      id: expired.selector,
-      digest: expired.digest,
-      expiresAt: NOW - 1,
-    }, {}, NOW - 1000);
-    const expiredStart = await postJson('/v1/auth/github/start', {
-      invitationToken: expired.token,
-    }, { origin: ORIGIN }, NOW);
-    assert.equal(expiredStart.status, 400);
-
-    const created = await postJson('/v1/admin/invitations', {}, authenticatedHeaders(ownerCookies, true), NOW + 30);
-    const body = await created.json() as { invitation: { token: string; id: string } };
-    const revoked = await postJson(
-      `/v1/admin/invitations/${body.invitation.id}/revoke`,
-      {},
-      authenticatedHeaders(ownerCookies, true),
-      NOW + 31,
-    );
-    assert.equal(revoked.status, 200, await revoked.clone().text());
-    const revokedStart = await postJson('/v1/auth/github/start', {
-      invitationToken: body.invitation.token,
-    }, { origin: ORIGIN }, NOW + 32);
-    assert.equal(revokedStart.status, 400);
-    const secondRevoke = await postJson(
-      `/v1/admin/invitations/${body.invitation.id}/revoke`,
-      {},
-      authenticatedHeaders(ownerCookies, true),
-      NOW + 33,
-    );
-    assert.equal(secondRevoke.status, 409);
-  });
-
   test('OAuth state and PKCE browser binding expire after ten minutes', async () => {
-    const flow = await startOAuth(undefined, NOW + 35);
+    const flow = await startOAuth(NOW + 35);
     const expired = await callback('owner', flow, NOW + 35 + 10 * 60 * 1000);
     assert.equal(expired.status, 400);
   });
 
   test('tampered OAuth state and browser binding are rejected', async () => {
-    const stateFlow = await startOAuth(undefined, NOW + 36);
+    const stateFlow = await startOAuth(NOW + 36);
     const tamperedState = {
       ...stateFlow,
       state: `${stateFlow.state.slice(0, -1)}${stateFlow.state.endsWith('A') ? 'B' : 'A'}`,
     };
     assert.equal((await callback('owner', tamperedState, NOW + 37)).status, 400);
 
-    const cookieFlow = await startOAuth(undefined, NOW + 38);
+    const cookieFlow = await startOAuth(NOW + 38);
     const tamperedCookie = {
       ...cookieFlow,
       oauthCookie: `${cookieFlow.oauthCookie.slice(0, -1)}${cookieFlow.oauthCookie.endsWith('A') ? 'B' : 'A'}`,
@@ -1578,7 +1484,7 @@ let firstCredentialToken = '';
   });
 
   test('another sponsor cannot inspect or mutate a foreign agent', async () => {
-    const login = await callback('mismatch', await startOAuth(undefined, NOW + 49), NOW + 50);
+    const login = await callback('mismatch', await startOAuth(NOW + 49), NOW + 50);
     assert.equal(login.status, 302);
     otherSponsorCookies = cookieValues(login);
 
@@ -1857,7 +1763,7 @@ let firstCredentialToken = '';
   });
 
   test('CSRF and exact Origin are mandatory and logout revokes immediately', async () => {
-    const flow = await startOAuth(undefined, NOW + 40);
+    const flow = await startOAuth(NOW + 40);
     const login = await callback('owner', flow, NOW + 41);
     const cookies = cookieValues(login);
 
@@ -1879,7 +1785,7 @@ let firstCredentialToken = '';
   });
 
   test('session activity writes at most once per 15-minute bucket', async () => {
-    const login = await callback('owner', await startOAuth(undefined, NOW + 50), NOW + 51);
+    const login = await callback('owner', await startOAuth(NOW + 50), NOW + 51);
     const cookies = cookieValues(login);
     const parsed = parseOpaqueToken(cookies.get(SESSION_COOKIE) ?? '');
     assert.ok(parsed);
@@ -1958,6 +1864,166 @@ let firstCredentialToken = '';
       queryDatabase<{ total: number }>('SELECT COUNT(*) AS total FROM account_sign_in_events')[0].total,
       0,
       'bir yılı geçen giriş izi hâlâ duruyor',
+    );
+  });
+
+  /* Paketin başındaki `ownerCookies` bu noktada artık geçerli değil: çıkış
+   * testi o oturumu bilerek iptal ediyor. Buradaki testler kendi taze
+   * oturumunu açıyor — bir öncekinin artığına yaslanmak, sıraları değiştiği
+   * gün sessizce bozulacak bir bağımlılık olurdu. */
+  async function ownerSession(now: number): Promise<Map<string, string>> {
+    const response = await callback('owner', await startOAuth(now - 1), now);
+    assert.equal(response.status, 302, await response.clone().text());
+    return cookieValues(response);
+  }
+
+  /* Kayıt hız tavanı. Bu testler davet kapısı KAPALIYKEN de anlamlı, ama asıl
+   * sebepleri kapının açılacağı gün: o gün kayıt hacmini bir insanın kararı
+   * değil internet belirleyecek. */
+  test('one connection can open a handful of accounts, then the door closes for that connection only', async () => {
+    const BUSY = '203.0.113.90';
+    for (let index = 0; index < REGISTRATION_IP_MAX; index += 1) {
+      const opened = await callback(
+        `crowd-${index}`,
+        await startOAuth(NOW + 400 + index * 2),
+        NOW + 401 + index * 2,
+        BUSY,
+        'true',
+      );
+      assert.equal(opened.status, 302, `${index + 1}. kayıt reddedildi: ${await opened.clone().text()}`);
+    }
+
+    const blocked = await callback(
+      `crowd-${REGISTRATION_IP_MAX}`,
+      await startOAuth(NOW + 440),
+      NOW + 441,
+      BUSY,
+      'true',
+    );
+    assert.equal(blocked.status, 429, 'aynı bağlantı tavandan sonra da hesap açabiliyor');
+    const page = await blocked.text();
+    /* Cevap bir tarayıcıya gidiyor. JSON dönmek, giriş yapmaya çalışan
+       birine süslü parantezler göstermek olurdu. */
+    assert.match(blocked.headers.get('content-type') ?? '', /text\/html/u);
+    assert.match(page, /Şu an yeni kayıt alamıyoruz/u, 'insana bakan bir hata sayfası dönmüyor');
+    assert.equal(blocked.headers.get('cache-control'), 'no-store', 'geçici bir engel önbelleğe giriyor');
+
+    /* Tavan BAĞLANTIYA ait, platforma değil. Bu satır olmasaydı, herkesin
+       kaydını kapatan bir tavanı yanlışlıkla kurmuş olabilirdim ve testler
+       yine yeşil görünürdü. */
+    const elsewhere = await callback(
+      `crowd-${REGISTRATION_IP_MAX + 1}`,
+      await startOAuth(NOW + 450),
+      NOW + 451,
+      '203.0.113.91',
+      'true',
+    );
+    assert.equal(elsewhere.status, 302, 'bir bağlantının tavanı başka bağlantıyı da kapatmış');
+
+  });
+
+  /* Kayıt freni. Davet sistemi kalktı ve geriye tek bir anahtar kaldı: bir
+     kötüye kullanım dalgasında yeni kayıtları tamamen durdurabilmek.
+     Kapatmanın mevcut hesapların girişini etkilememesi de aynı derecede
+     önemli — kapıyı kapatmak, içeridekileri dışarı atmak değil. */
+  test('the registration brake stops new accounts without locking out the people already inside', async () => {
+    const closed = await callback(
+      'crowd-40',
+      await startOAuth(NOW + 500),
+      NOW + 501,
+      '203.0.113.100',
+      'false',
+    );
+    assert.equal(closed.status, 403, 'fren çekiliyken yeni kayıt geçmiş');
+    assert.match(await closed.text(), /Yeni kayıtlar geçici olarak durduruldu/u);
+
+    const opened = await callback(
+      'crowd-40',
+      await startOAuth(NOW + 502),
+      NOW + 503,
+      '203.0.113.100',
+      'true',
+    );
+    assert.equal(opened.status, 302, `fren açıkken kayıt reddedildi: ${await opened.clone().text()}`);
+
+    const me = await (await request('/v1/me', {
+      headers: authenticatedHeaders(cookieValues(opened)),
+    }, NOW + 504)).json() as { account: { id: string; agentQuota: number } };
+    assert.equal(me.account.agentQuota, DEFAULT_AGENT_QUOTA, 'kayıt varsayılan ajan hakkını almamış');
+
+    /* Fren yalnız YENİ hesabı durduruyor. Az önce açılan hesap, fren geri
+       çekildiğinde de girebilmeli. */
+    const returning = await callback(
+      'crowd-40',
+      await startOAuth(NOW + 505),
+      NOW + 506,
+      '203.0.113.100',
+      'false',
+    );
+    assert.equal(returning.status, 302, 'fren mevcut hesabın girişini de kapatmış');
+  });
+
+  /* Sözleşme onayı. Kutu tarayıcıda; kapı sunucuda. Bu testler ikisinin
+     birbirine bağlı olduğunu değil, KAPININ tek başına tuttuğunu ölçüyor —
+     tarayıcıyı atlayan bir istekle. */
+  test('no consent, no sign-in: the door refuses before GitHub is ever contacted', async () => {
+    const unchecked = await postJson('/v1/auth/github/start', {}, { origin: ORIGIN }, NOW + 520);
+    assert.equal(unchecked.status, 400, 'onaysız akış kurulabiliyor');
+    assert.equal(
+      (await unchecked.json() as { error: { code: string } }).error.code,
+      'terms_not_accepted',
+    );
+
+    const refused = await postJson('/v1/auth/github/start', {
+      acceptedTerms: false,
+      termsVersion: LEGAL_LAST_UPDATED,
+    }, { origin: ORIGIN }, NOW + 521);
+    assert.equal(refused.status, 400, 'açıkça reddedilen onay kabul edilmiş');
+
+    /* Eski bir sürümü onaylamak da geçmiyor. Sayfa saatlerdir açık durup
+       metin bu arada değişmiş olabilir; kişinin ekranında gördüğü metin ile
+       kaydettiğimiz sürüm aynı olmak zorunda. */
+    const stale = await postJson('/v1/auth/github/start', {
+      acceptedTerms: true,
+      termsVersion: '2020-01-01',
+    }, { origin: ORIGIN }, NOW + 522);
+    assert.equal(stale.status, 409, 'eski sürüm onayı kabul edilmiş');
+  });
+
+  test('consent is written on registration and refreshed on every later sign-in', async () => {
+    const registration = await callback(
+      'crowd-50',
+      await startOAuth(NOW + 530),
+      NOW + 531,
+      '203.0.113.120',
+      'true',
+    );
+    assert.equal(registration.status, 302, await registration.clone().text());
+    const me = await (await request('/v1/me', {
+      headers: authenticatedHeaders(cookieValues(registration)),
+    }, NOW + 532)).json() as { account: { id: string } };
+
+    const first = queryDatabase<{ terms_accepted_at: number | null; terms_version: string | null }>(
+      `SELECT terms_accepted_at, terms_version FROM accounts WHERE id = '${me.account.id}'`,
+    )[0];
+    assert.equal(first.terms_accepted_at, NOW + 530, 'kayıt anındaki onay yazılmamış');
+    assert.equal(first.terms_version, LEGAL_LAST_UPDATED, 'onaylanan metnin sürümü yazılmamış');
+
+    const relogin = await callback(
+      'crowd-50',
+      await startOAuth(NOW + 540),
+      NOW + 541,
+      '203.0.113.120',
+      'true',
+    );
+    assert.equal(relogin.status, 302, await relogin.clone().text());
+    const second = queryDatabase<{ terms_accepted_at: number | null }>(
+      `SELECT terms_accepted_at FROM accounts WHERE id = '${me.account.id}'`,
+    )[0];
+    assert.equal(
+      second.terms_accepted_at,
+      NOW + 540,
+      'sonraki girişte onay tazelenmemiş: kayıt "bir zamanlar kabul etmişti" demeye devam ediyor',
     );
   });
 });

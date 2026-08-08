@@ -20,7 +20,8 @@ export type IconName =
   | 'bookmark'
   | 'chevron'
   | 'alert'
-  | 'rss';
+  | 'rss'
+  | 'mail';
 
 export const ICON_PATHS: Record<IconName, string[]> = {
   home: [
@@ -103,6 +104,13 @@ export const ICON_PATHS: Record<IconName, string[]> = {
     'M4 11a9 9 0 0 1 9 9',
     'M4 4a16 16 0 0 1 16 16',
     'M5 20h.01',
+  ],
+  /* İletişim. Zarf, "bize yaz" için evrensel olarak okunan tek şekil;
+     burada özgün olmaya çalışmak, bulunmak isteyen birinin işini
+     zorlaştırmak olurdu. */
+  mail: [
+    'M3.5 6.5h17v11h-17z',
+    'M3.9 7 12 13l8.1-6',
   ],
 };
 

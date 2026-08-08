@@ -34,6 +34,41 @@ export const EMAIL_MAX_ATTEMPTS = 5;
  * sebebi zaten bu — hiçbir tur her şeyi göndermek zorunda değil. */
 export const EMAIL_DRAIN_BATCH = 20;
 
+/* Yirmi dört saatte kaç deneme yapılabileceği.
+ *
+ * Sağlayıcının ücretsiz katmanı günde 100 veriyor. Doksan seçildi çünkü
+ * bizim saydığımızla onun saydığı asla birebir aynı olmayacak: kenarda
+ * düşen bir istek bize hata döner ama ona bir deneme olarak yazılmış
+ * olabilir. Aradaki on, o farkın payı.
+ *
+ * Aylık sınır (3000) ayrıca kontrol edilmiyor ve buna gerek yok: 90 × 31 =
+ * 2790, yani günlük tavana uyan bir sistem aylık tavanı zaten aşamıyor. İki
+ * sayaç yerine bir sayaç tutmak, ikisinin birbirinden kayma ihtimalini de
+ * ortadan kaldırıyor.
+ *
+ * Tavana çarpıldığında kuyruk boşalmıyor ama satırlar duruyor: bütçe
+ * yenilendiğinde sıradaki tur kaldığı yerden devam ediyor. Hiçbir posta
+ * bütçe yüzünden SİLİNMİYOR — geciken bir bildirim, kaybolan bir
+ * bildirimden başka bir şey. */
+export const EMAIL_DAILY_BUDGET = 90;
+export const EMAIL_BUDGET_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/* Tek bir duyurunun kaç kişiye postalanabileceği.
+ *
+ * Günlük bütçenin tamamı değil. Bir duyuru bütçeyi doldurursa aynı gün
+ * çıkması gereken bir moderasyon veya güvenlik bildirimi ertesi güne kalır;
+ * kalan otuz o bildirimlerin payı.
+ *
+ * Bu sayının aşılması bir arıza değil, bir eşik: alıcı sayısı buraya
+ * dayandığında yapılacak şey tavanı yükseltmek değil, gönderim planına para
+ * ödemek. Hata mesajı bunu böyle söylüyor — çünkü ben o anda orada
+ * olmayabilirim ve mesajı okuyan kişi ne yapacağını bilmeli.
+ *
+ * Duyuru postalanamadığında duyurunun kendisi yine yayımlanabiliyor:
+ * /duyurular sayfası ve ana sayfa şeridi bütçeden bağımsız. Kapanan tek şey
+ * postayla haber verme. */
+export const ANNOUNCEMENT_RECIPIENT_CAP = 60;
+
 export class D1NotificationRepository {
   readonly #db: D1DatabaseLike;
 
@@ -126,12 +161,47 @@ export class D1NotificationRepository {
     return row ? { accountId: row.account_id, agentHandle: row.handle, email: row.email } : null;
   }
 
+  /* Son penceredeki deneme sayısı. Gönderilenleri değil DENENENLERİ sayıyor:
+   * başarısız bir deneme de sağlayıcının kotasından düşüyor, ve kotayı asıl
+   * tüketen şey zaten ısrarla yeniden denenen bir satır olabilir. */
+  async countAttemptsSince(since: number): Promise<number> {
+    const row = await this.#db.prepare(`
+      SELECT COUNT(*) AS total FROM email_deliveries WHERE last_attempt_at >= ?
+    `).bind(since).first<{ total: number }>();
+    return row?.total ?? 0;
+  }
+
+  /* Bir duyuru şu an kaç kişiye gider. Sorgu, postaları gerçekten yazan
+   * announcementRecipientsStatement ile AYNI koşulları taşımak zorunda:
+   * önizlemenin gerçekten gönderilecek sayıdan farklı olması, kotayı
+   * koruyalım derken yanlış sayıya bakmak olurdu. Bir test ikisini
+   * karşılaştırıyor. */
+  async countAnnouncementRecipients(): Promise<number> {
+    const row = await this.#db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM accounts a
+      JOIN auth_identities i ON i.account_id = a.id
+      WHERE a.status = 'active'
+        AND a.announcement_emails_enabled = 1
+        AND i.provider_email_snapshot IS NOT NULL
+    `).first<{ total: number }>();
+    return row?.total ?? 0;
+  }
+
+  /* Bekleyenler, önce türüne sonra yaşına göre.
+   *
+   * Sıra türden başlıyor çünkü bütçe sonlu: kuyrukta elli duyuru postası
+   * varken araya giren bir güvenlik bildiriminin onların arkasında
+   * beklemesi, en çok önemsediğimiz postayı en çok geciktirmek olurdu.
+   * Duyuru gecikebilir; hesabıyla ilgili bir karar gecikemez. */
   async listPending(limit: number): Promise<PendingEmail[]> {
     const result = await this.#db.prepare(`
       SELECT id, recipient, kind, subject, body_text, attempts
       FROM email_deliveries
       WHERE status = 'pending'
-      ORDER BY created_at ASC
+      ORDER BY
+        CASE kind WHEN 'security' THEN 0 WHEN 'moderation' THEN 1 ELSE 2 END,
+        created_at ASC
       LIMIT ?
     `).bind(limit).all<{
       id: string; recipient: string; kind: EmailKind;
@@ -150,19 +220,21 @@ export class D1NotificationRepository {
   async markSent(id: string, now: number): Promise<void> {
     await this.#db.prepare(`
       UPDATE email_deliveries
-      SET status = 'sent', attempts = attempts + 1, sent_at = ?, last_error = NULL
+      SET status = 'sent', attempts = attempts + 1, sent_at = ?, last_attempt_at = ?,
+          last_error = NULL
       WHERE id = ? AND status = 'pending'
-    `).bind(now, id).run();
+    `).bind(now, now, id).run();
   }
 
   /* Kalıcı hatada satır 'failed' olur ve bir daha denenmez. Geçici hatada
    * deneme sayısı artar; tavana ulaşınca yine 'failed'. Sonsuza kadar
    * bekleyen bir satır, kuyruğu her turda meşgul eder ve gerçekten
    * gönderilebilecek postaları geciktirir. */
-  async markAttemptFailed(id: string, error: string, permanent: boolean): Promise<void> {
+  async markAttemptFailed(id: string, error: string, permanent: boolean, now: number): Promise<void> {
     await this.#db.prepare(`
       UPDATE email_deliveries
       SET attempts = attempts + 1,
+          last_attempt_at = ?,
           last_error = ?,
           status = CASE
             WHEN ? = 1 THEN 'failed'
@@ -170,7 +242,7 @@ export class D1NotificationRepository {
             ELSE 'pending'
           END
       WHERE id = ? AND status = 'pending'
-    `).bind(error.slice(0, 300), permanent ? 1 : 0, EMAIL_MAX_ATTEMPTS, id).run();
+    `).bind(now, error.slice(0, 300), permanent ? 1 : 0, EMAIL_MAX_ATTEMPTS, id).run();
   }
 
   async setAnnouncementEmailsEnabled(accountId: string, enabled: boolean): Promise<void> {

@@ -9,6 +9,7 @@ import { enforceBackupRetention, runR2Backup } from '../src/server/backup/r2-bac
 import type { R2BucketLike, R2ObjectBodyLike, R2ObjectLike } from '../src/server/identity/bindings';
 import { handleWorkerRequest } from '../src/worker';
 import { cleanupMedia } from '../src/server/media/media-service';
+import { drainEmailQueue } from '../src/server/notifications/drain';
 import { D1MediaRepository } from '../src/server/repositories/d1/d1-media-repository';
 
 interface TestStatement {
@@ -157,17 +158,33 @@ class MemoryR2 implements R2BucketLike {
 
 const mediaBucket = new MemoryR2();
 
+/* Kayıt hız tavanını ölçmek için bir avuç birbirinden farklı GitHub kimliği
+ * gerekiyor; her birini elle yazmak, sayı değişince güncellenmesi gereken
+ * bir liste demekti. `crowd-<n>` kodları anında üretiliyor ve numaraları
+ * elle yazılmış profillerin aralığından uzak duruyor. */
+function crowdProfile(key: string) {
+  const match = /^crowd-(\d{1,3})$/u.exec(key);
+  if (!match) return null;
+  const index = Number(match[1]);
+  return {
+    id: 300000000 + index,
+    login: `kalabalik-${index}`,
+    name: `Kalabalık ${index}`,
+    avatar_url: null,
+  };
+}
+
 function profileForToken(token: string | null) {
   if (!token?.startsWith('Bearer test-token-')) return null;
-  const key = token.slice('Bearer test-token-'.length) as keyof typeof PROFILES;
-  return PROFILES[key] ?? null;
+  const key = token.slice('Bearer test-token-'.length);
+  return PROFILES[key as keyof typeof PROFILES] ?? crowdProfile(key);
 }
 
 async function mockGithubFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input : input.url);
   if (url.href === 'https://github.com/login/oauth/access_token') {
     const body = JSON.parse(String(init?.body ?? '{}')) as { code?: string };
-    if (!body.code || !(body.code in PROFILES)) {
+    if (!body.code || (!(body.code in PROFILES) && !crowdProfile(body.code))) {
       return Response.json({ error: 'bad_verification_code' }, { status: 400 });
     }
     return Response.json({ access_token: `test-token-${body.code}`, token_type: 'bearer' });
@@ -204,41 +221,15 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     : {};
   const now = Number(request.headers.get('x-test-now') ?? Date.now());
 
-  if (url.pathname === '/__test/seed-invitation') {
-    const id = String(body.id);
-    await env.DB.prepare(`
-      INSERT INTO invitations (
-        id, secret_digest, hash_version, expected_github_user_id,
-        expected_github_login_snapshot, agent_quota,
-        created_by_account_id, created_at, expires_at, revoked_at
-      ) VALUES (?, ?, 1, ?, ?, 1,
-        '019f64d2-0109-7644-9a4e-a0d25df888e2', ?, ?, ?)
-    `).bind(
-      id,
-      String(body.digest),
-      body.expectedGithubUserId ?? null,
-      body.expectedGithubLogin ?? null,
-      now,
-      Number(body.expiresAt),
-      body.revokedAt ?? null,
-    ).run();
-    return Response.json({ ok: true });
-  }
-
   if (url.pathname === '/__test/state') {
     const githubUserId = String(body.githubUserId ?? '');
-    const invitationId = String(body.invitationId ?? '');
+
     const account = githubUserId
       ? await env.DB.prepare(`
         SELECT a.id, a.status
         FROM auth_identities ai JOIN accounts a ON a.id = ai.account_id
         WHERE ai.provider_user_id = ?
       `).bind(githubUserId).first()
-      : null;
-    const invitation = invitationId
-      ? await env.DB.prepare(`
-        SELECT redeemed_at, revoked_at FROM invitations WHERE id = ?
-      `).bind(invitationId).first()
       : null;
     const counts = await env.DB.prepare(`
       SELECT
@@ -247,7 +238,7 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
         (SELECT COUNT(*) FROM idempotency_keys) AS idempotency_keys,
         (SELECT COUNT(*) FROM audit_events) AS audit_events
     `).first();
-    return Response.json({ account, invitation, counts });
+    return Response.json({ account, counts });
   }
 
   if (url.pathname === '/__test/session') {
@@ -804,6 +795,105 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     return Response.json({ ok: true });
   }
 
+  /* Duyuru alıcı tavanını ölçmek için kalabalık bir abone listesi. Tavan
+   * altmış kişi; onu elle altmış bir hesap yazarak sınamak, sayı değiştiği
+   * gün güncellenmesi gereken bir fikstür demekti. */
+  if (url.pathname === '/__test/seed-email-recipients') {
+    const count = Number(body.count ?? 0);
+    const pool = Number(body.pool ?? 61);
+    /* Hesaplar silinmiyor, sadece susturuluyor. Silmek denendi ve olmadı:
+     * hesap açılışı bir tetikleyiciyle avatar yükleme politikası yazıyor ve
+     * başka bir tetikleyici o politikanın silinmesini yasaklıyor. Yani
+     * fikstür havuzu bir kez kuruluyor, testler yalnız kimin duyuru postası
+     * aldığını değiştiriyor — zaten ölçtüğümüz şey de bu. */
+    const statements = [
+      env.DB.prepare('DELETE FROM email_deliveries'),
+      env.DB.prepare('UPDATE accounts SET announcement_emails_enabled = 0'),
+    ];
+    for (let index = 0; index < pool; index += 1) {
+      const id = `bulk-${index}`;
+      statements.push(env.DB.prepare(`
+        INSERT INTO accounts (
+          id, handle, handle_normalized, display_name, avatar_url,
+          status, created_at, updated_at, last_login_at, announcement_emails_enabled
+        ) VALUES (?, ?, ?, ?, NULL, 'active', ?, ?, ?, 0)
+        ON CONFLICT (id) DO NOTHING
+      `).bind(id, id, id, id, now, now, now));
+      statements.push(env.DB.prepare(`
+        INSERT INTO auth_identities (
+          id, account_id, provider, provider_user_id,
+          provider_login_snapshot, provider_email_snapshot, created_at, last_seen_at
+        ) VALUES (?, ?, 'github', ?, ?, ?, ?, ?)
+        ON CONFLICT (account_id, provider) DO UPDATE SET
+          provider_email_snapshot = excluded.provider_email_snapshot
+      `).bind(`ident-${id}`, id, `8000${String(index).padStart(5, '0')}`, id, `${id}@example.test`, now, now));
+    }
+    await env.DB.batch(statements);
+    /* Havuzun `count` kadarı postayı alıyor, kalanı almıyor. count 0 ise
+     * fikstür bırakılıyor demektir: fikstür hesapları susuyor, gerçek
+     * hesaplar varsayılan hâline (açık) dönüyor. Bunu yapmazsak sonraki
+     * testler, duyuru postalarını kimin kapattığını bilmeyen bir dünyada
+     * çalışırdı. */
+    await env.DB.prepare(
+      count > 0
+        ? `UPDATE accounts SET announcement_emails_enabled = 1
+           WHERE id IN (SELECT id FROM accounts WHERE id LIKE 'bulk-%' ORDER BY id LIMIT ?)`
+        : `UPDATE accounts SET announcement_emails_enabled = 1
+           WHERE id NOT LIKE 'bulk-%' AND ? IS NOT NULL`,
+    ).bind(count).run();
+    return Response.json({ seeded: count });
+  }
+
+  /* Kuyruğu sahte bir göndericiyle boşaltır ve KİMİN hangi sırayla
+   * denendiğini geri verir. Sıra testin asıl konusu: bütçe sonluyken hangi
+   * postanın önce gittiği, bütçenin kendisi kadar önemli. */
+  if (url.pathname === '/__test/email-drain') {
+    const attempted: Array<{ to: string; subject: string }> = [];
+    const result = await drainEmailQueue(env, now, {
+      async send(message) {
+        attempted.push({ to: message.to, subject: message.subject });
+        return { outcome: 'sent' };
+      },
+    });
+    return Response.json({ result, attempted });
+  }
+
+  /* Kuyruğa elle bir posta yazar. Sıra testinin ihtiyacı bu: bir güvenlik
+   * bildirimini duyurulardan SONRA yazabilmek, yani yaşça en geride ama
+   * türce en önde bir satır kurabilmek. */
+  if (url.pathname === '/__test/queue-email') {
+    await env.DB.prepare(`
+      INSERT INTO email_deliveries (
+        id, account_id, recipient, kind, subject, body_text,
+        status, attempts, created_at, subject_ref
+      ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)
+    `).bind(
+      String(body.id), String(body.accountId), String(body.recipient), String(body.kind),
+      String(body.subject), 'govde', Number(body.createdAt ?? now), String(body.id),
+    ).run();
+    return Response.json({ ok: true });
+  }
+
+  /* Bütçeyi doldurulmuş göstermek. Gerçekten doksan posta göndermek yerine
+   * denenmiş satırlar yazıyoruz: ölçülen şey sayacın kendisi. */
+  if (url.pathname === '/__test/spend-email-budget') {
+    const count = Number(body.count ?? 0);
+    const statements = [];
+    for (let index = 0; index < count; index += 1) {
+      statements.push(env.DB.prepare(`
+        INSERT INTO email_deliveries (
+          id, account_id, recipient, kind, subject, body_text,
+          status, attempts, created_at, sent_at, last_attempt_at, subject_ref
+        ) VALUES (?, ?, ?, 'announcement', 'gecmis', 'gecmis', 'sent', 1, ?, ?, ?, ?)
+      `).bind(
+        `spent-${index}`, String(body.accountId), 'gecmis@example.test',
+        now - 1000, now - 1000, Number(body.attemptedAt ?? now - 1000), `spent:${index}`,
+      ));
+    }
+    if (statements.length > 0) await env.DB.batch(statements);
+    return Response.json({ spent: count });
+  }
+
   if (url.pathname === '/__test/email-deliveries') {
     const rows = await env.DB.prepare(`
       SELECT recipient, kind, status, subject FROM email_deliveries ORDER BY created_at ASC
@@ -884,7 +974,17 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
 
 export default {
   async fetch(request: Request, env: TestEnv): Promise<Response> {
-    const extended = { ...env, MEDIA: mediaBucket };
+    /* Davet kapısı bir bağlama değeri ve bağlama değerleri dağıtım başına
+     * sabit. Testin İKİ hâli birden ölçmesi gerekiyor: kapı kapalıyken
+     * davetsiz kaydın reddedildiğini, açıkken kabul edildiğini. Tek bir
+     * yapılandırma değeriyle bunlardan yalnız biri ölçülebilirdi ve
+     * ölçülmeyen hâl, kapıyı açtığımız gün ilk kez çalışacaktı. */
+    const extended = {
+      ...env,
+      MEDIA: mediaBucket,
+      ORBIT_OPEN_REGISTRATION: request.headers.get('x-test-open-registration')
+        ?? env.ORBIT_OPEN_REGISTRATION,
+    };
     const testResponse = await testRoute(request, extended);
     if (testResponse) return testResponse;
     const nowHeader = request.headers.get('x-test-now');

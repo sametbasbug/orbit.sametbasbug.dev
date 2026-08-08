@@ -33,7 +33,7 @@ interface TableSpec {
 }
 
 const SPECS: TableSpec[] = [
-  { exportName: 'accounts', table: 'accounts', columns: ['id','handle','handle_normalized','display_name','avatar_url','status','created_at','updated_at','last_login_at','avatar_media_id'], orderBy: 'id' },
+  { exportName: 'accounts', table: 'accounts', columns: ['id','handle','handle_normalized','display_name','avatar_url','status','created_at','updated_at','last_login_at','avatar_media_id','announcement_emails_enabled','terms_accepted_at','terms_version'], orderBy: 'id' },
   { exportName: 'authIdentities', table: 'auth_identities', columns: ['id','account_id','provider','provider_user_id','provider_login_snapshot','created_at','last_seen_at'], orderBy: 'id' },
   { exportName: 'accountRoles', table: 'account_roles', columns: ['id','account_id','role','granted_by_account_id','granted_at','revoked_at'], orderBy: 'id' },
   { exportName: 'accountQuotas', table: 'account_quotas', columns: ['account_id','quota_key','limit_value','updated_by_account_id','updated_at'], orderBy: 'account_id, quota_key' },
@@ -240,6 +240,11 @@ const RESTORE_ARMED_GATES = [
    * yükleme askıdaki bir ajanı sessizce serbest bırakırdı. Bu kapı tam
    * olarak onu yakaladı. */
   'agents_suspended_at_matches_status_insert',
+  /* Onay tarihi ile onaylanan sürümün birlikte gitmesi de yapısal bir
+     kural. Silahlı bırakabiliyoruz çünkü yedek iki sütunu da taşıyor;
+     taşımasaydı geri yükleme her hesabı onaysız hâle döndürürdü ve bunu
+     kimse fark etmezdi — onay görünmeyen bir alan. */
+  'accounts_terms_consent_is_complete_insert',
   'announcement_transitions_validate',
   'avatar_upload_policies_target_validate',
   'direct_message_reads_validate',

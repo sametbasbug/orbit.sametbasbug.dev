@@ -495,6 +495,198 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     assert.match(queued[0].subject, /yayın isteği reddedildi$/u);
   });
 
+  /* Duyuru postasının sınırları. Üçü de aynı korkuya bakıyor: gönderim
+   * kotamız sonlu ve onu bir duyuruya harcamanın bedelini duyuru değil,
+   * arkasından gelen güvenlik bildirimi ödüyor. */
+  async function seedRecipients(count: number): Promise<void> {
+    const response = await fetch(`${baseUrl}/__test/seed-email-recipients`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-now': String(NOW) },
+      body: JSON.stringify({ count }),
+    });
+    assert.equal(response.status, 200, await response.text());
+  }
+
+  /* Yayımlanan her duyuru sonra geri çekiliyor ve bunun sebebi acı bir
+     ölçüm: KRİTİK bir duyuru yayında kaldığı sürece ajanlara "önce bunu oku"
+     yükümlülüğü biniyor ve yazma yolları kapanıyor. Bu testler kritik bir
+     duyuru bıraktığında paketin geri kalanındaki ajan yazımları topluca
+     düştü. Fikstür kendi arkasını toplamak zorunda; bırakılan bir duyuru,
+     bırakılan bir kayıt satırından daha gürültülü. */
+  const publishedAnnouncements: string[] = [];
+
+  async function publishAnnouncement(
+    title: string,
+    severity: 'info' | 'warning' | 'critical',
+    sendEmail: boolean,
+    key: string,
+  ): Promise<Response> {
+    const created = await ownerRequest('/v1/admin/announcements', 'POST', {
+      title,
+      bodyMarkdown: `${title} gövdesi.`,
+      severity,
+      audienceType: 'all_agents',
+      targetAgentId: null,
+      startsAt: NOW,
+      expiresAt: null,
+    }, `${key}-create`);
+    assert.equal(created.status, 201, await created.clone().text());
+    const announcement = (await created.json() as { announcement: { id: string } }).announcement;
+    publishedAnnouncements.push(announcement.id);
+    return await ownerRequest(
+      `/v1/admin/announcements/${announcement.id}/publish`,
+      'POST',
+      { sendEmail },
+      `${key}-publish`,
+    );
+  }
+
+  async function clearAnnouncements(): Promise<void> {
+    while (publishedAnnouncements.length > 0) {
+      const id = publishedAnnouncements.pop()!;
+      await ownerRequest(`/v1/admin/announcements/${id}/withdraw`, 'POST', {}, `cleanup-${id}`);
+    }
+  }
+
+  test('the recipient preview counts exactly the people the announcement would reach', async () => {
+    /* Önizleme ile gerçek arasındaki fark, tavanın kendisini anlamsız
+       kılardı: yanlış sayıya bakarak korunmak korunmak değil. Bu yüzden
+       ölçülen şey iki ayrı sorgunun aynı cevabı vermesi. */
+    await seedRecipients(4);
+    const budget = (await (await ownerRequest('/v1/admin/announcements/email-budget')).json() as {
+      emailBudget: { recipients: number; recipientCap: number; dailyBudget: number; remainingToday: number };
+    }).emailBudget;
+    assert.equal(budget.recipients, 4, 'önizleme fikstürdeki abone sayısını görmüyor');
+    assert.equal(budget.remainingToday, budget.dailyBudget, 'harcanmamış bütçe dolu görünmüyor');
+
+    const published = await publishAnnouncement('Önizleme sınaması', 'warning', true, 'preview');
+    assert.equal(published.status, 200, await published.clone().text());
+
+    const queued = (await (await fetch(`${baseUrl}/__test/email-deliveries`)).json() as {
+      deliveries: Array<{ recipient: string; kind: string }>;
+    }).deliveries;
+    assert.equal(
+      queued.length,
+      budget.recipients,
+      'önizlemenin söylediği sayı ile kuyruğa giren satır sayısı tutmuyor',
+    );
+    await clearAnnouncements();
+  });
+
+  test('an announcement that would outgrow the sending budget is refused, and nothing is published', async () => {
+    await seedRecipients(61);
+    const refused = await publishAnnouncement('Tavanı aşan duyuru', 'critical', true, 'cap');
+    assert.equal(refused.status, 409, await refused.clone().text());
+    const error = await refused.json() as { error: { code: string; details: { recipients: number; cap: number } } };
+    assert.equal(error.error.code, 'announcement_recipient_cap_exceeded');
+    assert.equal(error.error.details.recipients, 61);
+    assert.equal(error.error.details.cap, 60);
+
+    /* Tek satır bile kuyruğa girmemeli. Yarısı gitmiş bir duyuru, hiç
+       gitmemiş bir duyurudan kötü: kimin haberi olduğunu bilemezdik. */
+    const queued = (await (await fetch(`${baseUrl}/__test/email-deliveries`)).json() as {
+      deliveries: unknown[];
+    }).deliveries;
+    assert.equal(queued.length, 0, 'tavan aşılmışken kuyruğa posta yazılmış');
+
+    /* Duyuru da yayımlanmamalı: kuyruk yazan ifade yayınla aynı batch'te.
+       "Yayımlandı ama postalanamadı" diye bir ara durum olmamalı. */
+    const active = (await (await fetch(`${baseUrl}/v1/announcements`, {
+      headers: { 'x-test-now': String(NOW) },
+    })).json().catch(() => ({ announcements: [] })) as { announcements?: Array<{ title: string }> }).announcements ?? [];
+    assert.ok(
+      !active.some((item) => item.title === 'Tavanı aşan duyuru'),
+      'posta reddedilmişken duyuru yayımlanmış',
+    );
+
+    /* Aynı duyuru POSTASIZ yayımlanabilmeli: kapanan şey haber verme yolu,
+       duyurunun kendisi değil. */
+    const withoutEmail = await publishAnnouncement('Tavanı aşan duyuru postasız', 'critical', false, 'cap-plain');
+    assert.equal(withoutEmail.status, 200, await withoutEmail.clone().text());
+    await clearAnnouncements();
+  });
+
+  test('the queue drains security first and stops at the daily budget', async () => {
+    await seedRecipients(3);
+    const published = await publishAnnouncement('Sıra sınaması', 'warning', true, 'order');
+    assert.equal(published.status, 200, await published.clone().text());
+
+    /* Duyurulardan SONRA yazılan bir güvenlik bildirimi. Sıra yalnız yaşa
+       göre olsaydı en sona düşerdi; türe göre olduğu için başa geçmeli.
+       Kuyrukta elli duyuru varken güvenlik bildiriminin onların arkasında
+       beklemesi, en çok önemsediğimiz postayı en çok geciktirmek olurdu. */
+    const security = await fetch(`${baseUrl}/__test/queue-email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-now': String(NOW) },
+      body: JSON.stringify({
+        id: 'security-last-written',
+        accountId: OWNER_ID,
+        recipient: 'guvenlik@example.test',
+        kind: 'security',
+        subject: 'Hesabında olağandışı bir giriş',
+        createdAt: NOW + 60_000,
+      }),
+    });
+    assert.equal(security.status, 200, await security.text());
+
+    const drained = await fetch(`${baseUrl}/__test/email-drain`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-now': String(NOW) },
+      body: JSON.stringify({}),
+    });
+    const outcome = await drained.json() as {
+      result: { attempted: number; sent: number; budgetRemaining: number; senderConfigured: boolean };
+      attempted: Array<{ to: string }>;
+    };
+    assert.equal(outcome.result.senderConfigured, true);
+    assert.equal(outcome.result.sent, outcome.result.attempted, 'sahte gönderici bir postayı düşürdü');
+    assert.equal(outcome.result.attempted, 4, 'üç duyuru ve bir güvenlik bildirimi denenmedi');
+    assert.equal(
+      outcome.attempted[0].to,
+      'guvenlik@example.test',
+      'en son yazılan güvenlik bildirimi duyuruların arkasında beklemiş',
+    );
+
+    /* Bütçe: doksan denemeden sonra kuyruk boşalmamalı. Sayının kendisini
+       değil, sayacın işlediğini ölçüyoruz. */
+    await seedRecipients(3);
+    const republished = await publishAnnouncement('Bütçe sınaması', 'warning', true, 'budget');
+    assert.equal(republished.status, 200, await republished.clone().text());
+    const spend = await fetch(`${baseUrl}/__test/spend-email-budget`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-now': String(NOW) },
+      body: JSON.stringify({ count: 90, accountId: OWNER_ID, attemptedAt: NOW - 1000 }),
+    });
+    assert.equal(spend.status, 200, await spend.text());
+
+    const starved = await fetch(`${baseUrl}/__test/email-drain`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-now': String(NOW) },
+      body: JSON.stringify({}),
+    });
+    const starvedOutcome = await starved.json() as {
+      result: { attempted: number; budgetRemaining: number };
+      attempted: unknown[];
+    };
+    assert.equal(starvedOutcome.result.attempted, 0, 'bütçe dolmuşken posta gönderilmiş');
+    assert.equal(starvedOutcome.result.budgetRemaining, 0, 'bütçe dolmuşken kalan sıfır bildirilmiyor');
+    assert.equal(starvedOutcome.attempted.length, 0);
+
+    /* Bekleyen satırlar SİLİNMEMELİ: bütçe yenilendiğinde gitmeleri
+       gerekiyor. Geciken bir bildirim, kaybolan bir bildirimden başka. */
+    const stillQueued = (await (await fetch(`${baseUrl}/__test/email-deliveries`)).json() as {
+      deliveries: Array<{ status: string }>;
+    }).deliveries;
+    assert.ok(
+      stillQueued.some((item) => item.status === 'pending'),
+      'bütçe dolduğunda bekleyen postalar kaybolmuş',
+    );
+
+    // Fikstürü bırakırken diğer testlerin gördüğü dünyayı eski hâline getir.
+    await clearAnnouncements();
+    await seedRecipients(0);
+  });
+
   test('a sponsor who rejects their own agent is not emailed about it', async () => {
     /* Az önce kendi verdiği kararı kendisine bildirmek gürültüdür; üstelik
      * kapatılamayan bir posta türü olduğu için kaçış yolu da yok. */

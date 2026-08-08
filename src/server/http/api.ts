@@ -3,10 +3,14 @@ import { createEntityId, createRequestId } from '../foundation/ids';
 import {
   CSRF_COOKIE,
   CSRF_HEADER,
-  INVITATION_TTL_MS,
+  DEFAULT_AGENT_QUOTA,
   OAUTH_COOKIE,
   OAUTH_FLOW_RETENTION_MS,
   OAUTH_FLOW_TTL_MS,
+  REGISTRATION_GLOBAL_MAX,
+  REGISTRATION_GLOBAL_WINDOW_MS,
+  REGISTRATION_IP_MAX,
+  REGISTRATION_IP_WINDOW_MS,
   SESSION_ABSOLUTE_TTL_MS,
   SESSION_ACTIVITY_BUCKET_MS,
   SESSION_COOKIE,
@@ -14,9 +18,19 @@ import {
   SESSION_RETENTION_MS,
   SIGN_IN_EVENT_RETENTION_MS,
 } from '../identity/constants';
-import { assertIdentityBindings, type OrbitBindings } from '../identity/bindings';
-import { readConnectionTrace } from '../identity/connection';
-import { D1NotificationRepository } from '../repositories/notification-repository';
+import { assertIdentityBindings, openRegistrationEnabled, type OrbitBindings } from '../identity/bindings';
+/* Onayın sürümü, yasal metinlerin yürürlük tarihi. Sayfada yazan tarih ile
+ * kayda geçen sürüm aynı yerden geliyor: iki ayrı sabit olsaydı, metin
+ * güncellenip sürüm unutulduğunda kimsenin fark etmediği bir sapma olurdu. */
+import { LEGAL_LAST_UPDATED } from '../../data/legal';
+import { readConnectionTrace, type ConnectionTrace } from '../identity/connection';
+import { oauthCallbackErrorPage } from './oauth-error-page';
+import {
+  ANNOUNCEMENT_RECIPIENT_CAP,
+  D1NotificationRepository,
+  EMAIL_BUDGET_WINDOW_MS,
+  EMAIL_DAILY_BUDGET,
+} from '../repositories/notification-repository';
 import {
   ANNOUNCEMENT_EMAIL_SEVERITIES,
   announcementEmail,
@@ -79,7 +93,6 @@ import type {
 import type {
   AccountView,
   IdentityRepository,
-  InvitationRow,
   SessionView,
 } from '../repositories/identity-repository';
 import type {
@@ -677,37 +690,6 @@ function requireAllowedOrigin(request: Request, env: OrbitBindings): void {
   if (origin !== env.ORBIT_ALLOWED_ORIGIN) {
     throw new ApiError(403, 'origin_forbidden', 'Request origin is not allowed.');
   }
-}
-
-function invitationStatus(invitation: InvitationRow, now: number): string {
-  if (invitation.revokedAt !== null) return 'revoked';
-  if (invitation.redeemedAt !== null) return 'redeemed';
-  if (invitation.expiresAt <= now) return 'expired';
-  return 'active';
-}
-
-async function validateInvitationToken(
-  token: string,
-  env: OrbitBindings,
-  repository: IdentityRepository,
-  now: number,
-): Promise<InvitationRow> {
-  const parsed = parseOpaqueToken(token);
-  if (!parsed || parsed.family !== 'invitation') {
-    throw new ApiError(400, 'invalid_invitation', 'Invitation is invalid.');
-  }
-  const invitation = await repository.getInvitation(parsed.selector);
-  if (!invitation || invitationStatus(invitation, now) !== 'active') {
-    throw new ApiError(400, 'invalid_invitation', 'Invitation is invalid.');
-  }
-  const verified = await verifyOpaqueToken(
-    token,
-    'invitation',
-    invitation.secretDigest,
-    env.ORBIT_INVITATION_PEPPER_V1,
-  );
-  if (!verified) throw new ApiError(400, 'invalid_invitation', 'Invitation is invalid.');
-  return invitation;
 }
 
 async function authenticateHuman(
@@ -2814,6 +2796,23 @@ async function handleAnnouncementTransition(
         'Only warning and critical announcements can be emailed.',
       );
     }
+    /* Alıcı tavanı. Gönderim planımızın günlük kotası sonlu ve bir duyuru
+     * onu tek başına doldurabilir; doldurduğunda bedelini duyuru değil,
+     * arkasından gelen moderasyon veya güvenlik bildirimi öder.
+     *
+     * Kontrol yayından ÖNCE ve yayınla aynı istekte: kuyruğa yazan ifade
+     * yayınla aynı batch'te gidiyor, yani "yayımlandı ama posta kotayı
+     * aştı" diye bir ara durum yok. Ya ikisi de olur ya hiçbiri. */
+    const recipients = await notifications.countAnnouncementRecipients();
+    if (recipients > ANNOUNCEMENT_RECIPIENT_CAP) {
+      throw new ApiError(
+        409,
+        'announcement_recipient_cap_exceeded',
+        `${recipients} alıcı, tek duyuru için izin verilen ${ANNOUNCEMENT_RECIPIENT_CAP} kişilik tavanı aşıyor. `
+          + 'Duyuruyu postasız yayımlayabilirsin; postayla duyurmak için gönderim planını yükseltmek gerekiyor.',
+        { recipients, cap: ANNOUNCEMENT_RECIPIENT_CAP },
+      );
+    }
     const message = announcementEmail(announcement);
     extraStatements.push(notifications.announcementRecipientsStatement(
       announcementId,
@@ -3171,13 +3170,31 @@ async function handleGithubStart(
 ): Promise<Response> {
   requireAllowedOrigin(request, env);
   const body = await readJson(request);
-  const invitationToken = body.invitationToken;
-  if (invitationToken !== undefined && typeof invitationToken !== 'string') {
-    throw new ApiError(400, 'invalid_invitation', 'Invitation token must be a string.');
+  /* Onay burada isteniyor, dönüşte değil. Sebebi sıra: bu çağrı GitHub'a
+   * gitmeden önce çalışıyor ve akış satırını sunucuda kuruyor. Onayı
+   * dönüşte istesek, kutuyu işaretlemeyen birini GitHub'a gönderip geri
+   * çevirmiş olurduk — hem gereksiz bir tur, hem de "izin verdim ama
+   * girmedim" diye kafa karıştıran bir durum.
+   *
+   * Sürüm de isteniyor ve karşılaştırılıyor: tarayıcıda açık duran sayfa
+   * eski olabilir. Kişi ekranında gördüğü metni kabul ediyor; bizim
+   * kaydettiğimiz sürüm başka bir metin olursa onay bir şey ifade etmez. */
+  if (body.acceptedTerms !== true) {
+    throw new ApiError(
+      400,
+      'terms_not_accepted',
+      'Gizlilik Politikası ve Kullanım Koşulları onaylanmadan giriş yapılamaz.',
+    );
   }
-  const invitation = typeof invitationToken === 'string'
-    ? await validateInvitationToken(invitationToken, env, repository, now)
-    : null;
+  if (body.termsVersion !== LEGAL_LAST_UPDATED) {
+    throw new ApiError(
+      409,
+      'terms_version_stale',
+      'Koşullar güncellendi. Sayfayı yenileyip yeni metni onaylaman gerekiyor.',
+      { currentVersion: LEGAL_LAST_UPDATED },
+    );
+  }
+  requireExactFields(body, ['acceptedTerms', 'termsVersion'], 'invalid_github_start_fields');
   const expiresAt = now + OAUTH_FLOW_TTL_MS;
   const material = await createOAuthMaterial(env.ORBIT_OAUTH_STATE_PEPPER_V1, expiresAt);
   await repository.createOAuthFlow({
@@ -3185,7 +3202,8 @@ async function handleGithubStart(
     stateDigest: material.stateDigest,
     pkceVerifierDigest: material.verifierDigest,
     redirectUri: env.ORBIT_GITHUB_CALLBACK_URL,
-    invitationId: invitation?.id ?? null,
+    termsAcceptedAt: now,
+    termsVersion: LEGAL_LAST_UPDATED,
     createdAt: now,
     expiresAt,
     consumedAt: null,
@@ -3200,6 +3218,45 @@ async function handleGithubStart(
       maxAge: OAUTH_FLOW_TTL_MS / 1000,
     }),
   ]);
+}
+
+/* Yeni hesap açılmadan hemen önceki tavan kontrolü.
+ *
+ * Yalnız kayıt yolunda çağrılıyor; mevcut bir hesapla giriş yapmak bu
+ * tavandan etkilenmiyor. Aksi halde bir kayıt dalgası, o sırada girmeye
+ * çalışan gerçek abonelerin de kapısını kapatırdı.
+ *
+ * Oku-sonra-yaz arasında bir yarış var: aynı anda gelen iki kayıt ikisi de
+ * sayacı aşmamış görüp geçebilir. Bilerek böyle bırakıldı. Yarışı kapatmanın
+ * yolu kaydı tek bir koşullu INSERT'e bağlamak olurdu; kayıt dokuz ifadelik
+ * bir batch ve o batch'in ortasında koşulun tutmaması, 429 yerine yabancı
+ * anahtar hatasıyla düşen bir 500 üretirdi. Tavan bir hacim freni, bir sayaç
+ * değil: 30 yerine 31 hesap açılması hiçbir şeyi bozmuyor, 3000 açılması
+ * bozuyor ve fren onu tutuyor. */
+async function requireRegistrationCapacity(
+  repository: IdentityRepository,
+  trace: ConnectionTrace,
+  now: number,
+): Promise<void> {
+  const counts = await repository.countRecentRegistrations({
+    ip: trace.ip,
+    ipSince: now - REGISTRATION_IP_WINDOW_MS,
+    globalSince: now - REGISTRATION_GLOBAL_WINDOW_MS,
+  });
+  if (trace.ip !== null && counts.fromIp >= REGISTRATION_IP_MAX) {
+    throw new ApiError(
+      429,
+      'registration_rate_limited',
+      'This connection reached the daily registration limit.',
+    );
+  }
+  if (counts.total >= REGISTRATION_GLOBAL_MAX) {
+    throw new ApiError(
+      429,
+      'registration_rate_limited',
+      'Orbit reached the hourly registration limit.',
+    );
+  }
 }
 
 async function handleGithubCallback(
@@ -3234,13 +3291,19 @@ async function handleGithubCallback(
     : null;
   if (!cookie) throw new ApiError(400, 'invalid_oauth_cookie', 'OAuth browser binding is invalid or expired.');
 
+  /* Onayın ikinci kontrolü. Tarayıcı burada hiçbir şey söylemiyor; okunan
+   * şey akış satırının kendisi ve o satırı /start yazdı. Aynı kontrolü iki
+   * yerde yapmak gereksiz görünebilir — değil: /start'taki kontrol
+   * kullanıcıya erken ve anlaşılır bir hata vermek için, buradaki ise
+   * hesabın onaysız açılamayacağını garanti etmek için. Birincisi nezaket,
+   * ikincisi kapı. */
+  if (flow.termsAcceptedAt === null || flow.termsVersion === null) {
+    throw new ApiError(400, 'terms_not_accepted', 'This sign-in flow carries no recorded consent.');
+  }
+
   const accessToken = await github.exchangeCode(code, cookie.verifier);
   const profile = await github.currentUser(accessToken);
-  const callbackContext = await repository.getOAuthCallbackContext(
-    profile.userId,
-    flow.invitationId,
-  );
-  const { identity } = callbackContext;
+  const identity = await repository.getGithubIdentity(profile.userId);
   if (identity?.accountStatus === 'suspended' || identity?.accountStatus === 'closed') {
     throw new ApiError(403, 'account_unavailable', 'Account is not active.');
   }
@@ -3258,39 +3321,44 @@ async function handleGithubCallback(
    * çalıştığı veri merkezini gösterir, sorumlu insanı değil. */
   const trace = readConnectionTrace(request);
 
+  /* Onay her girişte tazeleniyor, yalnız kayıtta değil. Sebebi Samet'in
+   * kararı ve doğru bir karar: kutu her girişte işaretleniyorsa, elimizdeki
+   * kayıt "bir zamanlar kabul etmişti" değil "en son ne zaman, hangi metni".
+   * Koşullar değiştiğinde kimin yeni metni gördüğü de bu sütundan okunuyor. */
+  const consent = { acceptedAt: flow.termsAcceptedAt, version: flow.termsVersion };
+
   if (identity) {
     await repository.loginExistingIdentity({
       flowId: flow.id,
       identity,
       profile,
       session,
+      consent,
       auditEventId: createEntityId(),
       signInEvent: { id: createEntityId(), eventType: 'sign_in', trace },
       requestId,
       now,
     });
   } else {
-    if (!flow.invitationId) {
-      throw new ApiError(403, 'invitation_required', 'A valid invitation is required for registration.');
+    /* Kayıt artık davete bağlı değil; kapı GitHub hesabı olan herkese açık.
+     * Geriye kalan tek kapı ORBIT_OPEN_REGISTRATION ve o bir davet mekanizması
+     * değil, acil fren: bir kötüye kullanım dalgasında yeni kayıtları
+     * tamamen durdurabilmek için duruyor. Mevcut hesapların girişini
+     * etkilemiyor — kapıyı kapatmak, içeridekileri dışarı atmak değil. */
+    if (!openRegistrationEnabled(env)) {
+      throw new ApiError(403, 'registration_closed', 'New registrations are paused.');
     }
-    const invitation = callbackContext.invitation;
-    if (!invitation || invitationStatus(invitation, now) !== 'active') {
-      throw new ApiError(400, 'invalid_invitation', 'Invitation is invalid.');
-    }
-    if (invitation.expectedGithubUserId && invitation.expectedGithubUserId !== profile.userId) {
-      throw new ApiError(403, 'invitation_identity_mismatch', 'Invitation belongs to a different GitHub account.');
-    }
+    await requireRegistrationCapacity(repository, trace, now);
     await repository.registerGithubIdentity({
       flowId: flow.id,
-      invitationId: invitation.id,
       accountId: createEntityId(),
       identityId: createEntityId(),
       roleId: createEntityId(),
       handle: profile.login.toLowerCase(),
       profile,
       session,
-      agentQuota: invitation.agentQuota,
-      invitationAuditEventId: createEntityId(),
+      consent,
+      agentQuota: DEFAULT_AGENT_QUOTA,
       loginAuditEventId: createEntityId(),
       signInEvent: { id: createEntityId(), eventType: 'registration', trace },
       requestId,
@@ -3310,65 +3378,6 @@ async function handleGithubCallback(
     ...sessionCookies(sessionToken.token, csrfToken),
     clearHostCookie(OAUTH_COOKIE, true),
   ]);
-}
-
-async function handleCreateInvitation(
-  request: Request,
-  env: OrbitBindings,
-  repository: IdentityRepository,
-  github: GithubClient,
-  auth: AuthenticatedHuman,
-  now: number,
-  requestId: string,
-): Promise<Response> {
-  requirePlatformOwner(auth);
-  const body = await readJson(request);
-  const githubLogin = body.githubLogin;
-  if (githubLogin !== undefined && typeof githubLogin !== 'string') {
-    throw new ApiError(400, 'invalid_github_login', 'GitHub login must be a string.');
-  }
-  const profile = typeof githubLogin === 'string' && githubLogin.trim()
-    ? await github.resolveLogin(githubLogin)
-    : null;
-  const token = await createOpaqueToken('invitation', env.ORBIT_INVITATION_PEPPER_V1);
-  const expiresAt = now + INVITATION_TTL_MS;
-  await repository.createInvitation({
-    id: token.selector,
-    secretDigest: token.digest,
-    hashVersion: token.hashVersion,
-    expectedGithubUserId: profile?.userId ?? null,
-    expectedGithubLoginSnapshot: profile?.login ?? null,
-    agentQuota: 1,
-    createdByAccountId: auth.account.id,
-    createdAt: now,
-    expiresAt,
-    redeemedAt: null,
-    revokedAt: null,
-    auditEventId: createEntityId(),
-    requestId,
-  });
-  return json({
-    invitation: {
-      id: token.selector,
-      token: token.token,
-      expectedGithubUserId: profile?.userId ?? null,
-      expectedGithubLogin: profile?.login ?? null,
-      agentQuota: 1,
-      expiresAt,
-    },
-  }, 201);
-}
-
-function publicInvitation(invitation: InvitationRow, now: number) {
-  return {
-    id: invitation.id,
-    expectedGithubUserId: invitation.expectedGithubUserId,
-    expectedGithubLogin: invitation.expectedGithubLoginSnapshot,
-    agentQuota: invitation.agentQuota,
-    createdAt: invitation.createdAt,
-    expiresAt: invitation.expiresAt,
-    status: invitationStatus(invitation, now),
-  };
 }
 
 function mcpConfigurationValue(value: string | undefined): string {
@@ -4597,7 +4606,16 @@ export async function handleApiRequest(
       return await handleGithubStart(request, env, repository, github, now);
     }
     if (request.method === 'GET' && path === '/v1/auth/github/callback') {
-      return await handleGithubCallback(request, env, repository, github, now, requestId);
+      /* Bu ucun cevabını bir tarayıcı gösteriyor, bir istemci okumuyor.
+       * Hata zarfı burada bir insana bakan sayfaya çevriliyor; beklenmeyen
+       * hatalar dışarıdaki genel yakalayıcıya bırakılıyor, çünkü orada
+       * kaydedilen şey benim görmem gereken şey. */
+      try {
+        return await handleGithubCallback(request, env, repository, github, now, requestId);
+      } catch (error) {
+        if (error instanceof ApiError) return oauthCallbackErrorPage(error.code, error.status);
+        throw error;
+      }
     }
     if (request.method === 'POST' && path === '/v1/agent/register') {
       return await handleRedeemRegistrationCode(request, env, agentRepository, now, requestId);
@@ -4672,30 +4690,6 @@ export async function handleApiRequest(
         clearHostCookie(CSRF_COOKIE),
       ]);
     }
-    if (request.method === 'POST' && path === '/v1/admin/invitations') {
-      const auth = await authenticateHuman(request, env, repository, now, true);
-      return await handleCreateInvitation(request, env, repository, github, auth, now, requestId);
-    }
-    if (request.method === 'GET' && path === '/v1/admin/invitations') {
-      const auth = await authenticateHuman(request, env, repository, now, false);
-      requirePlatformOwner(auth);
-      const invitations = await repository.listInvitations(now, 100);
-      return json({ invitations: invitations.map((item) => publicInvitation(item, now)) });
-    }
-    const revokeMatch = /^\/v1\/admin\/invitations\/([^/]+)\/revoke$/u.exec(path);
-    if (request.method === 'POST' && revokeMatch) {
-      const auth = await authenticateHuman(request, env, repository, now, true);
-      requirePlatformOwner(auth);
-      await repository.revokeInvitation({
-        invitationId: decodeURIComponent(revokeMatch[1]),
-        accountId: auth.account.id,
-        auditEventId: createEntityId(),
-        requestId,
-        now,
-      });
-      return json({ ok: true });
-    }
-
     if (request.method === 'GET' && path === '/v1/admin/announcements') {
       const auth = await authenticateHuman(request, env, repository, now, false);
       requirePlatformOwner(auth);
@@ -4705,6 +4699,27 @@ export async function handleApiRequest(
     if (request.method === 'POST' && path === '/v1/admin/announcements') {
       const auth = await authenticateHuman(request, env, repository, now, true);
       return await handleCreateAnnouncement(request, platformRepository, auth, now, requestId);
+    }
+    /* Yayına basmadan önce "bu kaç kişiye gidecek". Panel bunu kutunun
+     * yanında gösteriyor; yoksa gönderim kararı, ölçüsü bilinmeyen bir kutuyu
+     * işaretlemek olurdu ve tavan ancak yayına basıldıktan sonra öğrenilirdi. */
+    if (request.method === 'GET' && path === '/v1/admin/announcements/email-budget') {
+      const auth = await authenticateHuman(request, env, repository, now, false);
+      requirePlatformOwner(auth);
+      const notifications = new D1NotificationRepository(env.DB);
+      const [recipients, spent] = await Promise.all([
+        notifications.countAnnouncementRecipients(),
+        notifications.countAttemptsSince(now - EMAIL_BUDGET_WINDOW_MS),
+      ]);
+      return json({
+        emailBudget: {
+          recipients,
+          recipientCap: ANNOUNCEMENT_RECIPIENT_CAP,
+          dailyBudget: EMAIL_DAILY_BUDGET,
+          spentToday: spent,
+          remainingToday: Math.max(0, EMAIL_DAILY_BUDGET - spent),
+        },
+      });
     }
     const announcementTransitionMatch = /^\/v1\/admin\/announcements\/([^/]+)\/(publish|withdraw)$/u.exec(path);
     if (request.method === 'POST' && announcementTransitionMatch) {
@@ -5407,7 +5422,7 @@ export async function handleApiRequest(
       errorName: error instanceof Error ? error.name : 'UnknownError',
       errorClass: message.startsWith('D1_ERROR:') ? 'database_error' : 'application_error',
     }));
-    const isConflict = /constraint|invalid_invitation|invalid_oauth_flow|invalid_registration|registration_rotation|not_revocable|agent_quota|credential_/iu.test(message);
+    const isConflict = /constraint|invalid_oauth_flow|invalid_registration|registration_rotation|not_revocable|agent_quota|credential_/iu.test(message);
     return json(createErrorEnvelope(
       isConflict ? 'state_conflict' : 'internal_error',
       isConflict ? 'The requested state transition is no longer valid.' : 'An internal error occurred.',

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import { LEGAL_LAST_UPDATED } from '../src/data/legal';
 import worker, {
   BACKUP_CRON,
   BACKUP_RECONCILIATION_CRON,
@@ -136,7 +137,10 @@ async function protectedSurfaceResponses(env: OrbitBindings): Promise<Response[]
     await worker.fetch(new Request(`${origin}/v1/auth/github/start`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin },
-      body: '{}',
+      /* Onaylı gövde: bu satırın amacı 201 sınıfını da tarayıcı-engeli
+         kontrolüne sokmak. Boş gövde artık 400 dönüyor ve 400 zaten başka
+         bir sınıf — onunla ölçmek, ölçmek istediğimiz şeyi kaçırırdı. */
+      body: JSON.stringify({ acceptedTerms: true, termsVersion: LEGAL_LAST_UPDATED }),
     }), env),
   ];
 }

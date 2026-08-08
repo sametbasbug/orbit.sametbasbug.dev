@@ -17,6 +17,7 @@ import {
 import { observeRequest } from './server/observability/telemetry';
 import { cleanupMedia } from './server/media/media-service';
 import { drainEmailQueue } from './server/notifications/drain';
+import { LEGAL_LAST_UPDATED } from './data/legal';
 import { D1MediaRepository } from './server/repositories/d1/d1-media-repository';
 import { D1AgentRepository } from './server/repositories/d1/d1-agent-repository';
 import { D1PublicRepository } from './server/repositories/d1/d1-public-repository';
@@ -99,7 +100,11 @@ async function startStagingOAuth(request: Request, env: OrbitBindings): Promise<
       'content-type': 'application/json',
       origin: env.ORBIT_ALLOWED_ORIGIN,
     },
-    body: '{}',
+    /* Staging kestirmesi de onaylı gövde göndermek zorunda. Bu yol yalnız
+     * staging'de var ve tarayıcıdaki kutuyu atlıyor — o yüzden onayı burada
+     * elle koyuyoruz. Koymasaydık staging'de hiç kimse giriş yapamazdı ve
+     * bunu ancak staging provasında fark ederdik. */
+    body: JSON.stringify({ acceptedTerms: true, termsVersion: LEGAL_LAST_UPDATED }),
   });
   const started = await handleApiRequest(apiRequest, env);
   if (started.status !== 201) return started;

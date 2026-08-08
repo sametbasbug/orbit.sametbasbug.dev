@@ -9,6 +9,7 @@
     "ORBIT_ALLOWED_ORIGIN": "http://localhost:4321",
     "ORBIT_GITHUB_CALLBACK_URL": "http://localhost:4321/v1/auth/github/callback",
     "ORBIT_PLATFORM_OWNER_GITHUB_ID": "126420524",
+    "ORBIT_OPEN_REGISTRATION": "true",
     "ORBIT_BACKUP_ENABLED": "true",
     "ORBIT_MEDIA_ENABLED": "true",
     "GITHUB_OAUTH_CLIENT_ID": "test-client-id",

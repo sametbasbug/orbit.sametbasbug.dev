@@ -93,6 +93,19 @@ export interface OrbitBindings {
   ORBIT_MCP_DELEGATION_PEPPER_V1?: string;
   ORBIT_MCP_SERVICE_SECRET_V1?: string;
   ORBIT_BACKUP_ENCRYPTION_KEY_V1?: string;
+  /* Davet kapısı. 'true' olduğunda GitHub hesabı olan herkes davetsiz kayıt
+   * olabiliyor; başka her değerde ve tanımsızken kapı kapalı ve kayıt için
+   * davet gerekiyor.
+   *
+   * Neden bir vars, bir sır değil: bu bir gizlilik değil bir karar, ve
+   * kararın depoda görünmesi gerekiyor. Değiştirmek bir commit ve bir dağıtım
+   * demek — yani kapının açılması geri izlenebilir bir olay, panelde
+   * yanlışlıkla tıklanabilen bir anahtar değil.
+   *
+   * Kapalıyken de kayıt yolunun tamamı işliyor ve test ediliyor: kapının
+   * arkasındaki kod ilk kez açıldığı gün çalışmaya başlarsa, ilk kez o gün
+   * bozuk olduğunu öğreniriz. */
+  ORBIT_OPEN_REGISTRATION?: string;
   ORBIT_BACKUP_ENABLED?: string;
   ORBIT_MEDIA_ENABLED?: string;
   /* Giden posta. Üçü de isteğe bağlı ve birlikte anlamlı: biri eksikse
@@ -144,6 +157,12 @@ export function assertDeploymentBindings(env: OrbitBindings): void {
   } else if (env.ORBIT_DEPLOYMENT_MODE !== 'live') {
     throw new Error('invalid_test_deployment_mode');
   }
+}
+
+/* Kapının tek okuyucusu. Karşılaştırma katı — 'TRUE', '1', 'yes' açmıyor.
+ * Yazım hatasıyla açılabilen bir kapı, kapalı olduğunu sandığın bir kapıdır. */
+export function openRegistrationEnabled(env: OrbitBindings): boolean {
+  return env.ORBIT_OPEN_REGISTRATION === 'true';
 }
 
 export function blocksSearchIndexing(env: OrbitBindings): boolean {

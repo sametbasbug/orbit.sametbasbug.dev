@@ -730,6 +730,87 @@ check(
   'Askıya alma ucu rol kontrolünü kaybetmiş; yetki yalnız tarayıcıda kalmış olur.',
 );
 
+/* Kayıt kapısı ve posta bütçesi. Bu üç kilit, davet sistemi kalktığında
+ * sessizce kaybolabilecek şeylere bakıyor — ve kaybolduklarında hiçbir test
+ * kırmadan kaybolurlar, çünkü yokluklarının belirtisi bir hata değil, fazla
+ * hesap ve tükenmiş bir posta kotası. */
+check(
+  /openRegistrationEnabled\(env\)[\s\S]{0,200}?'registration_closed'/u.test(apiSource),
+  'Kayıt freni kaybolmuş; bir kötüye kullanım dalgasında kayıtları durduracak bir şey kalmamış.',
+);
+/* Onay iki yerde birden isteniyor ve ikisi de gerekli: /start'taki kontrol
+ * kullanıcıya erken ve anlaşılır bir hata vermek için, dönüşteki ise hesabın
+ * onaysız açılamayacağını garanti etmek için. Birincisi nezaket, ikincisi
+ * kapı — ve kapının kaybolması hiçbir ekranda görünmez. */
+check(
+  /body\.acceptedTerms !== true[\s\S]{0,300}?'terms_not_accepted'/u.test(apiSource),
+  'Giriş başlangıcı sözleşme onayını istemiyor; kutu işaretlenmeden GitHub turu başlayabilir.',
+);
+check(
+  /flow\.termsAcceptedAt === null[\s\S]{0,200}?'terms_not_accepted'/u.test(apiSource),
+  'Dönüş yolu akıştaki onayı doğrulamıyor; onaysız bir akış hesap açabilir.',
+);
+/* Onayın sürümü ile sayfada yazan yürürlük tarihi tek kaynaktan geliyor.
+ * İki ayrı sabit olsaydı metin güncellenip sürüm unutulduğunda, herkesin
+ * eski metni onayladığı kaydedilirdi ve bunu hiçbir şey söylemezdi. */
+check(
+  apiSource.includes("import { LEGAL_LAST_UPDATED } from '../../data/legal'")
+    && fs.readFileSync(path.join(ROOT, 'src', 'pages', 'dashboard.astro'), 'utf8')
+      .includes('data-terms-version={LEGAL_LAST_UPDATED}'),
+  'Onay sürümü yasal metnin yürürlük tarihinden kopmuş; kaydedilen onay yanlış metni gösterebilir.',
+);
+/* Kutu giriş kartında ve iki sözleşmeye de bağlantılı olmak zorunda.
+ * Okunmadan onaylanan bir metin, onaylanmamış bir metindir. */
+check(
+  /id="terms-consent"/u.test(fs.readFileSync(path.join(ROOT, 'src', 'pages', 'dashboard.astro'), 'utf8'))
+    && /href="\/gizlilik"[\s\S]{0,200}href="\/kosullar"/u.test(
+      fs.readFileSync(path.join(ROOT, 'src', 'pages', 'dashboard.astro'), 'utf8'),
+    ),
+  'Onay kutusu ya kayıp ya da onayladığı metinlere bağlantı vermiyor.',
+);
+/* İletişim menüde. Footer'da kalması, bize ulaşmak isteyen insanın
+ * ulaşamaması demekti — ve kayıt herkese açıkken o insan sayısı artıyor. */
+check(
+  /href: '\/iletisim'/u.test(fs.readFileSync(path.join(ROOT, 'src', 'components', 'Header.astro'), 'utf8')),
+  'İletişim menüden düşmüş; yalnız footer’da kalan bir bağlantıyı kimse bulmaz.',
+);
+check(
+  /requireRegistrationCapacity\(repository, trace, now\)/u.test(apiSource)
+    && apiSource.indexOf('requireRegistrationCapacity(repository, trace, now)')
+      < apiSource.indexOf('await repository.registerGithubIdentity({'),
+  'Kayıt hız tavanı hesap açılmadan önce çalışmıyor; tavan hesabı geri alamaz.',
+);
+/* Bir tarayıcıya JSON dönmek, giriş yapmaya çalışan insana süslü parantez
+ * göstermek demek. Kapı açıldığında bu yol hız tavanının da çıkışı olacak
+ * ve oraya çarpan kişi gerçek bir abone olacak. */
+check(
+  apiSource.includes('oauthCallbackErrorPage(error.code, error.status)'),
+  'GitHub dönüş hatası artık insana bakan bir sayfa üretmiyor.',
+);
+/* Bütçe kapısı boşaltma turunda. Kalkarsa duyurular kotayı tüketir ve
+ * bedelini arkasından gelen güvenlik bildirimi öder. */
+check(
+  /countAttemptsSince\(now - EMAIL_BUDGET_WINDOW_MS\)/u.test(
+    fs.readFileSync(path.join(ROOT, 'src', 'server', 'notifications', 'drain.ts'), 'utf8'),
+  ),
+  'Posta boşaltma turu günlük bütçeyi okumuyor; kota bir duyuruya harcanabilir.',
+);
+
+/* Kapı ile koşullar metni birbirine bağlı. Bugün koşullar "katılım davetle
+ * sınırlıdır" diyor ve bu doğru. Kapı açıldığı gün bu cümle yalan olacak —
+ * ve yalan olduğunu kimse fark etmeyecek, çünkü bir metnin eskimesi hiçbir
+ * testi kırmaz. Bu kilit onu kırıyor: yayındaki yapılandırma ile sayfadaki
+ * cümle aynı şeyi söylemek zorunda. */
+const liveVars = fs.readFileSync(path.join(ROOT, 'wrangler.production.live.jsonc'), 'utf8');
+const openRegistration = /"ORBIT_OPEN_REGISTRATION":\s*"true"/u.test(liveVars);
+const terms = fs.readFileSync(path.join(ROOT, 'src', 'pages', 'kosullar.astro'), 'utf8');
+check(
+  openRegistration === terms.includes('Katılım GitHub hesabı olan herkese açıktır'),
+  openRegistration
+    ? 'Kayıt herkese açık ama koşullar bunu söylemiyor.'
+    : 'Kayıt durdurulmuş ama koşullar hâlâ herkese açık olduğunu söylüyor.',
+);
+
 if (errors.length) {
   process.stderr.write(`${errors.map((error) => `- ${error}`).join('\n')}\n`);
   process.stderr.write(`Orbit site integrity tests failed (${errors.length}/${assertions}).\n`);

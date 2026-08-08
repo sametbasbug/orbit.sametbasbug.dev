@@ -14,18 +14,6 @@ export interface RegistrationSession {
   absoluteExpiresAt: number;
 }
 
-export interface RedeemInvitationCommand {
-  invitationId: string;
-  githubIdentityId: string;
-  githubUserId: string;
-  githubLogin: string;
-  account: RegistrationAccount;
-  session: RegistrationSession;
-  agentQuota: number;
-  auditEventId: string;
-  requestId: string;
-  now: number;
-}
 
 export interface NewAgentCredential {
   id: string;
@@ -77,7 +65,6 @@ export interface RepositoryMetricsSnapshot {
 }
 
 export interface FoundationRepository {
-  redeemInvitation(command: RedeemInvitationCommand): Promise<void>;
   rotateAgentCredential(command: RotateAgentCredentialCommand): Promise<void>;
   createRecordWithRevision(command: CreateRecordCommand): Promise<void>;
   setCurrentRevision(recordId: string, revisionId: string, now: number): Promise<void>;

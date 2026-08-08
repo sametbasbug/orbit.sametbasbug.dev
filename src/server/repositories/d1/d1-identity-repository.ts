@@ -2,9 +2,7 @@ import type {
   AccountView,
   GithubIdentityRow,
   IdentityRepository,
-  InvitationRow,
   NewSignInEvent,
-  OAuthCallbackContext,
   OAuthFlowRow,
   SessionView,
 } from '../identity-repository';
@@ -13,45 +11,16 @@ import type {
   D1RunResultLike,
 } from './d1-foundation-repository';
 
-interface InvitationSqlRow {
-  id: string;
-  secret_digest: string;
-  hash_version: number;
-  expected_github_user_id: string | null;
-  expected_github_login_snapshot: string | null;
-  agent_quota: number;
-  created_by_account_id: string;
-  created_at: number;
-  expires_at: number;
-  redeemed_at: number | null;
-  revoked_at: number | null;
-}
-
 interface OAuthFlowSqlRow {
   id: string;
   state_digest: string;
   pkce_verifier_digest: string;
   redirect_uri: string;
-  invitation_id: string | null;
+  terms_accepted_at: number | null;
+  terms_version: string | null;
   created_at: number;
   expires_at: number;
   consumed_at: number | null;
-}
-
-function invitationFromSql(row: InvitationSqlRow): InvitationRow {
-  return {
-    id: row.id,
-    secretDigest: row.secret_digest,
-    hashVersion: row.hash_version,
-    expectedGithubUserId: row.expected_github_user_id,
-    expectedGithubLoginSnapshot: row.expected_github_login_snapshot,
-    agentQuota: row.agent_quota,
-    createdByAccountId: row.created_by_account_id,
-    createdAt: row.created_at,
-    expiresAt: row.expires_at,
-    redeemedAt: row.redeemed_at,
-    revokedAt: row.revoked_at,
-  };
 }
 
 function oauthFlowFromSql(row: OAuthFlowSqlRow): OAuthFlowRow {
@@ -60,7 +29,8 @@ function oauthFlowFromSql(row: OAuthFlowSqlRow): OAuthFlowRow {
     stateDigest: row.state_digest,
     pkceVerifierDigest: row.pkce_verifier_digest,
     redirectUri: row.redirect_uri,
-    invitationId: row.invitation_id,
+    termsAcceptedAt: row.terms_accepted_at,
+    termsVersion: row.terms_version,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     consumedAt: row.consumed_at,
@@ -74,109 +44,17 @@ export class D1IdentityRepository implements IdentityRepository {
     this.#db = db;
   }
 
-  async getInvitation(selector: string): Promise<InvitationRow | null> {
-    const row = await this.#db.prepare(`
-      SELECT id, secret_digest, hash_version, expected_github_user_id,
-             expected_github_login_snapshot, agent_quota,
-             created_by_account_id, created_at, expires_at, redeemed_at, revoked_at
-      FROM invitations
-      WHERE id = ?
-    `).bind(selector).first<InvitationSqlRow>();
-    return row ? invitationFromSql(row) : null;
-  }
-
-  async createInvitation(input: InvitationRow & {
-    auditEventId: string;
-    requestId: string;
-  }): Promise<void> {
-    await this.#db.batch([
-      this.#db.prepare(`
-        INSERT INTO invitations (
-          id, secret_digest, hash_version, expected_github_user_id,
-          expected_github_login_snapshot, agent_quota,
-          created_by_account_id, created_at, expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(
-        input.id,
-        input.secretDigest,
-        input.hashVersion,
-        input.expectedGithubUserId,
-        input.expectedGithubLoginSnapshot,
-        input.agentQuota,
-        input.createdByAccountId,
-        input.createdAt,
-        input.expiresAt,
-      ),
-      this.#db.prepare(`
-        INSERT INTO audit_events (
-          id, event_type, actor_type, actor_id, subject_type,
-          subject_id, request_id, metadata_json, created_at
-        ) VALUES (?, 'invitation.created', 'account', ?, 'invitation', ?, ?, ?, ?)
-      `).bind(
-        input.auditEventId,
-        input.createdByAccountId,
-        input.id,
-        input.requestId,
-        JSON.stringify({
-          expectedGithubUserId: input.expectedGithubUserId,
-          agentQuota: input.agentQuota,
-          expiresAt: input.expiresAt,
-        }),
-        input.createdAt,
-      ),
-    ]);
-  }
-
-  async listInvitations(now: number, limit: number): Promise<InvitationRow[]> {
-    const result = await this.#db.prepare(`
-      SELECT id, secret_digest, hash_version, expected_github_user_id,
-             expected_github_login_snapshot, agent_quota,
-             created_by_account_id, created_at, expires_at, redeemed_at, revoked_at
-      FROM invitations
-      WHERE created_at <= ?
-      ORDER BY created_at DESC, id DESC
-      LIMIT ?
-    `).bind(now, limit).all<InvitationSqlRow>();
-    return result.results.map(invitationFromSql);
-  }
-
-  async revokeInvitation(input: {
-    invitationId: string;
-    accountId: string;
-    auditEventId: string;
-    requestId: string;
-    now: number;
-  }): Promise<void> {
-    await this.#db.batch([
-      this.#db.prepare(`
-        INSERT INTO invitation_revocations (invitation_id, account_id, revoked_at)
-        VALUES (?, ?, ?)
-      `).bind(input.invitationId, input.accountId, input.now),
-      this.#db.prepare(`
-        INSERT INTO audit_events (
-          id, event_type, actor_type, actor_id, subject_type,
-          subject_id, request_id, metadata_json, created_at
-        ) VALUES (?, 'invitation.revoked', 'account', ?, 'invitation', ?, ?, '{}', ?)
-      `).bind(
-        input.auditEventId,
-        input.accountId,
-        input.invitationId,
-        input.requestId,
-        input.now,
-      ),
-    ]);
-  }
-
   async createOAuthFlow(flow: OAuthFlowRow): Promise<void> {
     await this.#db.prepare(`
       INSERT INTO oauth_flows (
-        id, state_digest, invitation_id, created_at, expires_at,
+        id, state_digest, terms_accepted_at, terms_version, created_at, expires_at,
         pkce_verifier_digest, redirect_uri
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       flow.id,
       flow.stateDigest,
-      flow.invitationId,
+      flow.termsAcceptedAt,
+      flow.termsVersion,
       flow.createdAt,
       flow.expiresAt,
       flow.pkceVerifierDigest,
@@ -187,7 +65,7 @@ export class D1IdentityRepository implements IdentityRepository {
   async getOAuthFlow(selector: string): Promise<OAuthFlowRow | null> {
     const row = await this.#db.prepare(`
       SELECT id, state_digest, pkce_verifier_digest, redirect_uri,
-             invitation_id, created_at, expires_at, consumed_at
+             terms_accepted_at, terms_version, created_at, expires_at, consumed_at
       FROM oauth_flows
       WHERE id = ?
     `).bind(selector).first<OAuthFlowSqlRow>();
@@ -215,84 +93,11 @@ export class D1IdentityRepository implements IdentityRepository {
     } : null;
   }
 
-  async getOAuthCallbackContext(
-    providerUserId: string,
-    invitationId: string | null,
-  ): Promise<OAuthCallbackContext> {
-    const row = await this.#db.prepare(`
-      WITH callback_input(provider_user_id, invitation_id) AS (VALUES (?, ?))
-      SELECT
-        ai.id AS identity_id,
-        ai.account_id AS identity_account_id,
-        ai.provider_user_id,
-        a.status AS account_status,
-        i.id AS invitation_id,
-        i.secret_digest AS invitation_secret_digest,
-        i.hash_version AS invitation_hash_version,
-        i.expected_github_user_id,
-        i.expected_github_login_snapshot,
-        i.agent_quota,
-        i.created_by_account_id,
-        i.created_at AS invitation_created_at,
-        i.expires_at AS invitation_expires_at,
-        i.redeemed_at,
-        i.revoked_at
-      FROM callback_input input
-      LEFT JOIN auth_identities ai
-        ON ai.provider = 'github' AND ai.provider_user_id = input.provider_user_id
-      LEFT JOIN accounts a ON a.id = ai.account_id
-      LEFT JOIN invitations i ON i.id = input.invitation_id
-    `).bind(providerUserId, invitationId).first<{
-      identity_id: string | null;
-      identity_account_id: string | null;
-      provider_user_id: string | null;
-      account_status: GithubIdentityRow['accountStatus'] | null;
-      invitation_id: string | null;
-      invitation_secret_digest: string | null;
-      invitation_hash_version: number | null;
-      expected_github_user_id: string | null;
-      expected_github_login_snapshot: string | null;
-      agent_quota: number | null;
-      created_by_account_id: string | null;
-      invitation_created_at: number | null;
-      invitation_expires_at: number | null;
-      redeemed_at: number | null;
-      revoked_at: number | null;
-    }>();
-
-    const identity = row?.identity_id
-      && row.identity_account_id
-      && row.provider_user_id
-      && row.account_status
-      ? {
-        identityId: row.identity_id,
-        accountId: row.identity_account_id,
-        providerUserId: row.provider_user_id,
-        accountStatus: row.account_status,
-      }
-      : null;
-    const invitation = row?.invitation_id
-      && row.invitation_secret_digest
-      && row.invitation_hash_version
-      && row.agent_quota !== null
-      && row.created_by_account_id
-      && row.invitation_created_at !== null
-      && row.invitation_expires_at !== null
-      ? {
-        id: row.invitation_id,
-        secretDigest: row.invitation_secret_digest,
-        hashVersion: row.invitation_hash_version,
-        expectedGithubUserId: row.expected_github_user_id,
-        expectedGithubLoginSnapshot: row.expected_github_login_snapshot,
-        agentQuota: row.agent_quota,
-        createdByAccountId: row.created_by_account_id,
-        createdAt: row.invitation_created_at,
-        expiresAt: row.invitation_expires_at,
-        redeemedAt: row.redeemed_at,
-        revokedAt: row.revoked_at,
-      }
-      : null;
-    return { identity, invitation };
+  /* Davet kalkınca bu çağrı bir birleşim sorgusu olmaktan çıktı: dönüşte
+   * sorulan tek şey "bu GitHub hesabı bizde var mı". findGithubIdentity ile
+   * aynı işi yapıyor ve ona devrediyor — iki ad, tek sorgu. */
+  async getGithubIdentity(providerUserId: string): Promise<GithubIdentityRow | null> {
+    return await this.findGithubIdentity(providerUserId);
   }
 
   async loginExistingIdentity(input: Parameters<IdentityRepository['loginExistingIdentity']>[0]): Promise<void> {
@@ -319,11 +124,18 @@ export class D1IdentityRepository implements IdentityRepository {
         SET display_name = ?,
             avatar_url = ?,
             avatar_media_id = NULL,
+            terms_accepted_at = ?,
+            terms_version = ?,
             updated_at = ?, last_login_at = ?
         WHERE id = ? AND status = 'active'
       `).bind(
         input.profile.displayName,
         input.profile.avatarUrl,
+        /* Onay her girişte tazeleniyor. Kutu her girişte işaretlendiği için
+         * saklanan değer "en son ne zaman, hangi metni" oluyor; koşullar
+         * değiştiğinde kimin yeni metni gördüğü de buradan okunuyor. */
+        input.consent.acceptedAt,
+        input.consent.version,
         input.now,
         input.now,
         input.identity.accountId,
@@ -346,13 +158,39 @@ export class D1IdentityRepository implements IdentityRepository {
     ]);
   }
 
+  async countRecentRegistrations(
+    input: Parameters<IdentityRepository['countRecentRegistrations']>[0],
+  ): Promise<{ fromIp: number; total: number }> {
+    /* Dış WHERE iki pencerenin ERKEN olanını alıyor; içerideki iki koşul
+     * kendi penceresini kendi daraltıyor. Tek tarama, iki cevap.
+     *
+     * IP karşılaştırması metin eşitliği: aynı istemci Cloudflare'den her
+     * seferinde aynı biçimde yazılmış adresle geliyor. IPv6'yı normalize
+     * etmeye çalışmıyoruz — yanlış normalize edilmiş bir adres, farklı iki
+     * aboneyi aynı sayaca koyabilirdi. */
+    const row = await this.#db.prepare(`
+      SELECT
+        COUNT(*) FILTER (WHERE created_at >= ?) AS total,
+        COUNT(*) FILTER (WHERE ip IS NOT NULL AND ip = ? AND created_at >= ?) AS from_ip
+      FROM account_sign_in_events
+      WHERE event_type = 'registration' AND created_at >= ?
+    `).bind(
+      input.globalSince,
+      input.ip,
+      input.ipSince,
+      Math.min(input.globalSince, input.ipSince),
+    ).first<{ total: number; from_ip: number }>();
+    return { fromIp: row?.from_ip ?? 0, total: row?.total ?? 0 };
+  }
+
   async registerGithubIdentity(input: Parameters<IdentityRepository['registerGithubIdentity']>[0]): Promise<void> {
     await this.#db.batch([
       this.#db.prepare(`
         INSERT INTO accounts (
           id, handle, handle_normalized, display_name, avatar_url,
-          status, created_at, updated_at, last_login_at
-        ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)
+          status, created_at, updated_at, last_login_at,
+          terms_accepted_at, terms_version
+        ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
       `).bind(
         input.accountId,
         input.handle,
@@ -362,6 +200,12 @@ export class D1IdentityRepository implements IdentityRepository {
         input.now,
         input.now,
         input.now,
+        /* Onay hesabın kendisiyle AYNI ifadede yazılıyor. Ayrı bir UPDATE
+         * olsaydı, batch'in ortasında düşen bir çağrı onaysız bir hesap
+         * bırakabilirdi — ve o hesap, hiç kabul etmemiş biri adına açılmış
+         * bir hesap olurdu. */
+        input.consent.acceptedAt,
+        input.consent.version,
       ),
       this.#db.prepare(`
         INSERT INTO auth_identities (
@@ -389,15 +233,6 @@ export class D1IdentityRepository implements IdentityRepository {
       `).bind(input.accountId, input.agentQuota, input.now),
       this.#sessionInsert(input.accountId, input.session),
       this.#auditInsert(
-        input.invitationAuditEventId,
-        'invitation.redeemed',
-        input.accountId,
-        'invitation',
-        input.invitationId,
-        input.requestId,
-        input.now,
-      ),
-      this.#auditInsert(
         input.loginAuditEventId,
         'auth.github.registered',
         input.accountId,
@@ -406,11 +241,6 @@ export class D1IdentityRepository implements IdentityRepository {
         input.requestId,
         input.now,
       ),
-      this.#db.prepare(`
-        INSERT INTO invitation_redemptions (
-          invitation_id, account_id, github_user_id, redeemed_at
-        ) VALUES (?, ?, ?, ?)
-      `).bind(input.invitationId, input.accountId, input.profile.userId, input.now),
       this.#signInEventInsert(input.accountId, input.signInEvent, input.now),
       this.#db.prepare(`
         INSERT INTO oauth_flow_consumptions (flow_id, account_id, consumed_at)

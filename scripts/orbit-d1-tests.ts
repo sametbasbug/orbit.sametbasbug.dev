@@ -18,24 +18,6 @@ const callAction = async <T>(
   return await harness.callAction<T>(action, data, expectedStatus);
 };
 
-function registrationData(prefix: string, invitationId: string, githubUserId: string, now: number) {
-  return {
-    invitationId,
-    githubIdentityId: `${prefix}-identity`,
-    githubUserId,
-    githubLogin: `${prefix}-login`,
-    accountId: `${prefix}-account`,
-    handle: `${prefix}-handle`,
-    displayName: `${prefix} display`,
-    sessionId: `${prefix}-session`,
-    sessionDigest: `${prefix}-session-digest`,
-    csrfDigest: `${prefix}-csrf-digest`,
-    auditEventId: `${prefix}-audit`,
-    requestId: `${prefix}-request`,
-    now,
-  };
-}
-
 before(async () => {
   harness = await startTestWorker();
   [firstMigrationOutput, secondMigrationOutput] = harness.migrationOutputs;
@@ -63,76 +45,11 @@ describe('Orbit V6 Slice 0 local-D1 foundation', { concurrency: false }, () => {
     assert.deepEqual(check.rows, []);
   });
 
-  test('invitation redemption rolls the entire registration back on late validation failure', async () => {
-    const now = Date.now();
-    const invitationId = 'invite-rollback';
-    await callAction('seedInvitation', {
-      ownerId: 'owner-rollback',
-      invitationId,
-      expectedGithubUserId: 'github-expected',
-      now,
-    });
-    const registration = registrationData('rollback', invitationId, 'github-mismatch', now + 1);
-
-    await callAction('redeemInvitation', registration, 409);
-    const state = await callAction<{
-      accountCount: number;
-      sessionCount: number;
-      redemptionCount: number;
-      auditCount: number;
-    }>('registrationState', registration);
-
-    assert.deepEqual(state, {
-      accountCount: 0,
-      sessionCount: 0,
-      redemptionCount: 0,
-      auditCount: 0,
-    });
-  });
-
-  test('a second redemption of the same invitation is rejected without orphan writes', async () => {
-    const now = Date.now();
-    const invitationId = 'invite-single-use';
-    await callAction('seedInvitation', {
-      ownerId: 'owner-single-use',
-      invitationId,
-      now,
-    });
-
-    const first = registrationData('first-use', invitationId, 'github-first', now + 1);
-    const firstResult = await callAction<{
-      accountCount: number;
-      sessionCount: number;
-      redemptionCount: number;
-      auditCount: number;
-      metrics: { batches: number; statements: number };
-    }>('redeemInvitation', first);
-    assert.equal(firstResult.accountCount, 1);
-    assert.equal(firstResult.sessionCount, 1);
-    assert.equal(firstResult.redemptionCount, 1);
-    assert.equal(firstResult.auditCount, 1);
-    assert.deepEqual(firstResult.metrics, {
-      batches: 1,
-      statements: 7,
-      operations: { 'invitation.redeem': 7 },
-    });
-
-    const second = registrationData('second-use', invitationId, 'github-second', now + 2);
-    await callAction('redeemInvitation', second, 409);
-    const secondState = await callAction<{
-      accountCount: number;
-      sessionCount: number;
-      redemptionCount: number;
-      auditCount: number;
-    }>('registrationState', second);
-    assert.deepEqual(secondState, {
-      accountCount: 0,
-      sessionCount: 0,
-      redemptionCount: 1,
-      auditCount: 0,
-    });
-  });
-
+  /* Buradaki iki test davet kullanımının atomikliğini ölçüyordu. Davet
+     sistemi emekliye ayrıldı ve ölçtükleri özellik — bir batch'in geç
+     düşen bir kısıtta tamamen geri sarması — aşağıdaki kimlik bilgisi
+     döndürme testinde aynen duruyor. Ölü bir yolu yeşil tutan test,
+     hiçbir şey ölçmeyen testtir. */
   test('API credential rotation is atomic on late failure, success and stale retry', async () => {
     const now = Date.now();
     const seed = {
@@ -276,11 +193,11 @@ describe('Orbit V6 Slice 0 local-D1 foundation', { concurrency: false }, () => {
 
   test('error envelopes expose the stable request ID', () => {
     assert.deepEqual(
-      createErrorEnvelope('invalid_invitation', 'The invitation is not valid.', 'req_test'),
+      createErrorEnvelope('terms_not_accepted', 'Terms were not accepted.', 'req_test'),
       {
         error: {
-          code: 'invalid_invitation',
-          message: 'The invitation is not valid.',
+          code: 'terms_not_accepted',
+          message: 'Terms were not accepted.',
           requestId: 'req_test',
           details: {},
         },
@@ -293,7 +210,7 @@ describe('Orbit V6 Slice 0 local-D1 foundation', { concurrency: false }, () => {
       redactSecrets({
         authorization: 'Bearer orb_agent_v1_selector_supersecret',
         nested: {
-          message: 'received orb_inv_v1_selector_invitationsecret',
+          message: 'received orb_sess_v1_selector_sessionsecret',
           safe: 'visible',
         },
       }),

@@ -1,28 +1,29 @@
 import type { ConnectionTrace } from '../identity/connection';
 
-export interface InvitationRow {
-  id: string;
-  secretDigest: string;
-  hashVersion: number;
-  expectedGithubUserId: string | null;
-  expectedGithubLoginSnapshot: string | null;
-  agentQuota: number;
-  createdByAccountId: string;
-  createdAt: number;
-  expiresAt: number;
-  redeemedAt: number | null;
-  revokedAt: number | null;
-}
-
 export interface OAuthFlowRow {
   id: string;
   stateDigest: string;
   pkceVerifierDigest: string;
   redirectUri: string;
-  invitationId: string | null;
+  /* Kişinin Gizlilik Politikası ve Kullanım Koşulları'nı onayladığı an ve
+   * onayladığı metnin sürümü. Akış satırına yazılıyor çünkü akış satırı
+   * sunucuda doğuyor: tarayıcıdan gelen bir "kabul ettim" kanıt değil, ama
+   * /start içinde yazılmış bir satır kanıt. Dönüşte bu alanlar boşsa giriş
+   * tamamlanmıyor. */
+  termsAcceptedAt: number | null;
+  termsVersion: string | null;
   createdAt: number;
   expiresAt: number;
   consumedAt: number | null;
+}
+
+/* Bir giriş anında kaydedilen onay. Hem kayıtta hem her girişte yazılıyor:
+ * elimizdeki değer "bir zamanlar kabul etmişti" değil, "en son ne zaman ve
+ * hangi metni". Koşullar değiştiğinde kimin yeni metni gördüğünü de bu
+ * cevaplıyor. */
+export interface TermsConsent {
+  acceptedAt: number;
+  version: string;
 }
 
 export interface GithubIdentityRow {
@@ -30,11 +31,6 @@ export interface GithubIdentityRow {
   accountId: string;
   providerUserId: string;
   accountStatus: 'active' | 'suspended' | 'closed';
-}
-
-export interface OAuthCallbackContext {
-  identity: GithubIdentityRow | null;
-  invitation: InvitationRow | null;
 }
 
 export interface SessionView {
@@ -105,47 +101,42 @@ export interface NewSignInEvent {
 }
 
 export interface IdentityRepository {
-  getInvitation(selector: string): Promise<InvitationRow | null>;
-  createInvitation(input: InvitationRow & {
-    auditEventId: string;
-    requestId: string;
-  }): Promise<void>;
-  listInvitations(now: number, limit: number): Promise<InvitationRow[]>;
-  revokeInvitation(input: {
-    invitationId: string;
-    accountId: string;
-    auditEventId: string;
-    requestId: string;
-    now: number;
-  }): Promise<void>;
   createOAuthFlow(flow: OAuthFlowRow): Promise<void>;
   getOAuthFlow(selector: string): Promise<OAuthFlowRow | null>;
   findGithubIdentity(providerUserId: string): Promise<GithubIdentityRow | null>;
-  getOAuthCallbackContext(
-    providerUserId: string,
-    invitationId: string | null,
-  ): Promise<OAuthCallbackContext>;
+  /* Dönüşte "bu GitHub hesabı bizde var mı" sorusunun tek cevabı. Eskiden
+   * bunun yanında bir de davet okunuyordu ve ikisi tek sorguda geliyordu;
+   * davet kalkınca geriye sadece bu kaldı. */
+  getGithubIdentity(providerUserId: string): Promise<GithubIdentityRow | null>;
   loginExistingIdentity(input: {
     flowId: string;
     identity: GithubIdentityRow;
     profile: GithubProfileSnapshot;
     session: NewSessionRow;
+    consent: TermsConsent;
     auditEventId: string;
     signInEvent: NewSignInEvent;
     requestId: string;
     now: number;
   }): Promise<void>;
+  /* Son pencerelerde açılan hesap sayısı. İki sayı tek sorgudan geliyor:
+   * kayıt yolunda iki ayrı gidiş-dönüş, kapıyı korumak için ödenmesi
+   * gereksiz bir bedel. */
+  countRecentRegistrations(input: {
+    ip: string | null;
+    ipSince: number;
+    globalSince: number;
+  }): Promise<{ fromIp: number; total: number }>;
   registerGithubIdentity(input: {
     flowId: string;
-    invitationId: string;
     accountId: string;
     identityId: string;
     roleId: string;
     handle: string;
     profile: GithubProfileSnapshot;
     session: NewSessionRow;
+    consent: TermsConsent;
     agentQuota: number;
-    invitationAuditEventId: string;
     loginAuditEventId: string;
     signInEvent: NewSignInEvent;
     requestId: string;

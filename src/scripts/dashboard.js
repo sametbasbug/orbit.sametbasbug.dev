@@ -190,15 +190,33 @@ function denyMcpAuthorization() {
   }));
 }
 
+/* Onay kutusu. Tik atılmadan bu çağrı hiç yapılmıyor ve yapılsa da sunucu
+   reddediyor — buradaki kontrol kapı değil, kapıya gitmeden önce anlaşılır
+   bir cevap. Asıl kapı /v1/auth/github/start içinde ve oradan geçmeyen bir
+   akış GitHub'a hiç gitmiyor.
+
+   Sürüm de gönderiliyor: sayfa saatlerdir açık durup metin bu arada
+   güncellenmiş olabilir. Kişi ekranında gördüğü metni onaylıyor; sunucunun
+   kaydettiği sürüm başka bir metin olursa o onay bir şey ifade etmez. */
 async function login() {
-  const invitationToken = byId('invitation-token').value.trim();
+  if (!byId('terms-consent').checked) {
+    flash('Devam etmek için Gizlilik Politikası ve Kullanım Koşulları’nı onaylaman gerekiyor.', 'error');
+    return;
+  }
   const { body } = await request('/v1/auth/github/start', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(invitationToken ? { invitationToken } : {}),
+    body: JSON.stringify({
+      acceptedTerms: true,
+      termsVersion: byId('terms-consent').dataset.termsVersion,
+    }),
   });
   window.location.href = body.authorizationUrl;
 }
+
+/* Tik atılmadan buton çalışmıyor. Devre dışı bir butonun sebebini
+   söylemeyen arayüz sinir bozucu olur; o yüzden buton kapalı DEĞİL, basınca
+   sebebi söylüyor. Kapalı bir buton "site bozuk" gibi okunur. */
 
 function renderAccount() {
   const quota = me.account.agentQuota === -1 ? 'Sınırsız ajan hakkı' : `${me.account.agentQuota} ajan hakkı`;
@@ -449,30 +467,28 @@ async function decide(decision) {
   } catch (error) { flash(error.message, 'error'); }
 }
 
-async function loadInvitations() {
-  const rows = (await request('/v1/admin/invitations')).body.invitations;
-  const host = byId('invitations');
-  host.replaceChildren();
-  for (const invitation of rows) {
-    const item = document.createElement('div');
-    item.className = 'dashboard-item';
-    item.innerHTML = `<strong>${escapeHtml(invitation.expectedGithubLogin || 'Bağsız davet')}</strong><div class="meta">${escapeHtml(invitation.status)} · ${new Date(invitation.expiresAt).toLocaleString('tr-TR')}</div>`;
-    if (invitation.status === 'active') item.append(actionButton('İptal', async () => {
-      try { await mutate(`/v1/admin/invitations/${encodeURIComponent(invitation.id)}/revoke`); await loadInvitations(); }
-      catch (error) { flash(error.message, 'error'); }
-    }, 'danger'));
-    host.append(item);
-  }
-}
+/* Kutunun yanındaki sayı. Postayla duyurmak geri alınamayan bir iş: kuyruğa
+   giren satır yayınla aynı batch'te yazılıyor ve gönderilen posta geri
+   çağrılamıyor. Kaç kişiye gideceğini işaretlemeden ÖNCE görmek, o kararın
+   tek ölçüsü.
 
-async function createInvitation() {
+   Aynı yer kalan günlük bütçeyi de gösteriyor: alıcı sayısı tavanın altında
+   olsa bile o gün bütçe tükenmişse postalar bekler, ve bunu yayına
+   bastıktan sonra öğrenmek geç olur. */
+async function loadAnnouncementEmailBudget() {
+  const host = byId('announcement-email-budget');
   try {
-    const githubLogin = byId('invite-login').value.trim();
-    const { body } = await mutate('/v1/admin/invitations', 'POST', githubLogin ? { githubLogin } : {});
-    showSecret('Davet anahtarı', 'Bu davet anahtarı yalnızca şimdi gösterilir.', body.invitation.token);
-    byId('invite-login').value = '';
-    await loadInvitations();
-  } catch (error) { flash(error.message, 'error'); }
+    const budget = (await request('/v1/admin/announcements/email-budget')).body.emailBudget;
+    const overCap = budget.recipients > budget.recipientCap;
+    host.textContent = overCap
+      ? `Duyuru postası şu an ${budget.recipients} kişiye gidecekti; tek duyuru için tavan ${budget.recipientCap} kişi. Postasız yayımlayabilirsin — postayla duyurmak için gönderim planını yükseltmek gerekiyor.`
+      : `Postayla duyurursan ${budget.recipients} kişiye gider (tavan ${budget.recipientCap}). Bugün kalan gönderim hakkı: ${budget.remainingToday}/${budget.dailyBudget}.`;
+    host.classList.toggle('is-warning', overCap || budget.remainingToday < budget.recipients);
+  } catch {
+    /* Bütçe okunamadıysa yayın engellenmiyor — bu bir bilgi satırı, bir
+       kapı değil. Ama boş bırakmak "gidecek kişi yok" gibi okunurdu. */
+    host.textContent = 'Gönderim bütçesi şu an okunamıyor.';
+  }
 }
 
 async function loadAnnouncements() {
@@ -542,8 +558,13 @@ async function load() {
     }
     if (me.account.roles.includes('platform_owner')) {
       byId('admin-tools').classList.remove('hidden');
-      for (const id of ['owner-card', 'announcement-card', 'media-transform-card', 'backup-card']) byId(id).classList.remove('hidden');
-      await Promise.all([loadInvitations(), loadAnnouncements(), loadMediaTransformUsage(), loadBackups()]);
+      for (const id of ['announcement-card', 'media-transform-card', 'backup-card']) byId(id).classList.remove('hidden');
+      await Promise.all([
+        loadAnnouncements(),
+        loadAnnouncementEmailBudget(),
+        loadMediaTransformUsage(),
+        loadBackups(),
+      ]);
     }
   } catch (error) {
     if (error.status === 401) {
@@ -563,7 +584,6 @@ byId('secret-close').addEventListener('click', () => { byId('secret-value').text
 byId('review-approve').addEventListener('click', () => activeReview && decide('approve'));
 byId('review-reject').addEventListener('click', () => activeReview && decide('reject'));
 byId('review-close').addEventListener('click', () => { activeReview = null; byId('review-dialog').close(); });
-byId('invite-create').addEventListener('click', createInvitation);
 byId('backup-run').addEventListener('click', async () => {
   try { await mutate('/v1/admin/backups', 'POST', {}); await loadBackups(); flash('Şifreli manuel yedek doğrulandı.'); }
   catch (error) { await loadBackups(); flash(error.message, 'error'); }
@@ -621,7 +641,7 @@ byId('announcement-form').addEventListener('submit', async (event) => {
   try {
     await mutate(`/v1/admin/announcements/${encodeURIComponent(created.id)}/publish`, 'POST', { sendEmail });
     form.reset();
-    await loadAnnouncements();
+    await Promise.all([loadAnnouncements(), loadAnnouncementEmailBudget()]);
     const base = audienceType === 'all_agents' ? 'Duyuru yayımlandı — herkese görünür.' : 'Duyuru yayımlandı.';
     /* "Kuyruğa alındı" ile "gönderildi" farklı şeyler ve panel bunu
        karıştırmamalı: kuyruk beş dakikada bir boşalıyor ve gönderim

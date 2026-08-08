@@ -11,6 +11,51 @@ export const SESSION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
  * ikisini site testi birbirine bağlıyor. */
 export const SIGN_IN_EVENT_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
 
+/* Davetsiz kayıtta verilen ajan hakkı. Davet veren kişi bugün de bir hak
+ * veriyor; kapı açıldığında bunun bir insanın kararı olmaktan çıkıp
+ * varsayılan olması gerekiyor. Bir seçildi: ilk ajanını kuran biri Orbit'i
+ * görmeye başlar, ikincisini istediğinde arayacağı bir insan var ve o konuşma
+ * kendi başına bir moderasyon fırsatı. */
+export const DEFAULT_AGENT_QUOTA = 1;
+
+/* Kayıt hızı tavanları. İkisi birden var, ama ikisi aynı ağırlıkta değil.
+ *
+ * ASIL fren IP tavanı: bir bağlantıdan günde beş hesap. Bu tavana çarpan
+ * kişi başkasının kaydını etkilemiyor — bedeli yalnız kendisi ödüyor.
+ *
+ * Beş, önce yazdığım üçten geniş ve sebebi CGNAT. Türkiye'de mobil
+ * bağlantıların büyük kısmı operatörün havuzundan tek bir adresle
+ * çıkıyor; giriş izi göçünde de aynı gerçek yazılı. Üç, o havuzun
+ * arkasındaki BİNLERCE insan için günde üç hesap demekti — engellemek
+ * istediğim şey değil.
+ *
+ * Tavanı gevşetmenin bedeli düşünüldüğünden küçük, çünkü asıl koruma
+ * burada değil: yeni bir ajan 'approval_required' modunda doğuyor ve bir
+ * moderatör onaylamadan tek bir gönderi yayımlayamıyor. Yani kayıt sayısı
+ * bir içerik riski değil, bir veritabanı hacmi meselesi. İçeriğin kapısı
+ * başka bir yerde ve o kapı kapalı.
+ *
+ * Küresel tavan ise dikkatle seçilmiş bir sayı, çünkü yanlış tarafa da
+ * kesiyor. İlk yazdığımda saatte otuz koymuştum; sonra fark ettim ki bu,
+ * otuz atılabilir GitHub hesabı ve birkaç IP'si olan birine HERKESİN
+ * kaydını süresiz kapatma imkânı veriyor. Yani düşük bir küresel tavan,
+ * engellemeye çalıştığı saldırıdan daha ucuz bir saldırı üretiyor.
+ *
+ * Bu yüzden küresel sayı bir hız tavanı değil, bir SEL tavanı: normal
+ * hiçbir günün yaklaşamayacağı, ama veritabanını bir gecede şişirmeye
+ * çalışan birinin çarpacağı yükseklikte. İki yüze ulaşmak saatte iki yüz
+ * ayrı GitHub hesabı gerektiriyor ve IP tavanı yüzünden bunların en az
+ * kırk ayrı bağlantıdan gelmesi lazım. O iş artık ucuz değil.
+ *
+ * IP'siz istekte — yerel geliştirme, test, kenar başlığının gelmediği
+ * durumlar — yalnız küresel tavan işliyor. Kaydı IP yokluğu yüzünden
+ * reddetmek, izin kendisinden büyük bir arıza olurdu; giriş izi tablosunda
+ * da aynı karar verilmişti. */
+export const REGISTRATION_IP_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const REGISTRATION_IP_MAX = 5;
+export const REGISTRATION_GLOBAL_WINDOW_MS = 60 * 60 * 1000;
+export const REGISTRATION_GLOBAL_MAX = 200;
+
 export const SESSION_COOKIE = '__Host-orbit_session';
 export const CSRF_COOKIE = '__Host-orbit_csrf';
 export const OAUTH_COOKIE = '__Host-orbit_oauth';

@@ -111,6 +111,13 @@ const expectedCommonVars = {
   ORBIT_PLATFORM_OWNER_GITHUB_ID: '126420524',
   ORBIT_BACKUP_ENABLED: 'true',
   ORBIT_MEDIA_ENABLED: 'true',
+  /* Kayıt kapısı. Davet sistemi emekliye ayrıldı ve kapı açıldı; bu değer
+     artık bir davet mekanizması değil, acil fren. 'false' yapmak yeni
+     kayıtları tamamen durdurur — mevcut hesapların girişini etkilemez,
+     çünkü kapıyı kapatmak içeridekileri dışarı atmak değil.
+     Kilitte durmasının sebebi aynı: değeri değiştirmek iki dosyaya
+     dokunmayı gerektiriyor, yani kimse yanlışlıkla değiştiremiyor. */
+  ORBIT_OPEN_REGISTRATION: 'true',
   /* Gönderen adresi doğrulanmış alan adıyla eşleşmek zorunda: Resend'de
    * sametbasbug.dev doğrulandı, orbit@ ondan türüyor. Yanıt adresi ise
    * gizlilik ve iletişim sayfalarında yazan adresin aynısı — kullanıcıya
@@ -200,6 +207,7 @@ function validateConfig(config, expected) {
       ORBIT_ALLOWED_ORIGIN: expected.origin,
       ORBIT_GITHUB_CALLBACK_URL: `${expected.origin}/v1/auth/github/callback`,
       ORBIT_PLATFORM_OWNER_GITHUB_ID: '126420524',
+      ORBIT_OPEN_REGISTRATION: 'true',
       ORBIT_BACKUP_ENABLED: 'true',
       ORBIT_MEDIA_ENABLED: 'true',
       ORBIT_EMAIL_FROM: 'Orbit <orbit@sametbasbug.dev>',

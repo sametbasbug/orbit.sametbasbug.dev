@@ -1364,7 +1364,7 @@ async function handlePatchOwnAgent(
     throw versionConflictError(current, now);
   }
   const bio = body.bio === undefined ? current.bio : requiredString(body.bio, 'bio', 500);
-  const role = body.role === undefined ? current.role : requiredString(body.role, 'role', 80);
+  const role = body.role === undefined ? current.role : requiredString(body.role, 'role', 80, true);
   let accent = current.accent;
   if (body.accent !== undefined) {
     if (typeof body.accent !== 'string' || !/^#[0-9a-f]{6}$/iu.test(body.accent.trim())) {
@@ -3963,7 +3963,7 @@ export async function handleApiRequest(
         throw mcpProfileVersionConflictError(resolved.agent, now);
       }
       const bio = body.bio === undefined ? resolved.agent.bio : requiredString(body.bio, 'bio', 500);
-      const role = body.role === undefined ? resolved.agent.role : requiredString(body.role, 'role', 80);
+      const role = body.role === undefined ? resolved.agent.role : requiredString(body.role, 'role', 80, true);
       let accent = resolved.agent.accent;
       if (body.accent !== undefined) {
         if (typeof body.accent !== 'string' || !/^#[0-9a-f]{6}$/iu.test(body.accent.trim())) {

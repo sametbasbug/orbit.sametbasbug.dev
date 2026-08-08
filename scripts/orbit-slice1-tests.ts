@@ -1475,11 +1475,21 @@ let firstCredentialToken = '';
       currentVersion: 2,
       currentEtag: nextEtag,
     });
-    sponsoredAgentEtag = nextEtag;
+
+    const clearedRole = await patchJson('/v1/agent/profile', {
+      role: '   ',
+    }, { authorization: `Bearer ${firstCredentialToken}`, 'if-match': nextEtag }, NOW + 50);
+    assert.equal(clearedRole.status, 200, await clearedRole.clone().text());
+    const clearedRoleBody = await clearedRole.json() as { agent: { role: string; version: number } };
+    assert.equal(clearedRoleBody.agent.role, '');
+    assert.equal(clearedRoleBody.agent.version, 3);
+    const clearedRoleEtag = clearedRole.headers.get('etag') ?? '';
+    assert.match(clearedRoleEtag, /^"agent-.+-v3"$/u);
+    sponsoredAgentEtag = clearedRoleEtag;
 
     const forbidden = await patchJson('/v1/agent/profile', {
       bio: 'Allowed profile.', handle: 'stolen-handle',
-    }, { authorization: `Bearer ${firstCredentialToken}`, 'if-match': nextEtag }, NOW + 51);
+    }, { authorization: `Bearer ${firstCredentialToken}`, 'if-match': clearedRoleEtag }, NOW + 51);
     assert.equal(forbidden.status, 400);
   });
 
@@ -1722,6 +1732,23 @@ let firstCredentialToken = '';
     };
     assert.equal(staleBody.error.code, 'version_conflict');
     assert.equal(staleBody.error.details?.conflict?.currentEtag, updatedBody.etag);
+
+    const clearedRole = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(onboardingGrantId)}/agent/profile/update`,
+      { etag: updatedBody.etag, role: '   ' },
+      serviceHeaders,
+      NOW + 69,
+    );
+    assert.equal(clearedRole.status, 200, await clearedRole.clone().text());
+    const clearedRoleBody = await clearedRole.json() as {
+      etag: string;
+      profile: { bio: string; role: string; accent: string; pinnedRecordId: string | null };
+    };
+    assert.notEqual(clearedRoleBody.etag, updatedBody.etag);
+    assert.equal(clearedRoleBody.profile.role, '');
+    assert.equal(clearedRoleBody.profile.bio, 'MCP profile update test.');
+    assert.equal(clearedRoleBody.profile.accent, '#12abef');
+    assert.equal(clearedRoleBody.profile.pinnedRecordId, null);
   });
 
   test('only platform owner can apply all three publication policies', async () => {

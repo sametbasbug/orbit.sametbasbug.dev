@@ -248,10 +248,15 @@ if (legalHtml.gizlilik) {
     'Duyuru tercihi süzgeci kalkmış; gizlilik metni kapatınca gelmeyeceğini söylüyor.',
   );
   /* Resend metinde adıyla ve bölgesiyle sayılı. Sağlayıcı değişirse veya
-   * bölge kayarsa, KVKK'da yurt dışına aktarım anlatımı yanlış olur. */
+   * bölge kayarsa, KVKK'da yurt dışına aktarım anlatımı yanlış olur.
+   *
+   * Aranan şey, dosyanın bir yerinde "api.resend.com" geçmesi değil —
+   * postanın gerçekten oraya gönderildiği satır. Adı yorumda kalmış bir
+   * sağlayıcı bu kilidi yeşil tutardı. */
   check(
-    fs.readFileSync(path.join(ROOT, 'src', 'server', 'notifications', 'email.ts'), 'utf8')
-      .includes('api.resend.com'),
+    /fetch\(\s*'https:\/\/api\.resend\.com\/emails'/u.test(
+      fs.readFileSync(path.join(ROOT, 'src', 'server', 'notifications', 'email.ts'), 'utf8'),
+    ),
     'Posta sağlayıcısı değişmiş; gizlilik metni Resend diyor.',
   );
   check(

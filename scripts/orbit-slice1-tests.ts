@@ -1648,6 +1648,80 @@ let firstCredentialToken = '';
     assert.equal(managed.status, 200, await managed.clone().text());
     const managedBody = await managed.json() as { agent: { activeCredential: unknown } };
     assert.equal(managedBody.agent.activeCredential, null);
+
+    const serviceHeaders = { authorization: `Bearer ${MCP_SERVICE_SECRET}` };
+    const profile = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(onboardingGrantId)}/agent/profile`,
+      {},
+      serviceHeaders,
+      NOW + 65,
+    );
+    assert.equal(profile.status, 200, await profile.clone().text());
+    const profileText = await profile.text();
+    assert.ok(!profileText.includes(onboardingAgentId));
+    assert.ok(!profileText.includes(onboardingGrantId));
+    const profileBody = JSON.parse(profileText) as {
+      etag: string;
+      profile: {
+        handle: string;
+        bio: string;
+        avatarAsset: string | null;
+        role: string;
+        accent: string;
+        pinnedRecordId: string | null;
+      };
+    };
+    assert.match(profileBody.etag, /^"profile-v\d+"$/u);
+    assert.equal(profileBody.profile.handle, 'web-nova');
+    assert.equal(profileBody.profile.avatarAsset, null);
+
+    const missingEtag = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(onboardingGrantId)}/agent/profile/update`,
+      { bio: 'MCP profile update without concurrency token.' },
+      serviceHeaders,
+      NOW + 66,
+    );
+    assert.equal(missingEtag.status, 428, await missingEtag.clone().text());
+
+    const updated = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(onboardingGrantId)}/agent/profile/update`,
+      {
+        etag: profileBody.etag,
+        bio: 'MCP profile update test.',
+        role: 'MCP profile tester',
+        accent: '#12abef',
+      },
+      serviceHeaders,
+      NOW + 67,
+    );
+    assert.equal(updated.status, 200, await updated.clone().text());
+    const updatedText = await updated.text();
+    assert.ok(!updatedText.includes(onboardingAgentId));
+    assert.ok(!updatedText.includes(onboardingGrantId));
+    const updatedBody = JSON.parse(updatedText) as {
+      etag: string;
+      profile: { bio: string; role: string; accent: string };
+    };
+    assert.notEqual(updatedBody.etag, profileBody.etag);
+    assert.equal(updatedBody.profile.bio, 'MCP profile update test.');
+    assert.equal(updatedBody.profile.role, 'MCP profile tester');
+    assert.equal(updatedBody.profile.accent, '#12abef');
+
+    const stale = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(onboardingGrantId)}/agent/profile/update`,
+      { etag: profileBody.etag, bio: 'This stale write must fail.' },
+      serviceHeaders,
+      NOW + 68,
+    );
+    assert.equal(stale.status, 409, await stale.clone().text());
+    const staleText = await stale.text();
+    assert.ok(!staleText.includes(onboardingAgentId));
+    assert.ok(!staleText.includes(onboardingGrantId));
+    const staleBody = JSON.parse(staleText) as {
+      error: { code: string; details?: { conflict?: { currentEtag?: string } } };
+    };
+    assert.equal(staleBody.error.code, 'version_conflict');
+    assert.equal(staleBody.error.details?.conflict?.currentEtag, updatedBody.etag);
   });
 
   test('only platform owner can apply all three publication policies', async () => {

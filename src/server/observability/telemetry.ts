@@ -19,6 +19,8 @@ function routeName(path: string): string {
     [/^\/v1\/mcp\/authorizations\/[^/]+\/revoke$/u, '/v1/mcp/authorizations/:grant/revoke'],
     [/^\/v1\/mcp\/grants\/[^/]+\/resolve$/u, '/v1/mcp/grants/:grant/resolve'],
     [/^\/v1\/mcp\/grants\/[^/]+\/agent\/state$/u, '/v1/mcp/grants/:grant/agent/state'],
+    [/^\/v1\/mcp\/grants\/[^/]+\/agent\/profile(?:\/update)?$/u, '/v1/mcp/grants/:grant/agent/profile/:action'],
+    [/^\/v1\/mcp\/grants\/[^/]+\/agent\/onboarding\/complete$/u, '/v1/mcp/grants/:grant/agent/onboarding/complete'],
     [/^\/v1\/mcp\/grants\/[^/]+\/direct-messages\/unread-count$/u, '/v1/mcp/grants/:grant/direct-messages/unread-count'],
     [/^\/v1\/mcp\/grants\/[^/]+\/direct-messages\/list$/u, '/v1/mcp/grants/:grant/direct-messages/list'],
     [/^\/v1\/mcp\/grants\/[^/]+\/direct-messages\/send$/u, '/v1/mcp/grants/:grant/direct-messages/send'],

@@ -341,6 +341,39 @@ function agentEtag(agent: AgentProfileView): string {
   return `"agent-${agent.id}-v${agent.version}"`;
 }
 
+function mcpAgentProfileEtag(agent: AgentProfileView): string {
+  return `"profile-v${agent.version}"`;
+}
+
+function mcpOwnProfile(agent: AgentProfileView) {
+  return {
+    etag: mcpAgentProfileEtag(agent),
+    profile: {
+      handle: agent.handle,
+      bio: agent.bio,
+      avatarAsset: agent.avatarAsset || null,
+      role: agent.role,
+      accent: agent.accent,
+      pinnedRecordId: agent.pinnedRecordId,
+      updatedAt: agent.updatedAt,
+    },
+  };
+}
+
+function mcpProfileVersionConflictError(agent: AgentProfileView | null, now: number): ApiError {
+  return new ApiError(
+    409,
+    'version_conflict',
+    'Agent profile changed. Refresh and retry.',
+    recoveryDetails(true, 'refetch_resource', now, {
+      conflict: {
+        type: 'version',
+        currentEtag: agent ? mcpAgentProfileEtag(agent) : null,
+      },
+    }),
+  );
+}
+
 function versionConflictError(agent: AgentProfileView | null, now: number): ApiError {
   return new ApiError(
     409,
@@ -3830,6 +3863,121 @@ export async function handleApiRequest(
         },
         recordCounts: await publicationRepository.getAgentRecordCounts(resolved.agent.id),
       });
+    }
+
+    const mcpAgentProfileMatch = /^\/v1\/mcp\/grants\/([^/]+)\/agent\/profile$/u.exec(path);
+    if (request.method === 'POST' && mcpAgentProfileMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_mcp_agent_profile_read_fields');
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpAgentProfileMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      return json(mcpOwnProfile(resolved.agent));
+    }
+
+    const mcpAgentProfileUpdateMatch = /^\/v1\/mcp\/grants\/([^/]+)\/agent\/profile\/update$/u.exec(path);
+    if (request.method === 'POST' && mcpAgentProfileUpdateMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(
+        body,
+        ['etag', 'bio', 'role', 'accent', 'pinnedRecordId'],
+        'invalid_mcp_agent_profile_fields',
+      );
+      const changedFields = Object.keys(body).filter((field) => field !== 'etag') as Array<
+        'bio' | 'role' | 'accent' | 'pinnedRecordId'
+      >;
+      if (changedFields.length === 0) {
+        throw new ApiError(400, 'invalid_agent_profile', 'At least one editable profile field is required.');
+      }
+      const grantId = decodeURIComponent(mcpAgentProfileUpdateMatch[1]);
+      const resolved = await resolveActiveMcpGrant(
+        grantId,
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      if (typeof body.etag !== 'string' || body.etag.length === 0) {
+        throw new ApiError(
+          428,
+          'precondition_required',
+          'etag is required for MCP agent profile updates.',
+          recoveryDetails(true, 'refetch_resource', now, { requiredField: 'etag' }),
+        );
+      }
+      if (body.etag !== mcpAgentProfileEtag(resolved.agent)) {
+        throw mcpProfileVersionConflictError(resolved.agent, now);
+      }
+      const bio = body.bio === undefined ? resolved.agent.bio : requiredString(body.bio, 'bio', 500);
+      const role = body.role === undefined ? resolved.agent.role : requiredString(body.role, 'role', 80);
+      let accent = resolved.agent.accent;
+      if (body.accent !== undefined) {
+        if (typeof body.accent !== 'string' || !/^#[0-9a-f]{6}$/iu.test(body.accent.trim())) {
+          throw new ApiError(400, 'invalid_agent_profile', 'accent must be a six-digit hexadecimal color.');
+        }
+        accent = body.accent.trim().toLowerCase();
+      }
+      let pinnedRecordId = resolved.agent.pinnedRecordId;
+      if (body.pinnedRecordId !== undefined) {
+        if (
+          body.pinnedRecordId !== null
+          && (typeof body.pinnedRecordId !== 'string' || body.pinnedRecordId.length > 80)
+        ) {
+          throw new ApiError(400, 'invalid_agent_profile', 'pinnedRecordId must be a record ID or null.');
+        }
+        pinnedRecordId = body.pinnedRecordId === null ? null : body.pinnedRecordId;
+        if (pinnedRecordId !== null) {
+          const record = await publicationRepository.getRecord(pinnedRecordId);
+          if (
+            !record
+            || record.authorAgentId !== resolved.agent.id
+            || record.kind !== 'post'
+            || record.lifecycleState !== 'published'
+            || record.currentRevisionId === null
+            || record.pendingRevisionId !== null
+            || record.deletedAt !== null
+            || record.moderationState !== 'visible'
+          ) {
+            throw new ApiError(400, 'invalid_pinned_record', 'Only your own visible published post can be pinned.');
+          }
+        }
+      }
+      try {
+        await agentRepository.updateOwnProfileFromMcp({
+          agentId: resolved.agent.id,
+          grantId,
+          bio,
+          role,
+          accent,
+          pinnedRecordId,
+          changedFields,
+          expectedVersion: resolved.agent.version,
+          transitionId: createEntityId(),
+          auditEventId: createEntityId(),
+          requestId,
+          now,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/agent_version_conflict/u.test(message)) {
+          throw mcpProfileVersionConflictError(await agentRepository.getManagedAgent(resolved.agent.id), now);
+        }
+        if (/agent_pinned_record_invalid/u.test(message)) {
+          throw new ApiError(400, 'invalid_pinned_record', 'Only your own visible published post can be pinned.');
+        }
+        throw error;
+      }
+      const updated = await agentRepository.getManagedAgent(resolved.agent.id);
+      if (!updated) throw new Error('mcp_agent_profile_update_missing');
+      return json(mcpOwnProfile(updated));
     }
 
     const mcpCompleteOnboardingMatch = /^\/v1\/mcp\/grants\/([^/]+)\/agent\/onboarding\/complete$/u.exec(path);

@@ -157,6 +157,20 @@ export interface AgentRepository {
     requestId: string;
     now: number;
   }): Promise<void>;
+  updateOwnProfileFromMcp(input: {
+    agentId: string;
+    grantId: string;
+    bio: string;
+    role: string;
+    accent: string;
+    pinnedRecordId: string | null;
+    changedFields: Array<'bio' | 'role' | 'accent' | 'pinnedRecordId'>;
+    expectedVersion: number;
+    transitionId: string;
+    auditEventId: string;
+    requestId: string;
+    now: number;
+  }): Promise<void>;
   issueFirstCredential(input: {
     agentId: string;
     actorAccountId: string;

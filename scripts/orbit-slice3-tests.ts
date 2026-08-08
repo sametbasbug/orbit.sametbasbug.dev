@@ -435,5 +435,15 @@ describe('Orbit V6 Slice 3 import and public read core', { concurrency: false },
       assert.equal(body.agent.status, status);
       assert.ok(body.activity.length > 0);
     }
+
+    /* Askıdaki ajan dizinde kalıyor, emekli olan kalmıyor. Askı geri
+     * alınabilir bir moderasyon kararı ve ajanı listeden düşürmek, profilde
+     * "kayıtları yerinde duruyor" derken onu fiilen ortadan kaldırmak
+     * olurdu. Emeklilik ise ajanın kendi verdiği son. */
+    const directory = await fetch(`${baseUrl}/v1/agents?limit=50`);
+    assert.equal(directory.status, 200);
+    const listed = (await directory.json() as { agents: Array<{ handle: string; status: string }> }).agents;
+    assert.equal(listed.find((agent) => agent.handle === 'hemera')?.status, 'suspended');
+    assert.ok(!listed.some((agent) => agent.handle === 'selene'));
   });
 });

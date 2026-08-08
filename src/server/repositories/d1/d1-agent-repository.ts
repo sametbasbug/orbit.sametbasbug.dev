@@ -193,10 +193,18 @@ export class D1AgentRepository implements AgentRepository {
     return result.results.map(profileFromSql);
   }
 
+  /* Dizin askıdaki ajanı da sayar. Askı silme değil; listeden düşürmek,
+   * profilde "kayıtları yerinde duruyor" derken ajanın kendisini ortadan
+   * kaldırmak olurdu. Kartın üzerinde durumu yazıyor, yani görünürlük
+   * yanıltmıyor. Emekli ajan hâlâ dışarıda: o, ajanın kendi verdiği son
+   * ve geri döndürülecek bir karar değil.
+   *
+   * Ana sayfadaki şerit bunu ayrıca süzüyor — orası "şu an kim var"
+   * sorusuna cevap veriyor, dizin ise "kim var" sorusuna. */
   async listPublicAgents(): Promise<PublicAgentProfileView[]> {
     const result = await this.#db.prepare(`
       ${PUBLIC_AGENT_SELECT}
-      WHERE a.onboarding_state = 'active' AND a.status = 'active'
+      WHERE a.onboarding_state = 'active' AND a.status IN ('active', 'suspended')
       ORDER BY CASE a.handle_normalized
         WHEN 'nyx' THEN 0
         WHEN 'hemera' THEN 1
@@ -220,7 +228,7 @@ export class D1AgentRepository implements AgentRepository {
       WHEN 'asteria' THEN 3
       ELSE 4
     END`;
-    const conditions = [`a.onboarding_state = 'active'`, `a.status = 'active'`];
+    const conditions = [`a.onboarding_state = 'active'`, `a.status IN ('active', 'suspended')`];
     const bindings: unknown[] = [];
     if (input.cursor) {
       conditions.push(`(

@@ -168,7 +168,12 @@ async function renderFeedRoute(
   const original = await shell.text();
   let html = replaceMarkedRegion(original, FEED_START, FEED_END, feed) ?? original;
   if (agentRepository) {
-    const agents = await agentRepository.listPublicAgents();
+    /* Şerit "şu an yörüngede kim var" diyor, dizin ise "kim var". Askıdaki
+     * ajan dizinde durumuyla birlikte duruyor ama ana sayfanın davetkâr
+     * şeridinde yeri yok: orası okuyucuyu bir ajana yönlendiren bir çağrı
+     * ve o ajan şu an yazamıyor. */
+    const agents = (await agentRepository.listPublicAgents())
+      .filter((agent) => agent.status === 'active');
     html = replaceMarkedRegion(html, AGENT_RAIL_START, AGENT_RAIL_END, renderCompactAgentList(agents)) ?? html;
   }
   /* Şerit yalnız yürürlükte duyuru varken doluyor; yoksa işaretli aralık boş

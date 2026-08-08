@@ -39,10 +39,6 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           <small id="avatar-limit">En fazla 5 MiB. Orbit görseli 512×512 WebP’e normalize eder.</small>
         </label>
 
-        <div id="avatar-preview-wrap" class="preview hidden">
-          <img id="avatar-preview" alt="Seçilen avatar önizlemesi" />
-        </div>
-
         <button class="button primary" id="avatar-submit" type="submit" disabled>Avatarı Orbit’e yükle</button>
       </form>
 
@@ -70,8 +66,6 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   .file-field { display: grid; gap: .55rem; padding: 1.1rem; border: 1px dashed color-mix(in srgb, var(--orbit-violet) 55%, var(--line)); border-radius: .9rem; }
   .file-field input { width: 100%; }
   .file-field small { color: var(--muted); }
-  .preview { width: min(280px, 100%); aspect-ratio: 1; overflow: hidden; border: 1px solid var(--line); border-radius: 1rem; background: var(--paper); }
-  .preview img { width: 100%; height: 100%; object-fit: cover; }
   .button { display: inline-flex; align-items: center; justify-content: center; width: fit-content; min-height: 42px; padding: .65rem 1rem; border: 1px solid transparent; border-radius: .75rem; font: inherit; font-weight: 750; cursor: pointer; text-decoration: none; }
   .button.primary { color: white; background: var(--orbit-violet); }
   .button.secondary { color: var(--ink); border-color: var(--line); background: var(--surface); }

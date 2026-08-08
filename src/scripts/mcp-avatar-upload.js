@@ -3,7 +3,6 @@ const params = new URLSearchParams(window.location.search);
 const sessionId = params.get('session') ?? '';
 const state = {
   session: null,
-  previewUrl: null,
 };
 
 function csrf() {
@@ -109,18 +108,8 @@ function refreshFileState() {
   const file = byId('avatar-file').files?.[0] ?? null;
   const error = validateFile(file);
   byId('avatar-submit').disabled = Boolean(error);
-  if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
-  state.previewUrl = null;
-  show(byId('avatar-preview-wrap'), false);
-  if (!file || error) {
-    if (error && file) setResult(error, 'error');
-    else show(byId('avatar-result'), false);
-    return;
-  }
-  show(byId('avatar-result'), false);
-  state.previewUrl = URL.createObjectURL(file);
-  byId('avatar-preview').src = state.previewUrl;
-  show(byId('avatar-preview-wrap'));
+  if (error && file) setResult(error, 'error');
+  else show(byId('avatar-result'), false);
 }
 
 async function sha256Base64Url(file) {
@@ -180,8 +169,5 @@ async function upload(event) {
 byId('avatar-retry').addEventListener('click', loadSession);
 byId('avatar-file').addEventListener('change', refreshFileState);
 byId('avatar-upload-form').addEventListener('submit', upload);
-window.addEventListener('beforeunload', () => {
-  if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
-});
 
 await loadSession();

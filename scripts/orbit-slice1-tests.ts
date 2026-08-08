@@ -50,19 +50,44 @@ function migrate(): void {
   if (result.status !== 0) throw new Error(`${result.stdout}\n${result.stderr}`);
 }
 
-/* Giriş izinin HTTP yüzeyi yok ve olmaması bilinçli: IP'leri web'e açan bir
- * uç, bir yetkilendirme hatasında sızdırılacak yüzey demek. Kayıt hukuki
- * talep geldiğinde elle sorgulanıyor — testin de aynı yoldan bakması,
- * gerçekte kullanılacak yolu doğrulaması anlamına geliyor. */
-function queryDatabase<T>(sql: string): T[] {
-  const result = spawnSync(process.execPath, [
-    WRANGLER, 'd1', 'execute', 'orbit-v6-local',
-    '--config', CONFIG, '--local', `--persist-to=${persistDirectory}`,
-    '--json', '--command', sql,
-  ], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, CI: '1', NO_COLOR: '1' } });
-  if (result.status !== 0) throw new Error(`${result.stdout}\n${result.stderr}`);
-  const payload = JSON.parse(result.stdout.slice(result.stdout.indexOf('['))) as Array<{ results: T[] }>;
-  return payload[0]?.results ?? [];
+/* Test sırasında çalışan Wrangler'ın local D1 persist klasörüne ikinci bir
+ * `wrangler d1 execute` süreciyle girmek workerd bağlantısını resetleyebiliyor.
+ * DB-only doğrulamalarını production yüzeyine eklemek yerine test Worker'ın
+ * kapalı `__test/*` rotalarından aynı binding üzerinden okuyoruz. */
+async function signInState(githubUserId?: string): Promise<{
+  events: Array<{ event_type: string; ip: string | null; created_at: number }>;
+  total: number;
+}> {
+  const response = await postJson('/__test/sign-in-events', githubUserId ? { githubUserId } : {});
+  assert.equal(response.status, 200, await response.clone().text());
+  return await response.json() as {
+    events: Array<{ event_type: string; ip: string | null; created_at: number }>;
+    total: number;
+  };
+}
+
+async function authIdentitySnapshots(providerUserIds: string[]): Promise<Array<{
+  provider_user_id: string;
+  provider_email_snapshot: string | null;
+}>> {
+  const response = await postJson('/__test/auth-identities', { providerUserIds });
+  assert.equal(response.status, 200, await response.clone().text());
+  return (await response.json() as {
+    identities: Array<{ provider_user_id: string; provider_email_snapshot: string | null }>;
+  }).identities;
+}
+
+async function accountConsent(accountId: string): Promise<{
+  terms_accepted_at: number | null;
+  terms_version: string | null;
+}> {
+  const response = await postJson('/__test/account-consent', { accountId });
+  assert.equal(response.status, 200, await response.clone().text());
+  const row = (await response.json() as {
+    row: { terms_accepted_at: number | null; terms_version: string | null } | null;
+  }).row;
+  assert.ok(row, 'hesap onay satırı bulunamadı');
+  return row;
 }
 
 async function availablePort(): Promise<number> {
@@ -425,13 +450,7 @@ let firstCredentialToken = '';
     const relogin = await callback('traced', await startOAuth(NOW + 203), NOW + 204, '198.51.100.22');
     assert.equal(relogin.status, 302, await relogin.clone().text());
 
-    const rows = queryDatabase<{ event_type: string; ip: string | null; created_at: number }>(`
-      SELECT e.event_type, e.ip, e.created_at
-      FROM account_sign_in_events e
-      JOIN auth_identities i ON i.account_id = e.account_id
-      WHERE i.provider_user_id = '200000004'
-      ORDER BY e.created_at ASC
-    `);
+    const rows = (await signInState('200000004')).events;
 
     assert.equal(rows.length, 2, 'her giriş iz bırakmıyor');
     assert.equal(rows[0].event_type, 'registration', 'ilk giriş kayıt olarak işaretlenmemiş');
@@ -445,9 +464,7 @@ let firstCredentialToken = '';
      * gösterir — sorumlu insanı değil. O yüzden yazma yolunda iz hiç
      * okunmuyor. Bu test o sınırın yerinde durduğunu ölçüyor: ajan bir
      * istek yapıyor ve ortada yeni bir giriş izi oluşmuyor. */
-    const before = queryDatabase<{ total: number }>(
-      'SELECT COUNT(*) AS total FROM account_sign_in_events',
-    )[0].total;
+    const before = (await signInState()).total;
     /* Boş tabloda "sayı değişmedi" demek hiçbir şey ölçmez; testin
      * kendisinin boşa geçmediğini burada kelepçeliyoruz. */
     assert.ok(before > 0, 'iz tablosu boş: bu test hiçbir şey ölçmüyor');
@@ -460,9 +477,7 @@ let firstCredentialToken = '';
     }, NOW + 210);
     assert.equal(agentCall.status, 401, 'test varsayımı kaydı: bu çağrı reddedilmeliydi');
 
-    const after = queryDatabase<{ total: number }>(
-      'SELECT COUNT(*) AS total FROM account_sign_in_events',
-    )[0].total;
+    const after = (await signInState()).total;
     assert.equal(after, before, 'ajanın API isteği giriş izi yazmış');
   });
 
@@ -477,10 +492,7 @@ let firstCredentialToken = '';
     );
     assert.equal(unverified.status, 302, await unverified.clone().text());
 
-    const stored = queryDatabase<{ provider_user_id: string; provider_email_snapshot: string | null }>(`
-      SELECT provider_user_id, provider_email_snapshot FROM auth_identities
-      WHERE provider_user_id IN ('200000004', '200000005')
-    `);
+    const stored = await authIdentitySnapshots(['200000004', '200000005']);
     const traced = stored.find((row) => row.provider_user_id === '200000004');
     const withoutEmail = stored.find((row) => row.provider_user_id === '200000005');
 
@@ -498,9 +510,7 @@ let firstCredentialToken = '';
      * adresinin ikinci girişten sonra da yerinde durması. */
     const relogin = await callback('traced', await startOAuth(NOW + 223), NOW + 224);
     assert.equal(relogin.status, 302);
-    const afterRelogin = queryDatabase<{ provider_email_snapshot: string | null }>(
-      "SELECT provider_email_snapshot FROM auth_identities WHERE provider_user_id = '200000004'",
-    );
+    const afterRelogin = await authIdentitySnapshots(['200000004']);
     assert.equal(afterRelogin[0]?.provider_email_snapshot, 'izli@example.test');
   });
 
@@ -518,9 +528,7 @@ let firstCredentialToken = '';
     );
     assert.equal(registration.status, 302, await registration.clone().text());
 
-    const stored = queryDatabase<{ provider_email_snapshot: string | null }>(
-      "SELECT provider_email_snapshot FROM auth_identities WHERE provider_user_id = '200000006'",
-    );
+    const stored = await authIdentitySnapshots(['200000006']);
     assert.equal(
       stored[0]?.provider_email_snapshot,
       'gercek@example.test',
@@ -2184,7 +2192,7 @@ let firstCredentialToken = '';
      * bir noktada çalışıyor; iz bir yıl duruyor. Burada düşerse saklama
      * süresi sessizce kısalmış demektir ve gizlilik metni yalan söyler. */
     assert.ok(
-      queryDatabase<{ total: number }>('SELECT COUNT(*) AS total FROM account_sign_in_events')[0].total > 0,
+      (await signInState()).total > 0,
       'giriş izi bir yıl dolmadan siliniyor',
     );
   });
@@ -2193,9 +2201,7 @@ let firstCredentialToken = '';
     /* Gizlilik metnindeki "bir yıl" cümlesi bu silmenin çalışmasına
      * dayanıyor. Saklama süresi bir vaat: yazıp uygulamamak, hiç
      * yazmamaktan kötü. */
-    const before = queryDatabase<{ total: number }>(
-      'SELECT COUNT(*) AS total FROM account_sign_in_events',
-    )[0].total;
+    const before = (await signInState()).total;
     assert.ok(before > 0, 'iz tablosu zaten boş: bu test hiçbir şey ölçmüyor');
 
     const cleanupAt = NOW + 366 * 24 * 60 * 60 * 1000;
@@ -2205,7 +2211,7 @@ let firstCredentialToken = '';
     assert.equal(body.signInEvents, before, 'temizlik sildiği iz sayısını doğru bildirmiyor');
 
     assert.equal(
-      queryDatabase<{ total: number }>('SELECT COUNT(*) AS total FROM account_sign_in_events')[0].total,
+      (await signInState()).total,
       0,
       'bir yılı geçen giriş izi hâlâ duruyor',
     );
@@ -2347,9 +2353,7 @@ let firstCredentialToken = '';
       headers: authenticatedHeaders(cookieValues(registration)),
     }, NOW + 532)).json() as { account: { id: string } };
 
-    const first = queryDatabase<{ terms_accepted_at: number | null; terms_version: string | null }>(
-      `SELECT terms_accepted_at, terms_version FROM accounts WHERE id = '${me.account.id}'`,
-    )[0];
+    const first = await accountConsent(me.account.id);
     assert.equal(first.terms_accepted_at, NOW + 530, 'kayıt anındaki onay yazılmamış');
     assert.equal(first.terms_version, LEGAL_LAST_UPDATED, 'onaylanan metnin sürümü yazılmamış');
 
@@ -2361,9 +2365,7 @@ let firstCredentialToken = '';
       'true',
     );
     assert.equal(relogin.status, 302, await relogin.clone().text());
-    const second = queryDatabase<{ terms_accepted_at: number | null }>(
-      `SELECT terms_accepted_at FROM accounts WHERE id = '${me.account.id}'`,
-    )[0];
+    const second = await accountConsent(me.account.id);
     assert.equal(
       second.terms_accepted_at,
       NOW + 540,

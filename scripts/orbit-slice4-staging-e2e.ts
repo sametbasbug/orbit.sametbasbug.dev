@@ -169,7 +169,6 @@ const disposableAgent = async (mode: 'direct_publish' | 'approval_required' = 'd
 
 const session = await ownerSession(ownerId, sessionPepper, csrfPepper, now + 3);
 const createdRecordIds: string[] = [];
-const cleanupRecordIds: string[] = [];
 
 const directResponse = await agentWrite(direct.token, '/v1/records', {
   bodyMarkdown: 'Staging Slice 4 doğrudan yayın provası.',
@@ -178,7 +177,6 @@ const directResponse = await agentWrite(direct.token, '/v1/records', {
 assert.equal(directResponse.status, 201);
 const directBody = await directResponse.json() as { record: { id: string; slug: string } };
 createdRecordIds.push(directBody.record.id);
-cleanupRecordIds.push(directBody.record.id);
 assert.equal((await fetch(`${ORIGIN}/v1/records/${directBody.record.id}`)).status, 200);
 
 const replay = await agentWrite(direct.token, '/v1/records', {
@@ -195,7 +193,6 @@ const reply = await agentWrite(direct.token, `/v1/records/${directBody.record.id
 assert.equal(reply.status, 201);
 const replyBody = await reply.json() as { record: { id: string; parentId: string; rootId: string } };
 createdRecordIds.push(replyBody.record.id);
-cleanupRecordIds.push(replyBody.record.id);
 assert.equal(replyBody.record.parentId, directBody.record.id);
 assert.equal(replyBody.record.rootId, directBody.record.id);
 
@@ -205,7 +202,6 @@ const pending = await agentWrite(approval.token, '/v1/records', {
 assert.equal(pending.status, 202);
 const pendingBody = await pending.json() as { record: { id: string } };
 createdRecordIds.push(pendingBody.record.id);
-cleanupRecordIds.push(pendingBody.record.id);
 assert.equal((await fetch(`${ORIGIN}/v1/records/${pendingBody.record.id}`)).status, 404);
 const queue = await ownerRequest(session, '/v1/approvals').then((response) => response.json()) as {
   reviews: Array<{ id: string; record: { id: string } }>;
@@ -249,7 +245,6 @@ const concurrentPost = await pair(() => agentWrite(concurrentDirect.token, '/v1/
 }, `slice4-${suffix}-concurrent-post`), 201);
 const concurrentPostId = concurrentPost.record!.id;
 createdRecordIds.push(concurrentPostId);
-cleanupRecordIds.push(concurrentPostId);
 await settleBurstWindow();
 const concurrentReply = await pair(() => agentWrite(
   concurrentDirect.token,
@@ -258,7 +253,6 @@ const concurrentReply = await pair(() => agentWrite(
   `slice4-${suffix}-concurrent-reply`,
 ), 201);
 createdRecordIds.push(concurrentReply.record!.id);
-cleanupRecordIds.push(concurrentReply.record!.id);
 await pair(() => agentWrite(concurrentDirect.token, `/v1/records/${concurrentPostId}`, {
   bodyMarkdown: `Staging paralel idempotency revision ${suffix}.`,
 }, `slice4-${suffix}-concurrent-revision`, 'PATCH'), 200);
@@ -283,7 +277,6 @@ const slugBodies = await Promise.all(slugRace.map((response) => response.json())
 assert.notEqual(slugBodies[0].record.slug, slugBodies[1].record.slug);
 assert.ok(slugBodies.some((item) => item.record.slug.endsWith(item.record.id.replaceAll('-', '').slice(-12))));
 createdRecordIds.push(...slugBodies.map((item) => item.record.id));
-cleanupRecordIds.push(...slugBodies.map((item) => item.record.id));
 
 /* Her bekleyen kayıt kendi ajanıyla üretiliyor. Üç kayıt tek ajandan
    gelirse saatlik gönderi kotasına takılıyor; testin konusu onay akışı,
@@ -310,7 +303,6 @@ const approveReview = await reviewFor(approveId);
 await pair(() => ownerRequest(session, `/v1/approvals/${approveReview}/approve`, 'POST', {
   note: 'parallel staging approval',
 }, `slice4-${suffix}-concurrent-approve`), 200);
-cleanupRecordIds.push(approveId);
 
 const { id: rejectId } = await createPending(`Staging paralel ret ${suffix}.`, `slice4-${suffix}-reject-create`);
 const rejectReview = await reviewFor(rejectId);
@@ -363,12 +355,19 @@ assert.equal(Number(evidence.records), createdRecordIds.length);
 assert.ok(Number(evidence.audits) >= 15);
 assert.ok(Number(evidence.idempotency_rows) >= 15);
 
-/* Kök gönderiyi silmek yanıt ağacını da siliyor — bu, ayrı bir testin
+/* Temizlik, provanın yarattığı HER kaydı gezer — ayrı bir "silinecekler"
+ * listesi tutmuyoruz. Öyle bir liste vardı ve bir kaydı atlıyordu: reddedilen
+ * gönderi. Reddedilen kayıt zaten herkese 404 döndüğü için aşağıdaki genel
+ * okuma kontrolü de onu yakalayamıyordu; prova her koşuda staging'e bir satır
+ * bırakıp yeşil yanıyordu. Neyin yaratıldığını zaten bilen tek bir defter,
+ * hatırlanmaya dayanan ikinci bir defterden güvenli.
+ *
+ * Kök gönderiyi silmek yanıt ağacını da siliyor — bu, ayrı bir testin
  * doğruladığı kasıtlı davranış. Dolayısıyla listede önce kök, sonra onun
  * yanıtı geldiğinde ikincisi 404 döner ve bu bir arıza değil, istediğimiz
- * son durumun ta kendisi. Temizliğin ölçütü "her çağrı 200 döndü mü"
- * değil, "geride yayımlanmış kayıt kaldı mı". */
-for (const recordId of cleanupRecordIds) {
+ * son durumun ta kendisi. Aynısı provanın kendi sildiği kayıtlar için de
+ * geçerli. Ölçüt "her çağrı 200 döndü mü" değil, "geride ne kaldı". */
+for (const recordId of createdRecordIds) {
   const ownerDelete = await ownerRequest(session, `/v1/manage/records/${recordId}/delete`, 'POST', {
     reason: 'Slice 4 staging cleanup.',
   }, `slice4-${suffix}-delete-${recordId}`);
@@ -377,13 +376,26 @@ for (const recordId of cleanupRecordIds) {
     `Cleanup delete failed for ${recordId}: ${ownerDelete.status}`,
   );
 }
-for (const recordId of cleanupRecordIds) {
+for (const recordId of createdRecordIds) {
   assert.equal(
     (await fetch(`${ORIGIN}/v1/records/${recordId}`)).status,
     404,
     `Cleanup left ${recordId} publicly readable.`,
   );
 }
+/* Herkese 404 dönmek yetmez: taslak, bekleyen ve reddedilen kayıtlar zaten
+ * 404 döner. Kalıcı kanıt için D1'e soruyoruz — silinmemiş tek bir satır
+ * kalırsa prova kırmızı yanar, staging'de birikmez. */
+const survivors = execute(`
+  SELECT id, lifecycle_state FROM records
+  WHERE deleted_at IS NULL AND id IN (${createdRecordIds.map(quote).join(',')})
+`) as Array<{ id: string; lifecycle_state: string }>;
+assert.deepEqual(
+  survivors,
+  [],
+  `Cleanup left ${survivors.length} record(s) alive in staging: `
+    + survivors.map((row) => `${row.id} (${row.lifecycle_state})`).join(', '),
+);
 execute(`
   UPDATE agent_credentials SET revoked_at = ${Date.now()}, revoked_reason = 'staging_test_cleanup'
   WHERE id IN (${seededAgents.map((agent) => quote(agent.credentialId)).join(',')});

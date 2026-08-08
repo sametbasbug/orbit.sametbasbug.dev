@@ -37,3 +37,73 @@ jobs:
           npm run production:config:check
           npm run worker:build:production:live
           npm run contract:live
+
+  # Staging provaları hiçbir yerde otomatik koşmuyordu ve bir tanesi üç
+  # hafta boyunca bozuk kaldı: sunucuya yeni bir yayın kısıtı girdi, betik
+  # ondan habersiz kaldı, kimse çalıştırmadığı için kimse görmedi.
+  #
+  # Bu iş staging'e YENİ KOD DAĞITMIYOR. Staging Samet'in elle kullandığı
+  # kapı; gece yarısı üzerine yazmak, sabah bakmak için bıraktığı şeyi
+  # silmek olurdu. Burada aranan şey provaların ürüne ayak uydurup
+  # uydurmadığı — bunun için o an staging'de ne varsa yeter.
+  staging-rehearsal:
+    needs: full-regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Eksik bir secret'ın hatası, provanın kendi hatasına benzemesin.
+      # Kimlik bilgisi olmadan düşen bir iş, gerçekten kırılmış bir
+      # sözleşmeyle karıştırılırsa görmezden gelinmeye başlar.
+      - name: Verify the staging credentials are present
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ORBIT_SESSION_PEPPER_V1: ${{ secrets.ORBIT_STAGING_SESSION_PEPPER_V1 }}
+          ORBIT_CSRF_PEPPER_V1: ${{ secrets.ORBIT_STAGING_CSRF_PEPPER_V1 }}
+          ORBIT_AGENT_CREDENTIAL_PEPPER_V1: ${{ secrets.ORBIT_STAGING_AGENT_CREDENTIAL_PEPPER_V1 }}
+        run: |
+          missing=""
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -n "$ORBIT_SESSION_PEPPER_V1" ] || missing="$missing ORBIT_STAGING_SESSION_PEPPER_V1"
+          [ -n "$ORBIT_CSRF_PEPPER_V1" ] || missing="$missing ORBIT_STAGING_CSRF_PEPPER_V1"
+          [ -n "$ORBIT_AGENT_CREDENTIAL_PEPPER_V1" ] \
+            || missing="$missing ORBIT_STAGING_AGENT_CREDENTIAL_PEPPER_V1"
+          if [ -n "$missing" ]; then
+            echo "::error::Staging rehearsal cannot run. Missing repository secrets:$missing"
+            exit 1
+          fi
+
+      - name: Rehearse the staging contract
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ORBIT_SESSION_PEPPER_V1: ${{ secrets.ORBIT_STAGING_SESSION_PEPPER_V1 }}
+          ORBIT_CSRF_PEPPER_V1: ${{ secrets.ORBIT_STAGING_CSRF_PEPPER_V1 }}
+          ORBIT_AGENT_CREDENTIAL_PEPPER_V1: ${{ secrets.ORBIT_STAGING_AGENT_CREDENTIAL_PEPPER_V1 }}
+        # Buraya yalnız yeşil olduğu ölçülmüş provalar giriyor. slice2 ve
+        # slice3 kasten dışarıda:
+        #
+        #   slice2 — sponsorun ajan yaratmasını sınıyor; o uç 22 Temmuz'da
+        #   "Open Orbit to guest agents" ile kaldırıldı, ajanlar artık
+        #   kendileri kaydoluyor. Betik silinmiş bir API'ye bakıyor.
+        #
+        #   slice3 — akışın ilk iki kaydının tam olarak ne olduğunu iddia
+        #   ediyor. Başka bir provanın bıraktığı tek bir yayımlanmış kayıt
+        #   bunu bozuyor, yani her gece kendi kendine kırmızıya döner.
+        #
+        # İkisini de kırmızı hâlde bağlamak, gecelik işi görmezden
+        # gelinen bir işe çevirirdi — düzeltmeye çalıştığımız sorunun ta
+        # kendisi. Karar verilene kadar elle çalıştırılabilir durumdalar.
+        run: |
+          npm run staging:verify
+          npm run staging:slice4:e2e

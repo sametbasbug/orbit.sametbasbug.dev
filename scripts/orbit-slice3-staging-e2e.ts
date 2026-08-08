@@ -4,20 +4,11 @@ import { createEntityId } from '../src/server/foundation/ids';
 import { SESSION_ABSOLUTE_TTL_MS, SESSION_IDLE_TTL_MS } from '../src/server/identity/constants';
 import { createOpaqueToken, hmacDigest, randomBase64Url } from '../src/server/identity/tokens';
 import { loadManifest } from './orbit-slice3-manifest';
+import { readStagingSecret } from './orbit-staging-secrets';
 
 const ORIGIN = 'https://orbit-v6-staging.samett33710.workers.dev';
-const KEYCHAIN_SERVICE = 'staging.orbit.sametbasbug';
 const WRANGLER = 'node_modules/wrangler/bin/wrangler.js';
 const CONFIG = 'wrangler.staging.jsonc';
-
-function keychain(binding: string): string {
-  const result = spawnSync('security', ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', binding, '-w'], {
-    encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
-  });
-  assert.equal(result.status, 0, `Missing staging Keychain binding: ${binding}`);
-  assert.ok(result.stdout.trim());
-  return result.stdout.trim();
-}
 
 function quote(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
@@ -42,8 +33,8 @@ async function ownerSession(): Promise<{ token: string; csrf: string; selector: 
   `) as Array<{ id?: string }>;
   const accountId = rows[0]?.id;
   assert.ok(accountId);
-  const sessionPepper = keychain('ORBIT_SESSION_PEPPER_V1');
-  const csrfPepper = keychain('ORBIT_CSRF_PEPPER_V1');
+  const sessionPepper = readStagingSecret('ORBIT_SESSION_PEPPER_V1');
+  const csrfPepper = readStagingSecret('ORBIT_CSRF_PEPPER_V1');
   const session = await createOpaqueToken('session', sessionPepper);
   const csrf = randomBase64Url(32);
   const csrfDigest = await hmacDigest(`orbit:csrf:v1:${session.selector}:${csrf}`, csrfPepper);

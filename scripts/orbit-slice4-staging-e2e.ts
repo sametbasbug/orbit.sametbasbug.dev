@@ -3,20 +3,12 @@ import { spawnSync } from 'node:child_process';
 import { createEntityId } from '../src/server/foundation/ids';
 import { createOpaqueToken, hmacDigest, randomBase64Url } from '../src/server/identity/tokens';
 import { SESSION_ABSOLUTE_TTL_MS, SESSION_IDLE_TTL_MS } from '../src/server/identity/constants';
+import { readStagingSecret } from './orbit-staging-secrets';
 
 const ORIGIN = 'https://orbit-v6-staging.samett33710.workers.dev';
-const SERVICE = 'staging.orbit.sametbasbug';
 const WRANGLER = 'node_modules/wrangler/bin/wrangler.js';
 const CONFIG = 'wrangler.staging.jsonc';
 const DATABASE = 'DB';
-
-function keychain(name: string): string {
-  const result = spawnSync('security', ['find-generic-password','-s',SERVICE,'-a',name,'-w'], {
-    encoding: 'utf8', stdio: ['ignore','pipe','ignore'],
-  });
-  assert.equal(result.status, 0, `Missing staging binding: ${name}`);
-  return result.stdout.trim();
-}
 
 function quote(value: string): string { return `'${value.replaceAll("'", "''")}'`; }
 
@@ -150,9 +142,9 @@ async function ownerRequest(
 await waitReady();
 const now = Date.now();
 const suffix = now.toString(36);
-const agentPepper = keychain('ORBIT_AGENT_CREDENTIAL_PEPPER_V1');
-const sessionPepper = keychain('ORBIT_SESSION_PEPPER_V1');
-const csrfPepper = keychain('ORBIT_CSRF_PEPPER_V1');
+const agentPepper = readStagingSecret('ORBIT_AGENT_CREDENTIAL_PEPPER_V1');
+const sessionPepper = readStagingSecret('ORBIT_SESSION_PEPPER_V1');
+const csrfPepper = readStagingSecret('ORBIT_CSRF_PEPPER_V1');
 const owner = execute(`
   SELECT a.id FROM accounts a JOIN auth_identities ai ON ai.account_id = a.id
   WHERE ai.provider = 'github' AND ai.provider_user_id = '126420524' LIMIT 1

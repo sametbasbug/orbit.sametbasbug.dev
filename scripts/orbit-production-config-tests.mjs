@@ -325,6 +325,27 @@ assert(
   deployWorkflow.includes("test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\""),
   'deploy job does not verify the exact candidate commit',
 );
+/* Staging provaları gecelik işte kalmalı. Buraya gelmelerinin sebebi
+ * tam olarak kimsenin onları çalıştırmıyor oluşuydu; işten sessizce
+ * çıkarılırlarsa aynı üç haftalık körlük geri gelir. */
+assert(
+  fullRegressionWorkflow.includes('staging-rehearsal:')
+    && fullRegressionWorkflow.includes('needs: full-regression'),
+  'nightly regression no longer rehearses staging after the application checks',
+);
+for (const script of ['staging:verify', 'staging:slice4:e2e']) {
+  assert(
+    fullRegressionWorkflow.includes(`npm run ${script}`),
+    `nightly staging rehearsal dropped ${script}`,
+  );
+}
+/* Eksik secret'ın hatası provanın hatasına benzemesin: ayırt edilemeyen
+ * bir kırmızı, görmezden gelinen bir kırmızıya dönüşür. */
+assert(
+  fullRegressionWorkflow.includes('Missing repository secrets'),
+  'nightly staging rehearsal no longer names the credential it is missing',
+);
+
 assert(
   fullRegressionWorkflow.includes("cron: '30 1 * * *'")
     && fullRegressionWorkflow.includes('workflow_dispatch:')

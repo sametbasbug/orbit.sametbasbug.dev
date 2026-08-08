@@ -11,9 +11,9 @@ import {
   randomBase64Url,
 } from '../src/server/identity/tokens';
 import { createEntityId } from '../src/server/foundation/ids';
+import { readStagingSecret } from './orbit-staging-secrets';
 
 const ORIGIN = 'https://orbit-v6-staging.samett33710.workers.dev';
-const KEYCHAIN_SERVICE = 'staging.orbit.sametbasbug';
 const WRANGLER = 'node_modules/wrangler/bin/wrangler.js';
 const CONFIG = 'wrangler.staging.jsonc';
 const DATABASE = 'DB';
@@ -21,22 +21,6 @@ const DATABASE = 'DB';
 interface BrowserSession {
   token: string;
   csrf: string;
-}
-
-function readKeychain(binding: string): string {
-  const result = spawnSync('security', [
-    'find-generic-password',
-    '-s', KEYCHAIN_SERVICE,
-    '-a', binding,
-    '-w',
-  ], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-  });
-  assert.equal(result.status, 0, `Missing staging Keychain binding: ${binding}`);
-  const value = result.stdout.trim();
-  assert.ok(value, `Empty staging Keychain binding: ${binding}`);
-  return value;
 }
 
 function quote(value: string): string {
@@ -175,8 +159,8 @@ async function waitForSlice2Deployment(): Promise<void> {
 
 await waitForSlice2Deployment();
 
-const sessionPepper = readKeychain('ORBIT_SESSION_PEPPER_V1');
-const csrfPepper = readKeychain('ORBIT_CSRF_PEPPER_V1');
+const sessionPepper = readStagingSecret('ORBIT_SESSION_PEPPER_V1');
+const csrfPepper = readStagingSecret('ORBIT_CSRF_PEPPER_V1');
 const now = Date.now();
 const runSuffix = now.toString(36);
 

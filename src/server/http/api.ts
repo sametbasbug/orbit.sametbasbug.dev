@@ -2190,25 +2190,29 @@ async function handleAgentCreateRecord(
   );
 }
 
-async function handleAgentEditRecord(
+async function handleEditRecordForPrincipal(
   request: Request,
   env: OrbitBindings,
   repository: PublicationRepository,
   mediaRepository: MediaRepository,
+  principal: PublicationPrincipal,
   now: number,
   requestId: string,
   record: MutationRecord,
+  allowMedia: boolean,
 ): Promise<Response> {
-  const auth = await authenticateAgent(request, env, repository, now);
-  if (record.authorAgentId !== auth.principal.agentId || record.deletedAt !== null) {
+  if (record.authorAgentId !== principal.agentId || record.deletedAt !== null) {
     throw new ApiError(404, 'record_not_found', 'Record was not found.');
   }
   const body = await readJson(request);
   requireExactFields(body, ['bodyMarkdown', 'mediaId'], 'invalid_content_fields');
+  if (!allowMedia && body.mediaId !== undefined && body.mediaId !== null && body.mediaId !== '') {
+    throw new ApiError(403, 'mcp_media_scope_denied', 'Media publishing is not available through Orbit MCP yet.');
+  }
   if (record.kind === 'reply' && body.mediaId !== undefined && body.mediaId !== null && body.mediaId !== '') {
     throw new ApiError(400, 'reply_media_not_supported', 'Replies cannot contain media in the first beta.');
   }
-  const idem = await idempotencyContext(request, env, repository, 'agent', auth.principal.agentId, body, now);
+  const idem = await idempotencyContext(request, env, repository, 'agent', principal.agentId, body, now);
   if (idem.replay) return replayResponse(idem.replay);
   if (record.lifecycleState !== 'published' || !record.currentRevisionId || record.pendingRevisionId) {
     throw new ApiError(
@@ -2219,15 +2223,15 @@ async function handleAgentEditRecord(
     );
   }
   const markdown = markdownBody(body.bodyMarkdown);
-  const mediaId = await validateStagedMedia(mediaRepository, body.mediaId, auth.principal.agentId);
-  const direct = auth.principal.publicationMode === 'direct_publish';
+  const mediaId = await validateStagedMedia(mediaRepository, body.mediaId, principal.agentId);
+  const direct = principal.publicationMode === 'direct_publish';
   const revisionId = createEntityId();
   const responseBody = mutationResponse(record, revisionId, 'published', direct ? now : null);
   const status = direct ? 200 : 202;
   let concurrentReplay: Response | null;
   try {
     concurrentReplay = await runIdempotentMutation(
-      repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest,
+      repository, 'agent', principal.agentId, idem.keyDigest, idem.requestDigest,
       () => repository.createRevision({
       record,
       transitionId: createEntityId(),
@@ -2245,7 +2249,7 @@ async function handleAgentEditRecord(
       },
       reviewId: direct ? null : createEntityId(),
       idempotency: {
-        ...idem.row, principalType: 'agent', principalId: auth.principal.agentId,
+        ...idem.row, principalType: 'agent', principalId: principal.agentId,
         responseStatus: status, responseJson: canonicalJson(responseBody),
       },
       auditEventId: createEntityId(), requestId,
@@ -2254,7 +2258,7 @@ async function handleAgentEditRecord(
   } catch (error) {
     const mapped = await publicationQuotaApiError(
       repository,
-      auth.principal.agentId,
+      principal.agentId,
       record.kind,
       now,
       error,
@@ -2264,6 +2268,29 @@ async function handleAgentEditRecord(
   }
   if (concurrentReplay) return concurrentReplay;
   return idempotentJson(responseBody, status, idem.row.expiresAt);
+}
+
+async function handleAgentEditRecord(
+  request: Request,
+  env: OrbitBindings,
+  repository: PublicationRepository,
+  mediaRepository: MediaRepository,
+  now: number,
+  requestId: string,
+  record: MutationRecord,
+): Promise<Response> {
+  const auth = await authenticateAgent(request, env, repository, now);
+  return handleEditRecordForPrincipal(
+    request,
+    env,
+    repository,
+    mediaRepository,
+    auth.principal,
+    now,
+    requestId,
+    record,
+    true,
+  );
 }
 
 function reviewResponse(review: PublicationReviewView) {
@@ -2301,6 +2328,25 @@ function announcementResponse(item: AnnouncementView) {
     severity: item.severity,
     audienceType: item.audienceType,
     targetAgentId: item.targetAgentId,
+    status: item.status,
+    startsAt: item.startsAt,
+    expiresAt: item.expiresAt,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    publishedAt: item.publishedAt,
+    withdrawnAt: item.withdrawnAt,
+    readAt: item.readAt,
+  };
+}
+
+function mcpAnnouncementResponse(item: AnnouncementView) {
+  return {
+    id: item.id,
+    title: item.title,
+    bodyMarkdown: item.bodyMarkdown,
+    severity: item.severity,
+    audienceType: item.audienceType,
+    targetedToConnectedAgent: item.targetAgentId !== null,
     status: item.status,
     startsAt: item.startsAt,
     expiresAt: item.expiresAt,
@@ -2434,6 +2480,42 @@ async function listFollowsForAgent(
   });
 }
 
+async function listMcpFollowsForAgent(
+  url: URL,
+  repository: FollowRepository,
+  cursorPepper: string,
+  agentId: string,
+): Promise<Response> {
+  const box = followBox(url);
+  const filters = { agentId, box };
+  const values = await parseKeysetValues(url, 'follows', filters, ['number', 'string'], cursorPepper);
+  const cursor = values ? { createdAt: values[0] as number, agentId: values[1] as string } : null;
+  const page = box === 'following'
+    ? await repository.listFollowing({ agentId, limit: pageSize(url), cursor })
+    : await repository.listFollowers({ agentId, limit: pageSize(url), cursor });
+  const last = page.items.at(-1);
+  return json({
+    box,
+    follows: page.items.map((edge) => ({
+      agent: {
+        handle: edge.handle,
+        displayName: edge.displayName,
+        bio: edge.bio,
+        avatarAsset: edge.avatarAsset,
+        accent: edge.accent,
+      },
+      followedAt: edge.createdAt,
+    })),
+    nextCursor: await nextKeysetCursor(
+      page.hasMore,
+      'follows',
+      filters,
+      last ? [last.createdAt, last.agentId] : null,
+      cursorPepper,
+    ),
+  });
+}
+
 /*
  * Takip akışı public değil.
  *
@@ -2479,6 +2561,45 @@ async function resolveFollowTarget(
     throw new ApiError(409, 'follow_self_forbidden', 'An agent cannot follow itself.');
   }
   return target;
+}
+
+async function mutateFollowForAgent(
+  repository: FollowRepository,
+  followerAgentId: string,
+  rawHandle: string,
+  following: boolean,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const target = await resolveFollowTarget(repository, followerAgentId, rawHandle);
+  if (!following) {
+    await repository.unfollow({
+      followerAgentId,
+      followeeAgentId: target.id,
+      now,
+      auditEventId: crypto.randomUUID(),
+      requestId,
+    });
+    return json({ follow: { handle: target.handle, following: false } });
+  }
+  // Zaten takip ediliyorsa kota saymıyoruz: tekrar eden PUT yeni bir takip
+  // değil, aynı durumun tekrar söylenmesi.
+  if (!await repository.isFollowing(followerAgentId, target.id)) {
+    if (await repository.countFollowing(followerAgentId) >= FOLLOW_LIMIT_TOTAL) {
+      throw new ApiError(429, 'follow_limit_exceeded', `An agent can follow at most ${FOLLOW_LIMIT_TOTAL} agents.`);
+    }
+    if (await repository.countFollowsSince(followerAgentId, now - 3_600_000) >= FOLLOW_LIMIT_PER_HOUR) {
+      throw new ApiError(429, 'follow_rate_limit_exceeded', 'The agent reached an hourly follow limit.');
+    }
+    await repository.follow({
+      followerAgentId,
+      followeeAgentId: target.id,
+      createdAt: now,
+      auditEventId: crypto.randomUUID(),
+      requestId,
+    });
+  }
+  return json({ follow: { handle: target.handle, following: true } });
 }
 
 async function listDirectMessagesForAgent(
@@ -2541,6 +2662,31 @@ function directMessageListUrlFromBody(
       throw new ApiError(400, 'invalid_cursor', 'cursor must be a bounded opaque string.');
     }
     url.searchParams.set('cursor', body.cursor);
+  }
+  return url;
+}
+
+function mcpQueryUrlFromBody(
+  source: URL,
+  body: Record<string, unknown>,
+  fields: readonly string[],
+): URL {
+  const url = new URL(source.toString());
+  url.search = '';
+  for (const field of fields) {
+    const value = body[field];
+    if (value === undefined || value === null || value === '') continue;
+    if (field === 'limit') {
+      if (!Number.isSafeInteger(value)) {
+        throw new ApiError(400, 'invalid_page_size', 'limit must be an integer.');
+      }
+      url.searchParams.set(field, String(value));
+      continue;
+    }
+    if (typeof value !== 'string' || value.length > 2000) {
+      throw new ApiError(400, 'invalid_query_parameter', `${field} must be a bounded string.`);
+    }
+    url.searchParams.set(field, value);
   }
   return url;
 }
@@ -2962,21 +3108,21 @@ async function notifyReviewRejected(
   }, now);
 }
 
-async function handleWithdraw(
+async function handleWithdrawForPrincipal(
   request: Request,
   env: OrbitBindings,
   repository: PublicationRepository,
+  principal: Pick<PublicationPrincipal, 'agentId'>,
   record: MutationRecord,
   now: number,
   requestId: string,
 ): Promise<Response> {
-  const auth = await authenticateAgent(request, env, repository, now);
-  if (record.authorAgentId !== auth.principal.agentId) {
+  if (record.authorAgentId !== principal.agentId) {
     throw new ApiError(404, 'pending_record_not_found', 'Pending record or revision was not found.');
   }
   const body = await readJson(request);
   requireExactFields(body, [], 'invalid_withdraw_fields');
-  const idem = await idempotencyContext(request, env, repository, 'agent', auth.principal.agentId, body, now);
+  const idem = await idempotencyContext(request, env, repository, 'agent', principal.agentId, body, now);
   if (idem.replay) return replayResponse(idem.replay);
   if (!record.pendingRevisionId) {
     throw new ApiError(404, 'pending_record_not_found', 'Pending record or revision was not found.');
@@ -2992,12 +3138,12 @@ async function handleWithdraw(
   }
   const responseBody = { record: { id: record.id, status: record.currentRevisionId ? 'published' : 'withdrawn' } };
   const concurrentReplay = await runIdempotentMutation(
-    repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest,
+    repository, 'agent', principal.agentId, idem.keyDigest, idem.requestDigest,
     () => repository.withdrawPending({
-    review, agentId: auth.principal.agentId,
+    review, agentId: principal.agentId,
     transitionId: createEntityId(), auditEventId: createEntityId(), requestId, now,
     idempotency: {
-      ...idem.row, principalType: 'agent', principalId: auth.principal.agentId,
+      ...idem.row, principalType: 'agent', principalId: principal.agentId,
       responseStatus: 200, responseJson: canonicalJson(responseBody),
     },
     }),
@@ -3006,7 +3152,7 @@ async function handleWithdraw(
   return idempotentJson(responseBody, 200, idem.row.expiresAt);
 }
 
-async function handleAgentDelete(
+async function handleWithdraw(
   request: Request,
   env: OrbitBindings,
   repository: PublicationRepository,
@@ -3015,13 +3161,25 @@ async function handleAgentDelete(
   requestId: string,
 ): Promise<Response> {
   const auth = await authenticateAgent(request, env, repository, now);
-  if (record.authorAgentId !== auth.principal.agentId) {
+  return handleWithdrawForPrincipal(request, env, repository, auth.principal, record, now, requestId);
+}
+
+async function handleDeleteForPrincipal(
+  request: Request,
+  env: OrbitBindings,
+  repository: PublicationRepository,
+  principal: Pick<PublicationPrincipal, 'agentId'>,
+  record: MutationRecord,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  if (record.authorAgentId !== principal.agentId) {
     throw new ApiError(404, 'record_not_found', 'Record was not found.');
   }
   const body = await readJson(request);
   requireExactFields(body, ['reason'], 'invalid_delete_fields');
   const reason = requiredString(body.reason ?? 'author_deleted', 'reason', 280);
-  const idem = await idempotencyContext(request, env, repository, 'agent', auth.principal.agentId, body, now);
+  const idem = await idempotencyContext(request, env, repository, 'agent', principal.agentId, body, now);
   if (idem.replay) return replayResponse(idem.replay);
   if (record.deletedAt !== null) throw new ApiError(404, 'record_not_found', 'Record was not found.');
   if (record.kind === 'post') {
@@ -3037,17 +3195,17 @@ async function handleAgentDelete(
       },
     };
     const concurrentReplay = await runIdempotentMutation(
-      repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest,
+      repository, 'agent', principal.agentId, idem.keyDigest, idem.requestDigest,
       () => repository.softDeleteThread({
         rootRecord: record,
         actorType: 'agent',
-        actorId: auth.principal.agentId,
+        actorId: principal.agentId,
         reason,
         transitionId: createEntityId(),
         requestId,
         now,
         idempotency: {
-          ...idem.row, principalType: 'agent', principalId: auth.principal.agentId,
+          ...idem.row, principalType: 'agent', principalId: principal.agentId,
           responseStatus: 200, responseJson: canonicalJson(responseBody),
         },
       }),
@@ -3066,19 +3224,31 @@ async function handleAgentDelete(
     },
   };
   const concurrentReplay = await runIdempotentMutation(
-    repository, 'agent', auth.principal.agentId, idem.keyDigest, idem.requestDigest,
+    repository, 'agent', principal.agentId, idem.keyDigest, idem.requestDigest,
     () => repository.softDelete({
-    record, actorType: 'agent', actorId: auth.principal.agentId, reason,
+    record, actorType: 'agent', actorId: principal.agentId, reason,
     transitionId: createEntityId(), auditEventId: createEntityId(), moderationActionId: null,
     requestId, now,
     idempotency: {
-      ...idem.row, principalType: 'agent', principalId: auth.principal.agentId,
+      ...idem.row, principalType: 'agent', principalId: principal.agentId,
       responseStatus: 200, responseJson: canonicalJson(responseBody),
     },
     }),
   );
   if (concurrentReplay) return concurrentReplay;
   return idempotentJson(responseBody, 200, idem.row.expiresAt);
+}
+
+async function handleAgentDelete(
+  request: Request,
+  env: OrbitBindings,
+  repository: PublicationRepository,
+  record: MutationRecord,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const auth = await authenticateAgent(request, env, repository, now);
+  return handleDeleteForPrincipal(request, env, repository, auth.principal, record, now, requestId);
 }
 
 async function handleHumanDelete(
@@ -4261,6 +4431,308 @@ export async function handleApiRequest(
       );
     }
 
+    const mcpListOwnRecordsMatch = /^\/v1\/mcp\/grants\/([^/]+)\/agent\/records$/u.exec(path);
+    if (request.method === 'POST' && mcpListOwnRecordsMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, ['limit', 'cursor', 'state', 'kind', 'reviewStatus'], 'invalid_mcp_agent_record_list_fields');
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpListOwnRecordsMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      const requestUrl = mcpQueryUrlFromBody(url, body, ['limit', 'cursor', 'state', 'kind', 'reviewStatus']);
+      const state = agentRecordFilter(
+        requestUrl,
+        'state',
+        ['pending', 'published', 'rejected', 'deleted'] as const,
+      ) as AgentRecordLifecycleState | null;
+      const kind = agentRecordFilter(requestUrl, 'kind', ['post', 'reply'] as const);
+      const reviewStatus = agentRecordFilter(
+        requestUrl,
+        'reviewStatus',
+        ['pending', 'approved', 'rejected', 'cancelled'] as const,
+      ) as AgentRecordReviewStatus | null;
+      const filters = { agentId: resolved.agent.id, state, kind, reviewStatus };
+      const cursor = await parseAgentRecordCursor(requestUrl, filters, env.ORBIT_CURSOR_PEPPER_V1);
+      return await agentRecordPageResponse(
+        await publicationRepository.listAgentRecords({
+          agentId: resolved.agent.id,
+          limit: pageSize(requestUrl),
+          cursor,
+          state,
+          kind,
+          reviewStatus,
+        }),
+        filters,
+        env.ORBIT_CURSOR_PEPPER_V1,
+      );
+    }
+
+    const mcpOwnRecordMatch = /^\/v1\/mcp\/grants\/([^/]+)\/agent\/records\/([^/]+)$/u.exec(path);
+    if (request.method === 'POST' && mcpOwnRecordMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_mcp_agent_record_read_fields');
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpOwnRecordMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      const record = await publicationRepository.getAgentRecord(
+        resolved.agent.id,
+        decodeURIComponent(mcpOwnRecordMatch[2]),
+      );
+      if (!record) throw new ApiError(404, 'agent_record_not_found', 'Agent record was not found.');
+      return json({ record: agentRecord(record) });
+    }
+
+    const mcpReviseRecordMatch = /^\/v1\/mcp\/grants\/([^/]+)\/records\/([^/]+)\/revise$/u.exec(path);
+    if (request.method === 'POST' && mcpReviseRecordMatch) {
+      authenticateMcpService(request, env);
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpReviseRecordMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      const record = await publicationRepository.getRecord(decodeURIComponent(mcpReviseRecordMatch[2]));
+      if (!record) throw new ApiError(404, 'record_not_found', 'Record was not found.');
+      return await handleEditRecordForPrincipal(
+        request,
+        env,
+        publicationRepository,
+        mediaRepository,
+        mcpPublicationPrincipal(resolved.agent),
+        now,
+        requestId,
+        record,
+        false,
+      );
+    }
+
+    const mcpWithdrawRecordMatch = /^\/v1\/mcp\/grants\/([^/]+)\/records\/([^/]+)\/withdraw$/u.exec(path);
+    if (request.method === 'POST' && mcpWithdrawRecordMatch) {
+      authenticateMcpService(request, env);
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpWithdrawRecordMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      const record = await publicationRepository.getRecord(decodeURIComponent(mcpWithdrawRecordMatch[2]));
+      if (!record) throw new ApiError(404, 'pending_record_not_found', 'Pending record or revision was not found.');
+      return await handleWithdrawForPrincipal(
+        request,
+        env,
+        publicationRepository,
+        mcpPublicationPrincipal(resolved.agent),
+        record,
+        now,
+        requestId,
+      );
+    }
+
+    const mcpDeleteRecordMatch = /^\/v1\/mcp\/grants\/([^/]+)\/records\/([^/]+)\/delete$/u.exec(path);
+    if (request.method === 'POST' && mcpDeleteRecordMatch) {
+      authenticateMcpService(request, env);
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpDeleteRecordMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      const record = await publicationRepository.getRecord(decodeURIComponent(mcpDeleteRecordMatch[2]));
+      if (!record) throw new ApiError(404, 'record_not_found', 'Record was not found.');
+      return await handleDeleteForPrincipal(
+        request,
+        env,
+        publicationRepository,
+        mcpPublicationPrincipal(resolved.agent),
+        record,
+        now,
+        requestId,
+      );
+    }
+
+    const mcpUnreadAnnouncementsMatch = /^\/v1\/mcp\/grants\/([^/]+)\/announcements\/unread-count$/u.exec(path);
+    if (request.method === 'POST' && mcpUnreadAnnouncementsMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_mcp_announcement_unread_fields');
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpUnreadAnnouncementsMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      return json(unreadAnnouncementState(await platformRepository.listAnnouncementsForAgent(
+        resolved.agent.id,
+        resolved.agent.role !== '',
+        now,
+      )));
+    }
+
+    const mcpListAnnouncementsMatch = /^\/v1\/mcp\/grants\/([^/]+)\/announcements\/list$/u.exec(path);
+    if (request.method === 'POST' && mcpListAnnouncementsMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, ['limit', 'cursor'], 'invalid_mcp_announcement_list_fields');
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpListAnnouncementsMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      const requestUrl = mcpQueryUrlFromBody(url, body, ['limit', 'cursor']);
+      const filters = {
+        agentId: resolved.agent.id,
+        audience: resolved.agent.role !== '' ? 'equinox' : 'external',
+      };
+      const values = await parseKeysetValues(
+        requestUrl,
+        'agent-announcements',
+        filters,
+        ['number', 'number', 'string'],
+        env.ORBIT_CURSOR_PEPPER_V1,
+      );
+      const page = await platformRepository.listAnnouncementsForAgentPage({
+        agentId: resolved.agent.id,
+        isEquinox: resolved.agent.role !== '',
+        now,
+        limit: pageSize(requestUrl),
+        cursor: values ? {
+          severityRank: values[0] as number,
+          startsAt: values[1] as number,
+          id: values[2] as string,
+        } : null,
+      });
+      const last = page.items.at(-1);
+      return json({
+        announcements: page.items.map(mcpAnnouncementResponse),
+        nextCursor: await nextKeysetCursor(
+          page.hasMore,
+          'agent-announcements',
+          filters,
+          last ? [announcementSeverityRank(last.severity), last.startsAt, last.id] : null,
+          env.ORBIT_CURSOR_PEPPER_V1,
+        ),
+      });
+    }
+
+    const mcpAnnouncementReadMatch = /^\/v1\/mcp\/grants\/([^/]+)\/announcements\/([^/]+)\/read$/u.exec(path);
+    if (request.method === 'POST' && mcpAnnouncementReadMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_mcp_announcement_read_fields');
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpAnnouncementReadMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      const announcementId = decodeURIComponent(mcpAnnouncementReadMatch[2]);
+      const visible = await platformRepository.listAnnouncementsForAgent(
+        resolved.agent.id,
+        resolved.agent.role !== '',
+        now,
+      );
+      if (!visible.some((item) => item.id === announcementId)) {
+        throw new ApiError(404, 'announcement_not_found', 'Announcement was not found.');
+      }
+      await platformRepository.markAnnouncementRead({
+        announcementId,
+        agentId: resolved.agent.id,
+        auditEventId: createEntityId(),
+        requestId,
+        now,
+      });
+      return json({ announcement: { id: announcementId, readAt: now } });
+    }
+
+    const mcpFollowMutationMatch = /^\/v1\/mcp\/grants\/([^/]+)\/follows\/([^/]+)\/(follow|unfollow)$/u.exec(path);
+    if (request.method === 'POST' && mcpFollowMutationMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_mcp_follow_fields');
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpFollowMutationMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      return await mutateFollowForAgent(
+        followRepository,
+        resolved.agent.id,
+        decodeURIComponent(mcpFollowMutationMatch[2]),
+        mcpFollowMutationMatch[3] === 'follow',
+        now,
+        requestId,
+      );
+    }
+
+    const mcpListFollowsMatch = /^\/v1\/mcp\/grants\/([^/]+)\/follows\/list$/u.exec(path);
+    if (request.method === 'POST' && mcpListFollowsMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, ['box', 'limit', 'cursor'], 'invalid_mcp_follow_list_fields');
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpListFollowsMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      return await listMcpFollowsForAgent(
+        mcpQueryUrlFromBody(url, body, ['box', 'limit', 'cursor']),
+        followRepository,
+        env.ORBIT_CURSOR_PEPPER_V1,
+        resolved.agent.id,
+      );
+    }
+
+    const mcpFollowingFeedMatch = /^\/v1\/mcp\/grants\/([^/]+)\/feed\/following$/u.exec(path);
+    if (request.method === 'POST' && mcpFollowingFeedMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, ['limit', 'cursor'], 'invalid_mcp_following_feed_fields');
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpFollowingFeedMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      return await followingFeedResponse(
+        mcpQueryUrlFromBody(url, body, ['limit', 'cursor']),
+        publicRepository,
+        env.ORBIT_CURSOR_PEPPER_V1,
+        resolved.agent.handle.toLowerCase(),
+      );
+    }
+
     const mcpUnreadDirectMessagesMatch = /^\/v1\/mcp\/grants\/([^/]+)\/direct-messages\/unread-count$/u.exec(path);
     if (request.method === 'POST' && mcpUnreadDirectMessagesMatch) {
       authenticateMcpService(request, env);
@@ -5377,40 +5849,14 @@ export async function handleApiRequest(
     const agentFollowMatch = /^\/v1\/agent\/follows\/([^/]+)$/u.exec(path);
     if ((request.method === 'PUT' || request.method === 'DELETE') && agentFollowMatch) {
       const auth = await authenticateAgent(request, env, publicationRepository, now, true, 'social:write');
-      const follower = auth.principal.agentId;
-      const target = await resolveFollowTarget(
+      return await mutateFollowForAgent(
         followRepository,
-        follower,
+        auth.principal.agentId,
         decodeURIComponent(agentFollowMatch[1]),
+        request.method === 'PUT',
+        now,
+        requestId,
       );
-      if (request.method === 'DELETE') {
-        await followRepository.unfollow({
-          followerAgentId: follower,
-          followeeAgentId: target.id,
-          now,
-          auditEventId: crypto.randomUUID(),
-          requestId,
-        });
-        return json({ follow: { handle: target.handle, following: false } });
-      }
-      // Zaten takip ediliyorsa kota saymıyoruz: tekrar eden PUT yeni bir takip
-      // değil, aynı durumun tekrar söylenmesi.
-      if (!await followRepository.isFollowing(follower, target.id)) {
-        if (await followRepository.countFollowing(follower) >= FOLLOW_LIMIT_TOTAL) {
-          throw new ApiError(429, 'follow_limit_exceeded', `An agent can follow at most ${FOLLOW_LIMIT_TOTAL} agents.`);
-        }
-        if (await followRepository.countFollowsSince(follower, now - 3_600_000) >= FOLLOW_LIMIT_PER_HOUR) {
-          throw new ApiError(429, 'follow_rate_limit_exceeded', 'The agent reached an hourly follow limit.');
-        }
-        await followRepository.follow({
-          followerAgentId: follower,
-          followeeAgentId: target.id,
-          createdAt: now,
-          auditEventId: crypto.randomUUID(),
-          requestId,
-        });
-      }
-      return json({ follow: { handle: target.handle, following: true } });
     }
 
     if (request.method === 'GET' && path === '/v1/agent/feed/following') {

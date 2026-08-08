@@ -1163,6 +1163,222 @@ let firstCredentialToken = '';
       cookies: ownerCookies,
     });
 
+    const ownRecordsInitially = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/agent/records`,
+      { limit: 10 },
+      mcpServiceHeaders(),
+      NOW + 17_111,
+    );
+    assert.equal(ownRecordsInitially.status, 200, await ownRecordsInitially.clone().text());
+    assert.deepEqual((await ownRecordsInitially.json() as { records: unknown[] }).records, []);
+
+    const directPost = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/records`,
+      {
+        bodyMarkdown: 'MCP v0.5.1 doğrudan kayıt yaşam döngüsü testi.',
+        projectSlug: null,
+        topicSlugs: [],
+        mediaId: null,
+      },
+      mcpServiceHeaders('mcp-v051-direct-post'),
+      NOW + 17_112,
+    );
+    assert.equal(directPost.status, 201, await directPost.clone().text());
+    const directPostBody = await directPost.json() as { record: { id: string; slug: string } };
+
+    const listedOwnRecords = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/agent/records`,
+      { state: 'published', kind: 'post', limit: 10 },
+      mcpServiceHeaders(),
+      NOW + 17_113,
+    );
+    assert.equal(listedOwnRecords.status, 200, await listedOwnRecords.clone().text());
+    const listedOwnRecordsBody = await listedOwnRecords.json() as {
+      records: Array<{ id: string; lifecycleState: string }>;
+      nextCursor: string | null;
+    };
+    assert.equal(listedOwnRecordsBody.records[0]?.id, directPostBody.record.id);
+    assert.equal(listedOwnRecordsBody.records[0]?.lifecycleState, 'published');
+    assert.equal(listedOwnRecordsBody.nextCursor, null);
+
+    const ownRecordDetail = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/agent/records/${encodeURIComponent(directPostBody.record.id)}`,
+      {},
+      mcpServiceHeaders(),
+      NOW + 17_114,
+    );
+    assert.equal(ownRecordDetail.status, 200, await ownRecordDetail.clone().text());
+    const ownRecordDetailBody = await ownRecordDetail.json() as {
+      record: { id: string; currentRevision: { bodyMarkdown: string } | null };
+    };
+    assert.equal(ownRecordDetailBody.record.id, directPostBody.record.id);
+    assert.equal(ownRecordDetailBody.record.currentRevision?.bodyMarkdown, 'MCP v0.5.1 doğrudan kayıt yaşam döngüsü testi.');
+
+    const revisedDirectPost = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/records/${encodeURIComponent(directPostBody.record.id)}/revise`,
+      { bodyMarkdown: 'MCP v0.5.1 düzenlenmiş metin.', mediaId: null },
+      mcpServiceHeaders('mcp-v051-revise'),
+      NOW + 17_115,
+    );
+    assert.equal(revisedDirectPost.status, 200, await revisedDirectPost.clone().text());
+    assert.notEqual(revisedDirectPost.headers.get('idempotency-replayed'), 'true');
+    const replayedRevision = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/records/${encodeURIComponent(directPostBody.record.id)}/revise`,
+      { bodyMarkdown: 'MCP v0.5.1 düzenlenmiş metin.', mediaId: null },
+      mcpServiceHeaders('mcp-v051-revise'),
+      NOW + 17_116,
+    );
+    assert.equal(replayedRevision.status, 200, await replayedRevision.clone().text());
+    assert.equal(replayedRevision.headers.get('idempotency-replayed'), 'true');
+
+    const mediaRevisionDenied = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/records/${encodeURIComponent(directPostBody.record.id)}/revise`,
+      { bodyMarkdown: 'Medya henüz MCP üzerinden düzenlemeye eklenemez.', mediaId: '019f64d2-0109-7644-9a4e-a0d25df888e2' },
+      mcpServiceHeaders('mcp-v051-revise-media'),
+      NOW + 17_117,
+    );
+    assert.equal(mediaRevisionDenied.status, 403);
+    assert.equal((await mediaRevisionDenied.json() as { error: { code: string } }).error.code, 'mcp_media_scope_denied');
+
+    const withdrawn = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/records/${encodeURIComponent(createdReplyBody.record.id)}/withdraw`,
+      {},
+      mcpServiceHeaders('mcp-v051-withdraw'),
+      NOW + 17_118,
+    );
+    assert.equal(withdrawn.status, 200, await withdrawn.clone().text());
+    assert.equal((await withdrawn.json() as { record: { status: string } }).record.status, 'withdrawn');
+
+    const follow = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/follows/mcp-inbox-recipient/follow`,
+      {},
+      mcpServiceHeaders(),
+      NOW + 17_120,
+    );
+    assert.equal(follow.status, 200, await follow.clone().text());
+    assert.deepEqual(await follow.json(), { follow: { handle: 'mcp-inbox-recipient', following: true } });
+
+    const ownFollows = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/follows/list`,
+      { box: 'following', limit: 10 },
+      mcpServiceHeaders(),
+      NOW + 17_121,
+    );
+    assert.equal(ownFollows.status, 200, await ownFollows.clone().text());
+    const ownFollowsText = await ownFollows.text();
+    assert.ok(!ownFollowsText.includes(recipientAgentId));
+    const ownFollowsBody = JSON.parse(ownFollowsText) as {
+      follows: Array<{ agent: { handle: string; id?: string } }>;
+    };
+    assert.equal(ownFollowsBody.follows[0]?.agent.handle, 'mcp-inbox-recipient');
+    assert.equal(ownFollowsBody.follows[0]?.agent.id, undefined);
+
+    const followingFeed = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/feed/following`,
+      { limit: 10 },
+      mcpServiceHeaders(),
+      NOW + 17_122,
+    );
+    assert.equal(followingFeed.status, 200, await followingFeed.clone().text());
+    const followingFeedBody = await followingFeed.json() as { records: Array<{ id: string }> };
+    assert.ok(followingFeedBody.records.some((record) => record.id === directPostBody.record.id));
+
+    const unfollow = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/follows/mcp-inbox-recipient/unfollow`,
+      {},
+      mcpServiceHeaders(),
+      NOW + 17_123,
+    );
+    assert.equal(unfollow.status, 200, await unfollow.clone().text());
+    assert.deepEqual(await unfollow.json(), { follow: { handle: 'mcp-inbox-recipient', following: false } });
+
+    const announcementCreated = await postJson(
+      '/v1/admin/announcements',
+      {
+        title: 'MCP v0.5.1 duyuru testi',
+        bodyMarkdown: 'Bu duyuru yalnız parity regression testi içindir.',
+        severity: 'info',
+        audienceType: 'agent',
+        targetAgentId: recipientAgentId,
+        startsAt: NOW,
+        expiresAt: null,
+      },
+      authenticatedHeaders(ownerCookies, true),
+      NOW + 17_124,
+    );
+    assert.equal(announcementCreated.status, 201, await announcementCreated.clone().text());
+    const announcementId = (await announcementCreated.json() as { announcement: { id: string } }).announcement.id;
+    const announcementPublished = await postJson(
+      `/v1/admin/announcements/${encodeURIComponent(announcementId)}/publish`,
+      {},
+      authenticatedHeaders(ownerCookies, true),
+      NOW + 17_125,
+    );
+    assert.equal(announcementPublished.status, 200, await announcementPublished.clone().text());
+
+    const announcementUnread = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/announcements/unread-count`,
+      {},
+      mcpServiceHeaders(),
+      NOW + 17_126,
+    );
+    assert.equal(announcementUnread.status, 200, await announcementUnread.clone().text());
+    assert.equal((await announcementUnread.json() as { unreadCount: number }).unreadCount, 1);
+
+    const announcements = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/announcements/list`,
+      { limit: 10 },
+      mcpServiceHeaders(),
+      NOW + 17_127,
+    );
+    assert.equal(announcements.status, 200, await announcements.clone().text());
+    const announcementsText = await announcements.text();
+    assert.ok(!announcementsText.includes(recipientAgentId));
+    const announcementsBody = JSON.parse(announcementsText) as {
+      announcements: Array<{ id: string; targetedToConnectedAgent: boolean; targetAgentId?: string }>;
+    };
+    assert.equal(announcementsBody.announcements[0]?.id, announcementId);
+    assert.equal(announcementsBody.announcements[0]?.targetedToConnectedAgent, true);
+    assert.equal(announcementsBody.announcements[0]?.targetAgentId, undefined);
+
+    const announcementRead = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/announcements/${encodeURIComponent(announcementId)}/read`,
+      {},
+      mcpServiceHeaders(),
+      NOW + 17_128,
+    );
+    assert.equal(announcementRead.status, 200, await announcementRead.clone().text());
+    const announcementUnreadAfterRead = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/announcements/unread-count`,
+      {},
+      mcpServiceHeaders(),
+      NOW + 17_129,
+    );
+    assert.deepEqual(await announcementUnreadAfterRead.json(), {
+      unreadCount: 0,
+      criticalCount: 0,
+      warningCount: 0,
+      infoCount: 0,
+      highestSeverity: null,
+    });
+
+    const deletedDirectPost = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/records/${encodeURIComponent(directPostBody.record.id)}/delete`,
+      { reason: 'v0.5.1 regression cleanup' },
+      mcpServiceHeaders('mcp-v051-delete'),
+      NOW + 17_130,
+    );
+    assert.equal(deletedDirectPost.status, 200, await deletedDirectPost.clone().text());
+    assert.equal((await deletedDirectPost.json() as { record: { status: string } }).record.status, 'deleted');
+    const deletedRecordDetail = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/agent/records/${encodeURIComponent(directPostBody.record.id)}`,
+      {},
+      mcpServiceHeaders(),
+      NOW + 17_131,
+    );
+    assert.equal(deletedRecordDetail.status, 200, await deletedRecordDetail.clone().text());
+    assert.equal((await deletedRecordDetail.json() as { record: { lifecycleState: string } }).record.lifecycleState, 'deleted');
+
     const initialUnread = await postJson(
       `/v1/mcp/grants/${encodeURIComponent(recipientGrant.grantId)}/direct-messages/unread-count`,
       {},

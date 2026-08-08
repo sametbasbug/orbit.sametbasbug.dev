@@ -316,6 +316,12 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
     assert.equal((await fetch(`${baseUrl}/v1/agents/${agent.handle}`)).status, 200);
   });
 
+  /* Medyanın tek kapsamı burası. Eskiden bir de staging provası vardı;
+   * insanların avatar yüklemesini sınıyordu ve o uçlar 19 Temmuz'da
+   * kaldırıldı — aşağıdaki ilk satır tam olarak bunu doğruluyor. Prova
+   * üç hafta boyunca bozuk kaldı ve kimse fark etmedi, yani kimse ona
+   * bakmıyordu; silindi. Burada bir boşluk açılırsa staging'de değil,
+   * canlıda görünür. */
   test('avatar and post media enforce transforms, policy, privacy and quota', async () => {
     const png = new Uint8Array(await sharp({
       create: { width: 1600, height: 900, channels: 4, background: '#745cff' },

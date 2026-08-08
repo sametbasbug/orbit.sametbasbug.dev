@@ -34,7 +34,6 @@
     "staging:slice4:e2e": "tsx scripts/orbit-slice4-staging-e2e.ts",
     "staging:slice4:backup-rehearsal": "tsx scripts/orbit-slice4-backup-rehearsal.ts",
     "staging:slice5:r2-restore": "tsx scripts/orbit-slice5-r2-rehearsal.ts",
-    "staging:slice5:media-e2e": "tsx scripts/orbit-slice5-media-staging-e2e.ts",
     "staging:slice5:images-cpu": "tsx scripts/orbit-slice5-images-cpu-staging-e2e.ts",
     "orbit:import:verify": "tsx scripts/orbit-slice3-manifest.ts",
     "orbit:import:local": "tsx scripts/orbit-slice3-import.ts --local --database=orbit-v6-local --config=wrangler.test.jsonc",

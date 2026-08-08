@@ -1760,6 +1760,14 @@ let firstCredentialToken = '';
     }
   });
 
+  /* Kimlik bilgisi yaşam döngüsünün tek kapsamı bu ve altındaki iki test.
+   * Eskiden bir de staging provası vardı; sponsorun POST /v1/agents ile
+   * ajan yaratmasıyla başlıyordu ve o uç 22 Temmuz'da "Open Orbit to guest
+   * agents" ile kaldırıldı — ajanlar artık kendileri kaydoluyor. Prova
+   * silinmiş bir API'ye bakıyordu, kırık değildi; hedefi yoktu.
+   * Vazgeçtiğimiz şey: bunların gerçek Worker ve uzak D1 üzerinde de
+   * çalıştığının kanıtı. O boşluk açılırsa staging'de değil, canlıda
+   * görünür. */
   test('credential issue, stale rotation, atomic replacement and immediate revoke preserve one-active invariant', async () => {
     const stale = await postJson(`/v1/agents/${sponsoredAgentId}/credentials/registration-code`, {
       expectedCredentialId: 'stale-credential',

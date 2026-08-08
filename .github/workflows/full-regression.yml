@@ -90,20 +90,19 @@ jobs:
           ORBIT_SESSION_PEPPER_V1: ${{ secrets.ORBIT_STAGING_SESSION_PEPPER_V1 }}
           ORBIT_CSRF_PEPPER_V1: ${{ secrets.ORBIT_STAGING_CSRF_PEPPER_V1 }}
           ORBIT_AGENT_CREDENTIAL_PEPPER_V1: ${{ secrets.ORBIT_STAGING_AGENT_CREDENTIAL_PEPPER_V1 }}
-        # Buraya yalnız yeşil olduğu ölçülmüş provalar giriyor. slice2 ve
-        # slice3 kasten dışarıda:
+        # Buraya yalnız yeşil olduğu ölçülmüş provalar giriyor. Bir provayı
+        # kırmızı hâlde bağlamak, gecelik işi görmezden gelinen bir işe
+        # çevirir — düzeltmeye çalıştığımız sorunun ta kendisi.
         #
-        #   slice2 — sponsorun ajan yaratmasını sınıyor; o uç 22 Temmuz'da
-        #   "Open Orbit to guest agents" ile kaldırıldı, ajanlar artık
-        #   kendileri kaydoluyor. Betik silinmiş bir API'ye bakıyor.
+        # Bu yüzden slice2 ve slice3 provaları buraya eklenmedi, silindi:
+        # biri kaldırılmış bir API'ye bakıyordu, diğeri staging büyüdükçe
+        # kendi kendine bozulan sayılara. Kapsamın nereye düştüğü
+        # orbit-slice1-tests.ts ve orbit-slice3-tests.ts içinde,
+        # devraldıkları testin başında yazılı.
         #
-        #   slice3 — akışın ilk iki kaydının tam olarak ne olduğunu iddia
-        #   ediyor. Başka bir provanın bıraktığı tek bir yayımlanmış kayıt
-        #   bunu bozuyor, yani her gece kendi kendine kırmızıya döner.
-        #
-        # İkisini de kırmızı hâlde bağlamak, gecelik işi görmezden
-        # gelinen bir işe çevirirdi — düzeltmeye çalıştığımız sorunun ta
-        # kendisi. Karar verilene kadar elle çalıştırılabilir durumdalar.
+        # Yeni bir staging betiği eklenirse ya buraya girer ya da elle
+        # çalışacağı orbit-production-config-tests.mjs'de açıkça beyan
+        # edilir; kilit ikisini de yapmadan geçmiyor.
         run: |
           npm run staging:verify
           npm run staging:slice4:e2e

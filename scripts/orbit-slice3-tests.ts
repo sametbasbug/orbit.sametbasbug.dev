@@ -150,6 +150,23 @@ describe('Orbit V6 Slice 3 import and public read core', { concurrency: false },
     assert.match(`${conflict.stdout}\n${conflict.stderr}`, /legacy_import_conflict/u);
   });
 
+  /* Akış, imzalı imleç, kayıt detayı, görünürlük sızıntısı ve emekli ajan
+   * kapsamı buradan aşağısı. Eskiden bunların bir de staging provası
+   * vardı; iki nedenle emekliye ayrıldı.
+   *
+   * Birincisi: prova akışın ilk iki kaydının tam olarak ne olduğunu, yanıt
+   * sayısının üç, içe aktarılan kayıt sayısının on üç olduğunu iddia
+   * ediyordu. Bunlar 2026-07'de doğruydu. Staging büyüyen bir veritabanı,
+   * yani prova her yeni kayıtta kendi kendine kırmızıya dönüyordu.
+   *
+   * İkincisi ve ağır olanı: kanıtı üretmek için canlı staging satırlarını
+   * geçici olarak bozuyordu — bir kaydı 'pending' yapıp nyx'i 'retired'
+   * işaretliyor, sonunda geri alıyordu. Betik ortasında düşerse staging'de
+   * emekli bir ajan bırakıyor. Ölçtüğü şeyi bozarak ölçen bir prova.
+   *
+   * Buradaki testler aynı sözleşmeyi sabit bir manifest üzerinde sınıyor.
+   * Vazgeçtiğimiz: bunun gerçek Worker ve uzak D1'de de tuttuğunun,
+   * özellikle ETag/If-Match yarışının ağ üzerinden kanıtı. */
   test('feed uses stable keyset pagination and signed filter-bound cursors', async () => {
     const first = await fetch(`${baseUrl}/v1/feed?limit=2`);
     assert.equal(first.status, 200);

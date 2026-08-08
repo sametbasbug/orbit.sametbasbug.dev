@@ -7,7 +7,22 @@ const files = {
   staging: new URL('../wrangler.staging.jsonc', import.meta.url),
   deployWorkflow: new URL('../.github/workflows/deploy-production.yml', import.meta.url),
   fullRegressionWorkflow: new URL('../.github/workflows/full-regression.yml', import.meta.url),
+  packageJson: new URL('../package.json', import.meta.url),
 };
+
+/* Elle çalıştırılacağı bilerek kabul edilmiş staging betikleri. Buraya
+ * girmek bir beyandır: "bu iş gecelik koşamaz, çünkü ya dağıtım yapar ya
+ * da ücretli/yıkıcı bir kaynağa dokunur." Aşağıdaki kilit, listede de
+ * gecelik işte de olmayan bir staging betiğini hata sayar — bir prova
+ * yazılıp hiç çalıştırılmadan üç hafta bozuk kalmasının önündeki tek
+ * engel bu. */
+const HAND_RUN_STAGING_SCRIPTS = new Set([
+  'staging:deploy', // staging'e yeni kod basar; kapıyı Samet açar
+  'staging:slice3:cutover-rehearsal', // veritabanı kopyalayıp geri yükler
+  'staging:slice4:backup-rehearsal', // yedek alıp geri yükler
+  'staging:slice5:r2-restore', // R2 kovasına yazar
+  'staging:slice5:images-cpu', // Cloudflare Images kotası harcar
+]);
 
 let assertions = 0;
 
@@ -337,6 +352,26 @@ for (const script of ['staging:verify', 'staging:slice4:e2e']) {
   assert(
     fullRegressionWorkflow.includes(`npm run ${script}`),
     `nightly staging rehearsal dropped ${script}`,
+  );
+}
+/* Her staging betiği ya gecelik işte koşar ya da elle koşacağı yukarıda
+ * beyan edilmiştir. Üçüncü bir hâl — yazılmış ama kimsenin çalıştırmadığı
+ * betik — bize üç haftalık bir körlüğe mal oldu. */
+const stagingScripts = Object.keys(
+  JSON.parse(await readFile(files.packageJson, 'utf8')).scripts,
+).filter((name) => name.startsWith('staging:'));
+assert(stagingScripts.length > 0, 'package.json declares no staging script at all');
+for (const script of stagingScripts) {
+  assert(
+    fullRegressionWorkflow.includes(`npm run ${script}`) || HAND_RUN_STAGING_SCRIPTS.has(script),
+    `${script} runs nowhere: add it to the nightly rehearsal, `
+      + 'or declare it in HAND_RUN_STAGING_SCRIPTS with the reason it cannot',
+  );
+}
+for (const script of HAND_RUN_STAGING_SCRIPTS) {
+  assert(
+    stagingScripts.includes(script),
+    `HAND_RUN_STAGING_SCRIPTS still lists ${script}, which package.json no longer defines`,
   );
 }
 /* Eksik secret'ın hatası provanın hatasına benzemesin: ayırt edilemeyen

@@ -1,3 +1,5 @@
+import type { ConnectionTrace } from '../identity/connection';
+
 export interface InvitationRow {
   id: string;
   secretDigest: string;
@@ -84,6 +86,19 @@ export interface GithubProfileSnapshot {
   login: string;
   displayName: string;
   avatarUrl: string | null;
+  /* GitHub'ın doğruladığı birincil adres. Kullanıcı izni vermezse veya
+   * doğrulanmış adresi yoksa null kalır ve giriş yine tamamlanır: adres
+   * bir kolaylık, kimlik değil. Kimliği taşıyan alan userId. */
+  email: string | null;
+}
+
+/* Bir giriş anının bağlantı izi. Girişle aynı batch'te yazılıyor: giriş
+ * başarılıysa iz de vardır, giriş düşerse iz de düşer. Ayrı bir yazma
+ * olsaydı "giriş oldu ama izi tutulamadı" hâli sessizce mümkün olurdu. */
+export interface NewSignInEvent {
+  id: string;
+  eventType: 'registration' | 'sign_in';
+  trace: ConnectionTrace;
 }
 
 export interface IdentityRepository {
@@ -113,6 +128,7 @@ export interface IdentityRepository {
     profile: GithubProfileSnapshot;
     session: NewSessionRow;
     auditEventId: string;
+    signInEvent: NewSignInEvent;
     requestId: string;
     now: number;
   }): Promise<void>;
@@ -128,6 +144,7 @@ export interface IdentityRepository {
     agentQuota: number;
     invitationAuditEventId: string;
     loginAuditEventId: string;
+    signInEvent: NewSignInEvent;
     requestId: string;
     now: number;
   }): Promise<void>;
@@ -142,9 +159,15 @@ export interface IdentityRepository {
     now: number;
     reason: string;
   }): Promise<void>;
-  cleanup(now: number, oauthCutoff: number, sessionCutoff: number): Promise<{
+  cleanup(
+    now: number,
+    oauthCutoff: number,
+    sessionCutoff: number,
+    signInEventCutoff: number,
+  ): Promise<{
     oauthFlows: number;
     sessions: number;
     idempotencyKeys: number;
+    signInEvents: number;
   }>;
 }

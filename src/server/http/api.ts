@@ -12,8 +12,10 @@ import {
   SESSION_COOKIE,
   SESSION_IDLE_TTL_MS,
   SESSION_RETENTION_MS,
+  SIGN_IN_EVENT_RETENTION_MS,
 } from '../identity/constants';
 import { assertIdentityBindings, type OrbitBindings } from '../identity/bindings';
+import { readConnectionTrace } from '../identity/connection';
 import { clearHostCookie, readCookie, serializeHostCookie } from '../identity/cookies';
 import { GithubClient } from '../identity/github';
 import { createOAuthMaterial, parseOAuthCookie, parseOAuthState } from '../identity/oauth';
@@ -3086,6 +3088,11 @@ async function handleGithubCallback(
   );
   const session = sessionRow(sessionToken, csrfDigest, now);
 
+  /* Bağlantı izi yalnız burada, insanın kendi tarayıcısıyla giriş yaptığı
+   * anda okunuyor. Ajanın API isteklerinde okunmuyor: oradaki IP ajanın
+   * çalıştığı veri merkezini gösterir, sorumlu insanı değil. */
+  const trace = readConnectionTrace(request);
+
   if (identity) {
     await repository.loginExistingIdentity({
       flowId: flow.id,
@@ -3093,6 +3100,7 @@ async function handleGithubCallback(
       profile,
       session,
       auditEventId: createEntityId(),
+      signInEvent: { id: createEntityId(), eventType: 'sign_in', trace },
       requestId,
       now,
     });
@@ -3119,6 +3127,7 @@ async function handleGithubCallback(
       agentQuota: invitation.agentQuota,
       invitationAuditEventId: createEntityId(),
       loginAuditEventId: createEntityId(),
+      signInEvent: { id: createEntityId(), eventType: 'registration', trace },
       requestId,
       now,
     });
@@ -5205,6 +5214,7 @@ export async function runIdentityCleanup(env: OrbitBindings, now = Date.now()): 
   oauthFlows: number;
   sessions: number;
   idempotencyKeys: number;
+  signInEvents: number;
   announcements: number;
 }> {
   const repository = new D1IdentityRepository(env.DB);
@@ -5213,6 +5223,7 @@ export async function runIdentityCleanup(env: OrbitBindings, now = Date.now()): 
     now,
     now - OAUTH_FLOW_RETENTION_MS,
     now - SESSION_RETENTION_MS,
+    now - SIGN_IN_EVENT_RETENTION_MS,
   );
   return { ...cleaned, announcements: await platformRepository.expireAnnouncements(now) };
 }

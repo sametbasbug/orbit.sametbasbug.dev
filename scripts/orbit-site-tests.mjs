@@ -191,12 +191,63 @@ for (const [label, html] of [['Ana sayfa', homeHtml], ['Hakkında', fs.readFileS
 if (legalHtml.gizlilik) {
   const githubSource = fs.readFileSync(path.join(ROOT, 'src', 'server', 'identity', 'github.ts'), 'utf8');
   check(
-    githubSource.includes("url.searchParams.set('scope', 'read:user')"),
-    'GitHub izin kapsamı değişmiş. Gizlilik metni read:user diyor; kapsam genişlediyse metin artık doğru değil.',
+    githubSource.includes("url.searchParams.set('scope', 'read:user user:email')"),
+    'GitHub izin kapsamı değişmiş. Gizlilik metni read:user ve user:email sayıyor; kapsam değiştiyse metin artık doğru değil.',
+  );
+  for (const scope of ['read:user', 'user:email']) {
+    check(
+      legalHtml.gizlilik.includes(scope),
+      `Gizlilik metni ${scope} iznini saymıyor.`,
+    );
+  }
+  /* E-postanın ne için istendiği metinde yazılı olmalı ve orada kalmalı.
+   * "Madem adresler elimizde" diye başlayan cümle çok kolay kuruluyor;
+   * tanıtım göndermek İYS'ye tabi ayrı bir rıza rejimi ve oraya kazara
+   * girilmemeli. Kod tarafındaki karşılığı da göç dosyasında yazılı. */
+  check(
+    legalHtml.gizlilik.includes('yalnız hizmet bildirimi için kullanılır'),
+    'Gizlilik metni e-postanın ne için kullanıldığını söylemiyor.',
   );
   check(
-    legalHtml.gizlilik.includes('read:user'),
-    'Gizlilik metni GitHub izin kapsamını söylemiyor.',
+    legalHtml.gizlilik.includes('Tanıtım, pazarlama veya bülten gönderilmez'),
+    'Gizlilik metni tanıtım gönderilmeyeceği sözünü taşımıyor.',
+  );
+  /* Giriş izi: hangi alanların toplandığı, neyin toplanmadığı ve süresi.
+   * Üçü de metinde yazılı, üçü de kodda ölçülebilir. */
+  const signInMigration = fs.readFileSync(
+    path.join(ROOT, 'migrations', '0029_sign_in_traces_identify_the_human.sql'),
+    'utf8',
+  );
+  for (const column of ['ip', 'asn', 'asn_organization', 'country']) {
+    check(
+      new RegExp(`^\\s+${column}\\b`, 'mu').test(signInMigration),
+      `Giriş izi tablosunda ${column} alanı yok; gizlilik metni onu sayıyor.`,
+    );
+  }
+  check(
+    fs.readFileSync(path.join(ROOT, 'src', 'server', 'identity', 'constants.ts'), 'utf8')
+      .includes('SIGN_IN_EVENT_RETENTION_MS = 365 * 24 * 60 * 60 * 1000'),
+    'Giriş izinin saklama süresi değişmiş; gizlilik metni bir yıl diyor.',
+  );
+  check(
+    legalHtml.gizlilik.includes('<strong>bir yıl</strong>'),
+    'Gizlilik metni giriş izinin ne kadar saklandığını söylemiyor.',
+  );
+  /* Kapsamın darlığı ürünün sözü: ajanın API isteği kaydedilmiyor ve VPN
+   * engellenmiyor. İkisi de metinde yazılı olmalı, çünkü ikisi de
+   * kullanıcının bilmeye hakkı olduğu sınırlar. */
+  check(
+    legalHtml.gizlilik.includes('Ajanının API istekleri kaydedilmez'),
+    'Gizlilik metni ajanın isteklerinin kaydedilmediğini söylemiyor.',
+  );
+  check(
+    legalHtml.gizlilik.includes('VPN kullanmak <strong>engellenmez</strong>'),
+    'Gizlilik metni VPN kullanımının engellenmediğini söylemiyor.',
+  );
+  check(
+    fs.readFileSync(path.join(ROOT, 'src', 'server', 'identity', 'connection.ts'), 'utf8')
+      .includes("request.headers.get('cf-connecting-ip')"),
+    'Bağlantı izi IP kaynağını değiştirmiş; x-forwarded-for istemcinin uydurabileceği bir başlık.',
   );
   const identityConstants = fs.readFileSync(path.join(ROOT, 'src', 'server', 'identity', 'constants.ts'), 'utf8');
   for (const cookie of ['__Host-orbit_session', '__Host-orbit_csrf', '__Host-orbit_oauth']) {

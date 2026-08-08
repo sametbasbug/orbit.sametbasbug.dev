@@ -3,6 +3,7 @@ import type {
   GithubIdentityRow,
   IdentityRepository,
   InvitationRow,
+  NewSignInEvent,
   OAuthCallbackContext,
   OAuthFlowRow,
   SessionView,
@@ -298,9 +299,21 @@ export class D1IdentityRepository implements IdentityRepository {
     await this.#db.batch([
       this.#db.prepare(`
         UPDATE auth_identities
-        SET provider_login_snapshot = ?, last_seen_at = ?
+        SET provider_login_snapshot = ?,
+            provider_email_snapshot = COALESCE(?, provider_email_snapshot),
+            last_seen_at = ?
         WHERE id = ? AND account_id = ?
-      `).bind(input.profile.login, input.now, input.identity.identityId, input.identity.accountId),
+      `).bind(
+        input.profile.login,
+        /* COALESCE: adres bu girişte alınamadıysa (kullanıcı izni geri
+         * çekti, GitHub doğrulanmış adres döndürmedi) elimizdeki adresi
+         * silmiyoruz. Aksi hâlde tek bir izinsiz giriş, güvenlik bildirimi
+         * gönderebileceğimiz tek kanalı sessizce yok ederdi. */
+        input.profile.email,
+        input.now,
+        input.identity.identityId,
+        input.identity.accountId,
+      ),
       this.#db.prepare(`
         UPDATE accounts
         SET display_name = ?,
@@ -325,6 +338,7 @@ export class D1IdentityRepository implements IdentityRepository {
         input.requestId,
         input.now,
       ),
+      this.#signInEventInsert(input.identity.accountId, input.signInEvent, input.now),
       this.#db.prepare(`
         INSERT INTO oauth_flow_consumptions (flow_id, account_id, consumed_at)
         VALUES (?, ?, ?)
@@ -352,13 +366,14 @@ export class D1IdentityRepository implements IdentityRepository {
       this.#db.prepare(`
         INSERT INTO auth_identities (
           id, account_id, provider, provider_user_id,
-          provider_login_snapshot, created_at, last_seen_at
-        ) VALUES (?, ?, 'github', ?, ?, ?, ?)
+          provider_login_snapshot, provider_email_snapshot, created_at, last_seen_at
+        ) VALUES (?, ?, 'github', ?, ?, ?, ?, ?)
       `).bind(
         input.identityId,
         input.accountId,
         input.profile.userId,
         input.profile.login,
+        input.profile.email,
         input.now,
         input.now,
       ),
@@ -396,6 +411,7 @@ export class D1IdentityRepository implements IdentityRepository {
           invitation_id, account_id, github_user_id, redeemed_at
         ) VALUES (?, ?, ?, ?)
       `).bind(input.invitationId, input.accountId, input.profile.userId, input.now),
+      this.#signInEventInsert(input.accountId, input.signInEvent, input.now),
       this.#db.prepare(`
         INSERT INTO oauth_flow_consumptions (flow_id, account_id, consumed_at)
         VALUES (?, ?, ?)
@@ -500,10 +516,16 @@ export class D1IdentityRepository implements IdentityRepository {
     ]);
   }
 
-  async cleanup(now: number, oauthCutoff: number, sessionCutoff: number): Promise<{
+  async cleanup(
+    now: number,
+    oauthCutoff: number,
+    sessionCutoff: number,
+    signInEventCutoff: number,
+  ): Promise<{
     oauthFlows: number;
     sessions: number;
     idempotencyKeys: number;
+    signInEvents: number;
   }> {
     const results = await this.#db.batch<D1RunResultLike>([
       this.#db.prepare(`
@@ -540,11 +562,18 @@ export class D1IdentityRepository implements IdentityRepository {
             WHERE claim.idempotency_id = idempotency_keys.id
           )
       `).bind(now),
+      /* Giriş izinin saklama süresi burada gerçekten işliyor. Bir yıl
+       * demek, bir yıl sonra satırın gitmesi demek; gizlilik metnindeki
+       * süre bu satırın çalışmasına dayanıyor. */
+      this.#db.prepare(`
+        DELETE FROM account_sign_in_events WHERE created_at <= ?
+      `).bind(signInEventCutoff),
     ]);
     return {
       oauthFlows: results[1]?.meta?.changes ?? 0,
       sessions: results[3]?.meta?.changes ?? 0,
       idempotencyKeys: results[4]?.meta?.changes ?? 0,
+      signInEvents: results[5]?.meta?.changes ?? 0,
     };
   }
 
@@ -564,6 +593,23 @@ export class D1IdentityRepository implements IdentityRepository {
       session.lastSeenAt,
       session.idleExpiresAt,
       session.absoluteExpiresAt,
+    );
+  }
+
+  #signInEventInsert(accountId: string, event: NewSignInEvent, createdAt: number) {
+    return this.#db.prepare(`
+      INSERT INTO account_sign_in_events (
+        id, account_id, event_type, ip, asn, asn_organization, country, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      event.id,
+      accountId,
+      event.eventType,
+      event.trace.ip,
+      event.trace.asn,
+      event.trace.asnOrganization,
+      event.trace.country,
+      createdAt,
     );
   }
 

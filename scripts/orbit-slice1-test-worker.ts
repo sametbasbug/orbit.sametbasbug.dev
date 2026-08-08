@@ -30,12 +30,21 @@ const PROFILES = {
     login: 'sametbasbug',
     name: 'Samet Başbuğ',
     avatar_url: 'https://example.test/owner.png',
+    /* Birincil olmayan bir doğrulanmış adres de var: seçim "primary ve
+     * verified" olmalı, listedeki ilk doğrulanmış adres değil. */
+    emails: [
+      { email: 'ikincil@example.test', primary: false, verified: true },
+      { email: 'birincil@example.test', primary: true, verified: true },
+    ],
   },
   selene: {
     id: 200000001,
     login: 'selene-owner',
     name: 'Selene Owner',
     avatar_url: 'https://example.test/selene.png',
+    /* Doğrulanmamış adres saklanmamalı: doğrulanmamış bir kutuya bildirim
+     * göndermek, başkasının kutusuna yazmak riskini taşıyor. */
+    emails: [{ email: 'dogrulanmamis@example.test', primary: true, verified: false }],
   },
   mismatch: {
     id: 200000002,
@@ -58,6 +67,37 @@ const PROFILES = {
     login: 'yeni-kullanici',
     name: 'Yeni Kullanıcı',
     avatar_url: 'https://example.test/rename.png',
+  },
+  /* Giriş izi ve e-posta testlerinin kendi hesapları. Ayrı durmalarının
+   * sebebi, izleri sayan bir testin başka testlerin girişleriyle
+   * karışmaması: paylaşılan bir hesapta satır saymak kırılgan olurdu. */
+  traced: {
+    id: 200000004,
+    login: 'izli-kullanici',
+    name: 'İzli Kullanıcı',
+    avatar_url: null,
+    emails: [{ email: 'izli@example.test', primary: true, verified: true }],
+  },
+  tracedUnverified: {
+    id: 200000005,
+    login: 'dogrulanmamis-kullanici',
+    name: 'Doğrulanmamış Kullanıcı',
+    avatar_url: null,
+    emails: [{ email: 'olmaz@example.test', primary: true, verified: false }],
+  },
+  /* "E-posta adresimi gizli tut" açık olan kullanıcının hâli: noreply
+   * adresi hem birincil hem doğrulanmış görünüyor. GitHub o adrese posta
+   * teslim etmediği için atlanmalı ve gerçek doğrulanmış adrese
+   * düşülmeli. */
+  tracedNoreply: {
+    id: 200000006,
+    login: 'gizli-kullanici',
+    name: 'Gizli Kullanıcı',
+    avatar_url: null,
+    emails: [
+      { email: 'gizli-kullanici@users.noreply.github.com', primary: true, verified: true },
+      { email: 'gercek@example.test', primary: false, verified: true },
+    ],
   },
 } as const;
 
@@ -135,6 +175,17 @@ async function mockGithubFetch(input: RequestInfo | URL, init?: RequestInit): Pr
   if (url.href === 'https://api.github.com/user') {
     const profile = profileForToken(new Headers(init?.headers).get('authorization'));
     return profile ? Response.json(profile) : Response.json({ message: 'Bad credentials' }, { status: 401 });
+  }
+  /* Doğrulanmış birincil adres yalnız burada; /user'ın email alanı
+   * kullanıcının herkese açık adresini döndürür ve çoğu kişide boştur.
+   * Adres tanımlanmamış profillerde uç 404 dönüyor — kullanıcının
+   * user:email iznini vermediği hâlin karşılığı bu. */
+  if (url.href === 'https://api.github.com/user/emails') {
+    const profile = profileForToken(new Headers(init?.headers).get('authorization')) as
+      { emails?: ReadonlyArray<{ email: string; primary: boolean; verified: boolean }> } | null;
+    if (!profile) return Response.json({ message: 'Bad credentials' }, { status: 401 });
+    if (!profile.emails) return Response.json({ message: 'Not Found' }, { status: 404 });
+    return Response.json(profile.emails);
   }
   const loginMatch = /^\/users\/([^/]+)$/u.exec(url.pathname);
   if (url.origin === 'https://api.github.com' && loginMatch) {

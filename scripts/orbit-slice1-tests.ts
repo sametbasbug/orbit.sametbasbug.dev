@@ -48,6 +48,21 @@ function migrate(): void {
   if (result.status !== 0) throw new Error(`${result.stdout}\n${result.stderr}`);
 }
 
+/* Giriş izinin HTTP yüzeyi yok ve olmaması bilinçli: IP'leri web'e açan bir
+ * uç, bir yetkilendirme hatasında sızdırılacak yüzey demek. Kayıt hukuki
+ * talep geldiğinde elle sorgulanıyor — testin de aynı yoldan bakması,
+ * gerçekte kullanılacak yolu doğrulaması anlamına geliyor. */
+function queryDatabase<T>(sql: string): T[] {
+  const result = spawnSync(process.execPath, [
+    WRANGLER, 'd1', 'execute', 'orbit-v6-local',
+    '--config', CONFIG, '--local', `--persist-to=${persistDirectory}`,
+    '--json', '--command', sql,
+  ], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, CI: '1', NO_COLOR: '1' } });
+  if (result.status !== 0) throw new Error(`${result.stdout}\n${result.stderr}`);
+  const payload = JSON.parse(result.stdout.slice(result.stdout.indexOf('['))) as Array<{ results: T[] }>;
+  return payload[0]?.results ?? [];
+}
+
 async function availablePort(): Promise<number> {
   return await new Promise((resolve, reject) => {
     const server = createServer();
@@ -159,12 +174,21 @@ async function startOAuth(
 }
 
 async function callback(
-  code: 'owner' | 'selene' | 'mismatch' | 'renameBefore' | 'renameAfter',
+  code: 'owner' | 'selene' | 'mismatch' | 'renameBefore' | 'renameAfter'
+    | 'traced' | 'tracedUnverified' | 'tracedNoreply',
   flow: { state: string; oauthCookie: string },
   now = NOW + 1,
+  ip?: string,
 ): Promise<Response> {
+  const headers: Record<string, string> = {
+    cookie: `${OAUTH_COOKIE}=${encodeURIComponent(flow.oauthCookie)}`,
+  };
+  /* Cloudflare bu başlığı kenarda kendisi yazar; testte onun yerine
+   * geçiyoruz. Varsayılanı boş bırakmak da kasıtlı: izsiz bir girişin de
+   * çalıştığını başka testlerin geçmesi zaten gösteriyor. */
+  if (ip) headers['cf-connecting-ip'] = ip;
   return await request(`/v1/auth/github/callback?code=${code}&state=${encodeURIComponent(flow.state)}`, {
-    headers: { cookie: `${OAUTH_COOKIE}=${encodeURIComponent(flow.oauthCookie)}` },
+    headers,
   }, now);
 }
 
@@ -384,6 +408,132 @@ let firstCredentialToken = '';
     // Orbit'in kendi tanımlayıcısı kasten sabit kalır: benzersizlik kısıtı
     // taşıyor ve her girişte yeniden yazmak girişi çökertme riski demek.
     assert.equal(after.account.handle, 'eski-kullanici');
+  });
+
+  test('every human sign-in leaves a connection trace, and the first one is marked as registration', async () => {
+    /* Bu izin tek amacı, hukuki bir talepte hesabı gerçek bir aboneye
+     * bağlayabilmek. Yalnız kayıt anını tutmak yetmezdi: CGNAT arkasındaki
+     * tek gözlem aboneyi daraltmayabilir ve Cloudflare bize kaynak portu
+     * vermiyor. Cevap çokluk — o yüzden burada iki ayrı giriş ölçülüyor. */
+    const created = await postJson('/v1/admin/invitations', {}, authenticatedHeaders(ownerCookies, true), NOW + 200);
+    const invitation = await created.json() as { invitation: { token: string } };
+
+    const registration = await callback(
+      'traced',
+      await startOAuth(invitation.invitation.token, NOW + 201),
+      NOW + 202,
+      '203.0.113.7',
+    );
+    assert.equal(registration.status, 302, await registration.clone().text());
+
+    const relogin = await callback('traced', await startOAuth(undefined, NOW + 203), NOW + 204, '198.51.100.22');
+    assert.equal(relogin.status, 302, await relogin.clone().text());
+
+    const rows = queryDatabase<{ event_type: string; ip: string | null; created_at: number }>(`
+      SELECT e.event_type, e.ip, e.created_at
+      FROM account_sign_in_events e
+      JOIN auth_identities i ON i.account_id = e.account_id
+      WHERE i.provider_user_id = '200000004'
+      ORDER BY e.created_at ASC
+    `);
+
+    assert.equal(rows.length, 2, 'her giriş iz bırakmıyor');
+    assert.equal(rows[0].event_type, 'registration', 'ilk giriş kayıt olarak işaretlenmemiş');
+    assert.equal(rows[0].ip, '203.0.113.7', 'kayıt anındaki IP saklanmamış');
+    assert.equal(rows[1].event_type, 'sign_in');
+    assert.equal(rows[1].ip, '198.51.100.22', 'sonraki girişin IP\'si saklanmamış');
+  });
+
+  test('the trace records the human who signs in, never the agent that publishes', async () => {
+    /* Ajanın yayın isteğinde görülecek IP, ajanın çalıştığı veri merkezini
+     * gösterir — sorumlu insanı değil. O yüzden yazma yolunda iz hiç
+     * okunmuyor. Bu test o sınırın yerinde durduğunu ölçüyor: ajan bir
+     * istek yapıyor ve ortada yeni bir giriş izi oluşmuyor. */
+    const before = queryDatabase<{ total: number }>(
+      'SELECT COUNT(*) AS total FROM account_sign_in_events',
+    )[0].total;
+    /* Boş tabloda "sayı değişmedi" demek hiçbir şey ölçmez; testin
+     * kendisinin boşa geçmediğini burada kelepçeliyoruz. */
+    assert.ok(before > 0, 'iz tablosu boş: bu test hiçbir şey ölçmüyor');
+
+    const agentCall = await request('/v1/agent/profile', {
+      headers: new Headers({
+        authorization: 'Bearer orb_agent_v1_gecersiz',
+        'cf-connecting-ip': '203.0.113.250',
+      }),
+    }, NOW + 210);
+    assert.equal(agentCall.status, 401, 'test varsayımı kaydı: bu çağrı reddedilmeliydi');
+
+    const after = queryDatabase<{ total: number }>(
+      'SELECT COUNT(*) AS total FROM account_sign_in_events',
+    )[0].total;
+    assert.equal(after, before, 'ajanın API isteği giriş izi yazmış');
+  });
+
+  test('GitHub email is stored only when verified, and a later sign-in without one keeps it', async () => {
+    /* Adres yalnız hizmet bildirimi için: hesap, güvenlik, moderasyon,
+     * yasal bildirim ve platform duyurusu. Doğrulanmamış bir adrese yazmak
+     * başkasının kutusuna yazmak riskini taşıdığı için verified şartı var. */
+    const created = await postJson('/v1/admin/invitations', {}, authenticatedHeaders(ownerCookies, true), NOW + 220);
+    const invitation = await created.json() as { invitation: { token: string } };
+    const unverified = await callback(
+      'tracedUnverified',
+      await startOAuth(invitation.invitation.token, NOW + 221),
+      NOW + 222,
+    );
+    assert.equal(unverified.status, 302, await unverified.clone().text());
+
+    const stored = queryDatabase<{ provider_user_id: string; provider_email_snapshot: string | null }>(`
+      SELECT provider_user_id, provider_email_snapshot FROM auth_identities
+      WHERE provider_user_id IN ('200000004', '200000005')
+    `);
+    const traced = stored.find((row) => row.provider_user_id === '200000004');
+    const withoutEmail = stored.find((row) => row.provider_user_id === '200000005');
+
+    assert.equal(traced?.provider_email_snapshot, 'izli@example.test', 'doğrulanmış birincil adres saklanmamış');
+    assert.equal(
+      withoutEmail?.provider_email_snapshot,
+      null,
+      'doğrulanmamış adres saklanmış; o kutuya bildirim göndermek başkasına yazmak olurdu',
+    );
+
+    /* Adres alınamayan bir giriş, elimizdeki adresi silmemeli: aksi hâlde
+     * tek bir izinsiz giriş, güvenlik bildirimi gönderebileceğimiz tek
+     * kanalı sessizce yok ederdi. Owner profilinin adresi var, ama
+     * `mismatch` profilinin hiç yok — burada ölçülen, izli hesabın
+     * adresinin ikinci girişten sonra da yerinde durması. */
+    const relogin = await callback('traced', await startOAuth(undefined, NOW + 223), NOW + 224);
+    assert.equal(relogin.status, 302);
+    const afterRelogin = queryDatabase<{ provider_email_snapshot: string | null }>(
+      "SELECT provider_email_snapshot FROM auth_identities WHERE provider_user_id = '200000004'",
+    );
+    assert.equal(afterRelogin[0]?.provider_email_snapshot, 'izli@example.test');
+  });
+
+  test('a GitHub noreply address is never stored, even when it is the verified primary', async () => {
+    /* "E-posta adresimi gizli tut" açık olan kullanıcıda listedeki
+     * @users.noreply.github.com adresi hem birincil hem doğrulanmış
+     * görünür. GitHub o adrese posta teslim etmez: saklarsak elimizde
+     * ulaşabildiğimizi sandığımız ama ulaşamadığımız bir adres olur ve
+     * geri dönen her gönderim, gerçek adresi olan kullanıcılara ulaşma
+     * ihtimalimizi de düşürür. */
+    const created = await postJson('/v1/admin/invitations', {}, authenticatedHeaders(ownerCookies, true), NOW + 230);
+    const invitation = await created.json() as { invitation: { token: string } };
+    const registration = await callback(
+      'tracedNoreply',
+      await startOAuth(invitation.invitation.token, NOW + 231),
+      NOW + 232,
+    );
+    assert.equal(registration.status, 302, await registration.clone().text());
+
+    const stored = queryDatabase<{ provider_email_snapshot: string | null }>(
+      "SELECT provider_email_snapshot FROM auth_identities WHERE provider_user_id = '200000006'",
+    );
+    assert.equal(
+      stored[0]?.provider_email_snapshot,
+      'gercek@example.test',
+      'noreply adresi saklanmış ya da gerçek doğrulanmış adrese düşülmemiş',
+    );
   });
 
   test('ordinary sponsors cannot create platform invitations', async () => {
@@ -1772,5 +1922,34 @@ let firstCredentialToken = '';
     };
     assert.equal(after.counts.idempotency_keys, 1);
     assert.equal(after.counts.audit_events, before.counts.audit_events);
+    /* Giriş izi bu tarihte HENÜZ silinmemeli. Yukarıdaki temizlik iki aylık
+     * bir noktada çalışıyor; iz bir yıl duruyor. Burada düşerse saklama
+     * süresi sessizce kısalmış demektir ve gizlilik metni yalan söyler. */
+    assert.ok(
+      queryDatabase<{ total: number }>('SELECT COUNT(*) AS total FROM account_sign_in_events')[0].total > 0,
+      'giriş izi bir yıl dolmadan siliniyor',
+    );
+  });
+
+  test('sign-in traces are deleted once the one-year retention passes', async () => {
+    /* Gizlilik metnindeki "bir yıl" cümlesi bu silmenin çalışmasına
+     * dayanıyor. Saklama süresi bir vaat: yazıp uygulamamak, hiç
+     * yazmamaktan kötü. */
+    const before = queryDatabase<{ total: number }>(
+      'SELECT COUNT(*) AS total FROM account_sign_in_events',
+    )[0].total;
+    assert.ok(before > 0, 'iz tablosu zaten boş: bu test hiçbir şey ölçmüyor');
+
+    const cleanupAt = NOW + 366 * 24 * 60 * 60 * 1000;
+    const result = await postJson('/__test/cleanup', {}, {}, cleanupAt);
+    assert.equal(result.status, 200);
+    const body = await result.json() as { signInEvents: number };
+    assert.equal(body.signInEvents, before, 'temizlik sildiği iz sayısını doğru bildirmiyor');
+
+    assert.equal(
+      queryDatabase<{ total: number }>('SELECT COUNT(*) AS total FROM account_sign_in_events')[0].total,
+      0,
+      'bir yılı geçen giriş izi hâlâ duruyor',
+    );
   });
 });

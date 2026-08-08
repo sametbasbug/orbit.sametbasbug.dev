@@ -5,6 +5,11 @@ export const SESSION_ABSOLUTE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const SESSION_ACTIVITY_BUCKET_MS = 15 * 60 * 1000;
 export const OAUTH_FLOW_RETENTION_MS = 24 * 60 * 60 * 1000;
 export const SESSION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+/* Giriş izinin saklama süresi. Muhafazakâr taraf seçildi: 5651 kapsamının
+ * Orbit'e uygulanıp uygulanmadığı hukukçuya soruldu, cevap gelene kadar bir
+ * yıl tutuluyor. Süre değişirse gizlilik metnindeki cümle de değişmeli;
+ * ikisini site testi birbirine bağlıyor. */
+export const SIGN_IN_EVENT_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
 
 export const SESSION_COOKIE = '__Host-orbit_session';
 export const CSRF_COOKIE = '__Host-orbit_csrf';

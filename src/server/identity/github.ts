@@ -13,6 +13,12 @@ interface GithubUserResponse {
   avatar_url?: string | null;
 }
 
+interface GithubEmailResponse {
+  email?: string;
+  primary?: boolean;
+  verified?: boolean;
+}
+
 async function githubJson<T>(response: Response, errorCode: string): Promise<T> {
   if (!response.ok) throw new Error(`${errorCode}:${response.status}`);
   return await response.json() as T;
@@ -34,7 +40,11 @@ export class GithubClient {
     url.searchParams.set('state', state);
     url.searchParams.set('code_challenge', challenge);
     url.searchParams.set('code_challenge_method', 'S256');
-    url.searchParams.set('scope', 'read:user');
+    /* user:email, kullanıcıya hesap, güvenlik, moderasyon ve yasal bildirim
+     * gönderebilmek için. Kimlik tespiti için değil — onu zaten sayısal
+     * GitHub kimliği taşıyor. Kapsam genişlerse gizlilik metni de değişmeli;
+     * site testi ikisini birbirine bağlıyor. */
+    url.searchParams.set('scope', 'read:user user:email');
     return url.toString();
   }
 
@@ -71,7 +81,57 @@ export class GithubClient {
         'x-github-api-version': '2022-11-28',
       },
     });
-    return profileFromGithub(await githubJson<GithubUserResponse>(response, 'github_user_failed'));
+    const profile = profileFromGithub(await githubJson<GithubUserResponse>(response, 'github_user_failed'));
+    return { ...profile, email: await this.#primaryEmail(accessToken) };
+  }
+
+  /* /user'ın email alanı yalnız kullanıcının herkese açık adresini döndürür
+   * ve çoğu kişide boştur; gerçek adresler yalnız /user/emails ucunda.
+   *
+   * Seçim şu sırayla: önce doğrulanmış VE birincil olan, o yoksa herhangi
+   * bir doğrulanmış adres. Birincil adres geçici olarak doğrulanmamış
+   * olabilir (adres yeni değişmiş, doğrulama beklemede) ve o anda başka
+   * doğrulanmış adresi varken hiç adres saklamamak, güvenlik bildirimi
+   * gönderebileceğimiz tek kanalı kaybetmek olurdu.
+   *
+   * Katı olan tek şart `verified`. Doğrulanmamış bir kutuya bildirim
+   * göndermek, adresi henüz sahiplenmemiş birine — yani başkasına — yazmak
+   * riskini taşıyor.
+   *
+   * Bu çağrının düşmesi girişi düşürmez. Kullanıcı user:email iznini
+   * vermemiş olabilir (403), GitHub o an cevap vermiyor olabilir. Adres bir
+   * kolaylık; onun yokluğu yüzünden kimsenin giremediği bir sistem, adresin
+   * kendisinden büyük bir arıza olurdu. */
+  async #primaryEmail(accessToken: string): Promise<string | null> {
+    try {
+      const response = await this.#fetch('https://api.github.com/user/emails', {
+        headers: {
+          accept: 'application/vnd.github+json',
+          authorization: `Bearer ${accessToken}`,
+          'user-agent': 'Equinox-Orbit-V6',
+          'x-github-api-version': '2022-11-28',
+        },
+      });
+      if (!response.ok) return null;
+      const rows = await response.json() as GithubEmailResponse[];
+      if (!Array.isArray(rows)) return null;
+      const usable = rows.filter((row) => row?.verified === true
+        && typeof row.email === 'string'
+        && row.email.trim() !== ''
+        /* "E-posta adresimi gizli tut" açık olan kullanıcılarda listede bir
+         * @users.noreply.github.com adresi bulunuyor ve doğrulanmış
+         * görünüyor — hatta birincil olabiliyor. GitHub o adrese posta
+         * teslim etmez. Saklarsak elimizde ulaşabildiğimizi sandığımız ama
+         * ulaşamadığımız bir adres olur; üstelik her gönderim geri döner ve
+         * geri dönen postalar gönderim itibarını bozarak gerçek adresi olan
+         * kullanıcılara ulaşmamızı da engeller. */
+        && !/@users\.noreply\.github\.com$/iu.test(row.email.trim()));
+      const chosen = usable.find((row) => row.primary === true) ?? usable[0];
+      const address = chosen?.email?.trim() ?? '';
+      return address ? address.slice(0, 320) : null;
+    } catch {
+      return null;
+    }
   }
 
   async resolveLogin(login: string): Promise<GithubProfileSnapshot> {
@@ -99,5 +159,9 @@ function profileFromGithub(body: GithubUserResponse): GithubProfileSnapshot {
     login: body.login,
     displayName: body.name?.trim() || body.login,
     avatarUrl: body.avatar_url ?? null,
+    /* resolveLogin başkasının herkese açık profilini çözüyor; oradan adres
+     * almak ne mümkün ne de doğru. Adresi yalnız kendi hesabına giren
+     * kullanıcı için, kendi izniyle alıyoruz. */
+    email: null,
   };
 }

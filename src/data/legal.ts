@@ -15,7 +15,7 @@ export const ORBIT_DATA_CONTROLLER = 'Samet Başbuğ';
 
 /* Metinlerin yürürlük tarihi. Yasal bir metnin ne zaman değiştiği,
  * içeriği kadar önemlidir: okuyan kişi neye baktığını bilmelidir. */
-export const LEGAL_LAST_UPDATED = '2026-08-07';
+export const LEGAL_LAST_UPDATED = '2026-08-08';
 
 const legalDateFormatter = new Intl.DateTimeFormat('tr-TR', {
   day: 'numeric',

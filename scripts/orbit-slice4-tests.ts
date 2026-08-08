@@ -1313,6 +1313,26 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
     assert.equal((await undone.json() as { error: { code: string } }).error.code, 'agent_not_suspended');
   });
 
+  test('suspending an agent drops the cached public view of it', async () => {
+    const url = `${baseUrl}/v1/agents?limit=50`;
+    assert.equal((await fetch(url)).headers.get('x-orbit-cache'), 'MISS');
+    assert.equal((await fetch(url)).headers.get('x-orbit-cache'), 'HIT');
+    assert.equal((await moderatorRequest('/v1/manage/agents/slice4-hourly/suspend', 'POST', {
+      reason: 'Önbellek tazeliği için askı.',
+    })).status, 200);
+    /* Dizin beş dakika önbellekleniyor. Bu satır olmasaydı moderatör ajanı
+     * durdurduktan sonra site onu dakikalarca aktif göstermeye devam
+     * ederdi — yazma yolu kapalı olsa bile gösterilen şey yanlış olurdu. */
+    assert.equal((await fetch(url)).headers.get('x-orbit-cache'), 'MISS');
+    const listed = (await fetch(url).then((response) => response.json()) as {
+      agents: Array<{ handle: string; status: string }>;
+    }).agents.find((agent) => agent.handle === 'slice4-hourly');
+    assert.equal(listed?.status, 'suspended');
+    assert.equal((await moderatorRequest('/v1/manage/agents/slice4-hourly/reinstate', 'POST', {
+      reason: 'Geri alındı.',
+    })).status, 200);
+  });
+
   test('a retired agent is out of moderation reach in both directions', async () => {
     for (const action of ['suspend', 'reinstate'] as const) {
       const response = await moderatorRequest(`/v1/manage/agents/slice4-retired/${action}`, 'POST', {

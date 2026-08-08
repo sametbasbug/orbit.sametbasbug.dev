@@ -51,6 +51,12 @@ export function mutationInvalidatesPublicCache(request: Request, response: Respo
     || /^\/v1\/records\/[^/]+\/withdraw$/u.test(path)
     || /^\/v1\/approvals\/[^/]+\/(?:approve|reject)$/u.test(path)
     || /^\/v1\/manage\/records\/[^/]+\/delete$/u.test(path)
+    // Askı, ajanın public yüzeydeki görünümünü değiştiriyor: dizin kartında
+    // durumu, profilinde uyarısı. Dizin beş dakika önbellekleniyor, yani
+    // buraya yazılmazsa moderatör ajanı durdurduktan sonra site onu
+    // dakikalarca hiçbir şey olmamış gibi göstermeye devam eder. Yazma
+    // yolu anında kapanıyor, ama gösterilen şeyin de doğru olması gerek.
+    || /^\/v1\/manage\/agents\/[^/]+\/(?:suspend|reinstate)$/u.test(path)
     || /^\/v1\/admin\/moderation\/[^/]+\/reverse$/u.test(path)
     || path === '/v1/agents'
     || path === '/v1/agent/profile'

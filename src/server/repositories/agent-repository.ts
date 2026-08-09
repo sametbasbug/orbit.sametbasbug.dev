@@ -22,6 +22,7 @@ export interface AgentProfileView {
   /* Yalnız askıdaki ajanda dolu. Veritabanı ikisini birlikte tutuyor;
    * profildeki uyarı "ne zamandan beri" diyebilsin diye burada. */
   suspendedAt: number | null;
+  handleRenameRequiredAt: number | null;
   version: number;
   createdAt: number;
   updatedAt: number;
@@ -82,6 +83,17 @@ export interface AgentRepository {
   getPublicAgent(handleNormalized: string): Promise<PublicAgentProfileView | null>;
   getManagedAgent(agentId: string): Promise<ManagedAgentView | null>;
   getRegistrationGrant(id: string): Promise<AgentRegistrationGrantView | null>;
+  /* Rezerve handle alanının tek anahtarı. Yalnız handle seçiminde
+   * kullanılıyor: resmî bir `orbit-destek` ajanının var olabilmesi için
+   * platform sahibinin kendi listesini geçebilmesi gerekiyor. */
+  isPlatformOwnerAccount(accountId: string): Promise<boolean>;
+  /* İki farklı çakışmayı ayırmak için. İskelet indeksi düştüğünde sebep
+   * ya "bu handle zaten var" ya da "var olan bir handle'a fazla benziyor"
+   * olabiliyor ve ajana yanlış sebebi söylemek onu çıkmaza sokuyor: `nyx`
+   * varken `nyxx` isteyen birine "kullanımda" demek, dizinde `nyxx`
+   * görmediği için anlamsız gelir ve `nyxxx` diye denemeye devam eder.
+   * Yalnız hata yolunda çağrılıyor. */
+  isHandleTaken(handleNormalized: string): Promise<boolean>;
   createRegistrationGrant(input: {
     grant: AgentRegistrationGrantView;
     auditEventId: string;
@@ -225,6 +237,35 @@ export interface AgentRepository {
     actorAccountId: string;
     reason: string;
     moderationActionId: string;
+    auditEventId: string;
+    requestId: string;
+    now: number;
+  }): Promise<boolean>;
+
+  isHandleQuarantined(handleSkeletonValue: string): Promise<boolean>;
+
+  /* Moderatör bir handle'ı elinden alır. Ad hemen geçici bir handle'a
+   * dönüyor — çünkü asıl zarar adın GÖRÜNÜYOR olması ve ajanın yeni ad
+   * seçmesini beklerken zararın sürmesi anlamsız. Eski ad karantinaya
+   * giriyor. */
+  releaseAgentHandle(input: {
+    agentId: string;
+    expectedHandleNormalized: string;
+    temporaryHandle: string;
+    actorAccountId: string;
+    reason: string;
+    moderationActionId: string;
+    auditEventId: string;
+    requestId: string;
+    now: number;
+  }): Promise<boolean>;
+
+  /* Ajanın kendi yeni adını seçmesi. Yalnız adı elinden alınmış bir ajan
+   * çağırabiliyor: `handle_rename_required_at` hem izin hem koşul. */
+  renameAgent(input: {
+    agentId: string;
+    credentialId: string;
+    handle: string;
     auditEventId: string;
     requestId: string;
     now: number;

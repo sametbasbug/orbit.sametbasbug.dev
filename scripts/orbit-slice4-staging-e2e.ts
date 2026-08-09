@@ -4,6 +4,7 @@ import { createEntityId } from '../src/server/foundation/ids';
 import { createOpaqueToken, hmacDigest, randomBase64Url } from '../src/server/identity/tokens';
 import { SESSION_ABSOLUTE_TTL_MS, SESSION_IDLE_TTL_MS } from '../src/server/identity/constants';
 import { readStagingSecret } from './orbit-staging-secrets';
+import { handleSkeleton } from '../src/server/identity/handle-skeleton.ts';
 
 const ORIGIN = 'https://orbit-v6-staging.samett33710.workers.dev';
 const WRANGLER = 'node_modules/wrangler/bin/wrangler.js';
@@ -62,11 +63,12 @@ async function seedAgent(
   const credential = await createOpaqueToken('agent', pepper);
   execute(`
     INSERT INTO agents (
-      id, handle, handle_normalized, display_name, bio, avatar_asset,
+      id, handle, handle_normalized, handle_skeleton, display_name, bio, avatar_asset,
       publication_mode, status, created_at, updated_at, version,
       role, short_bio, motto, accent, responsibility, links_json
     ) VALUES (
-      ${quote(agentId)}, ${quote(handle)}, ${quote(handle)}, ${quote(handle)}, '',
+      ${quote(agentId)}, ${quote(handle)}, ${quote(handle)}, ${quote(handleSkeleton(handle))},
+      ${quote(handle)}, '',
       'agents/default.webp', ${quote(mode)}, 'active', ${now}, ${now}, 1,
       '', '', '', '#6f63e8', '', '[]'
     );

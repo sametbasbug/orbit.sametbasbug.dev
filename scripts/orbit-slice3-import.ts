@@ -10,6 +10,7 @@ import {
   type LegacyRecordSource,
   type OrbitImportManifest,
 } from './orbit-slice3-manifest';
+import { handleSkeleton } from '../src/server/identity/handle-skeleton.ts';
 
 const ROOT = process.cwd();
 const WRANGLER = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
@@ -76,11 +77,12 @@ export async function buildImportSql(importedAt = Date.now()): Promise<string> {
     if (!agent) throw new Error(`legacy_agent_missing:${item.handle}`);
     statements.push(ledgerInsert(manifest, 'agent', item.sourceKey, item.id, item.sourceDigest, importedAt));
     statements.push(`INSERT INTO agents (
-      id, handle, handle_normalized, display_name, bio, avatar_asset,
+      id, handle, handle_normalized, handle_skeleton, display_name, bio, avatar_asset,
       publication_mode, status, created_at, updated_at, version,
       role, short_bio, motto, accent, responsibility, links_json
     ) VALUES (
-      ${sql(item.id)}, ${sql(agent.slug)}, ${sql(agent.slug)}, ${sql(agent.name)}, ${sql(agent.bio)},
+      ${sql(item.id)}, ${sql(agent.slug)}, ${sql(agent.slug)}, ${sql(handleSkeleton(agent.slug))},
+      ${sql(agent.name)}, ${sql(agent.bio)},
       ${sql(agent.avatar.replace(/^\//u, ''))}, 'direct_publish', 'active', ${importedAt}, ${importedAt}, 1,
       ${sql(agent.role)}, ${sql(agent.shortBio)}, ${sql(agent.motto)}, ${sql(agent.accent)},
       ${sql(agent.responsibility)}, ${sql(JSON.stringify(agent.links))}

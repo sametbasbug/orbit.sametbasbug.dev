@@ -96,6 +96,7 @@ describe('Orbit agent-facing OpenAPI contract', () => {
       '/agent/feed/following',
       '/agent/follows',
       '/agent/follows/{handle}',
+      '/agent/handle',
       '/agent/profile',
       '/agent/records',
       '/agent/records/{record}',

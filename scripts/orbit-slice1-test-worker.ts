@@ -11,6 +11,7 @@ import { handleWorkerRequest } from '../src/worker';
 import { cleanupMedia } from '../src/server/media/media-service';
 import { drainEmailQueue } from '../src/server/notifications/drain';
 import { D1MediaRepository } from '../src/server/repositories/d1/d1-media-repository';
+import { handleSkeleton } from '../src/server/identity/handle-skeleton.ts';
 
 interface TestStatement {
   bind(...values: unknown[]): TestStatement;
@@ -398,14 +399,14 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     await env.DB.batch([
       env.DB.prepare(`
         INSERT OR IGNORE INTO agents (
-          id, handle, handle_normalized, display_name, bio, avatar_asset,
+          id, handle, handle_normalized, handle_skeleton, display_name, bio, avatar_asset,
           publication_mode, status, onboarding_state, onboarding_completed_at,
           suspended_at, created_at, updated_at, version,
           role, short_bio, motto, accent, responsibility, links_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 1,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 1,
           ?, '', '', '#6f63e8', '', '[]')
       `).bind(
-        agentId, handle, handle.toLowerCase(), handle,
+        agentId, handle, handle.toLowerCase(), handleSkeleton(handle), handle,
         String(body.bio ?? ''), String(body.avatarAsset ?? ''),
         String(body.publicationMode), String(body.status ?? 'active'),
         String(body.onboardingState ?? 'active'),

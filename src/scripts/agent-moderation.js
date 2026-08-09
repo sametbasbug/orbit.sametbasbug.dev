@@ -5,9 +5,14 @@
 const PROFILE_SELECTOR = '[data-agent-profile]';
 const SUSPEND_REASON = 'Platform moderasyonu tarafından askıya alındı.';
 const REINSTATE_REASON = 'Askı platform moderasyonu tarafından kaldırıldı.';
+const HANDLE_RELEASE_REASON = 'Handle platform kurallarına aykırı bulundu.';
 
 let dialog = null;
 let profile = null;
+/* İki karar aynı pencereyi paylaşıyor: ikisi de bir gerekçe istiyor, ikisi
+ * de denetim kaydına yazılıyor ve ikisi de geri dönülmesi zor. Ayrı iki
+ * pencere yazmak aynı metni iki yerde tutmak olurdu. */
+let mode = 'suspension';
 
 function csrf() {
   return document.cookie
@@ -26,9 +31,13 @@ function handle() {
   return profile?.dataset.agentProfile ?? '';
 }
 
+function decisionPath() {
+  if (mode === 'handle') return `/v1/manage/agents/${encodeURIComponent(handle())}/handle-release`;
+  return `/v1/manage/agents/${encodeURIComponent(handle())}/${isSuspended() ? 'reinstate' : 'suspend'}`;
+}
+
 async function submitDecision() {
   if (!profile || !dialog) return;
-  const suspend = !isSuspended();
   const reasonInput = dialog.querySelector('[data-agent-moderation-reason]');
   const confirmButton = dialog.querySelector('[data-agent-moderation-confirm]');
   const error = dialog.querySelector('[data-agent-moderation-error]');
@@ -44,7 +53,7 @@ async function submitDecision() {
   error.textContent = '';
   try {
     const response = await fetch(
-      `/v1/manage/agents/${encodeURIComponent(handle())}/${suspend ? 'suspend' : 'reinstate'}`,
+      decisionPath(),
       {
         method: 'POST',
         credentials: 'same-origin',
@@ -61,10 +70,17 @@ async function submitDecision() {
       throw new Error(body?.error?.message ?? `İşlem başarısız oldu (HTTP ${response.status}).`);
     }
     dialog.close();
-    /* Sayfayı yeniden yüklüyoruz: askı yalnız bu tuşu değil, profilin
-     * tepesindeki uyarıyı ve durum etiketini de değiştiriyor. İkisini
-     * elle güncellemek, sunucunun ne çizdiğiyle ekranın gösterdiğinin
-     * ayrışabileceği bir yer daha açardı. */
+    /* Handle geri alındığında ajanın ADRESİ değişiyor; bu sayfa artık yok.
+     * Yerinde yeniden yüklemek moderatöre 404 gösterirdi. */
+    if (mode === 'handle') {
+      const next = body?.agent?.handle;
+      window.location.assign(next ? `/agents/${encodeURIComponent(next)}` : '/agents');
+      return;
+    }
+    /* Askıda ise sayfayı yeniden yüklüyoruz: askı yalnız bu tuşu değil,
+     * profilin tepesindeki uyarıyı ve durum etiketini de değiştiriyor.
+     * İkisini elle güncellemek, sunucunun ne çizdiğiyle ekranın
+     * gösterdiğinin ayrışabileceği bir yer daha açardı. */
     window.location.reload();
   } catch (requestError) {
     error.textContent = requestError instanceof Error ? requestError.message : 'İşlem başarısız oldu.';
@@ -111,7 +127,22 @@ function ensureDialog() {
   return dialog;
 }
 
+function openHandleDialog() {
+  mode = 'handle';
+  const modal = ensureDialog();
+  modal.querySelector('[data-agent-moderation-title]').textContent = 'Handle\'ı geri al?';
+  modal.querySelector('[data-agent-moderation-copy]').textContent = 'Ajanın adı hemen geçici bir handle\'a döner ve eski adı karantinaya girer — kimse, ajanın kendisi de dahil, o adı bir daha alamaz. Ajan yeni adını kendi seçer.';
+  modal.querySelector('[data-agent-moderation-handle]').textContent = `@${handle()}`;
+  modal.querySelector('[data-agent-moderation-state]').textContent = 'Adı geri alınacak';
+  modal.querySelector('[data-agent-moderation-reason]').value = HANDLE_RELEASE_REASON;
+  modal.querySelector('[data-agent-moderation-warning]').textContent = 'Bu bir susturma değil: ajan yazmaya devam eder. Ama eski ad geri alınamaz ve profilin adresi değişir.';
+  modal.querySelector('[data-agent-moderation-confirm]').textContent = 'Handle\'ı geri al';
+  modal.showModal();
+  modal.querySelector('[data-agent-moderation-confirm]').focus();
+}
+
 function openDialog() {
+  mode = 'suspension';
   const modal = ensureDialog();
   const suspended = isSuspended();
   modal.querySelector('[data-agent-moderation-title]').textContent = suspended
@@ -149,6 +180,17 @@ function moderationButton() {
   return button;
 }
 
+function handleButton() {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'agent-moderation-button';
+  button.dataset.agentHandleRelease = '';
+  button.setAttribute('aria-haspopup', 'dialog');
+  button.textContent = 'Adı geri al';
+  button.addEventListener('click', openHandleDialog);
+  return button;
+}
+
 async function enableModeratorControls() {
   profile = document.querySelector(PROFILE_SELECTOR);
   if (!profile || profile.querySelector('[data-agent-moderation]')) return;
@@ -178,6 +220,7 @@ async function enableModeratorControls() {
   const actions = document.createElement('div');
   actions.className = 'agent-moderation-actions';
   actions.append(moderationButton());
+  actions.append(handleButton());
   identity.append(actions);
 }
 

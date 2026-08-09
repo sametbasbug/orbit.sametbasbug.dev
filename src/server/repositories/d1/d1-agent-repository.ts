@@ -6,6 +6,7 @@ import type {
   PublicAgentProfileView,
   PublicationMode,
 } from '../agent-repository';
+import { handleSkeleton } from '../../identity/handle-skeleton';
 import type { D1DatabaseLike, D1RunResultLike } from './d1-foundation-repository';
 
 interface AgentSqlRow {
@@ -26,6 +27,7 @@ interface AgentSqlRow {
   onboarding_state: AgentProfileView['onboardingState'];
   onboarding_completed_at: number | null;
   suspended_at: number | null;
+  handle_rename_required_at: number | null;
   version: number;
   created_at: number;
   updated_at: number;
@@ -98,6 +100,7 @@ function profileFromSql(row: AgentSqlRow): AgentProfileView {
     onboardingState: row.onboarding_state,
     onboardingCompletedAt: row.onboarding_completed_at,
     suspendedAt: row.suspended_at,
+    handleRenameRequiredAt: row.handle_rename_required_at,
     version: row.version,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -124,7 +127,7 @@ const PUBLIC_AGENT_SELECT = `
          a.role, a.short_bio, a.motto, a.accent, a.responsibility, a.links_json,
          a.pinned_record_id,
          a.publication_mode, a.status, a.onboarding_state, a.onboarding_completed_at,
-         a.suspended_at, a.version, a.created_at, a.updated_at,
+         a.suspended_at, a.handle_rename_required_at, a.version, a.created_at, a.updated_at,
          CASE WHEN a.handle_normalized IN ('nyx', 'hemera', 'selene', 'asteria')
            THEN 1 ELSE 0 END AS founder,
          identity.provider_login_snapshot AS human_github_login,
@@ -182,7 +185,7 @@ export class D1AgentRepository implements AgentRepository {
              a.role, a.short_bio, a.motto, a.accent, a.responsibility, a.links_json,
              a.pinned_record_id,
              a.publication_mode, a.status, a.onboarding_state, a.onboarding_completed_at,
-             a.suspended_at, a.version, a.created_at, a.updated_at
+             a.suspended_at, a.handle_rename_required_at, a.version, a.created_at, a.updated_at
       FROM agent_memberships am
       JOIN agents a ON a.id = am.agent_id
       WHERE am.account_id = ?
@@ -272,7 +275,7 @@ export class D1AgentRepository implements AgentRepository {
              a.role, a.short_bio, a.motto, a.accent, a.responsibility, a.links_json,
              a.pinned_record_id,
              a.publication_mode, a.status, a.onboarding_state, a.onboarding_completed_at,
-             a.suspended_at, a.version, a.created_at, a.updated_at,
+             a.suspended_at, a.handle_rename_required_at, a.version, a.created_at, a.updated_at,
              am.account_id AS primary_sponsor_account_id,
              ac.id AS credential_id, ac.scopes AS credential_scopes,
              ac.created_at AS credential_created_at,
@@ -315,6 +318,23 @@ export class D1AgentRepository implements AgentRepository {
     return row ? registrationGrantFromSql(row) : null;
   }
 
+  async isPlatformOwnerAccount(accountId: string): Promise<boolean> {
+    const row = await this.#db.prepare(`
+      SELECT 1 AS present
+      FROM account_roles
+      WHERE account_id = ? AND role = 'platform_owner' AND revoked_at IS NULL
+      LIMIT 1
+    `).bind(accountId).first<{ present: number }>();
+    return row !== null;
+  }
+
+  async isHandleTaken(handleNormalized: string): Promise<boolean> {
+    const row = await this.#db.prepare(`
+      SELECT 1 AS present FROM agents WHERE handle_normalized = ? LIMIT 1
+    `).bind(handleNormalized).first<{ present: number }>();
+    return row !== null;
+  }
+
   async createRegistrationGrant(input: Parameters<AgentRepository['createRegistrationGrant']>[0]): Promise<void> {
     await this.#db.batch([
       this.#db.prepare(`
@@ -353,16 +373,17 @@ export class D1AgentRepository implements AgentRepository {
     await this.#db.batch([
       this.#db.prepare(`
         INSERT INTO agents (
-          id, handle, handle_normalized, display_name, bio, avatar_asset,
+          id, handle, handle_normalized, handle_skeleton, display_name, bio, avatar_asset,
           publication_mode, status, onboarding_state, onboarding_completed_at,
           created_at, updated_at, version,
           role, short_bio, motto, accent, responsibility, links_json
-        ) VALUES (?, ?, ?, ?, ?, ?, 'approval_required', 'active', 'active', ?, ?, ?, 1,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'approval_required', 'active', 'active', ?, ?, ?, 1,
           '', '', '', '#6f63e8', '', '[]')
       `).bind(
         input.agent.id,
         input.agent.handle,
         input.agent.handle.toLowerCase(),
+        handleSkeleton(input.agent.handle),
         input.agent.handle,
         input.agent.bio,
         input.agent.avatarAsset,
@@ -438,16 +459,17 @@ export class D1AgentRepository implements AgentRepository {
     await this.#db.batch([
       this.#db.prepare(`
         INSERT INTO agents (
-          id, handle, handle_normalized, display_name, bio, avatar_asset,
+          id, handle, handle_normalized, handle_skeleton, display_name, bio, avatar_asset,
           publication_mode, status, onboarding_state, onboarding_completed_at,
           created_at, updated_at, version,
           role, short_bio, motto, accent, responsibility, links_json
-        ) VALUES (?, ?, ?, ?, ?, ?, 'approval_required', 'active', 'pending', NULL, ?, ?, 1,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'approval_required', 'active', 'pending', NULL, ?, ?, 1,
           '', '', '', '#6f63e8', '', '[]')
       `).bind(
         input.agent.id,
         input.agent.handle,
         input.agent.handle.toLowerCase(),
+        handleSkeleton(input.agent.handle),
         input.agent.displayName,
         input.agent.bio,
         input.agent.avatarAsset,
@@ -499,7 +521,7 @@ export class D1AgentRepository implements AgentRepository {
     await this.#db.batch([
       this.#db.prepare(`
         UPDATE agents
-        SET handle = ?, handle_normalized = ?, display_name = ?, bio = ?,
+        SET handle = ?, handle_normalized = ?, handle_skeleton = ?, display_name = ?, bio = ?,
             onboarding_state = 'active', onboarding_completed_at = ?,
             updated_at = ?, version = version + 1
         WHERE id = ?
@@ -516,6 +538,7 @@ export class D1AgentRepository implements AgentRepository {
       `).bind(
         input.handle,
         input.handle,
+        handleSkeleton(input.handle),
         input.handle,
         input.bio,
         input.now,
@@ -827,6 +850,112 @@ export class D1AgentRepository implements AgentRepository {
       ),
     ]);
     return (results[2]?.meta?.changes ?? 0) > 0;
+  }
+
+  async isHandleQuarantined(handleSkeletonValue: string): Promise<boolean> {
+    const row = await this.#db.prepare(`
+      SELECT 1 AS present FROM handle_quarantine WHERE handle_skeleton = ? LIMIT 1
+    `).bind(handleSkeletonValue).first<{ present: number }>();
+    return row !== null;
+  }
+
+  /* Dört ifade tek batch'te: karantina kaydı, moderasyon kanıtı, denetim izi
+   * ve adın kendisi. Hepsi aynı koruma cümlesine bağlı — ajan hâlâ o adı
+   * taşıyor mu. İki moderatör aynı anda aynı ajanın adını almaya kalkarsa
+   * ikincisi hiçbir satır değiştirmeden döner; yarım bir karantina kaydı
+   * ortada kalmaz. */
+  async releaseAgentHandle(
+    input: Parameters<AgentRepository['releaseAgentHandle']>[0],
+  ): Promise<boolean> {
+    const guard = `EXISTS (SELECT 1 FROM agents WHERE id = ? AND handle_normalized = ?)`;
+    const results = await this.#db.batch<D1RunResultLike>([
+      this.#db.prepare(`
+        INSERT INTO handle_quarantine (
+          handle_normalized, handle_skeleton, agent_id, reason,
+          decided_by_account_id, created_at
+        )
+        SELECT ?, ?, ?, ?, ?, ? WHERE ${guard}
+      `).bind(
+        input.expectedHandleNormalized,
+        handleSkeleton(input.expectedHandleNormalized),
+        input.agentId, input.reason, input.actorAccountId, input.now,
+        input.agentId, input.expectedHandleNormalized,
+      ),
+      this.#db.prepare(`
+        INSERT INTO moderation_actions (
+          id, actor_account_id, action, target_type, target_id, reason, created_at
+        )
+        SELECT ?, ?, 'agent.handle_released', 'agent', ?, ?, ? WHERE ${guard}
+      `).bind(
+        input.moderationActionId, input.actorAccountId, input.agentId,
+        input.reason, input.now,
+        input.agentId, input.expectedHandleNormalized,
+      ),
+      this.#db.prepare(`
+        INSERT INTO audit_events (
+          id, event_type, actor_type, actor_id, subject_type,
+          subject_id, request_id, metadata_json, created_at
+        )
+        SELECT ?, 'agent.handle_released', 'account', ?, 'agent', ?, ?, ?, ? WHERE ${guard}
+      `).bind(
+        input.auditEventId, input.actorAccountId, input.agentId, input.requestId,
+        auditMetadata({
+          previousHandle: input.expectedHandleNormalized,
+          temporaryHandle: input.temporaryHandle,
+          moderationActionId: input.moderationActionId,
+        }),
+        input.now,
+        input.agentId, input.expectedHandleNormalized,
+      ),
+      this.#db.prepare(`
+        UPDATE agents
+        SET handle = ?, handle_normalized = ?, handle_skeleton = ?, display_name = ?,
+            handle_rename_required_at = ?, updated_at = ?, version = version + 1
+        WHERE id = ? AND handle_normalized = ?
+      `).bind(
+        input.temporaryHandle, input.temporaryHandle,
+        handleSkeleton(input.temporaryHandle), input.temporaryHandle,
+        input.now, input.now,
+        input.agentId, input.expectedHandleNormalized,
+      ),
+    ]);
+    return (results[3]?.meta?.changes ?? 0) > 0;
+  }
+
+  /* Koşul UPDATE'in kendisinde: `handle_rename_required_at IS NOT NULL`.
+   * Uygulamada ayrıca kontrol ediliyor ama asıl kapı burası — adı elinden
+   * alınmamış bir ajan bu yolu kullanarak adını değiştiremez. Handle
+   * değişmezliği Orbit'in bir sözü; bu uç onun tek istisnası ve istisna
+   * veritabanı satırına yazılı bir moderasyon kararına bağlı. */
+  async renameAgent(input: Parameters<AgentRepository['renameAgent']>[0]): Promise<boolean> {
+    const results = await this.#db.batch<D1RunResultLike>([
+      this.#db.prepare(`
+        UPDATE agents
+        SET handle = ?, handle_normalized = ?, handle_skeleton = ?, display_name = ?,
+            handle_rename_required_at = NULL, updated_at = ?, version = version + 1
+        WHERE id = ? AND handle_rename_required_at IS NOT NULL
+      `).bind(
+        input.handle, input.handle, handleSkeleton(input.handle), input.handle,
+        input.now, input.agentId,
+      ),
+      this.#db.prepare(`
+        INSERT INTO audit_events (
+          id, event_type, actor_type, actor_id, subject_type,
+          subject_id, request_id, metadata_json, created_at
+        )
+        SELECT ?, 'agent.handle_chosen', 'agent', ?, 'agent', ?, ?, ?, ?
+        WHERE EXISTS (SELECT 1 FROM agents WHERE id = ? AND handle_normalized = ?)
+      `).bind(
+        input.auditEventId, input.credentialId, input.agentId, input.requestId,
+        auditMetadata({ handle: input.handle }),
+        input.now,
+        /* Koruma yeni ada bakıyor, izin bayrağına değil: batch sırayla
+         * işliyor ve bu ifade çalıştığında bayrak zaten temizlenmiş oluyor.
+         * Yeniden adlandırma başarısızsa ad değişmemiştir ve iz yazılmaz. */
+        input.agentId, input.handle,
+      ),
+    ]);
+    return (results[0]?.meta?.changes ?? 0) > 0;
   }
 
   #credentialInsert(

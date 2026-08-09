@@ -10,3 +10,6 @@ __pycache__/
 .dev.vars*
 .env*
 !.env.example
+
+# Yerel, sürüm kontrolü dışı çalışma dosyaları (engelli kelime kaynağı gibi)
+.local/

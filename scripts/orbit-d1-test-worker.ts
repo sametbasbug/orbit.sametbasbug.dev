@@ -6,6 +6,7 @@ import { createDynamicBackup } from '../src/server/backup/dynamic-backup';
 import type { McpAuthorizationScope } from '../src/server/identity/mcp-authorization-scopes';
 import { D1McpAuthorizationRepository } from '../src/server/repositories/d1/d1-mcp-authorization-repository';
 import { D1PublicRepository } from '../src/server/repositories/d1/d1-public-repository';
+import { handleSkeleton } from '../src/server/identity/handle-skeleton.ts';
 
 interface TestStatement {
   bind(...values: unknown[]): TestStatement;
@@ -99,10 +100,10 @@ async function seedMcpAgent(
   await seedOwner(db, accountId, now);
   await db.prepare(`
     INSERT OR IGNORE INTO agents (
-      id, handle, handle_normalized, display_name, bio, avatar_asset,
+      id, handle, handle_normalized, handle_skeleton, display_name, bio, avatar_asset,
       publication_mode, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, '', 'test.svg', 'direct_publish', 'active', ?, ?)
-  `).bind(agentId, agentId, agentId, agentId, now, now).run();
+    ) VALUES (?, ?, ?, ?, ?, '', 'test.svg', 'direct_publish', 'active', ?, ?)
+  `).bind(agentId, agentId, agentId, handleSkeleton(agentId), agentId, now, now).run();
   await db.prepare(`
     INSERT OR IGNORE INTO agent_memberships (
       id, agent_id, account_id, role, created_by_account_id, created_at
@@ -121,10 +122,10 @@ async function seedAgent(
   await seedOwner(db, sponsorId, now);
   await db.prepare(`
     INSERT INTO agents (
-      id, handle, handle_normalized, display_name, bio, avatar_asset,
+      id, handle, handle_normalized, handle_skeleton, display_name, bio, avatar_asset,
       publication_mode, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, '', 'test.svg', 'direct_publish', 'active', ?, ?)
-  `).bind(agentId, agentId, agentId, agentId, now, now).run();
+    ) VALUES (?, ?, ?, ?, ?, '', 'test.svg', 'direct_publish', 'active', ?, ?)
+  `).bind(agentId, agentId, agentId, handleSkeleton(agentId), agentId, now, now).run();
   await db.prepare(`
     INSERT INTO agent_credentials (
       id, agent_id, secret_digest, hash_version, scopes,
@@ -157,10 +158,10 @@ async function seedPublicWorld(
   for (const [handle, avatar, accent] of agents) {
     await db.prepare(`
       INSERT INTO agents (
-        id, handle, handle_normalized, display_name, bio, avatar_asset,
+        id, handle, handle_normalized, handle_skeleton, display_name, bio, avatar_asset,
         accent, publication_mode, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, '', ?, ?, 'direct_publish', 'active', ?, ?)
-    `).bind(handle, handle, handle, handle, avatar, accent, now, now).run();
+      ) VALUES (?, ?, ?, ?, ?, '', ?, ?, 'direct_publish', 'active', ?, ?)
+    `).bind(handle, handle, handle, handleSkeleton(handle), handle, avatar, accent, now, now).run();
   }
 
   await db.prepare(`
@@ -544,10 +545,10 @@ async function handleAction(body: ActionRequest, env: Environment): Promise<Resp
       await seedOwner(env.DB, sponsorId, now);
       await env.DB.prepare(`
         INSERT OR IGNORE INTO agents (
-          id, handle, handle_normalized, display_name, bio, avatar_asset,
+          id, handle, handle_normalized, handle_skeleton, display_name, bio, avatar_asset,
           publication_mode, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, '', 'test.svg', 'direct_publish', 'active', ?, ?)
-      `).bind(agentId, agentId, agentId, agentId, now, now).run();
+        ) VALUES (?, ?, ?, ?, ?, '', 'test.svg', 'direct_publish', 'active', ?, ?)
+      `).bind(agentId, agentId, agentId, handleSkeleton(agentId), agentId, now, now).run();
 
       for (const suffix of ['one', 'two']) {
         const recordId = stringValue(data, `record_${suffix}`);

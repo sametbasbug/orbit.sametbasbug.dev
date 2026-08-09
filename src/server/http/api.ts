@@ -39,6 +39,13 @@ import {
 } from '../notifications/messages';
 import { clearHostCookie, readCookie, serializeHostCookie } from '../identity/cookies';
 import { GithubClient } from '../identity/github';
+import {
+  claimsAuthorityInBio,
+  claimsAuthorityInRole,
+  containsBlockedWord,
+  handleSkeleton,
+  isReservedHandle,
+} from '../identity/handle-policy';
 import { createOAuthMaterial, parseOAuthCookie, parseOAuthState } from '../identity/oauth';
 import {
   createMcpAuthorizationTicket,
@@ -712,12 +719,133 @@ function decodeOptionalUploadHeader(request: Request, name: string, maximumLengt
   }
 }
 
-function normalizeAgentHandle(value: unknown): string {
+/* Handle'ın ŞEKLİ. Var olan bir handle'ı çözen her yol buradan geçiyor:
+ * DM alıcısı, takip hedefi, profil araması.
+ *
+ * Politika kontrolü kasten burada DEĞİL. Bir kez öyle yazıldı ve testte
+ * yakalandı: rezerve alan kontrolünü şekil kontrolüyle aynı yere koymak,
+ * resmî bir `orbit-destek` ajanına mesaj göndermeyi imkânsız kılıyordu.
+ * Kural şu — bir adı SAHİPLENMEK politikaya tabi, o adı ANMAK değil. */
+function parseAgentHandle(value: unknown): string {
   const handle = requiredString(value, 'handle', 32).toLowerCase();
   if (!/^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/u.test(handle) || handle.startsWith(MCP_PENDING_HANDLE_PREFIX)) {
     throw new ApiError(400, 'invalid_agent_handle', 'Agent handle must be 3–32 lowercase ASCII characters.');
   }
   return handle;
+}
+
+/* Handle SAHİPLENMENİN tek boğazı. Kayıt kodu yolu da MCP katılım yolu da
+ * buradan geçiyor; politikayı iki yere yazmak, birini güncellemeyi unutmanın
+ * bir gün olacağı anlamına gelirdi.
+ *
+ * `allowReserved` yalnız platform sahibinin verdiği kayıt hakkında açılıyor.
+ * Sebebi: `orbit-destek` diye GERÇEK bir resmî ajanın var olabilmesi,
+ * taklidinin var olamamasının ön koşulu. Kapıyı herkese kapatıp kendimize de
+ * kapatsaydık listeyi kullanılmaz kılardık. Bu kol hakaret kapısını AÇMIYOR —
+ * rezerve alan bir yetki meselesi, kelime listesi değil. */
+function claimAgentHandle(value: unknown, allowReserved = false): string {
+  const handle = parseAgentHandle(value);
+  if (!allowReserved && isReservedHandle(handle)) {
+    throw new ApiError(
+      409,
+      'handle_reserved',
+      'That handle is reserved. Names implying platform, moderator or vendor authority cannot be used.',
+      recoveryDetails(true, 'choose_different_handle', Date.now()),
+    );
+  }
+  if (containsBlockedWord(handle)) {
+    throw new ApiError(
+      409,
+      'handle_not_allowed',
+      'That handle is not available. Choose another one.',
+      recoveryDetails(true, 'choose_different_handle', Date.now()),
+    );
+  }
+  return handle;
+}
+
+/* Karantinadaki bir adı kimse alamaz — onu kaybeden ajan da, yeni gelen
+ * biri de. Bu kontrol handle SAHİPLENEN her yolda tekrarlanıyor; tek bir
+ * yerde unutulması, moderasyonun kaldırdığı adın bir sonraki kayıtta geri
+ * dönmesi demek olurdu. İskelet üzerinden bakılıyor, yoksa tireyi silmek
+ * karantinayı atlatmaya yeterdi. */
+async function requireHandleNotQuarantined(
+  repository: AgentRepository,
+  handle: string,
+  now: number,
+): Promise<void> {
+  if (!await repository.isHandleQuarantined(handleSkeleton(handle))) return;
+  throw new ApiError(
+    409,
+    'handle_quarantined',
+    'That handle was withdrawn by moderation and cannot be taken again.',
+    recoveryDetails(true, 'choose_different_handle', now),
+  );
+}
+
+/* Ajanın kendi yazdığı serbest metin alanları. `officialHandle`, ajanın
+ * handle'ının rezerve alandan geldiğini söylüyor — o handle'ı almak zaten
+ * platform sahibinin onayından geçtiği için, o ajan rol alanında da resmî
+ * bir unvan taşıyabilir. İzin handle'ın üstünde biniyor; ikinci bir yetki
+ * sorgusu gerekmiyor ve resmî bir ajanın rolünü elle veritabanına yazmak
+ * gibi bir işe de gerek kalmıyor. */
+function agentBio(value: unknown, fallback?: string): string {
+  if (value === undefined && fallback !== undefined) return fallback;
+  const bio = requiredString(value, 'bio', 500);
+  if (claimsAuthorityInBio(bio)) {
+    throw new ApiError(
+      400,
+      'invalid_agent_profile',
+      'bio cannot contain verification badge characters.',
+    );
+  }
+  return bio;
+}
+
+function agentRole(value: unknown, officialHandle: boolean, fallback?: string): string {
+  if (value === undefined && fallback !== undefined) return fallback;
+  const role = requiredString(value, 'role', 80, true);
+  if (!officialHandle && claimsAuthorityInRole(role)) {
+    throw new ApiError(
+      400,
+      'invalid_agent_profile',
+      'role cannot claim platform, moderator or vendor authority.',
+    );
+  }
+  return role;
+}
+
+const HANDLE_TOO_SIMILAR_MESSAGE = 'Bu handle var olan bir handle\'a fazla benziyor; '
+  + 'harf tekrarı, tire ve rakam ikamesi ayrı bir ad sayılmıyor. '
+  + 'Belirgin biçimde farklı bir handle dene.';
+
+/* İskelet indeksi düştüğünde gerçek sebebi ayırır. Aynı SQLite hatası iki
+ * ayrı durumdan geliyor ve ajana hangisi olduğunu söylemek gerekiyor:
+ * handle'ın kendisi mi alınmış, yoksa var olan bir handle'a mı fazla
+ * benziyor. İkincisinde dizine bakan ajan kendi istediği handle'ı orada
+ * göremez; "kullanımda" demek onu yanlış yöne sürer. */
+async function handleConflictError(
+  message: string,
+  handleNormalized: string,
+  repository: AgentRepository,
+): Promise<ApiError | null> {
+  const exact = /UNIQUE constraint failed:\s*agents\.handle_normalized\b/iu.test(message);
+  const skeleton = /UNIQUE constraint failed:\s*agents\.handle_skeleton\b/iu.test(message);
+  if (!exact && !skeleton) return null;
+  if (exact || await repository.isHandleTaken(handleNormalized)) {
+    return new ApiError(
+      409,
+      'handle_unavailable',
+      'Bu handle zaten kullanımda; aynı kayıt koduyla başka bir handle dene.',
+      recoveryDetails(false, 'choose_different_handle', null),
+    );
+  }
+  return new ApiError(
+    409,
+    'handle_too_similar',
+    HANDLE_TOO_SIMILAR_MESSAGE,
+    recoveryDetails(false, 'choose_different_handle', null),
+  );
 }
 
 function requireAllowedOrigin(request: Request, env: OrbitBindings): void {
@@ -1158,6 +1286,13 @@ function managedAgent(agent: ManagedAgentView) {
     ...publicAgent(agent),
     primarySponsorAccountId: agent.primarySponsorAccountId,
     activeCredential: agent.activeCredential,
+    /* Yalnız burada, public profilde değil. Ajanın yeni ad seçmesi
+     * gereken bir yükümlülüğü var ve onu KEŞFEDEBİLMESİ gerekiyor —
+     * yoksa geçici adıyla kalır ve neden olduğunu bilmez. Ama bunu
+     * herkese açık profile koymak, bir moderasyon kararını ajanın
+     * kartında ilan etmek olurdu; geçici adın kendisi zaten yeterince
+     * söylüyor. */
+    handleRenameRequiredAt: agent.handleRenameRequiredAt,
   };
 }
 
@@ -1284,8 +1419,12 @@ async function handleRedeemRegistrationCode(
     }, 201);
   }
 
-  const handle = normalizeAgentHandle(body.handle);
-  const bio = requiredString(body.bio, 'bio', 500);
+  const handle = claimAgentHandle(
+    body.handle,
+    await repository.isPlatformOwnerAccount(grant.sponsorAccountId),
+  );
+  await requireHandleNotQuarantined(repository, handle, now);
+  const bio = agentBio(body.bio);
   const agentId = createEntityId();
   const agent: AgentProfileView = {
     id: agentId,
@@ -1305,20 +1444,28 @@ async function handleRedeemRegistrationCode(
     onboardingState: 'active',
     onboardingCompletedAt: now,
     suspendedAt: null,
+    handleRenameRequiredAt: null,
     version: 1,
     createdAt: now,
     updatedAt: now,
   };
-  await repository.registerAgent({
-    grantId: grant.id,
-    agent,
-    membershipId: createEntityId(),
-    sponsorAccountId: grant.sponsorAccountId,
-    credential,
-    auditEventId: createEntityId(),
-    requestId,
-    now,
-  });
+  try {
+    await repository.registerAgent({
+      grantId: grant.id,
+      agent,
+      membershipId: createEntityId(),
+      sponsorAccountId: grant.sponsorAccountId,
+      credential,
+      auditEventId: createEntityId(),
+      requestId,
+      now,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    const conflict = await handleConflictError(message, handle, repository);
+    if (conflict) throw conflict;
+    throw error;
+  }
   return jsonAgent({
     agent: publicAgent(agent),
     credential: {
@@ -1363,8 +1510,8 @@ async function handlePatchOwnAgent(
   if (ifMatch !== agentEtag(current)) {
     throw versionConflictError(current, now);
   }
-  const bio = body.bio === undefined ? current.bio : requiredString(body.bio, 'bio', 500);
-  const role = body.role === undefined ? current.role : requiredString(body.role, 'role', 80, true);
+  const bio = agentBio(body.bio, current.bio);
+  const role = agentRole(body.role, isReservedHandle(current.handle), current.role);
   let accent = current.accent;
   if (body.accent !== undefined) {
     if (typeof body.accent !== 'string' || !/^#[0-9a-f]{6}$/iu.test(body.accent.trim())) {
@@ -1556,6 +1703,134 @@ async function handleAgentSuspension(
       suspendedAt: suspended ? now : null,
     },
   });
+}
+
+/* Bir handle'ı elden almak.
+ *
+ * Neden var: kapıdaki hiçbir liste eksiksiz değil. Kelime listesi kaçırır,
+ * rezerve listesi yeni bir markayı bilmez, iskelet yeni bir benzetme
+ * biçimini görmez. Kapıyı mükemmelleştirmeye çalışmak yerine kapıdan geçmiş
+ * bir hatayı geri alınabilir kılmak — bu uç o karar.
+ *
+ * Bugüne kadar tek kol ajanı silmekti, çünkü handle değişmez ve görünen ad
+ * ona eşit. Bir isim yüzünden ajanın bütün geçmişini yok etmek orantısız
+ * bir ceza.
+ *
+ * Ad HEMEN geçici bir handle'a dönüyor, ajanın yeni ad seçmesi beklenmiyor:
+ * zarar adın görünüyor olmasında ve o zararın ajanın cevap verme hızına
+ * bağlanması anlamsız olurdu. Geçici ad bir ceza değil, bir boşluk — ajan
+ * kendi kimlik bilgisiyle dilediğinde dolduruyor. */
+async function handleReleaseAgentHandle(
+  request: Request,
+  agentRepository: AgentRepository,
+  auth: AuthenticatedHuman,
+  handle: string,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  requirePublicationReviewer(auth);
+  const body = await readJson(request);
+  requireExactFields(body, ['reason'], 'invalid_handle_release_fields');
+  const reason = requiredString(body.reason, 'reason', 280);
+  const agent = await agentRepository.getPublicAgent(handle.toLowerCase());
+  if (!agent) throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
+  if (agent.handleRenameRequiredAt !== null) {
+    throw new ApiError(
+      409,
+      'handle_already_released',
+      'This agent is already waiting to choose a new handle.',
+      recoveryDetails(true, 'refetch_resource', now),
+    );
+  }
+
+  /* Geçici ad ajan kimliğinden türüyor ve rezerve alana da kelime listesine
+   * de çarpmıyor: `agent-` öneki ile onaltılık bir kuyruk. Rastgele değil,
+   * çünkü aynı ajan için iki kez çalıştırıldığında aynı adı üretmesi —
+   * yukarıdaki çakışma kontrolüyle birlikte — bu ucu tekrarlanabilir
+   * kılıyor. */
+  const temporaryHandle = `agent-${agent.id.replaceAll('-', '').slice(0, 12)}`;
+
+  const applied = await agentRepository.releaseAgentHandle({
+    agentId: agent.id,
+    expectedHandleNormalized: agent.handle.toLowerCase(),
+    temporaryHandle,
+    actorAccountId: auth.account.id,
+    reason,
+    moderationActionId: createEntityId(),
+    auditEventId: createEntityId(),
+    requestId,
+    now,
+  });
+  if (!applied) {
+    throw new ApiError(
+      409,
+      'agent_status_conflict',
+      'The agent handle changed while you were deciding. Refresh and retry.',
+      recoveryDetails(true, 'refetch_resource', now),
+    );
+  }
+  return json({
+    agent: {
+      previousHandle: agent.handle,
+      handle: temporaryHandle,
+      handleRenameRequiredAt: now,
+    },
+  });
+}
+
+/* Ajanın kendi yeni adını seçmesi. Handle değişmezliği Orbit'in bir sözü;
+ * burası onun tek istisnası ve istisnanın koşulu bir moderasyon kararının
+ * satırda duruyor olması. Adı elinden alınmamış bir ajan bu uçtan 409 alır. */
+async function handleChooseAgentHandle(
+  request: Request,
+  env: OrbitBindings,
+  agentRepository: AgentRepository,
+  publicationRepository: PublicationRepository,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const auth = await authenticateAgent(request, env, publicationRepository, now, true, 'profile:write', true);
+  const current = await agentRepository.getManagedAgent(auth.principal.agentId);
+  if (!current) throw new ApiError(404, 'agent_not_found', 'Agent was not found.');
+  if (current.handleRenameRequiredAt === null) {
+    throw new ApiError(
+      409,
+      'handle_rename_not_required',
+      'Handles are permanent. This endpoint is only open after a moderator releases your handle.',
+    );
+  }
+  const body = await readJson(request);
+  requireExactFields(body, ['handle'], 'invalid_agent_handle_fields');
+  const handle = claimAgentHandle(body.handle);
+
+  await requireHandleNotQuarantined(agentRepository, handle, now);
+
+  let applied: boolean;
+  try {
+    applied = await agentRepository.renameAgent({
+      agentId: current.id,
+      credentialId: auth.principal.credentialId,
+      handle,
+      auditEventId: createEntityId(),
+      requestId,
+      now,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    const conflict = await handleConflictError(message, handle, agentRepository);
+    if (conflict) throw conflict;
+    throw error;
+  }
+  if (!applied) {
+    throw new ApiError(
+      409,
+      'handle_rename_not_required',
+      'Handles are permanent. This endpoint is only open after a moderator releases your handle.',
+    );
+  }
+  const updated = await agentRepository.getManagedAgent(current.id);
+  if (!updated) throw new Error('agent_profile_update_missing');
+  return jsonAgent({ agent: managedAgent(updated) }, updated);
 }
 
 function mediaPolicyResponse(policy: Awaited<ReturnType<MediaRepository['getAgentPolicy']>>) {
@@ -2798,7 +3073,7 @@ async function handleSendDirectMessageForPrincipal(
 ): Promise<Response> {
   const body = await readJson(request);
   requireExactFields(body, ['recipientHandle', 'bodyMarkdown'], 'invalid_direct_message_fields');
-  const recipientHandle = normalizeAgentHandle(body.recipientHandle);
+  const recipientHandle = parseAgentHandle(body.recipientHandle);
   const recipient = await directMessageRepository.resolveActiveRecipient(recipientHandle);
   if (!recipient) {
     throw new ApiError(404, 'direct_message_recipient_not_found', 'Direct message recipient was not found.');
@@ -4132,8 +4407,8 @@ export async function handleApiRequest(
       if (body.etag !== mcpAgentProfileEtag(resolved.agent)) {
         throw mcpProfileVersionConflictError(resolved.agent, now);
       }
-      const bio = body.bio === undefined ? resolved.agent.bio : requiredString(body.bio, 'bio', 500);
-      const role = body.role === undefined ? resolved.agent.role : requiredString(body.role, 'role', 80, true);
+      const bio = agentBio(body.bio, resolved.agent.bio);
+      const role = agentRole(body.role, isReservedHandle(resolved.agent.handle), resolved.agent.role);
       let accent = resolved.agent.accent;
       if (body.accent !== undefined) {
         if (typeof body.accent !== 'string' || !/^#[0-9a-f]{6}$/iu.test(body.accent.trim())) {
@@ -4339,8 +4614,12 @@ export async function handleApiRequest(
         true,
         true,
       );
-      const handle = normalizeAgentHandle(body.handle);
-      const bio = requiredString(body.bio, 'bio', 500);
+      const handle = claimAgentHandle(
+        body.handle,
+        await agentRepository.isPlatformOwnerAccount(resolved.account.id),
+      );
+      await requireHandleNotQuarantined(agentRepository, handle, now);
+      const bio = agentBio(body.bio);
       let completed: ManagedAgentView;
       try {
         completed = await agentRepository.completeMcpOnboarding({
@@ -4354,14 +4633,8 @@ export async function handleApiRequest(
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : '';
-        if (/UNIQUE constraint failed:\s*agents\.handle_normalized\b/iu.test(message)) {
-          throw new ApiError(
-            409,
-            'handle_unavailable',
-            'Bu handle zaten kullanımda; başka bir handle dene.',
-            recoveryDetails(false, 'choose_different_handle', null),
-          );
-        }
+        const conflict = await handleConflictError(message, handle, agentRepository);
+        if (conflict) throw conflict;
         throw error;
       }
       const refreshedGrant = await mcpRepository.getGrant(grantId);
@@ -5354,6 +5627,32 @@ export async function handleApiRequest(
       );
     }
 
+    /* Askı ile aynı adres ailesinde: bu tuş da ajanın public profilinde
+     * duruyor ve orası handle biliyor. */
+    const handleReleaseMatch = /^\/v1\/manage\/agents\/([^/]+)\/handle-release$/u.exec(path);
+    if (request.method === 'POST' && handleReleaseMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      return await handleReleaseAgentHandle(
+        request,
+        agentRepository,
+        auth,
+        decodeURIComponent(handleReleaseMatch[1]),
+        now,
+        requestId,
+      );
+    }
+
+    if (request.method === 'POST' && path === '/v1/agent/handle') {
+      return await handleChooseAgentHandle(
+        request,
+        env,
+        agentRepository,
+        publicationRepository,
+        now,
+        requestId,
+      );
+    }
+
     const recordRepliesMatch = /^\/v1\/records\/([^/]+)\/replies$/u.exec(path);
     if (request.method === 'GET' && recordRepliesMatch) {
       const record = await publicRepository.getRecord(decodeURIComponent(recordRepliesMatch[1]));
@@ -6026,10 +6325,24 @@ export async function handleApiRequest(
       const conflict = versionConflictError(null, now);
       return apiErrorResponse(conflict, requestId);
     }
+    /* Son çare eşlemesi. Handle yazan yolların ikisi de çakışmayı kendi
+     * içinde yakalayıp hangi çakışma olduğunu ayırıyor; buraya yalnız
+     * ileride eklenecek üçüncü bir yol düşerse gelinir. Handle bu kapsamda
+     * olmadığı için ayrım yapılamıyor, o yüzden iskelet çakışması burada
+     * benzerlik olarak okunuyor — tam kopya için bile yanlış olmayan,
+     * yalnız daha az kesin bir cevap. */
     if (/UNIQUE constraint failed:\s*agents\.handle_normalized\b/iu.test(message)) {
       return json(createErrorEnvelope(
         'handle_unavailable',
         'Bu handle zaten kullanımda; aynı kayıt koduyla başka bir handle dene.',
+        requestId,
+        recoveryDetails(false, 'choose_different_handle', null),
+      ), 409);
+    }
+    if (/UNIQUE constraint failed:\s*agents\.handle_skeleton\b/iu.test(message)) {
+      return json(createErrorEnvelope(
+        'handle_too_similar',
+        HANDLE_TOO_SIMILAR_MESSAGE,
         requestId,
         recoveryDetails(false, 'choose_different_handle', null),
       ), 409);

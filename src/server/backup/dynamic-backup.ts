@@ -4,7 +4,11 @@ import { randomBase64Url, sha256Base64Url } from '../identity/tokens';
 import type { D1DatabaseLike, D1PreparedStatementLike } from '../repositories/d1/d1-foundation-repository';
 
 export const BACKUP_SCHEMA = 'equinox.orbit.dynamic-backup.v1';
-export const BACKUP_SCHEMA_VERSION = 9;
+/* 10: `handle_quarantine` tablosu ve `agents.handle_rename_required_at`
+ * eklendi. Sürüm yükseltmek eski yedek dosyalarını geçersiz kılıyor ve bu
+ * kasıtlı — dokuzuncu sürümden gelen bir dosyada karantina hiç yok, sessizce
+ * geri yüklenseydi moderasyonun elden aldığı bütün adlar serbest kalırdı. */
+export const BACKUP_SCHEMA_VERSION = 10;
 export const MAX_RESTORE_INPUT_BYTES = 4 * 1024 * 1024;
 export const MAX_RESTORE_STATEMENTS = 2_000;
 
@@ -38,7 +42,12 @@ const SPECS: TableSpec[] = [
   { exportName: 'accountRoles', table: 'account_roles', columns: ['id','account_id','role','granted_by_account_id','granted_at','revoked_at'], orderBy: 'id' },
   { exportName: 'accountQuotas', table: 'account_quotas', columns: ['account_id','quota_key','limit_value','updated_by_account_id','updated_at'], orderBy: 'account_id, quota_key' },
   { exportName: 'invitations', table: 'invitations', columns: ['id','secret_digest','hash_version','expected_github_user_id','expected_github_login_snapshot','agent_quota','created_by_account_id','created_at','expires_at','redeemed_at','redeemed_by_account_id','revoked_at','revoked_by_account_id'], orderBy: 'id' },
-  { exportName: 'agents', table: 'agents', columns: ['id','handle','handle_normalized','display_name','bio','avatar_asset','publication_mode','status','created_at','updated_at','version','role','short_bio','motto','accent','responsibility','links_json','avatar_media_id','onboarding_state','onboarding_completed_at','pinned_record_id','suspended_at'], orderBy: 'id' },
+  { exportName: 'agents', table: 'agents', columns: ['id','handle','handle_normalized','handle_skeleton','display_name','bio','avatar_asset','publication_mode','status','created_at','updated_at','version','role','short_bio','motto','accent','responsibility','links_json','avatar_media_id','onboarding_state','onboarding_completed_at','pinned_record_id','suspended_at','handle_rename_required_at'], orderBy: 'id' },
+  /* Karantina yedeğe giriyor: geri yüklemede kaybolsaydı moderasyonun
+     elden aldığı adlar sessizce serbest kalırdı ve bunu kimse fark etmezdi.
+     Sıra `agents`ten SONRA: satır ajana yabancı anahtarla bağlı ve önce
+     yazılsaydı geri yükleme kendi ürettiği bir ihlalde durabilirdi. */
+  { exportName: 'handleQuarantine', table: 'handle_quarantine', columns: ['handle_normalized','handle_skeleton','agent_id','reason','decided_by_account_id','created_at'], orderBy: 'handle_normalized' },
   { exportName: 'agentMemberships', table: 'agent_memberships', columns: ['id','agent_id','account_id','role','created_by_account_id','created_at','revoked_at'], orderBy: 'id' },
   { exportName: 'mcpAuthorizationGrants', table: 'mcp_authorization_grants', columns: ['id','account_id','agent_id','scopes','oauth_client_id','oauth_client_label','created_at','last_used_at','expires_at','revoked_at','revoked_reason'], orderBy: 'created_at, id' },
   { exportName: 'mcpAuthorizationRevocations', table: 'mcp_authorization_revocations', columns: ['grant_id','actor_account_id','reason','revoked_at'], orderBy: 'revoked_at, grant_id' },
@@ -245,6 +254,12 @@ const RESTORE_ARMED_GATES = [
      taşımasaydı geri yükleme her hesabı onaysız hâle döndürürdü ve bunu
      kimse fark etmezdi — onay görünmeyen bir alan. */
   'accounts_terms_consent_is_complete_insert',
+  /* İskeletsiz bir ajan satırı, benzer ad korumasının hiç çalışmaması
+     demek — SQLite tekil indekste NULL'ları çakıştırmaz. Silahlı
+     bırakabiliyoruz çünkü yedek `handle_skeleton` sütununu taşıyor;
+     taşımasaydı geri yükleme her ajanı iskeletsiz hâle döndürür ve kapı
+     sessizce açık kalırdı. */
+  'agents_handle_skeleton_is_required_insert',
   'announcement_transitions_validate',
   'avatar_upload_policies_target_validate',
   'direct_message_reads_validate',

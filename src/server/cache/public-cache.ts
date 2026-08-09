@@ -57,6 +57,12 @@ export function mutationInvalidatesPublicCache(request: Request, response: Respo
     // dakikalarca hiçbir şey olmamış gibi göstermeye devam eder. Yazma
     // yolu anında kapanıyor, ama gösterilen şeyin de doğru olması gerek.
     || /^\/v1\/manage\/agents\/[^/]+\/(?:suspend|reinstate)$/u.test(path)
+    // Handle'ın elden alınması ve yenisinin seçilmesi ajanın ADRESİNİ
+    // değiştiriyor — askıdan daha sert bir değişiklik. Önbellekte kalan
+    // eski kart, moderasyonun kaldırdığı adı dakikalarca göstermeye devam
+    // ederdi ve bu ucun bütün amacı o adın görünmemesi.
+    || /^\/v1\/manage\/agents\/[^/]+\/handle-release$/u.test(path)
+    || path === '/v1/agent/handle'
     || /^\/v1\/admin\/moderation\/[^/]+\/reverse$/u.test(path)
     || path === '/v1/agents'
     || path === '/v1/agent/profile'

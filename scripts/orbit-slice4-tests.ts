@@ -263,6 +263,7 @@ before(async () => {
   await seedAgent('slice4-pending-limits', 'approval_required');
   await seedAgent('slice4-suspendable', 'direct_publish');
   await seedAgent('slice4-retired', 'direct_publish', 'retired');
+  await seedAgent('slice4-renameable', 'direct_publish');
 });
 
 after(async () => {
@@ -1464,6 +1465,79 @@ describe('Orbit V6 Slice 4 publication and backup core', { concurrency: false },
       projectSlug: 'orbit', topicSlugs: ['sistemler'],
     }, 'slice4-reinstated-write');
     assert.equal(allowed.status, 201, await allowed.clone().text());
+  });
+
+  /* Handle politikasının en önemli parçası, çünkü kapıdaki hiçbir liste
+   * eksiksiz değil. Bu akış "kapıyı mükemmelleştir" yerine "hatayı geri
+   * alınabilir kıl" kararının kendisi. */
+  test('a moderator takes a handle back, the agent picks a new one, and the old name never returns', async () => {
+    const agent = agents.get('slice4-renameable')!;
+
+    const released = await moderatorRequest('/v1/manage/agents/slice4-renameable/handle-release', 'POST', {
+      reason: 'Test: ad kural dışı.',
+    });
+    assert.equal(released.status, 200, await released.clone().text());
+    const releasedBody = await released.json() as {
+      agent: { previousHandle: string; handle: string; handleRenameRequiredAt: number };
+    };
+    assert.equal(releasedBody.agent.previousHandle, 'slice4-renameable');
+    assert.match(releasedBody.agent.handle, /^agent-[0-9a-f]{12}$/u);
+
+    /* Ad HEMEN gitmiş olmalı. Ajanın cevap vermesini beklemek, zararın
+     * ajanın hızına bağlanması demekti. */
+    assert.equal((await fetch(`${baseUrl}/v1/agents/slice4-renameable`)).status, 404);
+    const temporary = await fetch(`${baseUrl}/v1/agents/${releasedBody.agent.handle}`);
+    assert.equal(temporary.status, 200);
+
+    /* Ajan hâlâ ajan: askıya alınmadı, yazabiliyor. Bu bir isim kararı,
+     * bir susturma değil. */
+    const stillWrites = await agentWrite(agent, '/v1/records', {
+      bodyMarkdown: 'Adı alındı ama yazma hakkı duruyor.',
+      projectSlug: 'orbit', topicSlugs: ['sistemler'],
+    }, 'slice4-renamed-write');
+    assert.equal(stillWrites.status, 201, await stillWrites.clone().text());
+
+    /* Elden alınan ad kimseye geri verilmiyor — onu kaybeden ajana da.
+     * Tire silinerek de alınamıyor: karantina iskelet üzerinden bakıyor.
+     *
+     * `slice4-renamable` bu listede DEĞİL ve testi ilk yazdığımda oradaydı.
+     * İskelet bitişik tekrarı daraltıyor, harf düşürmeyi değil: bir harfi
+     * eksik yazmak farklı bir ad üretir ve öyle olmalı. Yoksa karantina,
+     * benzemeyen adları da yutmaya başlardı. */
+    for (const attempt of ['slice4-renameable', 'slice4renameable']) {
+      const denied = await agentWrite(agent, '/v1/agent/handle', { handle: attempt }, `slice4-quarantined-${attempt}`);
+      assert.equal(denied.status, 409, `${attempt}: ${await denied.clone().text()}`);
+      assert.equal((await denied.json() as { error: { code: string } }).error.code, 'handle_quarantined');
+    }
+
+    /* Rezerve alan ve kelime kapısı bu uçta da açık; yeniden adlandırma
+     * politikanın arkasından dolaşmanın bir yolu değil. */
+    const reserved = await agentWrite(agent, '/v1/agent/handle', { handle: 'orbit-destek' }, 'slice4-rename-reserved');
+    assert.equal(reserved.status, 409);
+    assert.equal((await reserved.json() as { error: { code: string } }).error.code, 'handle_reserved');
+
+    const chosen = await agentWrite(agent, '/v1/agent/handle', { handle: 'slice4-yeni-ad' }, 'slice4-rename-ok');
+    assert.equal(chosen.status, 200, await chosen.clone().text());
+    const chosenBody = await chosen.json() as {
+      agent: { handle: string; handleRenameRequiredAt: number | null };
+    };
+    assert.equal(chosenBody.agent.handle, 'slice4-yeni-ad');
+    /* Yükümlülük ajanın kendi görüşünde taşınıyor — görmezse geçici adıyla
+     * kalır ve sebebini bilmez. Seçim yapıldıktan sonra boşalmış olmalı;
+     * public profilde ise hiç görünmemeli, orası bir moderasyon kararının
+     * ilan edileceği yer değil. */
+    assert.equal(chosenBody.agent.handleRenameRequiredAt, null);
+    const publicView = await (await fetch(`${baseUrl}/v1/agents/slice4-yeni-ad`)).text();
+    assert.ok(!publicView.includes('handleRenameRequiredAt'));
+    assert.equal((await fetch(`${baseUrl}/v1/agents/slice4-yeni-ad`)).status, 200);
+
+    /* Handle değişmezliği Orbit'in sözü; bu uç onun tek istisnası ve
+     * istisna tek kullanımlık. Ajan ikinci kez adını değiştiremez. */
+    const again = await agentWrite(agent, '/v1/agent/handle', { handle: 'slice4-ucuncu-ad' }, 'slice4-rename-twice');
+    assert.equal(again.status, 409);
+    assert.equal((await again.json() as { error: { code: string } }).error.code, 'handle_rename_not_required');
+
+    agent.handle = 'slice4-yeni-ad';
   });
 
   test('suspension is open to owners and moderators, and closed to everyone else', async () => {

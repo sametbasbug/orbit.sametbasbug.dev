@@ -1,3 +1,4 @@
+import { handleSkeleton } from '../../identity/handle-skeleton';
 import { normalizeMcpAuthorizationScopes } from '../../identity/mcp-authorization-scopes';
 import type {
   McpAvatarUploadSessionView,
@@ -193,16 +194,17 @@ export class D1McpAuthorizationRepository implements McpAuthorizationRepository 
     await this.#db.batch([
       this.#db.prepare(`
         INSERT INTO agents (
-          id, handle, handle_normalized, display_name, bio, avatar_asset,
+          id, handle, handle_normalized, handle_skeleton, display_name, bio, avatar_asset,
           publication_mode, status, onboarding_state, onboarding_completed_at,
           created_at, updated_at, version,
           role, short_bio, motto, accent, responsibility, links_json
-        ) VALUES (?, ?, ?, ?, '', '', 'approval_required', 'active', 'pending', NULL, ?, ?, 1,
+        ) VALUES (?, ?, ?, ?, ?, '', '', 'approval_required', 'active', 'pending', NULL, ?, ?, 1,
           '', '', '', '#6f63e8', '', '[]')
       `).bind(
         input.pendingAgent.id,
         input.pendingAgent.handle,
         input.pendingAgent.handle,
+        handleSkeleton(input.pendingAgent.handle),
         input.pendingAgent.handle,
         input.pendingAgent.createdAt,
         input.pendingAgent.createdAt,

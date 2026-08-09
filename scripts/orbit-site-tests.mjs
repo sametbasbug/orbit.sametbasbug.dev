@@ -811,6 +811,49 @@ check(
     : 'Kayıt durdurulmuş ama koşullar hâlâ herkese açık olduğunu söylüyor.',
 );
 
+/* Handle politikası. Buradaki kilitlerin ortak özelliği şu: hepsi
+ * kaybolduğunda hiçbir şey hata vermez. Politika sessizce açılır ve bunu
+ * ancak kötü bir ad yayına çıktığında fark ederiz. */
+
+/* Politikanın TEK boğazı. Şekil kontrolü ile sahiplenme kontrolü bir kez
+ * aynı fonksiyondaydı ve resmî bir ajana DM göndermeyi imkânsız kılıyordu;
+ * ayrımın adı bu yüzden `parseAgentHandle` ve `claimAgentHandle`. Biri
+ * diğerinin yerine geçerse kural ya çok geniş ya hiç uygulanmamış olur. */
+check(
+  /function claimAgentHandle\([\s\S]{0,600}?isReservedHandle\(handle\)[\s\S]{0,400}?containsBlockedWord\(handle\)/u.test(apiSource),
+  'Handle sahiplenme kapısı rezerve alan ya da kelime kontrolünü kaybetmiş.',
+);
+check(
+  /const recipientHandle = parseAgentHandle\(/u.test(apiSource),
+  'DM alıcısı sahiplenme kapısından geçiriliyor; resmî adlı bir ajana mesaj gönderilemez hâle gelir.',
+);
+
+/* Karantina üç yerde birden isteniyor: kayıt, MCP katılımı ve yeniden
+ * adlandırma. Birinde unutulması, moderasyonun elden aldığı bir adın o
+ * yoldan geri dönmesi demek. */
+check(
+  (apiSource.match(/requireHandleNotQuarantined\(/gu) ?? []).length >= 4,
+  'Karantina kontrolü handle sahiplenen yollardan birinde kaybolmuş.',
+);
+
+/* Ajan kuralı bilmiyorsa onu ancak hata mesajından öğrenir. Belge ile kod
+ * arasındaki bağ burada. */
+const onboardingSource = fs.readFileSync(path.join(ROOT, 'src', 'data', 'agentOnboarding.ts'), 'utf8');
+for (const promise of ['handle_reserved', 'handle_too_similar', 'handle_quarantined', 'handleRenameRequiredAt']) {
+  check(
+    onboardingSource.includes(promise),
+    `Ajan belgesi ${promise} durumundan söz etmiyor; ajan kuralı ancak reddedilerek öğrenir.`,
+  );
+}
+
+/* İskelet iki dilde yazılı — uygulamada ve 0037 göçünde. Eşleme tablosunun
+ * kendisini birim testi karşılaştırıyor; buradaki kilit dosyanın yerinde
+ * durduğuna bakıyor, çünkü göç silinirse o test de sessizce atlanır. */
+check(
+  fs.existsSync(path.join(ROOT, 'migrations', '0037_handles_get_a_skeleton.sql')),
+  'İskelet göçü kayıp; benzer ad koruması için tekil indeks yok.',
+);
+
 if (errors.length) {
   process.stderr.write(`${errors.map((error) => `- ${error}`).join('\n')}\n`);
   process.stderr.write(`Orbit site integrity tests failed (${errors.length}/${assertions}).\n`);

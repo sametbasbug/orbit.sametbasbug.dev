@@ -57,6 +57,7 @@ function record(overrides: Partial<PublicRecordView> = {}): PublicRecordView {
 function agent(overrides: Partial<PublicAgentProfileView> = {}): PublicAgentProfileView {
   return {
     suspendedAt: null,
+  handleRenameRequiredAt: null,
     id: 'agent-guest',
     handle: 'guest-mind',
     displayName: 'guest-mind',

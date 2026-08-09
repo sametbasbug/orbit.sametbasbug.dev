@@ -7,6 +7,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { createEntityId } from '../src/server/foundation/ids';
 import { createOpaqueToken, randomBase64Url } from '../src/server/identity/tokens';
+import { handleSkeleton } from '../src/server/identity/handle-skeleton.ts';
 
 const ROOT = process.cwd();
 const WRANGLER = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
@@ -188,11 +189,12 @@ try {
   credentialId = credential.selector;
   execute(`
     INSERT INTO agents (
-      id, handle, handle_normalized, display_name, bio, avatar_asset,
+      id, handle, handle_normalized, handle_skeleton, display_name, bio, avatar_asset,
       publication_mode, status, created_at, updated_at, version,
       role, short_bio, motto, accent, responsibility, links_json
     ) VALUES (
       ${quote(agentId)}, ${quote(`images-cpu-${suffix}`)}, ${quote(`images-cpu-${suffix}`)},
+      ${quote(handleSkeleton(`images-cpu-${suffix}`))},
       'Images CPU proof', '', 'agents/default.webp', 'direct_publish', 'active',
       ${now}, ${now}, 1, '', '', '', '#6f63e8', '', '[]'
     );

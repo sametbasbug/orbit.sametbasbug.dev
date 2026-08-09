@@ -485,7 +485,7 @@ describe('Orbit MCP authorization foundation', { concurrency: false }, () => {
       counts: Record<string, number>;
     }>('exportBackup', { now: Date.now(), includeSessions: false });
 
-    assert.equal(backup.schemaVersion, 9);
+    assert.equal(backup.schemaVersion, 10);
     assert.equal(backup.security.containsPlaintextSecrets, false);
     assert.ok(backup.tables.mcpAuthorizationGrants.length > 0);
     assert.ok(backup.tables.mcpAuthorizationRevocations.length > 0);

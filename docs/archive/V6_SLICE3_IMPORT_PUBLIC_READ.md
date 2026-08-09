@@ -1,5 +1,9 @@
 # Orbit V6 Slice 3 — Legacy Import and Public Read
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Status: complete in local, disposable D1 and isolated staging. Production is untouched.
 
 ## Locked cutover boundary

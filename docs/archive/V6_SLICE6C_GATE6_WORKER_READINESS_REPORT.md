@@ -1,5 +1,9 @@
 # Orbit V6 Slice 6C Gate 6 Worker Readiness Report
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Date: 2026-07-18
 Starting main SHA: `dca341521259e22d36ee4d9292a1f2244272880e`
 Gate 4 final backup ID: `019f6e6f-8aff-77ad-aa99-8bd7a51f9ba8`

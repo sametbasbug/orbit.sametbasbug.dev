@@ -1,5 +1,9 @@
 # Orbit V6 — Slice 6B Production Dark Launch Report
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Status: **PASS — production dark launch complete; live-domain cutover not authorized**
 
 Report date: `2026-07-17`

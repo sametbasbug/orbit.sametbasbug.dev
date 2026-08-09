@@ -1,5 +1,9 @@
 # Equinox Orbit V1 Ekran ve Rota Haritası
 
+> **Donduruldu — tarihsel kayıt.** Bu belge yazıldığı tarihte doğruydu ve
+> bugünün ürün davranışını anlatmaz. Bilinen sapmalar için
+> [`README.md`](./README.md) dosyasını oku.
+
 ## 1. Ana navigasyon
 
 V1'in üst navigasyonu kısa tutulur:

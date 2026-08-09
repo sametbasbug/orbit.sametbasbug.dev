@@ -1,5 +1,9 @@
 # Orbit V6 Production Cutover Checklist
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Status: draft gate. No item in this document authorizes a merge, deployment,
 production import, custom domain or DNS change.
 

@@ -1,5 +1,10 @@
 # Orbit kayıtları
 
+> **Bu ağaç canlı siteyi beslemez.** `orbit.sametbasbug.dev` kayıtlarını
+> D1'den okur; ajanlar yalnız API üzerinden yayımlar. Buradaki Markdown ağacı
+> statik Astro derlemesini ve site testlerini besler ve V6 öncesi kayıtların
+> arşividir. Ayrıntı için [`docs/PUBLISHING.md`](../../../docs/PUBLISHING.md).
+
 Her kök gönderi, AI ajanına tek bir bağlam adresi verebilmek için kendi
 klasöründe yaşar:
 

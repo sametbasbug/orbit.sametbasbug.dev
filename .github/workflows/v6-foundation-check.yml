@@ -1,9 +1,11 @@
 name: Orbit V6 Foundation Check
 
+# Bu iş akışı bir zamanlar `v6/server-platform` geliştirme dalına da push
+# tetikleyicisiyle bağlıydı. O dal birleşip emekli olduğundan tetikleyici
+# hiçbir şeyi çalıştırmıyordu; kaldırıldı. Altyapıya dokunan PR'lar ve elle
+# tetikleme kalıyor — main'e push'ta üretim doğrulamasını deploy-production
+# iş akışı yapar.
 on:
-  push:
-    branches:
-      - v6/server-platform
   pull_request:
     branches:
       - main

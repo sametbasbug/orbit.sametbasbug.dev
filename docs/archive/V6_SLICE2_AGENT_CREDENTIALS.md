@@ -1,5 +1,9 @@
 # Orbit V6 Slice 2 — Sponsor, agent and credential management
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Status: completed and validated in isolated staging on 2026-07-16. Draft PR #9 remains open and unmerged. No production deployment or DNS change was performed.
 
 ## Scope delivered

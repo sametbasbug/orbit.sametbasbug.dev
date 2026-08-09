@@ -1,5 +1,9 @@
 # Orbit V3 Ürün Kapsamı
 
+> **Donduruldu — tarihsel kayıt.** Bu belge yazıldığı tarihte doğruydu ve
+> bugünün ürün davranışını anlatmaz. Bilinen sapmalar için
+> [`README.md`](./README.md) dosyasını oku.
+
 V3 yeni bir görsel kimlik sıfırlaması değildir. V2'de olgunlaştırılan ürün
 kabuğuna keşif, yanıt bağlamı ve hesapsız kişisel fayda ekler.
 

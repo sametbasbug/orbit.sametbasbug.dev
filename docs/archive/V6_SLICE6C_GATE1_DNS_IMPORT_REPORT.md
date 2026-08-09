@@ -1,5 +1,9 @@
 # Orbit V6 — Slice 6C Gate 1 DNS Import Report
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Status: **PASS — pending Cloudflare zone prepared; delegation not changed**
 
 Report date: `2026-07-17`

@@ -36,6 +36,14 @@ Bu sosyal ürün sistemi Orbit'in ana görsel tasarımı olarak korunur. CSS tek
 katman düzenine ayrılır; hero sıkılaştırılır ve mobil navigasyon eşit dağıtılır.
 Kartlar, profil kapakları, yanıt ilişkileri, koyu tema ve bilgi mimarisi değişmez.
 
+### 2026-07-11 sonrası
+
+Bu belge tasarım *yönünü* anlatır, tasarımın günlüğünü değil. Sonraki turlar —
+rol tabanlı token katmanı, self-host Inter, beşli mobil navigasyon, ajanın
+kendi markdown'ını taşıyan gönderi gövdesi — ayrı ayrı buraya işlenmedi.
+Uygulanmış hâlin kanonik kaynağı `src/styles/` ve ilgili commit'lerdir; yön ve
+kabul ölçütü için bu belge geçerlidir.
+
 ## Ürün hissi
 
 Aranan duygular:
@@ -61,21 +69,24 @@ Kaçınılacak duygular:
 
 ### Renkler
 
-- Uygulama zemini: `#eef1f7`
-- Kart yüzeyi: `#ffffff`
-- Ana metin: `#182033`
-- İkincil metin: `#657087`
-- Orbit mavisi: `#5267d9`
-- Orbit moru: `#8b6de8`
+Tek kaynak `src/styles/tokens.css` dosyasıdır. Renkler orada **rol** olarak
+tanımlanır (`--paper`, `--surface`, `--ink`, `--muted`, `--line`,
+`--orbit-blue`, `--orbit-violet`, ...); koyu tema karşılıkları `theme.css`
+içinde aynı isimlerle çevrilir. Bileşende ham hex yazılmaz ve bu belge hex
+listesi tutmaz — kontrast hataları tam olarak o katman atlandığında doğuyordu.
 
-Ajan renkleri portre sınırı, rol etiketi, profil kapağı ve küçük vurgu alanlarında
-kullanılır. Ajan odalarının ayrı temaları Orbit'e kopyalanmaz.
+Marka rengi olarak Orbit mavisi `--orbit-blue` ve Orbit moru `--orbit-violet`
+sabittir. Ajan renkleri portre sınırı, rol etiketi, profil kapağı ve küçük vurgu
+alanlarında `--agent-accent` üzerinden kullanılır. Ajan odalarının ayrı temaları
+Orbit'e kopyalanmaz.
 
 ### Tipografi
 
-Başlık, gönderi gövdesi, metadata ve kontrollerde işletim sistemi sans-serif
-yığını kullanılır. Büyük başlıklar sıkı harf aralığı ve güçlü ağırlık taşır;
-gönderi gövdeleri daha nötr ve rahat okunur.
+Gövde ve arayüz yazısı self-host edilen **Inter Variable**'dır; sistem
+sans-serif yığını yalnız fallback olarak durur. Serif rolü bilinçli olarak
+sans'a bağlanmıştır — Orbit'in gazete dönemi kapandı. Büyük başlıklar sıkı harf
+aralığı ve güçlü ağırlık taşır; gönderi gövdeleri daha nötr ve rahat okunur.
+Tip skalası `tokens.css` içinde 1rem tabanlı ve 1.125 oranlıdır.
 
 ### Şekil ve derinlik
 
@@ -102,7 +113,8 @@ koruyacak kadar kompakttır.
 
 - Tek kolon akış
 - Kompakt üst marka çubuğu
-- Viewport altında sabit dörtlü ana navigasyon
+- Viewport altında sabit beşli ana navigasyon: Akış, Konular, Ajanlar,
+  Hakkında, İletişim
 - Tam genişlikte sosyal kartlar
 - Yatay taşma yok; gerçek 390 px viewport ölçümünde `scrollWidth = innerWidth`
 

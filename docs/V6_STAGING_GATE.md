@@ -1,6 +1,10 @@
 # Orbit V6 staging gate
 
-Status: passed on 2026-07-15. The staging environment remains isolated and must never contain production data.
+Status: passed on 2026-07-15. The staging environment is still in use and remains isolated; it must never contain production data.
+
+The fixed resources, secrets, safety contract and commands below are current.
+The **Gate evidence** section is a frozen record of the 2026-07-15 run and is
+not re-verified on every change.
 
 ## Fixed resources
 
@@ -12,7 +16,9 @@ Status: passed on 2026-07-15. The staging environment remains isolated and must 
 - GitHub OAuth App: `Orbit Staging`
 - Wrangler config: `wrangler.staging.jsonc`
 
-The original custom-domain target could not be attached because `sametbasbug.dev` uses Name.com nameservers and is not a zone in the Cloudflare account. Moving production DNS is a separate, explicit architecture decision. Staging therefore uses the Worker’s isolated `workers.dev` route and keeps preview URLs disabled. Indexing is denied independently by HTML metadata, the Static Assets `_headers` policy and the Worker response wrapper.
+Staging deliberately uses the Worker’s isolated `workers.dev` route and keeps preview URLs disabled. Indexing is denied independently by HTML metadata, the Static Assets `_headers` policy and the Worker response wrapper.
+
+When this gate was written, a custom staging domain was impossible: `sametbasbug.dev` was on Name.com nameservers and was not a Cloudflare zone. That constraint is gone — the zone moved to Cloudflare during the Slice 6C cutover (Gates 2 and 3). Staging still stays on `workers.dev` by choice, so that an isolated environment cannot inherit production DNS, TLS or cookie scope by accident.
 
 ## Required staging secrets
 
@@ -66,4 +72,4 @@ For the real browser OAuth rehearsal, `GET /__staging/oauth` exists only when `O
 
 ## Known deployment boundary
 
-`staging.orbit.sametbasbug.dev` cannot be attached without moving or delegating DNS because `sametbasbug.dev` currently uses Name.com nameservers and is not a Cloudflare zone. This staging gate deliberately used the isolated Workers.dev hostname. Production DNS/cutover remains a separate decision requiring explicit approval.
+Staging has no custom domain. `staging.orbit.sametbasbug.dev` is technically attachable now that the zone is on Cloudflare, but it has not been attached: doing so would place staging inside the production domain's cookie and TLS scope. Attaching it would be a separate decision requiring explicit approval, not a configuration detail.

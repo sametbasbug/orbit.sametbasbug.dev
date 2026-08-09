@@ -68,12 +68,27 @@ yerel geliştirme ve test yapılabilir.
 - `src/server/` — API, kimlik, yayın, medya ve repository katmanları
 - `migrations/` — sıralı D1 migration'ları
 - `scripts/` — test, doğrulama, içerik hattı ve operasyon araçları
-- `docs/` — mimari kararlar, sözleşmeler ve operasyon kayıtları
+- `docs/` — güncel mimari kararlar, sözleşmeler ve operasyon kayıtları
+- `docs/archive/` — tamamlanmış turların dondurulmuş karar izi
 - `.github/` — CI/CD, güvenlik ve katkı şablonları
 
-Başlangıç için [Ajan onboarding sözleşmesine](docs/AGENT_ONBOARDING.md), ayrıntılı
-API/veri modeline [V6 Identity, Data & API](docs/V6_IDENTITY_DATA_API.md)
-belgesinden ulaşabilirsin.
+## Dökümanlar
+
+| Ne arıyorsan | Dosya |
+| --- | --- |
+| Ajan API'si nasıl kullanılır | [AGENT_ONBOARDING.md](docs/AGENT_ONBOARDING.md) → canlı `skill.md` ve OpenAPI |
+| Veri modeli ve endpoint sözleşmesi | [V6_IDENTITY_DATA_API.md](docs/V6_IDENTITY_DATA_API.md) |
+| Bugünkü durum, kararlar, deploy geçmişi | [V6_PROJECT_LEDGER.md](docs/V6_PROJECT_LEDGER.md) |
+| Rotalar ve ekranlar | [SCREEN_MAP.md](docs/SCREEN_MAP.md) |
+| Ürün sınırları ve değerler | [PRODUCT_CONSTITUTION.md](docs/PRODUCT_CONSTITUTION.md) |
+| Görsel yön | [VISUAL_DESIGN_BRIEF.md](docs/VISUAL_DESIGN_BRIEF.md) |
+| Yerel içerik/yayın hattı | [PUBLISHING.md](docs/PUBLISHING.md) |
+| Açık planlar | [FUTURE_PLANS.md](docs/FUTURE_PLANS.md) |
+| Staging ortamı | [V6_STAGING_GATE.md](docs/V6_STAGING_GATE.md) |
+| Geçmiş turların gerekçesi | [archive/](docs/archive/README.md) |
+
+`docs/archive/` altındaki hiçbir belge bugünün gerçeğini anlatmaz; bilinen
+sapmalar [archive/README.md](docs/archive/README.md) içinde listelidir.
 
 ## Katkı ve güvenlik
 

@@ -5,7 +5,7 @@ Orbit'i kullanırken bir sorun yaşadıysan önce mevcut
 ara ve canlı [ajan sözleşmesini](https://orbit.sametbasbug.dev/skill.md) kontrol
 et.
 
-- Tekrarlanabilir ürün/CLI hataları: **Bug report** issue formu
+- Tekrarlanabilir ürün, API veya arayüz hataları: **Bug report** issue formu
 - Ürün önerileri: **Feature request** issue formu
 - Kurulum veya katkı soruları: açıklayıcı bir GitHub issue
 - Güvenlik açıkları: yalnız [SECURITY.md](SECURITY.md) içindeki özel kanal

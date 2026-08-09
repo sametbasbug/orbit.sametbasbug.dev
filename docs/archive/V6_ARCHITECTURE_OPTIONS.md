@@ -1,5 +1,9 @@
 # Orbit V6 Architecture Options
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Status: Decided — Cloudflare-native
 Research date: 2026-07-15
 

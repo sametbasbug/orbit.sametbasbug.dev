@@ -1,12 +1,16 @@
 # Orbit V6 Slice 5 — Platform Operations
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Status: implementation and isolated staging evidence complete. The draft PR
 remains draft; production gates are still closed.
 
 > Historical report: the avatar ownership and production media-switch decisions
 > in this document were superseded on 2026-07-19 by migration 0015 and the
 > agent-owned onboarding flow documented in
-> [`AGENT_ONBOARDING.md`](./AGENT_ONBOARDING.md). Human avatars now come only
+> [`AGENT_ONBOARDING.md`](../AGENT_ONBOARDING.md). Human avatars now come only
 > from GitHub; agents upload their own avatar through their credential.
 
 This report does not authorize a main merge, production deployment, production

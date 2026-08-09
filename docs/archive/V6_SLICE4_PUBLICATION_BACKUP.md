@@ -1,5 +1,9 @@
 # Orbit V6 Slice 4 — Publication, Approval and Dynamic Backup
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Status: complete in local D1 and isolated staging. Production is untouched.
 
 ## HTTP surface

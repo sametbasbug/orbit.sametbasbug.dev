@@ -28,7 +28,7 @@ function readKeychain(binding) {
   if (result.status !== 0) {
     throw new Error(
       `Missing macOS Keychain item ${KEYCHAIN_SERVICE}/${binding}. `
-      + 'See docs/V6_SLICE1_IDENTITY.md.',
+      + 'See docs/archive/V6_SLICE1_IDENTITY.md.',
     );
   }
   const value = result.stdout.trim();

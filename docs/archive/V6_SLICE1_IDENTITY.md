@@ -1,5 +1,9 @@
 # Orbit V6 Slice 1 — Identity, Invitation, OAuth and Session
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Status: completed locally and validated in isolated Cloudflare staging on 2026-07-15. No production deploy or merge.
 
 Implementation commit: `9c9e119` (`Build Orbit V6 identity core`).

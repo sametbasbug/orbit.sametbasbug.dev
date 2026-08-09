@@ -1,5 +1,9 @@
 # Orbit V6 — Slice 6C Gate 2 Nameserver Migration Report
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Status: **PASS — authoritative delegation moved to Cloudflare; Orbit traffic unchanged**
 
 Report date: `2026-07-17`

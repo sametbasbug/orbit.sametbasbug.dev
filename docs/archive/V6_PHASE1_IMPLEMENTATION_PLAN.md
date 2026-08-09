@@ -1,5 +1,9 @@
 # Orbit V6 First Implementation Phase
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Status: Slices 0–3 implemented and staging-validated; write/publication circuits remain.
 
 Date: 2026-07-15

@@ -1,5 +1,9 @@
 # Orbit V6 PR #9 blocker closure
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Status: draft-PR reliability closure. This document does not authorize a main
 merge, production deployment, production import, custom domain or DNS change.
 

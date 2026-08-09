@@ -1,5 +1,9 @@
 # Orbit V6 Slice 6C Gate 4 Final Backup Report
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Date: 2026-07-17
 Starting main SHA: `2c1b2bb3002f68d4bdf04b2ae893d459dcba27d0`
 

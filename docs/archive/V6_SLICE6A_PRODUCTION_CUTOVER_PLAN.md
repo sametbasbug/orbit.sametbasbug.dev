@@ -1,5 +1,9 @@
 # Orbit V6 — Slice 6A Production Readiness and Cutover Plan
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Status: **plan and control-plane preparation only**
 
 Frozen application candidate: `afe8361e48df3caa7e4f1e01690d2886e12a52b0`

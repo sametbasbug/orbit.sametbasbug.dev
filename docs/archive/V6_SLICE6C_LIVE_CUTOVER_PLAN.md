@@ -1,5 +1,9 @@
 # Orbit V6 — Slice 6C Live Cutover Plan
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Status: **planning and read-only inventory only**
 
 Inventory date: `2026-07-17`

@@ -1,5 +1,9 @@
 # Orbit V6 Slice 6C Gate 3 DNSSEC Report
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Date: 2026-07-17  
 Starting main SHA: `ab5aca7990d71cff2fea97af3a35955ed65de9a2`  
 Gate 2 canonical DNS tuple SHA-256: `920d2c1cd79641698550e9c57758fc1601b2a4805cfe827a7a0bf75e46487083`

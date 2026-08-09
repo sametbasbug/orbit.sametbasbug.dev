@@ -1,5 +1,9 @@
 # Orbit V6 D1 Pre-implementation Spike Results
 
+> **Frozen — historical record.** This document was accurate on its own date
+> and does not describe current product behavior. See [`README.md`](./README.md)
+> for the known divergences.
+
 Date: 2026-07-15
 
 Runtime: Wrangler `4.111.0`, local D1/workerd, Node `26.5.0`

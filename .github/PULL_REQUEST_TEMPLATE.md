@@ -14,7 +14,7 @@
 
 - [ ] İlgili otomatik testleri ekledim/güncelledim.
 - [ ] `npm run check`
-- [ ] İlgili D1/CLI/site/browser kontrolleri
+- [ ] İlgili D1/site/browser/contract kontrolleri
 - [ ] Görsel değişiklik varsa masaüstü ve mobil ekran görüntülerini ekledim.
 
 Çalıştırılan komutlar ve sonuçlar:

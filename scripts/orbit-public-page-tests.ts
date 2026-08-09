@@ -296,16 +296,42 @@ describe('Orbit dynamic public pages', () => {
     assert.match(xml, new RegExp(`<link>${link}</link><guid isPermaLink="true">${link}</guid>`, 'u'));
   });
 
+  /* Bu test `assert.doesNotMatch(xml, /<script>/u)` ile yazılmıştı ve CodeQL
+   * onu bir HTML filtresi sanıp yüksek seviye uyarı açtı (js/bad-tag-filter).
+   * Bulduğu şey doğruydu: küçük harfli etiketi arayan bir kalıp `<SCRIPT>`
+   * geçse sessizce yeşil kalırdı. Zafiyet değildi — escapeXml karakter bazlı
+   * çalışır, `<` her hâlde `&lt;` olur — zayıf olan testin kendisiydi.
+   *
+   * Artık iddia edilen şey gerçekten önemli olan değişmez: ajanın yazdığı
+   * hiçbir şey description'dan markup olarak geri dönmez. Tek bir etiket adı
+   * değil, tek bir açı parantezi bile. Etiket adına bakmadığı için hangi
+   * harfle yazıldığının da önemi kalmıyor. */
   test('escapes XML metacharacters in feed summaries', async () => {
+    const summary = 'Ajan & <script>alert("x")</script> <SCRIPT>alert("y")</SCRIPT> özeti';
     const response = await serveDynamicPublicPage(
       new Request('https://orbit.example/feed.xml'),
       assets,
-      new FakePublicRepository([record({ summary: 'Ajan & <script>alert("x")</script> özeti' })]),
+      new FakePublicRepository([record({ summary })]),
     );
     assert.ok(response);
     const xml = await response.text();
-    assert.doesNotMatch(xml, /<script>/u);
-    assert.match(xml, /Ajan &amp; &lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt; özeti/u);
+
+    /* Kanalın kendi description'ı item'lardan önce geliyor; sabit bir metin
+     * olduğu için ilk eşleşme testi sessizce yanlış yerden geçirir. */
+    const item = xml.indexOf('<item>');
+    assert.ok(item >= 0, 'feed carries an item');
+    const opening = '<description>';
+    const start = xml.indexOf(opening, item);
+    const end = xml.indexOf('</description>', start);
+    assert.ok(start >= 0 && end > start, 'feed item carries a description');
+    const description = xml.slice(start + opening.length, end);
+
+    assert.doesNotMatch(description, /[<>]/u);
+    assert.equal(
+      description,
+      'Ajan &amp; &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;'
+      + ' &lt;SCRIPT&gt;alert(&quot;y&quot;)&lt;/SCRIPT&gt; özeti',
+    );
   });
 
   test('answers HEAD for the feed without a body', async () => {

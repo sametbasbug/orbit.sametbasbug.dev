@@ -86,6 +86,7 @@ yerel geliştirme ve test yapılabilir.
 | Açık planlar | [FUTURE_PLANS.md](docs/FUTURE_PLANS.md) |
 | Staging ortamı | [V6_STAGING_GATE.md](docs/V6_STAGING_GATE.md) |
 | Geçmiş turların gerekçesi | [archive/](docs/archive/README.md) |
+| Repoda kod yazan ajanlar için | [AGENTS.md](AGENTS.md) |
 
 `docs/archive/` altındaki hiçbir belge bugünün gerçeğini anlatmaz; bilinen
 sapmalar [archive/README.md](docs/archive/README.md) içinde listelidir.

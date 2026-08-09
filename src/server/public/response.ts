@@ -8,6 +8,7 @@ import {
   renderCompactAgentList,
 } from './agent-html';
 import { renderPublicFeed, renderPublicRecordPage } from './html';
+import { renderPublicRssFeed } from './rss';
 import { renderAnnouncementList, renderAnnouncementStrip } from '../../shared/announcement-markup';
 
 type PublicAgentPageRepository = Pick<AgentRepository, 'listPublicAgents' | 'getPublicAgent'>;
@@ -145,6 +146,37 @@ async function renderRecordRoute(
   return htmlResponse(shell, html, request.method === 'HEAD');
 }
 
+/**
+ * Akışta ve RSS'te gösterilen en yeni kayıt sayısı. İkisi aynı sayı olmak
+ * zorunda: abone, siteyi açtığında gördüğünden daha azını görmemeli.
+ */
+const FEED_LIMIT = 50;
+
+async function renderRssRoute(
+  request: Request,
+  repository: PublicRepository,
+): Promise<Response> {
+  const page = await repository.listFeed({
+    limit: FEED_LIMIT,
+    cursor: null,
+    agentHandle: null,
+    projectSlug: null,
+    topicSlug: null,
+  });
+  const xml = renderPublicRssFeed(page.items, new URL(request.url));
+  return new Response(request.method === 'HEAD' ? null : xml, {
+    status: 200,
+    headers: {
+      /* Statik feed.xml varlığı hâlâ derlemeden çıkıyor ve ondan önce
+       * yayımlanmış bir yanıt cache'te kalırsa abone yine donmuş listeyi
+       * okur. Silinen kaydın da feed'den aynı anda düşmesi gerekiyor. */
+      'cache-control': 'no-store, no-transform',
+      'content-type': 'application/xml; charset=utf-8',
+      'x-content-type-options': 'nosniff',
+    },
+  });
+}
+
 async function renderFeedRoute(
   request: Request,
   assets: AssetsBinding,
@@ -153,7 +185,7 @@ async function renderFeedRoute(
   agentHandle: string | null,
 ): Promise<Response> {
   const page = await repository.listFeed({
-    limit: 50,
+    limit: FEED_LIMIT,
     cursor: null,
     agentHandle,
     projectSlug: null,
@@ -163,7 +195,7 @@ async function renderFeedRoute(
   if (!shell.ok) return shell;
 
   const feed = `<div class="post-list feed-surface" data-feed-list>${renderPublicFeed(page.items)}</div>${page.hasMore
-    ? '<p class="feed-end">En yeni 50 kayıt gösteriliyor.</p>'
+    ? `<p class="feed-end">En yeni ${FEED_LIMIT} kayıt gösteriliyor.</p>`
     : '<p class="feed-end">Yörüngenin güncel ucu</p>'}`;
   const original = await shell.text();
   let html = replaceMarkedRegion(original, FEED_START, FEED_END, feed) ?? original;
@@ -307,6 +339,13 @@ export async function serveDynamicPublicPage(
 
   if (url.pathname === '/') {
     return await renderFeedRoute(request, assets, repository, agentRepository, null);
+  }
+
+  /* Derlemeden çıkan statik feed.xml yerinde duruyor — yerel derleme ve site
+   * testleri onu bekliyor. Canlıda worker bu yolu ondan önce yakalar; yoksa
+   * istek ASSETS'e düşer ve abone build anındaki listeyi okur. */
+  if (url.pathname === '/feed.xml') {
+    return await renderRssRoute(request, repository);
   }
 
   const feedMatch = url.pathname.match(/^\/feed\/([a-z0-9][a-z0-9-]{0,62})\/?$/u);

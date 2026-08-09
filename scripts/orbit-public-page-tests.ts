@@ -259,6 +259,66 @@ describe('Orbit dynamic public pages', () => {
     assert.match(await response.text(), /henüz yayımlanmış kayıt yok/u);
   });
 
+  /* Feed bir dönem yalnız derleme zamanı markdown koleksiyonundan üretiliyordu:
+   * canlıda yayımlanan hiçbir kayıt aboneye ulaşmıyordu, silinen kayıt ise
+   * feed'de asılı kalıyordu. Bu testler RSS'in D1'e bakmaya devam etmesini
+   * koruyor. */
+  test('serves the RSS feed from D1 instead of the build-time asset', async () => {
+    const response = await serveDynamicPublicPage(
+      new Request('https://orbit.example/feed.xml'),
+      assets,
+      new FakePublicRepository([record()]),
+    );
+    assert.ok(response);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'application/xml; charset=utf-8');
+    assert.equal(response.headers.get('cache-control'), 'no-store, no-transform');
+    const xml = await response.text();
+    assert.match(xml, /^<\?xml version="1\.0" encoding="UTF-8"\?><rss version="2\.0">/u);
+    assert.match(xml, /<title>@nyx: D1 dinamik kayıt özeti<\/title>/u);
+    assert.match(xml, /<pubDate>Sun, 19 Jul 2026 10:00:00 GMT<\/pubDate>/u);
+    assert.match(xml, /<category>nyx<\/category><category>Gönderi<\/category><category>orbit<\/category>/u);
+    assert.doesNotMatch(xml, /ESKİ STATİK İÇERİK/u);
+  });
+
+  /* Guid, okuyucunun kaydı tanıdığı tek şey. Kanonik HTML adresine
+   * (sondaki eğik çizgili) kaydırırsak her abonede tüm arşiv bir kez daha
+   * yeni gibi görünür. */
+  test('keeps feed item links stable and identical to their guid', async () => {
+    const response = await serveDynamicPublicPage(
+      new Request('https://orbit.example/feed.xml'),
+      assets,
+      new FakePublicRepository([record()]),
+    );
+    assert.ok(response);
+    const xml = await response.text();
+    const link = 'https://orbit.example/posts/d1-dinamik-kayit';
+    assert.match(xml, new RegExp(`<link>${link}</link><guid isPermaLink="true">${link}</guid>`, 'u'));
+  });
+
+  test('escapes XML metacharacters in feed summaries', async () => {
+    const response = await serveDynamicPublicPage(
+      new Request('https://orbit.example/feed.xml'),
+      assets,
+      new FakePublicRepository([record({ summary: 'Ajan & <script>alert("x")</script> özeti' })]),
+    );
+    assert.ok(response);
+    const xml = await response.text();
+    assert.doesNotMatch(xml, /<script>/u);
+    assert.match(xml, /Ajan &amp; &lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt; özeti/u);
+  });
+
+  test('answers HEAD for the feed without a body', async () => {
+    const response = await serveDynamicPublicPage(
+      new Request('https://orbit.example/feed.xml', { method: 'HEAD' }),
+      assets,
+      new FakePublicRepository([record()]),
+    );
+    assert.ok(response);
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), '');
+  });
+
   test('renders D1-backed guest directory and profile with bounded GitHub attribution', async () => {
     const guest = agent({ pinnedRecordId: 'record-1' });
     const agentRepository = new FakeAgentRepository([guest]);

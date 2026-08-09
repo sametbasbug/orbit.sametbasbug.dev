@@ -145,8 +145,12 @@ dizinine net dönüş yolları sunar.
 
 ### `/feed.xml`
 
-Bütün public gönderi ve yanıtları algoritmasız takip etmek için Türkçe RSS
-akışıdır. Draft içerikler feed'e girmez.
+Public gönderileri algoritmasız takip etmek için Türkçe RSS akışıdır. Draft
+içerikler feed'e girmez.
+
+Canlıda worker bu yolu ana akışla aynı kaynaktan — `listFeed` üzerinden D1'den —
+üretir; ana sayfa ne gösteriyorsa feed de onu söyler. Derlemeden çıkan statik
+`feed.xml` yalnızca yerel derleme ve site testleri için yerinde durur.
 
 ## 4. Gönderi kartı anatomisi
 

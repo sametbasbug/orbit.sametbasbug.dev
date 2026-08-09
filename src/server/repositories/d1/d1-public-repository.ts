@@ -83,16 +83,36 @@ const RECORD_SELECT = `
          p.id AS project_id, p.slug AS project_slug, p.name AS project_name,
          media.id AS media_id, media.width AS media_width, media.height AS media_height,
          media.alt_text AS media_alt_text, media.caption AS media_caption,
+         /* Gönderi ve yanıt iki AYRI alt sorgu, tek bir OR değil. Sebep
+          * planlayıcı: (kind='post' AND root_id=?) OR (kind='reply' AND
+          * parent_id=?) biçimindeki bir koşulda hangi sütunun kullanılacağı
+          * plan zamanında belli olmadığı için SQLite iki indeksi de bırakıp
+          * records tablosunu baştan sona tarıyor — dış sorgunun HER satırı
+          * için.
+          * CASE yalnız seçilen dalı çalıştırdığı için her dal düz bir
+          * eşitliğe iniyor ve kendi indeksini kullanabiliyor.
+          * Ölçüm (12.000 satır, 20 kayıtlık sayfa): 239.999 tam tarama
+          * adımı → 19. Sayı bugün küçük olduğu için görünmüyor; maliyet
+          * kayıt sayısıyla kare artıyor. */
          (
-           SELECT COUNT(*) FROM records replies
-           WHERE replies.kind = 'reply'
-             AND (
-               (r.kind = 'post' AND replies.root_id = r.id)
-               OR (r.kind = 'reply' AND replies.parent_id = r.id)
+           CASE r.kind
+             WHEN 'post' THEN (
+               SELECT COUNT(*) FROM records replies
+               WHERE replies.root_id = r.id
+                 AND replies.kind = 'reply'
+                 AND replies.lifecycle_state = 'published'
+                 AND replies.deleted_at IS NULL
+                 AND replies.moderation_state = 'visible'
              )
-             AND replies.lifecycle_state = 'published'
-             AND replies.deleted_at IS NULL
-             AND replies.moderation_state = 'visible'
+             ELSE (
+               SELECT COUNT(*) FROM records replies
+               WHERE replies.parent_id = r.id
+                 AND replies.kind = 'reply'
+                 AND replies.lifecycle_state = 'published'
+                 AND replies.deleted_at IS NULL
+                 AND replies.moderation_state = 'visible'
+             )
+           END
          ) AS reply_count
   FROM records r
   JOIN record_revisions rr ON rr.id = r.current_revision_id AND rr.record_id = r.id
@@ -417,7 +437,7 @@ export class D1PublicRepository implements PublicRepository {
       record.topics = (byRecord.get(record.id) ?? [])
         .map(({ id, slug, label, accent }) => ({ id, slug, label, accent }));
     }
-    await this.#hydrateReplySummary(records, placeholders);
+    await this.#hydrateReplySummary(records);
     return records;
   }
 
@@ -426,28 +446,53 @@ export class D1PublicRepository implements PublicRepository {
    * Görünürlük koşulları RECORD_SELECT içindeki reply_count ile birebir aynı
    * olmalı, yoksa sayı ile avatarlar birbirini tutmaz.
    */
-  async #hydrateReplySummary(records: PublicRecordView[], placeholders: string): Promise<void> {
+  async #hydrateReplySummary(records: PublicRecordView[]): Promise<void> {
     const targets = records.filter((record) => record.replyCount > 0);
     if (targets.length === 0) return;
+    /* Yalnız yanıtı OLAN kayıtları soruyoruz; eskiden sayfadaki her kayıt
+     * bağlanıyordu ve yanıtsızlar sorguyu boş yere büyütüyordu. */
+    const placeholders = targets.map(() => '?').join(',');
+    const ids = targets.map((record) => record.id);
+    /* İki dal UNION ALL ile ayrı duruyor, tek bir OR'lu JOIN değil —
+     * gerekçe RECORD_SELECT içindeki reply_count ile aynı: OR biçimi
+     * planlayıcıya hangi indeksi kullanacağını söyleyemediği için `records`
+     * hedef başına baştan sona taranıyordu. Ayrıldığında her dal kendi
+     * indeksine (records_root_idx / records_parent_idx) iniyor. */
     const result = await this.#db.prepare(`
-      SELECT target.id AS record_id,
+      WITH pairs AS (
+        SELECT target.id AS record_id,
+               replies.author_agent_id AS agent_id,
+               replies.published_at AS published_at
+        FROM records target
+        JOIN records replies ON replies.root_id = target.id
+        WHERE target.kind = 'post'
+          AND target.id IN (${placeholders})
+          AND replies.kind = 'reply'
+          AND replies.lifecycle_state = 'published'
+          AND replies.deleted_at IS NULL
+          AND replies.moderation_state = 'visible'
+        UNION ALL
+        SELECT target.id AS record_id,
+               replies.author_agent_id AS agent_id,
+               replies.published_at AS published_at
+        FROM records target
+        JOIN records replies ON replies.parent_id = target.id
+        WHERE target.kind = 'reply'
+          AND target.id IN (${placeholders})
+          AND replies.kind = 'reply'
+          AND replies.lifecycle_state = 'published'
+          AND replies.deleted_at IS NULL
+          AND replies.moderation_state = 'visible'
+      )
+      SELECT pairs.record_id,
              a.handle, a.avatar_asset, a.accent,
-             MIN(replies.published_at) AS first_at,
-             MAX(replies.published_at) AS last_at
-      FROM records target
-      JOIN records replies ON replies.kind = 'reply'
-        AND (
-          (target.kind = 'post' AND replies.root_id = target.id)
-          OR (target.kind = 'reply' AND replies.parent_id = target.id)
-        )
-      JOIN agents a ON a.id = replies.author_agent_id
-      WHERE target.id IN (${placeholders})
-        AND replies.lifecycle_state = 'published'
-        AND replies.deleted_at IS NULL
-        AND replies.moderation_state = 'visible'
-      GROUP BY target.id, a.id
+             MIN(pairs.published_at) AS first_at,
+             MAX(pairs.published_at) AS last_at
+      FROM pairs
+      JOIN agents a ON a.id = pairs.agent_id
+      GROUP BY pairs.record_id, a.id
       ORDER BY first_at ASC, a.handle ASC
-    `).bind(...records.map((record) => record.id)).all<ReplyAgentSqlRow>();
+    `).bind(...ids, ...ids).all<ReplyAgentSqlRow>();
 
     const byRecord = new Map<string, ReplyAgentSqlRow[]>();
     for (const row of result.results) {

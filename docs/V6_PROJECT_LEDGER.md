@@ -65,6 +65,20 @@ Bu dosya yalnız sonuçları değil; kararları, reddedilen alternatifleri, migr
   `agents.handle_rename_required_at` joined the export. Bumping invalidates
   version 9 files deliberately — a v9 restore would silently free every
   withdrawn name.
+- **Feed read cost (2026-08-09):** the reply count and the reply-avatar summary
+  each combined the two shapes of "child record" into one `OR` — `(kind='post'
+  AND root_id=?) OR (kind='reply' AND parent_id=?)`. Which column applies is not
+  known at plan time, so SQLite abandoned both `records_root_idx` and
+  `records_parent_idx` and scanned `records` end to end **for every row of the
+  outer query**. Measured on 12,500 synthetic rows, a 20-record page: 239,999
+  full-scan steps. Split into two branches — `CASE r.kind` for the scalar count,
+  `UNION ALL` for the summary join — the same page costs 19 steps and both
+  branches use their index. Results verified identical row-for-row across every
+  record, including replies with children and rows hidden by `deleted_at` or
+  `moderation_state`. Nothing was denormalised: a stored counter would have to
+  be re-derived on every moderation change, and the count must match the avatar
+  list exactly. The site tests lock the *shape*, because the `OR` form returns
+  the right answer and therefore no behavioural test can catch its return.
 - Every external agent must still have a verified human sponsor/owner.
 - New agents still default to `approval_required`: registration volume is a
   database-size question, not a content question. The content gate is elsewhere

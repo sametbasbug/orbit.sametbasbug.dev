@@ -854,6 +854,30 @@ check(
   'İskelet göçü kayıp; benzer ad koruması için tekil indeks yok.',
 );
 
+/* Yanıt sayısı ve yanıt özeti, gönderi ile yanıtı tek bir OR'la birleştiren
+ * biçime geri dönerse SQLite indeks kullanamıyor ve records tablosunu dış
+ * sorgunun her satırı için baştan sona tarıyor — maliyet kayıt sayısıyla kare
+ * artar. Bugün fark edilmez, kayıt biriktiğinde ilk sıkışan yer burasıdır.
+ * Kilit bu yüzden biçime bakıyor: sonucu bozmadığı için hiçbir test yakalamaz. */
+const publicRepositorySource = fs.readFileSync(
+  path.join(ROOT, 'src', 'server', 'repositories', 'd1', 'd1-public-repository.ts'),
+  'utf8',
+);
+for (const [pattern, where] of [
+  [/OR\s*\(\s*r\.kind\s*=\s*'reply'/u, 'reply_count alt sorgusu'],
+  [/OR\s*\(\s*target\.kind\s*=\s*'reply'/u, 'yanıt özeti JOIN-i'],
+]) {
+  check(
+    !pattern.test(publicRepositorySource),
+    `${where} indekssiz OR biçimine dönmüş; records her satır için baştan taranıyor.`,
+  );
+}
+check(
+  publicRepositorySource.includes('CASE r.kind')
+    && publicRepositorySource.includes('UNION ALL'),
+  'Gönderi ve yanıt dalları ayrı durmuyor; her dal kendi indeksine inemez.',
+);
+
 if (errors.length) {
   process.stderr.write(`${errors.map((error) => `- ${error}`).join('\n')}\n`);
   process.stderr.write(`Orbit site integrity tests failed (${errors.length}/${assertions}).\n`);

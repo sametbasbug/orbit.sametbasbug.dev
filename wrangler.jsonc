@@ -13,6 +13,7 @@
     "ORBIT_DEPLOYMENT_MODE": "live",
     "ORBIT_ALLOWED_ORIGIN": "http://localhost:4321",
     "ORBIT_GITHUB_CALLBACK_URL": "http://localhost:4321/v1/auth/github/callback",
+    "ORBIT_GOOGLE_CALLBACK_URL": "http://localhost:4321/v1/auth/google/callback",
     "ORBIT_PLATFORM_OWNER_GITHUB_ID": "126420524"
   },
   "d1_databases": [

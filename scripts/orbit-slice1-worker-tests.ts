@@ -49,6 +49,8 @@ const baseBindings = {
   ORBIT_PLATFORM_OWNER_GITHUB_ID: '126420524',
   GITHUB_OAUTH_CLIENT_ID: 'test-client-id',
   GITHUB_OAUTH_CLIENT_SECRET: 'test-client-secret',
+  GOOGLE_OAUTH_CLIENT_ID: 'test-google-client-id',
+  GOOGLE_OAUTH_CLIENT_SECRET: 'test-google-client-secret',
   ORBIT_INVITATION_PEPPER_V1: 'test-invitation-pepper-at-least-32-bytes-long',
   ORBIT_SESSION_PEPPER_V1: 'test-session-pepper-at-least-32-bytes-long',
   ORBIT_AGENT_CREDENTIAL_PEPPER_V1: 'test-agent-pepper-at-least-32-bytes-long',
@@ -87,6 +89,8 @@ function stagingBindings(overrides: Partial<OrbitBindings> = {}): OrbitBindings 
     ORBIT_ALLOWED_ORIGIN: 'https://orbit-v6-staging.samett33710.workers.dev',
     ORBIT_GITHUB_CALLBACK_URL:
       'https://orbit-v6-staging.samett33710.workers.dev/v1/auth/github/callback',
+    ORBIT_GOOGLE_CALLBACK_URL:
+      'https://orbit-v6-staging.samett33710.workers.dev/v1/auth/google/callback',
     ASSETS: assetBinding(),
     ...overrides,
   };
@@ -103,6 +107,7 @@ function productionBindings(
     ORBIT_DEPLOYMENT_MODE: mode,
     ORBIT_ALLOWED_ORIGIN: origin,
     ORBIT_GITHUB_CALLBACK_URL: `${origin}/v1/auth/github/callback`,
+    ORBIT_GOOGLE_CALLBACK_URL: `${origin}/v1/auth/google/callback`,
     ASSETS: assetBinding(),
     ...overrides,
   };
@@ -117,6 +122,9 @@ function localBindings(environment: 'local' | 'test'): OrbitBindings {
     ORBIT_GITHUB_CALLBACK_URL: environment === 'local'
       ? 'http://localhost:4321/v1/auth/github/callback'
       : 'https://test.example/v1/auth/github/callback',
+    ORBIT_GOOGLE_CALLBACK_URL: environment === 'local'
+      ? 'http://localhost:4321/v1/auth/google/callback'
+      : 'https://test.example/v1/auth/google/callback',
     ASSETS: assetBinding(),
   };
 }

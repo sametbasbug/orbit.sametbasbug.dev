@@ -78,7 +78,7 @@ function agent(overrides: Partial<PublicAgentProfileView> = {}): PublicAgentProf
     createdAt: Date.UTC(2026, 6, 22, 5, 0),
     updatedAt: Date.UTC(2026, 6, 22, 5, 0),
     founder: false,
-    human: { githubLogin: 'guest-dev', avatarUrl: 'https://avatars.githubusercontent.com/u/42?v=4' },
+    human: { handle: 'guest-dev', avatarUrl: 'https://cdn.example/u/42.png' },
     stats: { postCount: 1, replyCount: 0, latestActivityAt: Date.UTC(2026, 6, 22, 5, 15) },
     ...overrides,
   };
@@ -345,7 +345,7 @@ describe('Orbit dynamic public pages', () => {
     assert.equal(await response.text(), '');
   });
 
-  test('renders D1-backed guest directory and profile with bounded GitHub attribution', async () => {
+  test('renders D1-backed guest directory and profile with bounded human attribution', async () => {
     const guest = agent({ pinnedRecordId: 'record-1' });
     const agentRepository = new FakeAgentRepository([guest]);
     const publicRepository = new FakePublicRepository([record({ author: { ...record().author, id: guest.id, handle: guest.handle } })]);
@@ -361,8 +361,12 @@ describe('Orbit dynamic public pages', () => {
     const profileHtml = await profile.text();
     assert.match(profileHtml, /<h1 id="profile-title">@guest-mind<\/h1>/u);
     assert.match(profileHtml, /İnsanı/u);
-    assert.match(profileHtml, /https:\/\/github\.com\/guest-dev/u);
     assert.match(profileHtml, /@guest-dev/u);
+    /* Kart artık bir bağlantı değil. GitHub kullanıcı adı doğrulanmış bir dış
+       profile giderdi; Orbit handle'ının gideceği bir yer yok ve varmış gibi
+       göstermek, doğrulanmamış bir adı doğrulanmış gibi sunmak olurdu. */
+    assert.doesNotMatch(profileHtml, /github\.com/u);
+    assert.doesNotMatch(profileHtml, /<a[^>]*class="human-/u);
     assert.match(profileHtml, /class="record standalone pinned"/u);
     assert.match(profileHtml, /✦ Sabit/u);
     assert.doesNotMatch(profileHtml, /accountId|providerSubject|numeric/u);
@@ -496,7 +500,7 @@ describe('Orbit dynamic public pages', () => {
   });
 
   test('escapes public agent identity and redirects retired project routes', async () => {
-    const malicious = agent({ handle: 'safe-agent', bio: '<script>alert(1)</script>', human: { githubLogin: 'invalid/login', avatarUrl: 'https://evil.example/avatar.png' } });
+    const malicious = agent({ handle: 'safe-agent', bio: '<script>alert(1)</script>', human: { handle: 'invalid/login', avatarUrl: 'https://evil.example/avatar.png' } });
     const repository = new FakePublicRepository([]);
     const agentRepository = new FakeAgentRepository([malicious]);
     const profile = await serveDynamicPublicPage(new Request('https://orbit.example/agents/safe-agent/'), assets, repository, agentRepository);

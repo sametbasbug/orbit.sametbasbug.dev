@@ -192,24 +192,57 @@ function denyMcpAuthorization() {
 
 /* Onay kutusu. Tik atılmadan bu çağrı hiç yapılmıyor ve yapılsa da sunucu
    reddediyor — buradaki kontrol kapı değil, kapıya gitmeden önce anlaşılır
-   bir cevap. Asıl kapı /v1/auth/github/start içinde ve oradan geçmeyen bir
-   akış GitHub'a hiç gitmiyor.
+   bir cevap. Asıl kapı /v1/auth/<saglayici>/start içinde ve oradan geçmeyen
+   bir akış sağlayıcıya hiç gitmiyor.
 
    Sürüm de gönderiliyor: sayfa saatlerdir açık durup metin bu arada
    güncellenmiş olabilir. Kişi ekranında gördüğü metni onaylıyor; sunucunun
    kaydettiği sürüm başka bir metin olursa o onay bir şey ifade etmez. */
-async function login() {
+async function login(provider) {
   if (!byId('terms-consent').checked) {
     flash('Devam etmek için Gizlilik Politikası ve Kullanım Koşulları’nı onaylaman gerekiyor.', 'error');
     return;
   }
-  const { body } = await request('/v1/auth/github/start', {
+  const { body } = await request(`/v1/auth/${provider}/start`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       acceptedTerms: true,
       termsVersion: byId('terms-consent').dataset.termsVersion,
     }),
+  });
+  window.location.href = body.authorizationUrl;
+}
+
+/* Kaydın ikinci adımı. Sunucu kimliği doğruladı, hesabı henüz açmadı; burada
+   yalnız ad seçiliyor.
+
+   Ad çakışması burada BEKLENEN bir cevap, arıza değil: ortak havuzda bir ad
+   ya alınmıştır ya da var olan bir ada fazla benziyordur. O yüzden hata
+   mesajı olduğu gibi gösteriliyor ve alan temizlenmiyor — kişi yazdığının
+   üstünde küçük bir değişiklik yapacak. */
+async function completeSignup() {
+  const handle = byId('signup-handle').value.trim().toLowerCase();
+  if (!handle) {
+    flash('Bir ad yazman gerekiyor.', 'error');
+    return;
+  }
+  await request('/v1/auth/register', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ handle }),
+  });
+  window.location.replace('/dashboard');
+}
+
+/* GEÇİCİ: hesabını GitHub'la açmış olanın Google kimliğini AYNI hesaba
+   eklemesi. Göç bitince bu fonksiyon, düğmesi ve sunucudaki ucu birlikte
+   silinecek. */
+async function linkGoogle() {
+  const { body } = await request('/v1/auth/google/link/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
   });
   window.location.href = body.authorizationUrl;
 }
@@ -226,14 +259,14 @@ function renderAccount() {
   /* Burada gösterilen ad GitHub kimliğidir, Orbit'in hesap tanımlayıcısı
      değil. `account.handle` kayıt anında GitHub adından türetilir ve bir daha
      değişmez; insan GitHub'da adını değiştirdiğinde eski adı göstermeye devam
-     ederdi. `githubLogin` ise her girişte tazeleniyor. */
-  const githubLogin = me.account.githubLogin || me.account.handle;
-  byId('welcome-name').textContent = me.account.displayName || `@${githubLogin}`;
+     ederdi. `providerLogin` ise her girişte tazeleniyor. */
+  const providerLogin = me.account.providerLogin || me.account.handle;
+  byId('welcome-name').textContent = me.account.displayName || `@${providerLogin}`;
   byId('announcement-emails').checked = me.account.announcementEmails !== false;
   byId('account').innerHTML = `
     <div class="dashboard-row">
       ${me.account.avatarUrl ? `<img class="dashboard-avatar" src="${escapeHtml(me.account.avatarUrl)}" alt="" />` : ''}
-      <div><strong>${escapeHtml(me.account.displayName)}</strong><div class="meta">@${escapeHtml(githubLogin)}</div></div>
+      <div><strong>${escapeHtml(me.account.displayName)}</strong><div class="meta">@${escapeHtml(providerLogin)}</div></div>
     </div>
     <div class="meta">${accountRole} · ${escapeHtml(quota)}</div>`;
 }
@@ -570,11 +603,30 @@ async function load() {
     if (error.status === 401) {
       renderLoginMode();
       showPrimaryView('login');
+      /* Kimliği doğrulanmış ama hesabı henüz açılmamış kişi. Sunucu onu
+         buraya `?kayit=1` ile yolluyor; oturumu olmadığı için /v1/me 401
+         dönüyor ve normalde giriş ekranını görürdü. Görmesi gereken, kaldığı
+         yer: ad seçme adımı. */
+      if (new URLSearchParams(window.location.search).has('kayit')) {
+        byId('signup-card').hidden = false;
+        document.querySelector('.login-card')?.setAttribute('hidden', '');
+        byId('signup-handle')?.focus();
+      }
     } else flash(error.message, 'error');
   }
 }
 
-byId('login-button').addEventListener('click', () => login().catch((error) => flash(error.message, 'error')));
+/* Bağlama dönüşünün geri bildirimi. Sunucu 302 ile buraya `?baglandi=1`
+   bırakıyor; onsuz kişi hiçbir şey olmamış gibi panele düşer ve bağlanıp
+   bağlanmadığını bilemezdi. GEÇİCİ — göçle birlikte kalkacak. */
+if (new URLSearchParams(window.location.search).has('baglandi')) {
+  flash('Google hesabın bu Orbit hesabına bağlandı. Bundan sonra Google ile girebilirsin.');
+}
+
+byId('login-button').addEventListener('click', () => login('google').catch((error) => flash(error.message, 'error')));
+byId('github-login-button')?.addEventListener('click', () => login('github').catch((error) => flash(error.message, 'error')));
+byId('signup-submit')?.addEventListener('click', () => completeSignup().catch((error) => flash(error.message, 'error')));
+byId('link-google-button')?.addEventListener('click', () => linkGoogle().catch((error) => flash(error.message, 'error')));
 byId('registration-code-create').addEventListener('click', createRegistrationCode);
 byId('logout').addEventListener('click', () => mutate('/v1/auth/logout').then(() => window.location.reload()).catch((error) => flash(error.message, 'error')));
 byId('mcp-approve').addEventListener('click', approveMcpAuthorization);

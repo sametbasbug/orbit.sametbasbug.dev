@@ -8,7 +8,13 @@ export const BACKUP_SCHEMA = 'equinox.orbit.dynamic-backup.v1';
  * eklendi. Sürüm yükseltmek eski yedek dosyalarını geçersiz kılıyor ve bu
  * kasıtlı — dokuzuncu sürümden gelen bir dosyada karantina hiç yok, sessizce
  * geri yüklenseydi moderasyonun elden aldığı bütün adlar serbest kalırdı. */
-export const BACKUP_SCHEMA_VERSION = 10;
+/* 11: `accounts.handle_skeleton` ve `auth_identities.provider_email_snapshot`
+ * eklendi. Sürüm yükseltmenin gerekçesi ikisinde de aynı ama ağırlıkları
+ * farklı: iskeletsiz gelen bir hesap satırı 0039'un kapısına çarpıp geri
+ * yüklemeyi gürültüyle durdurur, adressiz gelen bir kimlik satırı ise hiçbir
+ * şeye çarpmaz — sessizce herkesin güvenlik bildirimi kanalını siler.
+ * Sessiz olanı yakalamanın tek yolu eski dosyaları en baştan reddetmek. */
+export const BACKUP_SCHEMA_VERSION = 11;
 export const MAX_RESTORE_INPUT_BYTES = 4 * 1024 * 1024;
 export const MAX_RESTORE_STATEMENTS = 2_000;
 
@@ -37,8 +43,13 @@ interface TableSpec {
 }
 
 const SPECS: TableSpec[] = [
-  { exportName: 'accounts', table: 'accounts', columns: ['id','handle','handle_normalized','display_name','avatar_url','status','created_at','updated_at','last_login_at','avatar_media_id','announcement_emails_enabled','terms_accepted_at','terms_version'], orderBy: 'id' },
-  { exportName: 'authIdentities', table: 'auth_identities', columns: ['id','account_id','provider','provider_user_id','provider_login_snapshot','created_at','last_seen_at'], orderBy: 'id' },
+  { exportName: 'accounts', table: 'accounts', columns: ['id','handle','handle_normalized','handle_skeleton','display_name','avatar_url','status','created_at','updated_at','last_login_at','avatar_media_id','announcement_emails_enabled','terms_accepted_at','terms_version'], orderBy: 'id' },
+  /* `provider_email_snapshot` 0029'da eklendi ama buraya eklenmemişti. Sonucu
+   * sessiz ve ağırdı: geri yükleme her hesabın adresini boşaltır, yani bir
+   * restore'dan sonra elimizde güvenlik ve moderasyon bildirimi
+   * gönderebileceğimiz tek kanal kalmazdı. Kimse de fark etmezdi — adres
+   * arayüzde görünen bir alan değil. */
+  { exportName: 'authIdentities', table: 'auth_identities', columns: ['id','account_id','provider','provider_user_id','provider_login_snapshot','provider_email_snapshot','created_at','last_seen_at'], orderBy: 'id' },
   { exportName: 'accountRoles', table: 'account_roles', columns: ['id','account_id','role','granted_by_account_id','granted_at','revoked_at'], orderBy: 'id' },
   { exportName: 'accountQuotas', table: 'account_quotas', columns: ['account_id','quota_key','limit_value','updated_by_account_id','updated_at'], orderBy: 'account_id, quota_key' },
   { exportName: 'invitations', table: 'invitations', columns: ['id','secret_digest','hash_version','expected_github_user_id','expected_github_login_snapshot','agent_quota','created_by_account_id','created_at','expires_at','redeemed_at','redeemed_by_account_id','revoked_at','revoked_by_account_id'], orderBy: 'id' },
@@ -260,6 +271,17 @@ const RESTORE_ARMED_GATES = [
      taşımasaydı geri yükleme her ajanı iskeletsiz hâle döndürür ve kapı
      sessizce açık kalırdı. */
   'agents_handle_skeleton_is_required_insert',
+  /* Aynı gerekçe insan tarafında: 0039 handle havuzunu birleştirince hesap
+     satırı da iskeletsiz kalamaz. Yedek artık `handle_skeleton` sütununu
+     taşıyor. */
+  'accounts_handle_skeleton_is_required_insert',
+  /* Ortak havuz kapıları. Silahlı kalmaları burada fazladan bir değer
+     taşıyor: yedek geçerli bir veritabanından alındıysa zaten çakışma yok,
+     ama bozuk ya da elle kurcalanmış bir yedek aynı ismi iki varlığa
+     verdiyse geri yükleme sessizce sürmek yerine burada duruyor. Geri yükleme
+     sırası da bunu destekliyor — `accounts` `agents`'tan önce giriyor. */
+  'accounts_handle_skeleton_is_shared_with_agents_insert',
+  'agents_handle_skeleton_is_shared_with_accounts_insert',
   'announcement_transitions_validate',
   'avatar_upload_policies_target_validate',
   'direct_message_reads_validate',

@@ -9,7 +9,9 @@ import {
   CSRF_COOKIE,
   CSRF_HEADER,
   DEFAULT_AGENT_QUOTA,
+  LINK_COOKIE,
   OAUTH_COOKIE,
+  SIGNUP_COOKIE,
   REGISTRATION_IP_MAX,
   SESSION_ACTIVITY_BUCKET_MS,
   SESSION_COOKIE,
@@ -186,11 +188,12 @@ function cookieHeader(values: Map<string, string>, names?: string[]): string {
 
 /* Her akış artık onayla başlıyor. Onaysız bir akış hiç kurulmuyor, o yüzden
  * bunu varsayılan yapmak testleri gerçeğe yaklaştırıyor; onayın YOKLUĞUNU
- * ölçen testler /v1/auth/github/start'ı kendileri çağırıyor. */
+ * ölçen testler /v1/auth/google/start'ı kendileri çağırıyor. */
 async function startOAuth(
   now = NOW,
+  provider: 'google' | 'github' = 'google',
 ): Promise<{ state: string; oauthCookie: string }> {
-  const response = await postJson('/v1/auth/github/start', {
+  const response = await postJson(`/v1/auth/${provider}/start`, {
     acceptedTerms: true,
     termsVersion: LEGAL_LAST_UPDATED,
   }, { origin: ORIGIN }, now);
@@ -203,6 +206,13 @@ async function startOAuth(
   return { state, oauthCookie };
 }
 
+/* `callback()` iki yoldan birini yürüyor: kimlik zaten varsa GİRİŞ (302
+   yönlendirme), yoksa kayıt tamamlama (201 JSON). Konusu kayıt olan testler
+   201 bekliyor; konusu giriş olanlar 302'de kalıyor ve o ayrım kasıtlı —
+   ikisini tek bir "başarılı" kontrolüne indirmek, giriş yolunun sessizce
+   kayıt yoluna kaymasını görünmez kılardı. */
+const REGISTERED = 201;
+
 let callbackCount = 0;
 
 async function callback(
@@ -212,10 +222,12 @@ async function callback(
   now = NOW + 1,
   ip?: string,
   openRegistration?: 'true' | 'false',
+  provider: 'google' | 'github' = 'google',
+  extraCookies: Map<string, string> = new Map(),
 ): Promise<Response> {
-  const headers: Record<string, string> = {
-    cookie: `${OAUTH_COOKIE}=${encodeURIComponent(flow.oauthCookie)}`,
-  };
+  const cookies = [`${OAUTH_COOKIE}=${encodeURIComponent(flow.oauthCookie)}`];
+  for (const [name, value] of extraCookies) cookies.push(`${name}=${encodeURIComponent(value)}`);
+  const headers: Record<string, string> = { cookie: cookies.join('; ') };
   if (openRegistration) headers['x-test-open-registration'] = openRegistration;
   /* Cloudflare bu başlığı kenarda kendisi yazar; testte onun yerine
    * geçiyoruz.
@@ -228,9 +240,64 @@ async function callback(
    * hız tavanı geldiğinde alakasız testler düşmeye başladı. Tavanı gevşetmek
    * yerine kurgu düzeltildi: paketin gerçeğe benzemesi gerekiyordu. */
   headers['cf-connecting-ip'] = ip ?? `198.18.${Math.floor(callbackCount / 250) % 250}.${callbackCount++ % 250}`;
-  return await request(`/v1/auth/github/callback?code=${code}&state=${encodeURIComponent(flow.state)}`, {
-    headers,
+  const connectionIp = headers['cf-connecting-ip'];
+  const response = await request(
+    `/v1/auth/${provider}/callback?code=${code}&state=${encodeURIComponent(flow.state)}`,
+    { headers },
+    now,
+  );
+
+  /* Kayıt artık callback'te bitmiyor: Google'da kullanıcı adı olmadığı için
+   * handle'ı kişi seçiyor ve hesap ikinci bir istekte açılıyor. Buradaki
+   * yardımcı o ikinci adımı kendisi atıyor.
+   *
+   * Sebebi, çağıran testlerin ÖLÇTÜĞÜ şeyin handle seçimi olmaması: yirmi
+   * altı çağrı yerinin hepsine bir adım daha eklemek, konusu oturum yenileme
+   * ya da ajan yönetimi olan testleri kayıt akışının ayrıntısına bağlardı.
+   * Handle seçiminin kendisi ayrı testlerde ölçülüyor.
+   *
+   * Kayıt gerektirmeyen durumlar (mevcut hesap girişi, kapalı kayıt, tavana
+   * çarpmış istek) buradan dokunulmadan geçiyor. */
+  const signupCookie = cookieValues(response).get(SIGNUP_COOKIE);
+  if (!signupCookie) return response;
+  return await request('/v1/auth/register', {
+    method: 'POST',
+    headers: {
+      origin: ORIGIN,
+      'content-type': 'application/json',
+      'cf-connecting-ip': connectionIp,
+      cookie: `${SIGNUP_COOKIE}=${encodeURIComponent(signupCookie)}`,
+    },
+    body: JSON.stringify({ handle: signupHandle(code) }),
   }, now);
+}
+
+/* Kod → seçilecek handle. Eskiden bu eşleme yoktu çünkü handle GitHub
+ * kullanıcı adından türüyordu; testlerin beklediği adlar aynı kalsın diye
+ * aynı adlar burada elle yazılı.
+ *
+ * `crowd-<n>` tarafı iki AYRIK alfabeden üretiliyor. Düz `kalabalik-<n>`
+ * olsaydı `kalabalik-1` ile `kalabalik-11` aynı iskelete inerdi — tire
+ * atılıyor, `1` `i`ye eşleniyor, ardışık tekrar daraltılıyor — ve ortak
+ * havuz ikincisini reddederdi. */
+function signupHandle(code: string): string {
+  const named: Record<string, string> = {
+    owner: 'sametbasbug',
+    selene: 'selene-owner',
+    mismatch: 'wrong-owner',
+    renameBefore: 'eski-kullanici',
+    renameAfter: 'yeni-kullanici',
+    traced: 'izli-kullanici',
+    tracedUnverified: 'dogrulanmamis-kullanici',
+    tracedNoreply: 'gizli-kullanici',
+  };
+  if (named[code]) return named[code];
+  const crowd = /^crowd-(\d{1,3})$/u.exec(code);
+  if (!crowd) throw new Error(`unmapped_signup_handle:${code}`);
+  const index = Number(crowd[1]);
+  const first = 'abcdefghijlm';
+  const second = 'nopqrstuvwxyz';
+  return `kalabalik${first[index % first.length]}${second[Math.floor(index / first.length) % second.length]}`;
 }
 
 function authenticatedHeaders(cookies: Map<string, string>, csrf = false): Headers {
@@ -353,11 +420,51 @@ let firstCredentialToken = '';
     }
   });
 
+  /* Göçün kendisi. Seed edilmiş hesabın GitHub kimliği var, Google kimliği
+     yok; yani bu hesap Google'la GİREMEZ, önce bağlaması gerekir. Testin
+     yürüdüğü yol production'da üç hesabın yürüyeceği yolun aynısı:
+     GitHub'la gir, panelden bağla, bundan sonra Google'la gir.
+
+     Bağlamanın hesabı değiştirmediği de burada ölçülüyor — handle, rol ve
+     ajan hakkı bağlantıdan önce ne ise sonra da o. */
   test('platform owner seed is authorized by immutable GitHub numeric ID', async () => {
-    const flow = await startOAuth();
-    const response = await callback('owner', flow);
+    const githubFlow = await startOAuth(NOW, 'github');
+    const response = await callback('owner', githubFlow, NOW + 1, undefined, undefined, 'github');
     assert.equal(response.status, 302, await response.clone().text());
     ownerCookies = cookieValues(response);
+
+    const linkStart = await postJson(
+      '/v1/auth/google/link/start',
+      {},
+      authenticatedHeaders(ownerCookies, true),
+      NOW + 2,
+    );
+    assert.equal(linkStart.status, 201, await linkStart.clone().text());
+    const linkBody = await linkStart.json() as { authorizationUrl: string };
+    const linkState = new URL(linkBody.authorizationUrl).searchParams.get('state');
+    const linkCookies = cookieValues(linkStart);
+    assert.ok(linkState);
+
+    const linked = await callback(
+      'owner',
+      { state: linkState, oauthCookie: linkCookies.get(OAUTH_COOKIE) ?? '' },
+      NOW + 3,
+      undefined,
+      undefined,
+      'google',
+      new Map([
+        [SESSION_COOKIE, ownerCookies.get(SESSION_COOKIE) ?? ''],
+        [LINK_COOKIE, linkCookies.get(LINK_COOKIE) ?? ''],
+      ]),
+    );
+    assert.equal(linked.status, 302, await linked.clone().text());
+    assert.match(linked.headers.get('location') ?? '', /baglandi=1/u);
+
+    /* Bağlantıdan sonra Google kapısı bu hesaba açılıyor ve AYNI hesaba
+       düşüyor — yeni bir hesap açmıyor. Göçün ölçmesi gereken tek şey bu. */
+    const googleLogin = await callback('owner', await startOAuth(NOW + 4), NOW + 5);
+    assert.equal(googleLogin.status, 302, await googleLogin.clone().text());
+    ownerCookies = cookieValues(googleLogin);
     assert.ok(ownerCookies.get(SESSION_COOKIE)?.startsWith('orb_sess_v1_'));
     assert.equal(ownerCookies.get(CSRF_COOKIE)?.length, 43);
 
@@ -368,7 +475,7 @@ let firstCredentialToken = '';
     assert.deepEqual(body.account.roles, ['platform_owner']);
     assert.equal(body.account.agentQuota, -1);
 
-    const replay = await callback('owner', flow, NOW + 3);
+    const replay = await callback('owner', githubFlow, NOW + 6, undefined, undefined, 'github');
     assert.equal(replay.status, 400);
   });
 
@@ -379,7 +486,7 @@ let firstCredentialToken = '';
      ikinci girişinde aynı hesaba mı düşüyor. */
   test('anyone with a GitHub account registers themselves, lands as a member, and returns to the same account', async () => {
     const registration = await callback('selene', await startOAuth(NOW + 12), NOW + 13);
-    assert.equal(registration.status, 302, await registration.clone().text());
+    assert.equal(registration.status, REGISTERED, await registration.clone().text());
     sponsorCookies = cookieValues(registration);
     const me = await request('/v1/me', {
       headers: authenticatedHeaders(sponsorCookies),
@@ -397,36 +504,92 @@ let firstCredentialToken = '';
     assert.equal(again.account.id, sponsor.account.id, 'ikinci giriş ikinci bir hesap açmış');
   });
 
-  test('a GitHub rename reaches the dashboard on the next login', async () => {
-    /* GitHub kullanıcı adı değişebilir; kimlik numarası değişmez. Hesap
-     * kayıt anındaki adı `accounts.handle` içinde saklıyor ve orası bir daha
-     * değişmiyor — değişemez de, benzersizlik kısıtı var ve o alan Orbit'in
-     * kendi tanımlayıcısı. Dashboard bir zamanlar onu "GitHub hesabın" diye
-     * gösteriyordu, bu yüzden yeniden adlandırma hiç görünmüyordu.
-     * Gösterilmesi gereken, her girişte tazelenen `githubLogin`. */
+  /* Bağlamanın güvenlik kapısı. Bu kontrol olmasaydı, bağlantı isteğini
+     kurbanın tarayıcısına yaptırabilen biri KENDİ Google hesabını kurbanın
+     Orbit hesabına bağlayıp o hesaba kalıcı erişim kazanırdı. Niyet çerezi
+     imzalı ama uzun ömürlü bir tarayıcıda duruyor olabilir; bu yüzden çerezin
+     gösterdiği hesapla oturumun gösterdiği hesabın AYNI olması şart.
+
+     Test kendi iki hesabını kuruyor: paylaşılan fikstür oturumlarına
+     yaslanmak, bu testin başka testlerin sırasına bağımlı olması demekti. */
+  test('a link intent minted for one account cannot be spent by another session', async () => {
+    const victim = await callback('crowd-90', await startOAuth(NOW + 700), NOW + 701);
+    assert.equal(victim.status, REGISTERED, await victim.clone().text());
+    const victimCookies = cookieValues(victim);
+
+    const attacker = await callback('crowd-91', await startOAuth(NOW + 702), NOW + 703);
+    assert.equal(attacker.status, REGISTERED, await attacker.clone().text());
+    const attackerCookies = cookieValues(attacker);
+
+    const minted = await postJson(
+      '/v1/auth/google/link/start',
+      {},
+      authenticatedHeaders(victimCookies, true),
+      NOW + 704,
+    );
+    assert.equal(minted.status, 201, await minted.clone().text());
+    const intent = cookieValues(minted);
+    const state = new URL(
+      (await minted.json() as { authorizationUrl: string }).authorizationUrl,
+    ).searchParams.get('state');
+    assert.ok(state);
+
+    /* Kurbanın niyet çerezi, saldırganın oturumuyla harcanmaya çalışılıyor. */
+    const stolen = await callback(
+      'crowd-92',
+      { state, oauthCookie: intent.get(OAUTH_COOKIE) ?? '' },
+      NOW + 705,
+      undefined,
+      undefined,
+      'google',
+      new Map([
+        [SESSION_COOKIE, attackerCookies.get(SESSION_COOKIE) ?? ''],
+        [LINK_COOKIE, intent.get(LINK_COOKIE) ?? ''],
+      ]),
+    );
+    assert.equal(stolen.status, 403, await stolen.clone().text());
+    /* Cevap gövdesi insana bakan hata sayfası, makine okunur bir zarf değil;
+       o yüzden kanıt gövdede değil veritabanında aranıyor: üçüncü Google
+       kimliği hiçbir hesaba bağlanmamış olmalı. */
+    const linkedRows = await authIdentitySnapshots(['300000092']);
+    assert.equal(linkedRows.length, 0, 'yabancı Google kimliği bir hesaba bağlanmış');
+  });
+
+  test('a provider-side rename reaches the dashboard on the next login', async () => {
+    /* Sağlayıcıdaki etiket değişebilir — GitHub'da kullanıcı adı, Google'da
+     * e-posta adresi; değişmeyen tek şey sağlayıcının sayısal kimliği. Hesap
+     * kayıt anında seçilen adı `accounts.handle` içinde saklıyor ve orası bir
+     * daha değişmiyor: benzersizlik kısıtı taşıyor ve o alan Orbit'in kendi
+     * tanımlayıcısı. Dashboard bir zamanlar onu "hesabın" diye gösteriyordu,
+     * bu yüzden sağlayıcı tarafındaki değişiklik hiç görünmüyordu.
+     * Gösterilmesi gereken, her girişte tazelenen `providerLogin`. */
 
     const registration = await callback('renameBefore', await startOAuth(NOW + 61), NOW + 62);
-    assert.equal(registration.status, 302, await registration.clone().text());
+    assert.equal(registration.status, REGISTERED, await registration.clone().text());
     const firstCookies = cookieValues(registration);
     const before = await (await request('/v1/me', {
       headers: authenticatedHeaders(firstCookies),
-    }, NOW + 63)).json() as { account: { id: string; handle: string; githubLogin: string | null } };
+    }, NOW + 63)).json() as { account: { id: string; handle: string; providerLogin: string | null } };
     assert.equal(before.account.handle, 'eski-kullanici');
-    assert.equal(before.account.githubLogin, 'eski-kullanici');
+    assert.equal(before.account.providerLogin, 'eski-kullanici@example.test');
 
-    // İnsan GitHub'da adını değiştirdi ve tekrar giriş yaptı.
+    // İnsan sağlayıcı tarafındaki adresini değiştirdi ve tekrar giriş yaptı.
     const relogin = await callback('renameAfter', await startOAuth(NOW + 64), NOW + 65);
     assert.equal(relogin.status, 302, await relogin.clone().text());
     const secondCookies = cookieValues(relogin);
     const after = await (await request('/v1/me', {
       headers: authenticatedHeaders(secondCookies),
     }, NOW + 66)).json() as {
-      account: { id: string; handle: string; githubLogin: string | null; displayName: string };
+      account: { id: string; handle: string; providerLogin: string | null; displayName: string };
     };
 
-    // Yeni bir hesap açılmadı: aynı GitHub kimlik numarası aynı hesaba düştü.
+    // Yeni bir hesap açılmadı: aynı sağlayıcı kimliği aynı hesaba düştü.
     assert.equal(after.account.id, before.account.id);
-    assert.equal(after.account.githubLogin, 'yeni-kullanici', 'dashboard yeni GitHub adını göstermiyor');
+    assert.equal(
+      after.account.providerLogin,
+      'yeni-kullanici@example.test',
+      'dashboard sağlayıcıdaki yeni etiketi göstermiyor',
+    );
     assert.equal(after.account.displayName, 'Yeni Kullanıcı');
     // Orbit'in kendi tanımlayıcısı kasten sabit kalır: benzersizlik kısıtı
     // taşıyor ve her girişte yeniden yazmak girişi çökertme riski demek.
@@ -445,7 +608,7 @@ let firstCredentialToken = '';
       NOW + 202,
       '203.0.113.7',
     );
-    assert.equal(registration.status, 302, await registration.clone().text());
+    assert.equal(registration.status, REGISTERED, await registration.clone().text());
 
     const relogin = await callback('traced', await startOAuth(NOW + 203), NOW + 204, '198.51.100.22');
     assert.equal(relogin.status, 302, await relogin.clone().text());
@@ -490,7 +653,7 @@ let firstCredentialToken = '';
       await startOAuth(NOW + 221),
       NOW + 222,
     );
-    assert.equal(unverified.status, 302, await unverified.clone().text());
+    assert.equal(unverified.status, REGISTERED, await unverified.clone().text());
 
     const stored = await authIdentitySnapshots(['200000004', '200000005']);
     const traced = stored.find((row) => row.provider_user_id === '200000004');
@@ -521,12 +684,33 @@ let firstCredentialToken = '';
      * ulaşabildiğimizi sandığımız ama ulaşamadığımız bir adres olur ve
      * geri dönen her gönderim, gerçek adresi olan kullanıcılara ulaşma
      * ihtimalimizi de düşürür. */
-    const registration = await callback(
+    /* Bu kural GitHub'a özgü ve GitHub artık kayıt kapısı değil, yalnız
+       mevcut hesapların giriş kapısı. Bu yüzden test hesabı ve kimliği
+       seed ediliyor, sonra GitHub'la GİRİLİYOR — göç sırasındaki gerçek
+       durumun aynısı. */
+    await postJson('/__test/seed-account', {
+      accountId: 'noreply-account',
+      handle: 'gizli-kullanici',
+      now: NOW + 230,
+    }, {}, NOW + 230);
+    await postJson('/__test/seed-provider-identity', {
+      identityId: 'noreply-identity',
+      accountId: 'noreply-account',
+      provider: 'github',
+      providerUserId: '200000006',
+      providerLogin: 'gizli-kullanici',
+      now: NOW + 230,
+    }, {}, NOW + 230);
+
+    const login = await callback(
       'tracedNoreply',
-      await startOAuth(NOW + 231),
+      await startOAuth(NOW + 231, 'github'),
       NOW + 232,
+      undefined,
+      undefined,
+      'github',
     );
-    assert.equal(registration.status, 302, await registration.clone().text());
+    assert.equal(login.status, 302, await login.clone().text());
 
     const stored = await authIdentitySnapshots(['200000006']);
     assert.equal(
@@ -1591,11 +1775,11 @@ let firstCredentialToken = '';
     assert.ok(!publicText.includes('displayName'));
     assert.ok(!publicText.includes('primarySponsorAccountId'));
     const publicBody = JSON.parse(publicText) as {
-      agent: { handle: string; founder: boolean; human: { githubLogin: string; avatarUrl: string | null } | null };
+      agent: { handle: string; founder: boolean; human: { handle: string; avatarUrl: string | null } | null };
     };
     assert.equal(publicBody.agent.handle, 'selene-test-agent');
     assert.equal(publicBody.agent.founder, false);
-    assert.equal(publicBody.agent.human?.githubLogin, 'selene-owner');
+    assert.equal(publicBody.agent.human?.handle, 'selene-owner');
 
     const directoryResponse = await request('/v1/agents', {}, NOW + 45);
     assert.equal(directoryResponse.status, 200);
@@ -1745,8 +1929,9 @@ let firstCredentialToken = '';
   });
 
   test('another sponsor cannot inspect or mutate a foreign agent', async () => {
+    /* Bu hesap burada ilk kez doğuyor, yani giriş değil kayıt: 201. */
     const login = await callback('mismatch', await startOAuth(NOW + 49), NOW + 50);
-    assert.equal(login.status, 302);
+    assert.equal(login.status, REGISTERED, await login.clone().text());
     otherSponsorCookies = cookieValues(login);
 
     const managed = await request(`/v1/agents/${sponsoredAgentId}/manage`, {
@@ -2240,7 +2425,7 @@ let firstCredentialToken = '';
         BUSY,
         'true',
       );
-      assert.equal(opened.status, 302, `${index + 1}. kayıt reddedildi: ${await opened.clone().text()}`);
+      assert.equal(opened.status, REGISTERED, `${index + 1}. kayıt reddedildi: ${await opened.clone().text()}`);
     }
 
     const blocked = await callback(
@@ -2268,7 +2453,7 @@ let firstCredentialToken = '';
       '203.0.113.91',
       'true',
     );
-    assert.equal(elsewhere.status, 302, 'bir bağlantının tavanı başka bağlantıyı da kapatmış');
+    assert.equal(elsewhere.status, REGISTERED, 'bir bağlantının tavanı başka bağlantıyı da kapatmış');
 
   });
 
@@ -2294,7 +2479,7 @@ let firstCredentialToken = '';
       '203.0.113.100',
       'true',
     );
-    assert.equal(opened.status, 302, `fren açıkken kayıt reddedildi: ${await opened.clone().text()}`);
+    assert.equal(opened.status, REGISTERED, `fren açıkken kayıt reddedildi: ${await opened.clone().text()}`);
 
     const me = await (await request('/v1/me', {
       headers: authenticatedHeaders(cookieValues(opened)),
@@ -2348,7 +2533,7 @@ let firstCredentialToken = '';
       '203.0.113.120',
       'true',
     );
-    assert.equal(registration.status, 302, await registration.clone().text());
+    assert.equal(registration.status, REGISTERED, await registration.clone().text());
     const me = await (await request('/v1/me', {
       headers: authenticatedHeaders(cookieValues(registration)),
     }, NOW + 532)).json() as { account: { id: string } };

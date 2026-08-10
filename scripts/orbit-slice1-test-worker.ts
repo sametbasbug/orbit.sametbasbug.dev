@@ -181,7 +181,59 @@ function profileForToken(token: string | null) {
   return PROFILES[key as keyof typeof PROFILES] ?? crowdProfile(key);
 }
 
+/* Google tarafının sahtesi. Aynı PROFILES tablosundan besleniyor, çünkü
+ * testlerin ölçtüğü şey hangi sağlayıcıdan geldiğimiz değil, kaydın ve
+ * girişin davranışı.
+ *
+ * `sub` sayısal kimliğin dizesi: Google'da kimlik zaten dize ve GitHub'ınki
+ * de sütuna dize olarak yazılıyor. Aynı profili iki sağlayıcıdan sokmak, tek
+ * bir insanın iki kimliği olması demek — göç testinin tam da ölçmesi gereken
+ * durum. */
+function googleProfile(key: string) {
+  const profile = PROFILES[key as keyof typeof PROFILES] ?? crowdProfile(key);
+  if (!profile) return null;
+  const emails = (profile as { emails?: ReadonlyArray<{ email: string; primary: boolean; verified: boolean }> }).emails;
+  const primary = emails?.find((item) => item.primary) ?? emails?.[0];
+  return {
+    sub: String(profile.id),
+    email: primary?.email ?? `${profile.login}@example.test`,
+    /* Adres yoksa doğrulanmış sayılıyor: GitHub'da adres opsiyoneldi,
+     * Google'da her hesabın adresi var. Doğrulanmamış hâli ölçen test
+     * `tracedUnverified` profilini kullanıyor ve o profil `verified: false`
+     * taşıyor. */
+    email_verified: primary ? primary.verified : true,
+    name: profile.name,
+    picture: profile.avatar_url,
+  };
+}
+
+async function mockGoogleFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response | null> {
+  const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input : input.url);
+  if (url.href === 'https://oauth2.googleapis.com/token') {
+    /* Gövde form kodlu. Google JSON kabul etmiyor ve istemci de form kodlu
+     * gönderiyor; sahte uç JSON okusaydı, istemcideki bir regresyon burada
+     * fark edilmeden geçerdi. */
+    const params = new URLSearchParams(String(init?.body ?? ''));
+    const code = params.get('code') ?? '';
+    if (!googleProfile(code)) {
+      return Response.json({ error: 'invalid_grant' }, { status: 400 });
+    }
+    return Response.json({ access_token: `google-token-${code}`, token_type: 'Bearer' });
+  }
+  if (url.href === 'https://openidconnect.googleapis.com/v1/userinfo') {
+    const token = new Headers(init?.headers).get('authorization');
+    if (!token?.startsWith('Bearer google-token-')) {
+      return Response.json({ error: 'invalid_token' }, { status: 401 });
+    }
+    const profile = googleProfile(token.slice('Bearer google-token-'.length));
+    return profile ? Response.json(profile) : Response.json({ error: 'invalid_token' }, { status: 401 });
+  }
+  return null;
+}
+
 async function mockGithubFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const google = await mockGoogleFetch(input, init);
+  if (google) return google;
   const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input : input.url);
   if (url.href === 'https://github.com/login/oauth/access_token') {
     const body = JSON.parse(String(init?.body ?? '{}')) as { code?: string };
@@ -460,17 +512,40 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
   if (url.pathname === '/__test/seed-account') {
     await env.DB.prepare(`
       INSERT INTO accounts (
-        id, handle, handle_normalized, display_name, avatar_url,
+        id, handle, handle_normalized, handle_skeleton, display_name, avatar_url,
         status, created_at, updated_at, last_login_at,
         announcement_emails_enabled, terms_accepted_at, terms_version
-      ) VALUES (?, ?, ?, ?, NULL, 'active', ?, ?, ?, 1, ?, '2026-08-08')
+      ) VALUES (?, ?, ?, ?, ?, NULL, 'active', ?, ?, ?, 1, ?, '2026-08-08')
     `).bind(
       String(body.accountId),
       String(body.handle),
       String(body.handle).toLowerCase(),
+      handleSkeleton(String(body.handle)),
       String(body.displayName ?? body.handle),
       Number(body.now ?? Date.now()),
       Number(body.now ?? Date.now()),
+      Number(body.now ?? Date.now()),
+      Number(body.now ?? Date.now()),
+    ).run();
+    return Response.json({ ok: true });
+  }
+
+  /* Var olan bir hesaba sağlayıcı kimliği takar. GitHub kayıt yolu kapandığı
+   * için, GitHub'a özgü davranışı (noreply adres süzgeci) ölçen testlerin
+   * hesabı başka türlü kuramaması bu ucu gerektirdi: göç sırasında gerçek
+   * durum da bu — hesap zaten var, GitHub kimliği zaten bağlı. */
+  if (url.pathname === '/__test/seed-provider-identity') {
+    await env.DB.prepare(`
+      INSERT INTO auth_identities (
+        id, account_id, provider, provider_user_id,
+        provider_login_snapshot, provider_email_snapshot, created_at, last_seen_at
+      ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
+    `).bind(
+      String(body.identityId),
+      String(body.accountId),
+      String(body.provider),
+      String(body.providerUserId),
+      String(body.providerLogin),
       Number(body.now ?? Date.now()),
       Number(body.now ?? Date.now()),
     ).run();
@@ -499,10 +574,10 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     await env.DB.batch([
       env.DB.prepare(`
         INSERT INTO accounts (
-          id, handle, handle_normalized, display_name, avatar_url,
+          id, handle, handle_normalized, handle_skeleton, display_name, avatar_url,
           status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, NULL, 'active', ?, ?)
-      `).bind(accountId, handle, handle.toLowerCase(), handle, now, now),
+        ) VALUES (?, ?, ?, ?, ?, NULL, 'active', ?, ?)
+      `).bind(accountId, handle, handle.toLowerCase(), handleSkeleton(handle), handle, now, now),
       env.DB.prepare(`
         INSERT INTO account_roles (
           id, account_id, role, granted_by_account_id, granted_at
@@ -527,10 +602,13 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     await env.DB.batch([
       env.DB.prepare(`
         INSERT INTO accounts (
-          id, handle, handle_normalized, display_name, avatar_url,
+          id, handle, handle_normalized, handle_skeleton, display_name, avatar_url,
           status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, NULL, 'active', ?, ?)
-      `).bind(accountId, String(body.handle), String(body.handle), String(body.handle), now, now),
+        ) VALUES (?, ?, ?, ?, ?, NULL, 'active', ?, ?)
+      `).bind(
+        accountId, String(body.handle), String(body.handle),
+        handleSkeleton(String(body.handle)), String(body.handle), now, now,
+      ),
       env.DB.prepare(`
         INSERT INTO sessions (
           id, account_id, secret_digest, hash_version, csrf_digest,
@@ -826,10 +904,10 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
      */
     const account = (id: string, handle: string) => env.DB.prepare(`
       INSERT OR IGNORE INTO accounts (
-        id, handle, handle_normalized, display_name, avatar_url,
+        id, handle, handle_normalized, handle_skeleton, display_name, avatar_url,
         status, created_at, updated_at, last_login_at
-      ) VALUES (?, ?, ?, ?, NULL, 'active', ?, ?, ?)
-    `).bind(id, handle, handle, handle, now, now, now);
+      ) VALUES (?, ?, ?, ?, ?, NULL, 'active', ?, ?, ?)
+    `).bind(id, handle, handle, handleSkeleton(handle), handle, now, now, now);
     const identity = (id: string, accountId: string, providerId: string, email: string | null) =>
       env.DB.prepare(`
         INSERT OR IGNORE INTO auth_identities (
@@ -895,13 +973,26 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     ];
     for (let index = 0; index < pool; index += 1) {
       const id = `bulk-${index}`;
+      /* Handle artık id'nin aynısı olamıyor. `bulk-1` ve `bulk-11` ayrı
+       * hesaplar ama iskeletleri aynı: tire atılıyor, `1` `i`ye eşleniyor ve
+       * ardışık tekrar daraltılıyor — ikisi de `bulki`. 0039 iskeleti tekil
+       * yaptığı için fikstür kendi içinde çakışıyordu.
+       *
+       * Sayıyı harfe çeviren iki ayrık alfabe: ilk harf birinciden, ikinci
+       * harf ikinciden geliyor, yani yan yana iki aynı harf hiç doğmuyor ve
+       * daraltma bu adları hiç değiştirmiyor. `k` ilk alfabede yok, çünkü
+       * `bulk`in son harfiyle birleşip `bulkk` → `bulk` olurdu. */
+      const first = 'abcdefghijlm';
+      const second = 'nopqrstuvwxyz';
+      const handle = `bulk${first[index % first.length]}${
+        second[Math.floor(index / first.length) % second.length]}`;
       statements.push(env.DB.prepare(`
         INSERT INTO accounts (
-          id, handle, handle_normalized, display_name, avatar_url,
+          id, handle, handle_normalized, handle_skeleton, display_name, avatar_url,
           status, created_at, updated_at, last_login_at, announcement_emails_enabled
-        ) VALUES (?, ?, ?, ?, NULL, 'active', ?, ?, ?, 0)
+        ) VALUES (?, ?, ?, ?, ?, NULL, 'active', ?, ?, ?, 0)
         ON CONFLICT (id) DO NOTHING
-      `).bind(id, id, id, id, now, now, now));
+      `).bind(id, handle, handle, handleSkeleton(handle), handle, now, now, now));
       statements.push(env.DB.prepare(`
         INSERT INTO auth_identities (
           id, account_id, provider, provider_user_id,

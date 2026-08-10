@@ -59,6 +59,14 @@ export const REGISTRATION_GLOBAL_MAX = 200;
 export const SESSION_COOKIE = '__Host-orbit_session';
 export const CSRF_COOKIE = '__Host-orbit_csrf';
 export const OAUTH_COOKIE = '__Host-orbit_oauth';
+/* Kimliği doğrulanmış ama henüz adını seçmemiş kişinin bileti. Ayrı bir çerez,
+ * çünkü taşıdığı yetki de ayrı: oturum çerezi "bu hesabın sahibiyim" der, bu
+ * çerez yalnız "şu sağlayıcı hesabının sahibi olduğumu az önce kanıtladım"
+ * der. İkisi karışırsa, hesabı olmayan biri hesap sahibinin yollarına
+ * girebilir. */
+export const SIGNUP_COOKIE = '__Host-orbit_signup';
+/* Hesap bağlama niyeti. GEÇİCİ — göç bitince silinecek. */
+export const LINK_COOKIE = '__Host-orbit_link';
 export const CSRF_HEADER = 'X-Orbit-CSRF';
 
 export const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
@@ -70,6 +78,7 @@ export const PLATFORM_OWNER_GITHUB_ID = '126420524';
 
 export const REQUIRED_SECRET_BINDINGS = [
   'GITHUB_OAUTH_CLIENT_SECRET',
+  'GOOGLE_OAUTH_CLIENT_SECRET',
   'ORBIT_INVITATION_PEPPER_V1',
   'ORBIT_SESSION_PEPPER_V1',
   'ORBIT_AGENT_CREDENTIAL_PEPPER_V1',

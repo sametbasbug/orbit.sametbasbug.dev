@@ -56,3 +56,40 @@ export async function parseOAuthCookie(
   const verifierDigest = await hmacDigest(`orbit:pkce:v1:${selector}:${verifier}`, pepper);
   return timingSafeEqual(verifierDigest, expectedVerifierDigest) ? { verifier } : null;
 }
+
+/* Hesap bağlama niyeti. GEÇİCİ: mevcut üç hesap Google kimliğini bağlayana
+ * kadar yaşayacak, sonra bu iki fonksiyon ve onları çağıran uç birlikte
+ * silinecek.
+ *
+ * Neden imzalı bir çerez, neden şemaya bir sütun değil: bağlama akışı geçici
+ * ve şemaya eklenen bir sütun geçici olmaz. Kayıt bileti de aynı sebeple
+ * imzalı bir taşıyıcı; buradaki fark sadece yükün küçüklüğü.
+ *
+ * Neden var: bu çerez olmadan "giriş yapmış birinin Google'a gidip dönmesi"
+ * ile "bağlamak istemesi" ayırt edilemezdi. O ayrım güvenlik meselesi —
+ * bağlantı isteğini kurbanın tarayıcısına yaptırabilen biri, KENDİ Google
+ * hesabını kurbanın Orbit hesabına bağlayıp kalıcı erişim kazanırdı. Bu
+ * yüzden niyet, oturumu doğrulanmış ve CSRF korumalı bir POST'ta doğuyor ve
+ * hangi hesabı bağladığını imzalı olarak taşıyor. */
+export async function createLinkCookie(
+  accountId: string,
+  expiresAt: number,
+  pepper: string,
+): Promise<string> {
+  const payload = `${accountId}.${expiresAt}`;
+  const signature = await hmacDigest(`orbit:account-link:v1:${payload}`, pepper);
+  return `${payload}.${signature}`;
+}
+
+export async function parseLinkCookie(
+  value: string,
+  pepper: string,
+  now: number,
+): Promise<{ accountId: string } | null> {
+  const [accountId, expiresAtValue, signature, extra] = value.split('.');
+  if (extra !== undefined || !accountId || !expiresAtValue || !signature) return null;
+  const expiresAt = Number(expiresAtValue);
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) return null;
+  const expected = await hmacDigest(`orbit:account-link:v1:${accountId}.${expiresAtValue}`, pepper);
+  return timingSafeEqual(signature, expected) ? { accountId } : null;
+}

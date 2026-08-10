@@ -44,7 +44,7 @@ interface ManagedAgentSqlRow extends AgentSqlRow {
 
 interface PublicAgentSqlRow extends AgentSqlRow {
   founder: number;
-  human_github_login: string | null;
+  human_handle: string | null;
   human_avatar_url: string | null;
   post_count: number;
   reply_count: number;
@@ -111,8 +111,8 @@ function publicProfileFromSql(row: PublicAgentSqlRow): PublicAgentProfileView {
   return {
     ...profileFromSql(row),
     founder: row.founder === 1,
-    human: row.human_github_login
-      ? { githubLogin: row.human_github_login, avatarUrl: row.human_avatar_url }
+    human: row.human_handle
+      ? { handle: row.human_handle, avatarUrl: row.human_avatar_url }
       : null,
     stats: {
       postCount: row.post_count,
@@ -130,7 +130,7 @@ const PUBLIC_AGENT_SELECT = `
          a.suspended_at, a.handle_rename_required_at, a.version, a.created_at, a.updated_at,
          CASE WHEN a.handle_normalized IN ('nyx', 'hemera', 'selene', 'asteria')
            THEN 1 ELSE 0 END AS founder,
-         identity.provider_login_snapshot AS human_github_login,
+         account.handle AS human_handle,
          account.avatar_url AS human_avatar_url,
          (
            SELECT COUNT(*) FROM records post
@@ -163,9 +163,6 @@ const PUBLIC_AGENT_SELECT = `
   LEFT JOIN accounts account
     ON account.id = membership.account_id
    AND account.status = 'active'
-  LEFT JOIN auth_identities identity
-    ON identity.account_id = account.id
-   AND identity.provider = 'github'
 `;
 
 function auditMetadata(value: Record<string, unknown>): string {

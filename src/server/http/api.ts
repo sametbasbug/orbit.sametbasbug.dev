@@ -4,6 +4,7 @@ import {
   CSRF_COOKIE,
   CSRF_HEADER,
   DEFAULT_AGENT_QUOTA,
+  LINK_COOKIE,
   OAUTH_COOKIE,
   OAUTH_FLOW_RETENTION_MS,
   OAUTH_FLOW_TTL_MS,
@@ -17,6 +18,7 @@ import {
   SESSION_IDLE_TTL_MS,
   SESSION_RETENTION_MS,
   SIGN_IN_EVENT_RETENTION_MS,
+  SIGNUP_COOKIE,
 } from '../identity/constants';
 import { assertIdentityBindings, openRegistrationEnabled, type OrbitBindings } from '../identity/bindings';
 /* Onayın sürümü, yasal metinlerin yürürlük tarihi. Sayfada yazan tarih ile
@@ -39,6 +41,12 @@ import {
 } from '../notifications/messages';
 import { clearHostCookie, readCookie, serializeHostCookie } from '../identity/cookies';
 import { GithubClient } from '../identity/github';
+import { GoogleClient } from '../identity/google';
+import {
+  createPendingRegistration,
+  PENDING_REGISTRATION_TTL_MS,
+  verifyPendingRegistration,
+} from '../identity/pending-registration';
 import {
   claimsAuthorityInBio,
   claimsAuthorityInRole,
@@ -46,7 +54,13 @@ import {
   handleSkeleton,
   isReservedHandle,
 } from '../identity/handle-policy';
-import { createOAuthMaterial, parseOAuthCookie, parseOAuthState } from '../identity/oauth';
+import {
+  createLinkCookie,
+  createOAuthMaterial,
+  parseLinkCookie,
+  parseOAuthCookie,
+  parseOAuthState,
+} from '../identity/oauth';
 import {
   createMcpAuthorizationTicket,
   verifyMcpAuthorizationTicket,
@@ -99,7 +113,9 @@ import type {
 } from '../repositories/agent-repository';
 import type {
   AccountView,
+  AuthProvider,
   IdentityRepository,
+  ProviderProfileSnapshot,
   SessionView,
 } from '../repositories/identity-repository';
 import type {
@@ -726,10 +742,10 @@ function decodeOptionalUploadHeader(request: Request, name: string, maximumLengt
  * yakalandı: rezerve alan kontrolünü şekil kontrolüyle aynı yere koymak,
  * resmî bir `orbit-destek` ajanına mesaj göndermeyi imkânsız kılıyordu.
  * Kural şu — bir adı SAHİPLENMEK politikaya tabi, o adı ANMAK değil. */
-function parseAgentHandle(value: unknown): string {
+function parseAgentHandle(value: unknown, invalidCode = 'invalid_agent_handle'): string {
   const handle = requiredString(value, 'handle', 32).toLowerCase();
   if (!/^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/u.test(handle) || handle.startsWith(MCP_PENDING_HANDLE_PREFIX)) {
-    throw new ApiError(400, 'invalid_agent_handle', 'Agent handle must be 3–32 lowercase ASCII characters.');
+    throw new ApiError(400, invalidCode, 'Handle must be 3–32 lowercase ASCII characters.');
   }
   return handle;
 }
@@ -743,8 +759,12 @@ function parseAgentHandle(value: unknown): string {
  * taklidinin var olamamasının ön koşulu. Kapıyı herkese kapatıp kendimize de
  * kapatsaydık listeyi kullanılmaz kılardık. Bu kol hakaret kapısını AÇMIYOR —
  * rezerve alan bir yetki meselesi, kelime listesi değil. */
-function claimAgentHandle(value: unknown, allowReserved = false): string {
-  const handle = parseAgentHandle(value);
+function claimAgentHandle(
+  value: unknown,
+  allowReserved = false,
+  invalidCode = 'invalid_agent_handle',
+): string {
+  const handle = parseAgentHandle(value, invalidCode);
   if (!allowReserved && isReservedHandle(handle)) {
     throw new ApiError(
       409,
@@ -3641,11 +3661,16 @@ function sessionRow(
   };
 }
 
-async function handleGithubStart(
+/* Giriş akışının başlangıcı, sağlayıcıdan bağımsız. İki sağlayıcının farkı
+ * yalnız son satırda: hangi adrese yönlendirdiğimiz. Onay kontrolü, akış
+ * satırı, PKCE ve çerez ikisinde de aynı olmak zorunda — kopyalanmış iki
+ * kopya, birinde yapılan bir düzeltmenin diğerine geçmemesi demekti. */
+async function handleOAuthStart(
   request: Request,
   env: OrbitBindings,
   repository: IdentityRepository,
-  github: GithubClient,
+  redirectUri: string,
+  buildAuthorizationUrl: (state: string, challenge: string) => string,
   now: number,
 ): Promise<Response> {
   requireAllowedOrigin(request, env);
@@ -3674,14 +3699,14 @@ async function handleGithubStart(
       { currentVersion: LEGAL_LAST_UPDATED },
     );
   }
-  requireExactFields(body, ['acceptedTerms', 'termsVersion'], 'invalid_github_start_fields');
+  requireExactFields(body, ['acceptedTerms', 'termsVersion'], 'invalid_oauth_start_fields');
   const expiresAt = now + OAUTH_FLOW_TTL_MS;
   const material = await createOAuthMaterial(env.ORBIT_OAUTH_STATE_PEPPER_V1, expiresAt);
   await repository.createOAuthFlow({
     id: material.selector,
     stateDigest: material.stateDigest,
     pkceVerifierDigest: material.verifierDigest,
-    redirectUri: env.ORBIT_GITHUB_CALLBACK_URL,
+    redirectUri,
     termsAcceptedAt: now,
     termsVersion: LEGAL_LAST_UPDATED,
     createdAt: now,
@@ -3689,7 +3714,7 @@ async function handleGithubStart(
     consumedAt: null,
   });
   const response = json({
-    authorizationUrl: github.authorizationUrl(material.state, material.challenge),
+    authorizationUrl: buildAuthorizationUrl(material.state, material.challenge),
     expiresAt,
   }, 201);
   return attachCookies(response, [
@@ -3739,11 +3764,18 @@ async function requireRegistrationCapacity(
   }
 }
 
-async function handleGithubCallback(
+interface OAuthProviderClient {
+  exchangeCode(code: string, verifier: string): Promise<string>;
+  currentUser(accessToken: string): Promise<ProviderProfileSnapshot>;
+}
+
+async function handleProviderCallback(
   request: Request,
   env: OrbitBindings,
   repository: IdentityRepository,
-  github: GithubClient,
+  provider: AuthProvider,
+  client: OAuthProviderClient,
+  redirectUri: string,
   now: number,
   requestId: string,
 ): Promise<Response> {
@@ -3753,7 +3785,11 @@ async function handleGithubCallback(
   if (!code || !state) throw new ApiError(400, 'invalid_oauth_callback', 'OAuth code and state are required.');
   const selector = state.split('.')[0];
   const flow = selector ? await repository.getOAuthFlow(selector) : null;
-  if (!flow || flow.consumedAt !== null || flow.expiresAt <= now || flow.redirectUri !== env.ORBIT_GITHUB_CALLBACK_URL) {
+  /* Akış satırının taşıdığı yönlendirme adresi, dönülen kapıyla aynı olmak
+   * zorunda. İki sağlayıcı olunca bu kontrol bir formaliteden gerçek bir
+   * kapıya dönüştü: Google için açılmış bir akışın GitHub callback'inde
+   * tamamlanmasını engelliyor. */
+  if (!flow || flow.consumedAt !== null || flow.expiresAt <= now || flow.redirectUri !== redirectUri) {
     throw new ApiError(400, 'invalid_oauth_flow', 'OAuth flow is invalid or expired.');
   }
   if (!await parseOAuthState(state, flow.stateDigest, env.ORBIT_OAUTH_STATE_PEPPER_V1)) {
@@ -3771,6 +3807,60 @@ async function handleGithubCallback(
     : null;
   if (!cookie) throw new ApiError(400, 'invalid_oauth_cookie', 'OAuth browser binding is invalid or expired.');
 
+  /* GEÇİCİ bağlama dalı. Niyet çerezi varsa bu bir giriş değil, var olan bir
+   * hesaba ikinci anahtarı tanıtma işlemi. Göç bitince bu blok silinecek.
+   *
+   * Çerez tek başına yetmiyor: oturum da isteniyor ve İKİSİNİN AYNI HESABI
+   * göstermesi şart. Çerez imzalı ama uzun ömürlü bir tarayıcıda duruyor
+   * olabilir; arada çıkış yapıp başka bir hesaba girmiş biri, çerezin
+   * gösterdiği hesaba yabancı bir Google kimliği bağlayabilirdi. */
+  const linkCookieValue = readCookie(request, LINK_COOKIE);
+  const linkIntent = linkCookieValue
+    ? await parseLinkCookie(linkCookieValue, env.ORBIT_OAUTH_STATE_PEPPER_V1, now)
+    : null;
+  if (linkIntent) {
+    const auth = await authenticateHuman(request, env, repository, now, false);
+    if (auth.account.id !== linkIntent.accountId) {
+      throw new ApiError(403, 'link_session_mismatch', 'Bağlama isteği başka bir hesaba ait.');
+    }
+    const accessToken = await client.exchangeCode(code, cookie.verifier);
+    const profile = await client.currentUser(accessToken);
+    const existing = await repository.findProviderIdentity(provider, profile.userId);
+    if (existing && existing.accountId !== auth.account.id) {
+      throw new ApiError(
+        409,
+        'provider_identity_taken',
+        'Bu Google hesabı başka bir Orbit hesabına bağlı.',
+      );
+    }
+    /* Zaten bağlıysa sessizce geçiyoruz. Kişi düğmeye ikinci kez basmış ya da
+     * geri tuşuyla dönmüş olabilir; ona hata göstermek, aslında istediği
+     * durumun zaten sağlandığı bir anda onu telaşlandırmak olurdu. */
+    if (!existing) {
+      await repository.linkProviderIdentity({
+        accountId: auth.account.id,
+        identityId: createEntityId(),
+        provider,
+        profile,
+        auditEventId: createEntityId(),
+        requestId,
+        now,
+      });
+    }
+    const linked = new Response(null, {
+      status: 302,
+      headers: {
+        location: `${env.ORBIT_ALLOWED_ORIGIN}/dashboard?baglandi=1`,
+        'cache-control': 'no-store',
+        'referrer-policy': 'no-referrer',
+      },
+    });
+    return attachCookies(linked, [
+      clearHostCookie(OAUTH_COOKIE, true),
+      clearHostCookie(LINK_COOKIE, true),
+    ]);
+  }
+
   /* Onayın ikinci kontrolü. Tarayıcı burada hiçbir şey söylemiyor; okunan
    * şey akış satırının kendisi ve o satırı /start yazdı. Aynı kontrolü iki
    * yerde yapmak gereksiz görünebilir — değil: /start'taki kontrol
@@ -3781,11 +3871,64 @@ async function handleGithubCallback(
     throw new ApiError(400, 'terms_not_accepted', 'This sign-in flow carries no recorded consent.');
   }
 
-  const accessToken = await github.exchangeCode(code, cookie.verifier);
-  const profile = await github.currentUser(accessToken);
-  const identity = await repository.getGithubIdentity(profile.userId);
+  const accessToken = await client.exchangeCode(code, cookie.verifier);
+  const profile = await client.currentUser(accessToken);
+  const identity = await repository.findProviderIdentity(provider, profile.userId);
   if (identity?.accountStatus === 'suspended' || identity?.accountStatus === 'closed') {
     throw new ApiError(403, 'account_unavailable', 'Account is not active.');
+  }
+
+  if (!identity) {
+    /* Hesabı olmayan biri. Buradan sonrası sağlayıcıya göre ayrılıyor ve
+     * ayrım kalıcı değil, göçün bir parçası.
+     *
+     * GitHub artık KAYIT kapısı değil, yalnız mevcut üç hesabın giriş kapısı.
+     * Yeni birinin GitHub'la hesap açmasına izin vermek, göç bittiğinde
+     * taşınacak hesap sayısını artırmaktan başka bir işe yaramazdı. */
+    if (provider === 'github') {
+      throw new ApiError(
+        403,
+        'registration_moved',
+        'Yeni hesaplar artık Google ile açılıyor.',
+      );
+    }
+
+    /* Kayıt burada BİTMİYOR. Google'da kullanıcı adı olmadığı için handle'ı
+     * kişi seçecek; elimizde şu an yalnız doğrulanmış bir kimlik var.
+     *
+     * Acil fren ve hız tavanı burada da okunuyor, kaydın kendisinde de: burada
+     * okumak kişiyi isim seçtirdikten SONRA reddetmemek için, orada okumak ise
+     * kapının gerçekten kapalı olması için. Birincisi nezaket, ikincisi kapı —
+     * onay kontrolündeki ayrımın aynısı. */
+    if (!openRegistrationEnabled(env)) {
+      throw new ApiError(403, 'registration_closed', 'New registrations are paused.');
+    }
+    await requireRegistrationCapacity(repository, readConnectionTrace(request), now);
+
+    const ticket = await createPendingRegistration({
+      provider,
+      profile,
+      termsAcceptedAt: flow.termsAcceptedAt,
+      termsVersion: flow.termsVersion,
+      issuedAt: now,
+      expiresAt: now + PENDING_REGISTRATION_TTL_MS,
+    }, env.ORBIT_OAUTH_STATE_PEPPER_V1);
+
+    const signupResponse = new Response(null, {
+      status: 302,
+      headers: {
+        location: `${env.ORBIT_ALLOWED_ORIGIN}/dashboard?kayit=1`,
+        'cache-control': 'no-store',
+        'referrer-policy': 'no-referrer',
+      },
+    });
+    return attachCookies(signupResponse, [
+      serializeHostCookie(SIGNUP_COOKIE, ticket, {
+        httpOnly: true,
+        maxAge: PENDING_REGISTRATION_TTL_MS / 1000,
+      }),
+      clearHostCookie(OAUTH_COOKIE, true),
+    ]);
   }
 
   const sessionToken = await createOpaqueToken('session', env.ORBIT_SESSION_PEPPER_V1);
@@ -3807,44 +3950,17 @@ async function handleGithubCallback(
    * Koşullar değiştiğinde kimin yeni metni gördüğü de bu sütundan okunuyor. */
   const consent = { acceptedAt: flow.termsAcceptedAt, version: flow.termsVersion };
 
-  if (identity) {
-    await repository.loginExistingIdentity({
-      flowId: flow.id,
-      identity,
-      profile,
-      session,
-      consent,
-      auditEventId: createEntityId(),
-      signInEvent: { id: createEntityId(), eventType: 'sign_in', trace },
-      requestId,
-      now,
-    });
-  } else {
-    /* Kayıt artık davete bağlı değil; kapı GitHub hesabı olan herkese açık.
-     * Geriye kalan tek kapı ORBIT_OPEN_REGISTRATION ve o bir davet mekanizması
-     * değil, acil fren: bir kötüye kullanım dalgasında yeni kayıtları
-     * tamamen durdurabilmek için duruyor. Mevcut hesapların girişini
-     * etkilemiyor — kapıyı kapatmak, içeridekileri dışarı atmak değil. */
-    if (!openRegistrationEnabled(env)) {
-      throw new ApiError(403, 'registration_closed', 'New registrations are paused.');
-    }
-    await requireRegistrationCapacity(repository, trace, now);
-    await repository.registerGithubIdentity({
-      flowId: flow.id,
-      accountId: createEntityId(),
-      identityId: createEntityId(),
-      roleId: createEntityId(),
-      handle: profile.login.toLowerCase(),
-      profile,
-      session,
-      consent,
-      agentQuota: DEFAULT_AGENT_QUOTA,
-      loginAuditEventId: createEntityId(),
-      signInEvent: { id: createEntityId(), eventType: 'registration', trace },
-      requestId,
-      now,
-    });
-  }
+  await repository.loginExistingIdentity({
+    flowId: flow.id,
+    identity,
+    profile,
+    session,
+    consent,
+    auditEventId: createEntityId(),
+    signInEvent: { id: createEntityId(), eventType: 'sign_in', trace },
+    requestId,
+    now,
+  });
 
   const response = new Response(null, {
     status: 302,
@@ -3857,6 +3973,172 @@ async function handleGithubCallback(
   return attachCookies(response, [
     ...sessionCookies(sessionToken.token, csrfToken),
     clearHostCookie(OAUTH_COOKIE, true),
+  ]);
+}
+
+/* Bağlama niyetinin ömrü. Akış satırıyla aynı: bu pencere yalnız Google'a
+ * gidip dönmeyi ölçüyor, kayıt bileti gibi bir insanın karar vermesini
+ * beklemiyor. */
+const LINK_INTENT_TTL_MS = OAUTH_FLOW_TTL_MS;
+
+/* GEÇİCİ: mevcut hesapların Google kimliğini kendi oturumlarında bağladığı
+ * yol. Göç bitince bu iki fonksiyon, çerez, `linkProviderIdentity` ve GitHub
+ * sağlayıcısı birlikte silinecek.
+ *
+ * Buranın oturum GEREKTİRMESİ tasarımın kendisi. Bağlamayı oturumsuz
+ * yapabilseydik, "hangi hesaba bağlanacağı" tarayıcıdan gelen bir iddia
+ * olurdu; e-posta eşleyerek bağlamanın reddedilme sebebi de aynıydı. Kişi iki
+ * kimliği de kendi kanıtlıyor: birini oturumuyla, ötekini Google'a giderek. */
+async function handleAccountLinkStart(
+  request: Request,
+  env: OrbitBindings,
+  repository: IdentityRepository,
+  google: GoogleClient,
+  now: number,
+): Promise<Response> {
+  const auth = await authenticateHuman(request, env, repository, now, true);
+  const expiresAt = now + OAUTH_FLOW_TTL_MS;
+  const material = await createOAuthMaterial(env.ORBIT_OAUTH_STATE_PEPPER_V1, expiresAt);
+  await repository.createOAuthFlow({
+    id: material.selector,
+    stateDigest: material.stateDigest,
+    pkceVerifierDigest: material.verifierDigest,
+    redirectUri: env.ORBIT_GOOGLE_CALLBACK_URL,
+    /* Bağlamada onay istenmiyor ve akış satırı onaysız kalıyor. Kişi zaten
+     * içeride; koşulları en son girişinde onaylamış ve o kayıt hesabın
+     * üstünde duruyor. Burada tekrar sormak, onayı bir anahtar takma
+     * işlemine iliştirmek olurdu. Callback tarafı bunu biliyor: onay
+     * kontrolü yalnız giriş ve kayıt yollarında çalışıyor. */
+    termsAcceptedAt: null,
+    termsVersion: null,
+    createdAt: now,
+    expiresAt,
+    consumedAt: null,
+  });
+  const response = json({
+    authorizationUrl: google.authorizationUrl(material.state, material.challenge),
+    expiresAt,
+  }, 201);
+  return attachCookies(response, [
+    serializeHostCookie(OAUTH_COOKIE, material.cookie, {
+      httpOnly: true,
+      maxAge: OAUTH_FLOW_TTL_MS / 1000,
+    }),
+    serializeHostCookie(
+      LINK_COOKIE,
+      await createLinkCookie(auth.account.id, now + LINK_INTENT_TTL_MS, env.ORBIT_OAUTH_STATE_PEPPER_V1),
+      { httpOnly: true, maxAge: LINK_INTENT_TTL_MS / 1000 },
+    ),
+  ]);
+}
+
+/* Kaydın kapıya çarpabileceği çakışmalar. Liste dar tutuldu: geniş bir
+ * "constraint" eşleşmesi, beklemediğimiz bir şema ihlalini de kullanıcıya
+ * "bu ad kullanılamıyor" diye gösterirdi ve gerçek arıza kayıtlara hiç
+ * düşmezdi. Buradaki dört durumun dördü de kullanıcının düzeltebileceği
+ * durumlar. */
+function isRegistrationConflict(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /UNIQUE constraint failed:\s*accounts\.handle_(?:normalized|skeleton)\b/iu.test(message)
+    || /UNIQUE constraint failed:\s*auth_identities\.provider\b/iu.test(message)
+    || /\bhandle_taken\b/iu.test(message);
+}
+
+/* Kaydın ikinci ve son adımı: kişi adını seçiyor, hesap burada açılıyor.
+ *
+ * Buraya gelen istekte oturum YOK — kişinin henüz hesabı yok. Yetkiyi taşıyan
+ * tek şey imzalı bekleyen-kayıt bileti ve o bilet sunucunun kendi ürettiği bir
+ * kanıt. Gövdeden gelen tek şey handle; kimlik, adres ve onay bilette. Kimliği
+ * gövdeden okusaydık, adını yazan herkes istediği Google hesabıyla kayıt
+ * olabilirdi. */
+async function handleCompleteRegistration(
+  request: Request,
+  env: OrbitBindings,
+  repository: IdentityRepository,
+  agentRepository: AgentRepository,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  requireAllowedOrigin(request, env);
+  const ticket = readCookie(request, SIGNUP_COOKIE);
+  const pending = ticket
+    ? await verifyPendingRegistration(ticket, env.ORBIT_OAUTH_STATE_PEPPER_V1, now)
+    : null;
+  if (!pending) {
+    throw new ApiError(
+      401,
+      'signup_expired',
+      'Kayıt adımının süresi doldu. Baştan giriş yapman gerekiyor.',
+    );
+  }
+
+  const body = await readJson(request);
+  requireExactFields(body, ['handle'], 'invalid_registration_fields');
+  /* Ajan handle'ıyla AYNI boğaz. Havuz 0039'dan beri ortak: `nyx` adlı bir
+   * ajan varken `nyx` adlı bir insan olamıyor. Politikayı ikinci bir yere
+   * kopyalasaydık, rezerve adlar ve hakaret listesi bir taraf için güncellenip
+   * diğeri için unutulurdu. */
+  const handle = claimAgentHandle(body.handle, false, 'invalid_handle');
+  await requireHandleNotQuarantined(agentRepository, handle, now);
+
+  /* Acil fren ve hız tavanı burada tekrar okunuyor. Callback'te de okunmuştu
+   * ama arada dakikalar geçmiş olabilir; kapıyı o aradan sonra kapatmış
+   * olabiliriz ve kapının gerçekten kapalı olması bu okumaya bağlı. */
+  if (!openRegistrationEnabled(env)) {
+    throw new ApiError(403, 'registration_closed', 'New registrations are paused.');
+  }
+  const trace = readConnectionTrace(request);
+  await requireRegistrationCapacity(repository, trace, now);
+
+  const sessionToken = await createOpaqueToken('session', env.ORBIT_SESSION_PEPPER_V1);
+  const csrfToken = randomBase64Url(32);
+  const csrfDigest = await hmacDigest(
+    `orbit:csrf:v1:${sessionToken.selector}:${csrfToken}`,
+    env.ORBIT_CSRF_PEPPER_V1,
+  );
+
+  try {
+    await repository.registerProviderIdentity({
+      provider: pending.provider,
+      accountId: createEntityId(),
+      identityId: createEntityId(),
+      roleId: createEntityId(),
+      handle,
+      profile: pending.profile,
+      session: sessionRow(sessionToken, csrfDigest, now),
+      consent: { acceptedAt: pending.termsAcceptedAt, version: pending.termsVersion },
+      agentQuota: DEFAULT_AGENT_QUOTA,
+      loginAuditEventId: createEntityId(),
+      signInEvent: { id: createEntityId(), eventType: 'registration', trace },
+      requestId,
+      now,
+    });
+  } catch (error) {
+    /* İki ayrı çakışma buraya aynı biçimde düşüyor ve ikisi de kullanıcının
+     * düzeltebileceği bir durum, bir arıza değil:
+     *
+     *   - handle bu arada başkası tarafından alındı (tekil indeks ya da ortak
+     *     havuz trigger'ı),
+     *   - aynı sağlayıcı kimliğiyle hesap bu arada zaten açıldı — biletin
+     *     ikinci kez oynatılması tam olarak burada duruyor.
+     *
+     * İkincisinde kullanıcıya "adı değiştir" demek yanlış olurdu ama ayrımı
+     * D1'in hata metnine bakarak yapmak, o metne bağımlı kırılgan bir kod
+     * demek. Bu yüzden mesaj ikisini de karşılayacak biçimde yazıldı. */
+    if (isRegistrationConflict(error)) {
+      throw new ApiError(
+        409,
+        'handle_taken',
+        'Bu ad kullanılamıyor. Başka bir ad dene; hesabın bu arada açıldıysa giriş yapmayı dene.',
+        recoveryDetails(true, 'choose_different_handle', now),
+      );
+    }
+    throw error;
+  }
+
+  return attachCookies(json({ handle }, 201), [
+    ...sessionCookies(sessionToken.token, csrfToken),
+    clearHostCookie(SIGNUP_COOKIE, true),
   ]);
 }
 
@@ -4177,6 +4459,11 @@ export async function handleApiRequest(
       clientId: env.GITHUB_OAUTH_CLIENT_ID,
       clientSecret: env.GITHUB_OAUTH_CLIENT_SECRET,
       callbackUrl: env.ORBIT_GITHUB_CALLBACK_URL,
+    }, dependencies.fetch);
+    const google = new GoogleClient({
+      clientId: env.GOOGLE_OAUTH_CLIENT_ID,
+      clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+      callbackUrl: env.ORBIT_GOOGLE_CALLBACK_URL,
     }, dependencies.fetch);
     const url = new URL(request.url);
     const path = url.pathname;
@@ -5695,8 +5982,19 @@ export async function handleApiRequest(
       return json({ record: publicRecord(record) });
     }
 
+    /* GitHub uçları GEÇİCİ. Yalnız mevcut hesapların girmesi ve panelden
+     * Google kimliğini bağlaması için duruyorlar; yeni kayıt bu yoldan
+     * geçmiyor. Üç hesap da bağlandığında bu blok, GithubClient ve şemadaki
+     * 'github' sağlayıcısı birlikte kalkacak. */
     if (request.method === 'POST' && path === '/v1/auth/github/start') {
-      return await handleGithubStart(request, env, repository, github, now);
+      return await handleOAuthStart(
+        request,
+        env,
+        repository,
+        env.ORBIT_GITHUB_CALLBACK_URL,
+        (state, challenge) => github.authorizationUrl(state, challenge),
+        now,
+      );
     }
     if (request.method === 'GET' && path === '/v1/auth/github/callback') {
       /* Bu ucun cevabını bir tarayıcı gösteriyor, bir istemci okumuyor.
@@ -5704,11 +6002,44 @@ export async function handleApiRequest(
        * hatalar dışarıdaki genel yakalayıcıya bırakılıyor, çünkü orada
        * kaydedilen şey benim görmem gereken şey. */
       try {
-        return await handleGithubCallback(request, env, repository, github, now, requestId);
+        return await handleProviderCallback(
+          request, env, repository, 'github', github,
+          env.ORBIT_GITHUB_CALLBACK_URL, now, requestId,
+        );
       } catch (error) {
         if (error instanceof ApiError) return oauthCallbackErrorPage(error.code, error.status);
         throw error;
       }
+    }
+    if (request.method === 'POST' && path === '/v1/auth/google/start') {
+      return await handleOAuthStart(
+        request,
+        env,
+        repository,
+        env.ORBIT_GOOGLE_CALLBACK_URL,
+        (state, challenge) => google.authorizationUrl(state, challenge),
+        now,
+      );
+    }
+    if (request.method === 'GET' && path === '/v1/auth/google/callback') {
+      try {
+        return await handleProviderCallback(
+          request, env, repository, 'google', google,
+          env.ORBIT_GOOGLE_CALLBACK_URL, now, requestId,
+        );
+      } catch (error) {
+        if (error instanceof ApiError) return oauthCallbackErrorPage(error.code, error.status);
+        throw error;
+      }
+    }
+    /* GEÇİCİ: göç bitince bu uç de silinecek. */
+    if (request.method === 'POST' && path === '/v1/auth/google/link/start') {
+      return await handleAccountLinkStart(request, env, repository, google, now);
+    }
+    if (request.method === 'POST' && path === '/v1/auth/register') {
+      return await handleCompleteRegistration(
+        request, env, repository, agentRepository, now, requestId,
+      );
     }
     if (request.method === 'POST' && path === '/v1/agent/register') {
       return await handleRedeemRegistrationCode(request, env, agentRepository, now, requestId);

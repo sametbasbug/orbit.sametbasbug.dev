@@ -1,4 +1,4 @@
-import type { GithubProfileSnapshot } from '../repositories/identity-repository';
+import type { ProviderProfileSnapshot } from '../repositories/identity-repository';
 
 export interface GithubClientConfig {
   clientId: string;
@@ -72,7 +72,7 @@ export class GithubClient {
     return body.access_token;
   }
 
-  async currentUser(accessToken: string): Promise<GithubProfileSnapshot> {
+  async currentUser(accessToken: string): Promise<ProviderProfileSnapshot> {
     const response = await this.#fetch('https://api.github.com/user', {
       headers: {
         accept: 'application/vnd.github+json',
@@ -134,7 +134,7 @@ export class GithubClient {
     }
   }
 
-  async resolveLogin(login: string): Promise<GithubProfileSnapshot> {
+  async resolveLogin(login: string): Promise<ProviderProfileSnapshot> {
     const normalized = login.trim();
     if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u.test(normalized)) {
       throw new Error('invalid_github_login');
@@ -150,7 +150,7 @@ export class GithubClient {
   }
 }
 
-function profileFromGithub(body: GithubUserResponse): GithubProfileSnapshot {
+function profileFromGithub(body: GithubUserResponse): ProviderProfileSnapshot {
   if (!Number.isSafeInteger(body.id) || typeof body.login !== 'string' || !body.login) {
     throw new Error('invalid_github_user_response');
   }

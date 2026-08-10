@@ -1,6 +1,8 @@
+import { handleSkeleton } from '../../identity/handle-skeleton';
 import type {
   AccountView,
-  GithubIdentityRow,
+  AuthProvider,
+  ProviderIdentityRow,
   IdentityRepository,
   NewSignInEvent,
   OAuthFlowRow,
@@ -72,32 +74,30 @@ export class D1IdentityRepository implements IdentityRepository {
     return row ? oauthFlowFromSql(row) : null;
   }
 
-  async findGithubIdentity(providerUserId: string): Promise<GithubIdentityRow | null> {
+  async findProviderIdentity(
+    provider: AuthProvider,
+    providerUserId: string,
+  ): Promise<ProviderIdentityRow | null> {
     const row = await this.#db.prepare(`
-      SELECT ai.id AS identity_id, ai.account_id, ai.provider_user_id,
+      SELECT ai.id AS identity_id, ai.account_id, ai.provider, ai.provider_user_id,
              a.status AS account_status
       FROM auth_identities ai
       JOIN accounts a ON a.id = ai.account_id
-      WHERE ai.provider = 'github' AND ai.provider_user_id = ?
-    `).bind(providerUserId).first<{
+      WHERE ai.provider = ? AND ai.provider_user_id = ?
+    `).bind(provider, providerUserId).first<{
       identity_id: string;
       account_id: string;
+      provider: AuthProvider;
       provider_user_id: string;
-      account_status: GithubIdentityRow['accountStatus'];
+      account_status: ProviderIdentityRow['accountStatus'];
     }>();
     return row ? {
       identityId: row.identity_id,
       accountId: row.account_id,
+      provider: row.provider,
       providerUserId: row.provider_user_id,
       accountStatus: row.account_status,
     } : null;
-  }
-
-  /* Davet kalkınca bu çağrı bir birleşim sorgusu olmaktan çıktı: dönüşte
-   * sorulan tek şey "bu GitHub hesabı bizde var mı". findGithubIdentity ile
-   * aynı işi yapıyor ve ona devrediyor — iki ad, tek sorgu. */
-  async getGithubIdentity(providerUserId: string): Promise<GithubIdentityRow | null> {
-    return await this.findGithubIdentity(providerUserId);
   }
 
   async loginExistingIdentity(input: Parameters<IdentityRepository['loginExistingIdentity']>[0]): Promise<void> {
@@ -143,7 +143,7 @@ export class D1IdentityRepository implements IdentityRepository {
       this.#sessionInsert(input.identity.accountId, input.session),
       this.#auditInsert(
         input.auditEventId,
-        'auth.github.login',
+        `auth.${input.identity.provider}.login`,
         input.identity.accountId,
         'session',
         input.session.id,
@@ -183,18 +183,23 @@ export class D1IdentityRepository implements IdentityRepository {
     return { fromIp: row?.from_ip ?? 0, total: row?.total ?? 0 };
   }
 
-  async registerGithubIdentity(input: Parameters<IdentityRepository['registerGithubIdentity']>[0]): Promise<void> {
+  async registerProviderIdentity(input: Parameters<IdentityRepository['registerProviderIdentity']>[0]): Promise<void> {
     await this.#db.batch([
       this.#db.prepare(`
         INSERT INTO accounts (
-          id, handle, handle_normalized, display_name, avatar_url,
+          id, handle, handle_normalized, handle_skeleton, display_name, avatar_url,
           status, created_at, updated_at, last_login_at,
           terms_accepted_at, terms_version
-        ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
       `).bind(
         input.accountId,
         input.handle,
         input.handle.toLowerCase(),
+        /* İskelet burada hesaplanıyor, çağıranda değil: handle yazan her yol
+         * bu tek ifadeden geçsin diye. 0039'un trigger'ı iskeletsiz satırı
+         * zaten reddediyor, ama reddedilen bir kayıt kullanıcıya 500 olarak
+         * döner — doğru yer, yanlış an. */
+        handleSkeleton(input.handle),
         input.profile.displayName,
         input.profile.avatarUrl,
         input.now,
@@ -211,10 +216,11 @@ export class D1IdentityRepository implements IdentityRepository {
         INSERT INTO auth_identities (
           id, account_id, provider, provider_user_id,
           provider_login_snapshot, provider_email_snapshot, created_at, last_seen_at
-        ) VALUES (?, ?, 'github', ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         input.identityId,
         input.accountId,
+        input.provider,
         input.profile.userId,
         input.profile.login,
         input.profile.email,
@@ -234,7 +240,7 @@ export class D1IdentityRepository implements IdentityRepository {
       this.#sessionInsert(input.accountId, input.session),
       this.#auditInsert(
         input.loginAuditEventId,
-        'auth.github.registered',
+        `auth.${input.provider}.registered`,
         input.accountId,
         'session',
         input.session.id,
@@ -242,10 +248,37 @@ export class D1IdentityRepository implements IdentityRepository {
         input.now,
       ),
       this.#signInEventInsert(input.accountId, input.signInEvent, input.now),
+    ]);
+  }
+
+  async linkProviderIdentity(
+    input: Parameters<IdentityRepository['linkProviderIdentity']>[0],
+  ): Promise<void> {
+    await this.#db.batch([
       this.#db.prepare(`
-        INSERT INTO oauth_flow_consumptions (flow_id, account_id, consumed_at)
-        VALUES (?, ?, ?)
-      `).bind(input.flowId, input.accountId, input.now),
+        INSERT INTO auth_identities (
+          id, account_id, provider, provider_user_id,
+          provider_login_snapshot, provider_email_snapshot, created_at, last_seen_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        input.identityId,
+        input.accountId,
+        input.provider,
+        input.profile.userId,
+        input.profile.login,
+        input.profile.email,
+        input.now,
+        input.now,
+      ),
+      this.#auditInsert(
+        input.auditEventId,
+        `auth.${input.provider}.linked`,
+        input.accountId,
+        'account',
+        input.accountId,
+        input.requestId,
+        input.now,
+      ),
     ]);
   }
 
@@ -296,13 +329,17 @@ export class D1IdentityRepository implements IdentityRepository {
   async getAccount(accountId: string): Promise<AccountView | null> {
     const row = await this.#db.prepare(`
       SELECT a.id, a.handle, a.display_name, a.avatar_url,
-             identity.provider_login_snapshot AS github_login,
+             identity.provider_login_snapshot AS provider_login,
              COALESCE(GROUP_CONCAT(DISTINCT ar.role), '') AS roles,
              COALESCE(MAX(aq.limit_value), 0) AS agent_quota,
              a.announcement_emails_enabled
       FROM accounts a
+      -- Saglayici suzgeci kalkti. Goc sirasinda bir hesapta iki kimlik birden
+      -- olabiliyor ve gruplama bunlardan birini seciyor; alanin isi kullaniciya
+      -- "hangi hesapla baglisin" demek, hangi saglayici oldugunu kanitlamak
+      -- degil. Goc bitince tek satir kalacak ve secim tekillesecek.
       LEFT JOIN auth_identities identity
-        ON identity.account_id = a.id AND identity.provider = 'github'
+        ON identity.account_id = a.id
       LEFT JOIN account_roles ar
         ON ar.account_id = a.id AND ar.revoked_at IS NULL
       LEFT JOIN account_quotas aq
@@ -313,7 +350,7 @@ export class D1IdentityRepository implements IdentityRepository {
     `).bind(accountId).first<{
       id: string;
       handle: string;
-      github_login: string | null;
+      provider_login: string | null;
       display_name: string;
       avatar_url: string | null;
       roles: string;
@@ -323,7 +360,7 @@ export class D1IdentityRepository implements IdentityRepository {
     return row ? {
       id: row.id,
       handle: row.handle,
-      githubLogin: row.github_login,
+      providerLogin: row.provider_login,
       displayName: row.display_name,
       avatarUrl: row.avatar_url,
       roles: row.roles ? row.roles.split(',').sort() : [],

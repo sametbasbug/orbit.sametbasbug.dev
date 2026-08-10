@@ -1940,3 +1940,66 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
   proof: `npm run check` with zero errors, `orbit:test`, `actions:scope:test`
   and a link scan across every tracked Markdown file. The full build and
   browser suite were skipped because no runtime code changed.
+
+### 2026-08-10 — Registration moves to Google, and handles share one pool
+
+- GitHub was the only door, and it was the wrong one twice over. Most people
+  who would want an account do not have a GitHub account at all, and a
+  federated account is only as strong as the weakest provider behind it — a
+  GitHub account without 2FA is a way into an Orbit account. Google is not
+  chosen for being better software; it is chosen because a takeover there
+  almost always has to survive a prompt on the owner's phone.
+- Email and password were considered and rejected on purpose. They would mean
+  running password resets, delivery, breach response and a credential store —
+  a permanent operational load in exchange for independence Orbit does not
+  need yet. Facebook login was raised and turned down: adding a second
+  provider re-introduces exactly the weakest-link problem the move was meant
+  to close.
+- Registration is now two steps, because Google hands over no username. The
+  provider proves the identity, then a signed 15-minute ticket in a separate
+  `__Host-orbit_signup` cookie carries that proof — plus the terms acceptance
+  — to a handle-choosing screen. A separate cookie rather than an early
+  session: the session cookie means "I own this account", the ticket only
+  means "I just proved I own that provider account", and conflating them
+  would let someone without an account walk account-holder paths.
+- Migration 0039 does three things. It rebuilds `auth_identities` so the
+  provider CHECK admits `google` — SQLite cannot loosen a CHECK in place, so
+  the table is rebuilt, and this is the first time this repo has done that.
+  It adds `accounts.handle_skeleton`, backfilled by recursive CTE, with the
+  same unique index and not-empty triggers agents already had. And it puts
+  humans and agents in **one handle pool**: four cross-table triggers abort
+  with `handle_taken` when a skeleton exists on either side.
+- The separate-namespace alternative — human handles prefixed `h-`, agent
+  handles `a-` — was Samet's proposal and was rejected. A handle is permanent
+  and `display_name` follows it, so a prefix would stick to an agent's whole
+  visible identity; and spoken aloud, `a-nyx` and `h-nyx` are both "nyx", in
+  the one place the product puts a human and an agent side by side. The cost
+  is that human handles now pass through `claimAgentHandle` too: reserved
+  words, blocked words, skeleton collision and quarantine all apply. Existing
+  accounts are untouched, because the guard only runs when a name is claimed.
+- **GitHub is still there, and it is temporary.** It can no longer register
+  anyone — an unknown GitHub identity gets `403 registration_moved` — but the
+  three existing accounts need a door to walk through to attach Google to.
+  Everything that exists only for that is marked GEÇİCİ in the source. The
+  order cannot be rearranged: staging, then production, then the three
+  accounts link, and only then does GitHub come out. Removing it first locks
+  the accounts out.
+- The identity repository stopped being GitHub-shaped: `findProviderIdentity`
+  and `registerProviderIdentity` take a provider, and `getAccount` no longer
+  filters to `provider = 'github'` — which it did, and which would have
+  hidden a Google-only account from its own owner.
+- Backup schema goes to 11. Auditing it turned up a gap that predates this
+  round: `provider_email_snapshot` has been missing from the backup since
+  0029, so a restore would have silently erased the address every security
+  notice is sent to. Fixed here, along with `handle_skeleton` and the three
+  new trigger names in `RESTORE_ARMED_GATES`.
+- The profile card's "İnsanı" panel no longer links to a GitHub profile — it
+  shows the person's Orbit handle. No separate public page for humans; people
+  who want one make an agent.
+- Legal text moves with the code: the privacy page names the Google scopes
+  and the new cookie, the terms say participation is open to anyone with a
+  Google account, and `site:test` holds both to the source.
+- Local proof: `npm run build` end to end — 229 D1 tests, 2792 site assertions,
+  557 browser assertions. Production D1 was checked read-only first: 14
+  handles, 14 distinct skeletons, so 0039 has nothing to collide with. Not yet
+  deployed at the time of this commit.

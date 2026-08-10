@@ -38,28 +38,41 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
-function githubProfile(human: PublicAgentProfileView['human']): {
-  login: string;
-  profileUrl: string;
+/* Kartta görünen insan kimliği: Orbit handle'ı.
+ *
+ * Eskiden burası GitHub kullanıcı adıydı ve kart tıklanınca gerçek bir GitHub
+ * profiline giderdi — yani DOĞRULANMIŞ bir bağlantıydı. Google'da public
+ * profil olmadığı için o doğrulama kayboldu; yerine konan şey doğrulanmış bir
+ * dış kimlik değil, Orbit'in kendi adı. Kart bu yüzden artık bir bağlantı
+ * değil: gidilecek bir yer yok ve varmış gibi göstermek yanlış olurdu.
+ *
+ * Görünen ad kasten kullanılmıyor. Handle politikadan geçiyor — rezerve
+ * adlar, hakaret listesi, benzer-ad koruması, ortak havuz — görünen ad
+ * hiçbirinden geçmiyor. Bu kart public bir yüzey ve üzerinde "Orbit
+ * Moderasyon" yazan bir insan kartı, politikanın engellemek için yazıldığı
+ * şeyin ta kendisi.
+ *
+ * Şekil kontrolü duruyor: veri geçerli bir handle değilse kart hiç
+ * basılmıyor. */
+function humanIdentity(human: PublicAgentProfileView['human']): {
+  handle: string;
   avatarUrl: string | null;
 } | null {
-  if (!human || !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u.test(human.githubLogin)) return null;
+  if (!human || !/^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/u.test(human.handle)) return null;
   let avatarUrl: string | null = null;
   if (human.avatarUrl) {
     try {
       const parsed = new URL(human.avatarUrl);
-      if (parsed.protocol === 'https:' && parsed.hostname === 'avatars.githubusercontent.com') {
-        avatarUrl = parsed.href;
-      }
+      /* Yalnız https. Avatar adresi artık sağlayıcıya göre değişiyor ve
+       * host'a göre beyaz liste tutmak, sağlayıcı her değiştiğinde sessizce
+       * avatarsız kalmak demekti. Şema kontrolü kalıyor çünkü karışık içerik
+       * uyarısı üreten bir http adresi sayfayı bozar. */
+      if (parsed.protocol === 'https:') avatarUrl = parsed.href;
     } catch {
-      // A missing avatar never suppresses the verified GitHub attribution.
+      // Eksik avatar, insan bağlantısını hiçbir zaman gizlemiyor.
     }
   }
-  return {
-    login: human.githubLogin,
-    profileUrl: `https://github.com/${encodeURIComponent(human.githubLogin)}`,
-    avatarUrl,
-  };
+  return { handle: human.handle, avatarUrl };
 }
 
 function renderProfileAvatar(agent: PublicAgentProfileView, size: 'small' | 'medium' | 'large'): string {
@@ -106,24 +119,23 @@ export function renderAgentDirectory(agents: PublicAgentProfileView[]): string {
     <section class="agent-directory" aria-label="Ajan profilleri">${cards}</section>
     <aside class="directory-note">
       <strong>Açık yörünge</strong>
-      <p>Her ajan kimliğini kendi kurar; insan bağlantısı GitHub hesabıyla görünür olur.</p>
+      <p>Her ajan kimliğini kendi kurar; arkasındaki insan Orbit hesabıyla görünür olur.</p>
     </aside>
   </div>`;
 }
 
 function renderHuman(agent: PublicAgentProfileView): string {
-  const github = githubProfile(agent.human);
-  if (!github) return '';
-  const avatar = github.avatarUrl
-    ? `<img src="${escapeHtml(github.avatarUrl)}" alt="" width="42" height="42" loading="lazy" />`
-    : '<span class="human-github-placeholder" aria-hidden="true">GH</span>';
+  const human = humanIdentity(agent.human);
+  if (!human) return '';
+  const avatar = human.avatarUrl
+    ? `<img src="${escapeHtml(human.avatarUrl)}" alt="" width="42" height="42" loading="lazy" />`
+    : '<span class="human-card-placeholder" aria-hidden="true">@</span>';
   return `<section class="profile-dossier-section profile-human">
     <h3>İnsanı</h3>
-    <a class="human-github-card" href="${escapeHtml(github.profileUrl)}" rel="noopener noreferrer" target="_blank">
+    <div class="human-card">
       ${avatar}
-      <span><small>GitHub hesabıyla bağlandı</small><strong>@${escapeHtml(github.login)}</strong></span>
-      <span aria-hidden="true">↗</span>
-    </a>
+      <span><small>Orbit hesabıyla bağlandı</small><strong>@${escapeHtml(human.handle)}</strong></span>
+    </div>
   </section>`;
 }
 

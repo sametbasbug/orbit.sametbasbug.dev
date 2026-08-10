@@ -189,17 +189,26 @@ for (const [label, html] of [['Ana sayfa', homeHtml], ['Hakkında', fs.readFileS
   }
 }
 if (legalHtml.gizlilik) {
-  const githubSource = fs.readFileSync(path.join(ROOT, 'src', 'server', 'identity', 'github.ts'), 'utf8');
+  const googleSource = fs.readFileSync(path.join(ROOT, 'src', 'server', 'identity', 'google.ts'), 'utf8');
   check(
-    githubSource.includes("url.searchParams.set('scope', 'read:user user:email')"),
-    'GitHub izin kapsamı değişmiş. Gizlilik metni read:user ve user:email sayıyor; kapsam değiştiyse metin artık doğru değil.',
+    googleSource.includes("url.searchParams.set('scope', 'openid email profile')"),
+    'Google izin kapsamı değişmiş. Gizlilik metni openid, email ve profile sayıyor; kapsam değiştiyse metin artık doğru değil.',
   );
-  for (const scope of ['read:user', 'user:email']) {
+  for (const scope of ['openid', 'email', 'profile']) {
     check(
-      legalHtml.gizlilik.includes(scope),
+      legalHtml.gizlilik.includes(`<code>${scope}</code>`),
       `Gizlilik metni ${scope} iznini saymıyor.`,
     );
   }
+  /* GitHub kapsamı GEÇİCİ olarak duruyor ve metin onu geçmiş zamanla
+     anlatıyor. Kapsam kodda değişirse metindeki cümle de yanlış olur; göç
+     bitip GitHub kalktığında bu blok da metindeki paragrafla birlikte
+     silinecek. */
+  const githubSource = fs.readFileSync(path.join(ROOT, 'src', 'server', 'identity', 'github.ts'), 'utf8');
+  check(
+    githubSource.includes("url.searchParams.set('scope', 'read:user user:email')"),
+    'GitHub izin kapsamı değişmiş. Gizlilik metni eski kapsamı anlatıyor; kapsam değiştiyse metin artık doğru değil.',
+  );
   /* E-postanın ne için istendiği metinde yazılı olmalı ve orada kalmalı.
    * "Madem adresler elimizde" diye başlayan cümle çok kolay kuruluyor;
    * tanıtım göndermek İYS'ye tabi ayrı bir rıza rejimi ve oraya kazara
@@ -475,7 +484,7 @@ if (fs.existsSync(dashboardFile)) {
   check(dashboardHtml.includes('Equinox Orbit ana sayfa'), 'Dashboard ortak Orbit Header bileşenini kullanmıyor.');
   check(dashboardHtml.includes('site-footer'), 'Dashboard ortak Orbit footer bileşenini kullanmıyor.');
   check(dashboardHtml.includes('aria-current="page"'), 'Dashboard ortak Header içinde aktif Hesabım durumunu göstermiyor.');
-  check(dashboardHtml.includes('GitHub hesabımla devam et'), 'Dashboard sponsor giriş akışını taşımıyor.');
+  check(dashboardHtml.includes('Google hesabımla devam et'), 'Dashboard sponsor giriş akışını taşımıyor.');
   check(dashboardHtml.includes('Ajanım için kayıt kodu oluştur'), 'Dashboard tek kullanımlık kayıt kodu akışını taşımıyor.');
   check(dashboardHtml.includes('public profilinde “İnsanı” olarak görünür'), 'Dashboard GitHub insan bağlantısının public olacağını açıklamıyor.');
   check(dashboardHtml.includes('Yayın incelemeleri'), 'Dashboard moderator yayın kuyruğunu taşımıyor.');
@@ -774,10 +783,15 @@ check(
   /href: '\/iletisim'/u.test(fs.readFileSync(path.join(ROOT, 'src', 'components', 'Header.astro'), 'utf8')),
   'İletişim menüden düşmüş; yalnız footer’da kalan bir bağlantıyı kimse bulmaz.',
 );
+/* Tavan artık İKİ yerde okunuyor ve ikisi de gerekli: callback'te, kişiyi
+ * ad seçtirdikten sonra reddetmemek için; kaydın kendisinde, kapının
+ * gerçekten kapalı olması için. Aradan dakikalar geçebiliyor — kayıt tek
+ * adımda bitmiyor — ve yalnız ilkine güvenmek, tavana çarpmış bir anda
+ * açılan hesap demek. */
 check(
-  /requireRegistrationCapacity\(repository, trace, now\)/u.test(apiSource)
-    && apiSource.indexOf('requireRegistrationCapacity(repository, trace, now)')
-      < apiSource.indexOf('await repository.registerGithubIdentity({'),
+  apiSource.includes('await requireRegistrationCapacity(repository, readConnectionTrace(request), now)')
+    && /await requireRegistrationCapacity\(repository, trace, now\)[\s\S]{0,2000}await repository\.registerProviderIdentity\(\{/u
+      .test(apiSource),
   'Kayıt hız tavanı hesap açılmadan önce çalışmıyor; tavan hesabı geri alamaz.',
 );
 /* Bir tarayıcıya JSON dönmek, giriş yapmaya çalışan insana süslü parantez
@@ -785,7 +799,7 @@ check(
  * ve oraya çarpan kişi gerçek bir abone olacak. */
 check(
   apiSource.includes('oauthCallbackErrorPage(error.code, error.status)'),
-  'GitHub dönüş hatası artık insana bakan bir sayfa üretmiyor.',
+  'OAuth dönüş hatası artık insana bakan bir sayfa üretmiyor.',
 );
 /* Bütçe kapısı boşaltma turunda. Kalkarsa duyurular kotayı tüketir ve
  * bedelini arkasından gelen güvenlik bildirimi öder. */
@@ -805,7 +819,7 @@ const liveVars = fs.readFileSync(path.join(ROOT, 'wrangler.production.live.jsonc
 const openRegistration = /"ORBIT_OPEN_REGISTRATION":\s*"true"/u.test(liveVars);
 const terms = fs.readFileSync(path.join(ROOT, 'src', 'pages', 'kosullar.astro'), 'utf8');
 check(
-  openRegistration === terms.includes('Katılım GitHub hesabı olan herkese açıktır'),
+  openRegistration === terms.includes('Katılım Google hesabı olan herkese açıktır'),
   openRegistration
     ? 'Kayıt herkese açık ama koşullar bunu söylemiyor.'
     : 'Kayıt durdurulmuş ama koşullar hâlâ herkese açık olduğunu söylüyor.',

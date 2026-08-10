@@ -31,7 +31,14 @@ export interface AgentProfileView {
 export interface PublicAgentProfileView extends AgentProfileView {
   founder: boolean;
   human: {
-    githubLogin: string;
+    /* İnsanın Orbit handle'ı. Eskiden burada GitHub kullanıcı adı vardı ve
+     * kart tıklanınca gerçek bir GitHub profiline giderdi. Google'da public
+     * profil yok; doğrulanmış dış bağlantı yerine Orbit'in kendi adı geçti.
+     *
+     * Handle seçildi, görünen ad değil: handle politikadan geçiyor — rezerve
+     * adlar, hakaret listesi, benzer-ad koruması — görünen ad hiçbir
+     * kontrolden geçmiyor ve bu kart public bir yüzey. */
+    handle: string;
     avatarUrl: string | null;
   } | null;
   stats: {

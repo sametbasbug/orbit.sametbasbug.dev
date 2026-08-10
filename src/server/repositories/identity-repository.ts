@@ -26,9 +26,20 @@ export interface TermsConsent {
   version: string;
 }
 
-export interface GithubIdentityRow {
+/* Kimlik sağlayıcıları. Google birincil kapı; GitHub yalnız göç süresince
+ * duruyor ve mevcut üç hesap Google kimliğini kendi oturumunda bağlayınca
+ * hem buradan hem şemadan kalkacak.
+ *
+ * Listenin kısa kalması bir tercih değil, kararın kendisi: federe bir hesabın
+ * güvenliği bağlı sağlayıcıların EN ZAYIFINA eşit. İki adımlı doğrulaması
+ * olmayan bir sağlayıcı eklemek, güçlü olanın getirdiği korumayı tümüyle
+ * iptal eder. Yeni bir kapı ancak o zemini karşılıyorsa açılır. */
+export type AuthProvider = 'github' | 'google';
+
+export interface ProviderIdentityRow {
   identityId: string;
   accountId: string;
+  provider: AuthProvider;
   providerUserId: string;
   accountStatus: 'active' | 'suspended' | 'closed';
 }
@@ -50,16 +61,17 @@ export interface SessionView {
 export interface AccountView {
   id: string;
   /**
-   * Orbit'in kendi hesap tanımlayıcısı. Kayıt anında GitHub kullanıcı adından
-   * türetilir ama ondan bağımsızdır ve benzersizlik kısıtı taşır; GitHub'daki
-   * ad değiştiğinde bu alan değişmez.
+   * Orbit'in kendi hesap tanımlayıcısı. Kayıtta kullanıcı seçer, ortak
+   * havuzdan gelir ve değişmez; sağlayıcıdaki ad veya adres değiştiğinde bu
+   * alan etkilenmez.
    */
   handle: string;
   /**
-   * GitHub'daki güncel kullanıcı adı. Her girişte tazelenir. Kullanıcıya
-   * "GitHub hesabın" diye bir şey gösteriliyorsa gösterilmesi gereken budur.
+   * Sağlayıcıdaki güncel etiket — Google'da e-posta adresi, GitHub'da
+   * kullanıcı adı. Her girişte tazelenir. Kullanıcıya "hangi hesapla
+   * bağlısın" diye bir şey gösteriliyorsa gösterilmesi gereken budur.
    */
-  githubLogin: string | null;
+  providerLogin: string | null;
   displayName: string;
   avatarUrl: string | null;
   roles: string[];
@@ -80,13 +92,21 @@ export interface NewSessionRow {
   absoluteExpiresAt: number;
 }
 
-export interface GithubProfileSnapshot {
+/* Sağlayıcıdan bağımsız profil anlık görüntüsü. İki sağlayıcı da kendi
+ * cevabını buna çeviriyor; bu katmandan sonrası hangi kapıdan gelindiğini
+ * yalnız `provider` alanından biliyor. */
+export interface ProviderProfileSnapshot {
+  /* Sağlayıcının değişmeyen kimliği: GitHub'da sayısal id, Google'da `sub`.
+   * Kullanıcı adını, adresini ve adını değiştirebilir; bu değişmez. */
   userId: string;
+  /* Kullanıcıya "hangi hesapla bağlısın" derken gösterilecek etiket.
+   * GitHub'da kullanıcı adı, Google'da e-posta adresi. Bir posta kutusu
+   * değil — posta yalnız `email` alanına gider. */
   login: string;
   displayName: string;
   avatarUrl: string | null;
-  /* GitHub'ın doğruladığı birincil adres. Kullanıcı izni vermezse veya
-   * doğrulanmış adresi yoksa null kalır ve giriş yine tamamlanır: adres
+  /* Sağlayıcının DOĞRULADIĞI adres. Doğrulanmamışsa, alınamamışsa veya
+   * kullanıcı izin vermemişse null kalır ve giriş yine tamamlanır: adres
    * bir kolaylık, kimlik değil. Kimliği taşıyan alan userId. */
   email: string | null;
 }
@@ -103,15 +123,20 @@ export interface NewSignInEvent {
 export interface IdentityRepository {
   createOAuthFlow(flow: OAuthFlowRow): Promise<void>;
   getOAuthFlow(selector: string): Promise<OAuthFlowRow | null>;
-  findGithubIdentity(providerUserId: string): Promise<GithubIdentityRow | null>;
-  /* Dönüşte "bu GitHub hesabı bizde var mı" sorusunun tek cevabı. Eskiden
-   * bunun yanında bir de davet okunuyordu ve ikisi tek sorguda geliyordu;
-   * davet kalkınca geriye sadece bu kaldı. */
-  getGithubIdentity(providerUserId: string): Promise<GithubIdentityRow | null>;
+  /* Dönüşte "bu sağlayıcı hesabı bizde var mı" sorusunun tek cevabı.
+   *
+   * Sağlayıcı da anahtarın parçası: şemadaki tekillik `(provider,
+   * provider_user_id)` üzerinde. Yalnız kimliğe bakmak, iki sağlayıcının
+   * sayısal kimliklerinin bir gün çakışması hâlinde iki yabancıyı aynı hesaba
+   * sokardı. */
+  findProviderIdentity(
+    provider: AuthProvider,
+    providerUserId: string,
+  ): Promise<ProviderIdentityRow | null>;
   loginExistingIdentity(input: {
     flowId: string;
-    identity: GithubIdentityRow;
-    profile: GithubProfileSnapshot;
+    identity: ProviderIdentityRow;
+    profile: ProviderProfileSnapshot;
     session: NewSessionRow;
     consent: TermsConsent;
     auditEventId: string;
@@ -127,18 +152,46 @@ export interface IdentityRepository {
     ipSince: number;
     globalSince: number;
   }): Promise<{ fromIp: number; total: number }>;
-  registerGithubIdentity(input: {
-    flowId: string;
+  /* Kayıt artık OAuth akış satırını TÜKETMİYOR ve bu bilinçli.
+   *
+   * Google'da kullanıcı adı olmadığı için handle'ı kullanıcı seçiyor, yani
+   * kayıt callback'te bitmiyor: kimlik doğrulanıyor, imzalı bir bekleyen-kayıt
+   * bileti veriliyor, hesap ikinci bir istekte açılıyor. Akış satırının ömrü
+   * on dakika ve handle seçmek daha uzun sürebilir; tüketimi orada istemek,
+   * yavaş davranan kullanıcıyı kaydın sonunda kapıda bırakırdı.
+   *
+   * Tekrar oynatmaya karşı koruma yerini değiştirdi, kaybolmadı: bilet imzalı
+   * ve süreli, üstelik şemadaki `(provider, provider_user_id)` tekilliği aynı
+   * kimlikle ikinci bir hesabın açılmasını zaten reddediyor. Yani bir bilet
+   * kaç kez oynatılırsa oynatılsın en fazla bir hesap doğuyor. */
+  registerProviderIdentity(input: {
+    provider: AuthProvider;
     accountId: string;
     identityId: string;
     roleId: string;
     handle: string;
-    profile: GithubProfileSnapshot;
+    profile: ProviderProfileSnapshot;
     session: NewSessionRow;
     consent: TermsConsent;
     agentQuota: number;
     loginAuditEventId: string;
     signInEvent: NewSignInEvent;
+    requestId: string;
+    now: number;
+  }): Promise<void>;
+  /* Var olan bir hesaba ikinci bir sağlayıcı kimliği ekler. GEÇİCİ: göçün
+   * mekanizması bu ve göç bitince kalkacak.
+   *
+   * Hesabın kendisine dokunmuyor — ne görünen ad, ne avatar, ne onay. Bağlama
+   * bir giriş değil: kişi zaten girmiş durumda ve yaptığı şey yalnız ikinci
+   * bir anahtarı aynı kilide tanıtmak. Profil alanlarını buradan tazelemek,
+   * bir tıklamayı sessiz bir profil değişikliğine çevirirdi. */
+  linkProviderIdentity(input: {
+    accountId: string;
+    identityId: string;
+    provider: AuthProvider;
+    profile: ProviderProfileSnapshot;
+    auditEventId: string;
     requestId: string;
     now: number;
   }): Promise<void>;

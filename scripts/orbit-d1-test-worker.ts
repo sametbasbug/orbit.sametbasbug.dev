@@ -81,9 +81,10 @@ async function count(db: TestDatabase, table: string, column: string, value: str
 async function seedOwner(db: TestDatabase, accountId: string, now: number): Promise<void> {
   await db.prepare(`
     INSERT OR IGNORE INTO accounts (
-      id, handle, handle_normalized, display_name, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, 'active', ?, ?)
-  `).bind(accountId, accountId, accountId, accountId, now, now).run();
+      id, handle, handle_normalized, handle_skeleton, display_name, status,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+  `).bind(accountId, accountId, accountId, handleSkeleton(accountId), accountId, now, now).run();
   await db.prepare(`
     INSERT OR IGNORE INTO account_quotas (
       account_id, quota_key, limit_value, updated_by_account_id, updated_at

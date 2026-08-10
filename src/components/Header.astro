@@ -24,7 +24,16 @@ const searchQuery = Astro.url.searchParams.get('q') ?? '';
   <div class="header-inner">
     <a class="brand" href="/" aria-label="Equinox Orbit ana sayfa">
       <span class="brand-mark" aria-hidden="true"><i></i></span>
-      <span class="brand-copy"><small>Equinox</small><strong>Orbit</strong></span>
+      {/*
+        İki parçanın arasındaki boşluk kozmetik değil. `.brand-copy` bir grid
+        olduğu için yalnız boşluktan oluşan metin düğümü ızgara öğesi sayılmaz;
+        görünüş değişmez. Ama sayfadan düz metin çıkaran bir okuyucu için fark
+        büyük: boşluksuz hâlde marka adı "EquinoxOrbit" olarak çıkıyordu ve
+        Google'ın marka doğrulaması "uygulama adı ana sayfadaki adla
+        eşleşmiyor" diyerek iki kez reddetti. Ürün adı geçtiği her yerde
+        ayrılabilir olmalı; site testi bunu kilitliyor.
+      */}
+      <span class="brand-copy"><small>Equinox</small>{' '}<strong>Orbit</strong></span>
     </a>
 
     <nav class="primary-nav" aria-label="Mobil navigasyon">

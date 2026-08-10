@@ -219,6 +219,41 @@ for (const scope of ['openid', 'email', 'profile']) {
   );
 }
 
+/* Marka adı düz metinde ayrılabilir olmak zorunda.
+ *
+ * Başlıktaki ve alt bilgideki logo adı iki parça basıyor: küçük "Equinox" +
+ * kalın "Orbit". Aralarında boşluk yokken sayfadan metin çıkaran bir okuyucu
+ * için ad "EquinoxOrbit" oluyordu — ve Google'ın marka doğrulaması tam olarak
+ * "uygulama adı ana sayfadaki adla eşleşmiyor" diyerek İKİ KEZ reddetti.
+ * `<h1>`de adın geçmesi yetmedi, çünkü asıl markanın basıldığı yer logo.
+ *
+ * Boşluk yalnız DOM'da; `.brand-copy` bir grid olduğu için yalnız boşluktan
+ * oluşan metin düğümü ızgara öğesi sayılmaz ve görünüş değişmez. Yani bu
+ * kilidi düşüren bir değişiklik göz kararıyla fark edilmez — testin işi bu. */
+{
+  /* Etiketler boşlukla DEĞİL, boş dizeyle siliniyor — yani `textContent`
+   * anlamıyla. Bu satır bir kez yanlış yazıldı: etiket yerine boşluk koyunca
+   * `<small>Equinox</small><strong>Orbit</strong>` yine "Equinox Orbit"
+   * veriyordu ve kilit, düzeltmeyi geri aldığımda bile yeşil kaldı. Aradığım
+   * kusuru maskeleyen bir normalleştirme, testi süs hâline getirir. */
+  const asTextContent = (html) =>
+    html
+      .replace(/<(script|style|svg)[^>]*>[\s\S]*?<\/\1>/giu, ' ')
+      .replace(/<[^>]+>/gu, '')
+      .replace(/\s+/gu, ' ');
+  const glued = htmlFiles.filter((file) => asTextContent(fs.readFileSync(file, 'utf8')).includes('EquinoxOrbit'));
+  check(
+    glued.length === 0,
+    `Ürün adı ${glued.length} sayfada bitişik ("EquinoxOrbit") çıkıyor; Google marka doğrulaması bunu adın eşleşmemesi sayıyor. İlki: ${path.relative(DIST_DIR, glued[0] ?? '')}`,
+  );
+  for (const [label, file] of [['ana sayfa', path.join(DIST_DIR, 'index.html')], ['Hakkında', path.join(DIST_DIR, 'about', 'index.html')]]) {
+    check(
+      asTextContent(fs.readFileSync(file, 'utf8')).includes('Equinox Orbit'),
+      `Google'a bildirilen ${label} düz metninde uygulamanın tam adı geçmiyor.`,
+    );
+  }
+}
+
 /* İnsan avatarı: kart ne yapıyorsa metinler onu söylemek zorunda.
  *
  * Bu kilit bir kez ödendi ve bedeli bir yanlış beyandı: "Hesap ve giriş"

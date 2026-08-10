@@ -188,50 +188,44 @@ for (const [label, html] of [['Ana sayfa', homeHtml], ['Hakkında', fs.readFileS
     check(html.includes(`href="${route}"`), `${label} footer'ında ${route} bağlantısı yok.`);
   }
 }
-/* Google'a verilen özel OAuth ana sayfası ile onay ekranı arasındaki bağ.
+/* Tanıtım sayfası ile Google onay ekranı arasındaki bağ.
  *
- * /about/ birkaç kez Google'ın otomatik marka kontrolüne göre biçimlendirildi
- * ama ürün sayfası ile doğrulama yüzeyini aynı URL'ye yüklemek iki tarafı da
- * kötüleştirdi. Google farklı, herkese açık bir homepage URL'si kabul ediyor;
- * bu yüzden doğrulama sözleşmesi artık /equinox-orbit/ sayfasında tek başına
- * duruyor.
+ * Bu kilit bir kez ödendi: marka doğrulaması reddedildi, iki gerekçeden biri
+ * onay ekranındaki "Equinox Orbit" adının tanıtım sayfasında geçmemesiydi.
+ * Sayfa kendini yalnız "Orbit" diye tanıtıyordu ve başlıktaki logo adı iki
+ * parça hâlinde bastığı için tek başına karşılamıyordu.
  *
- * Ad hem H1 hem document metadata'da birebir olmalı. Ama yalnız ad yetmez:
- * sayfa uygulamanın işlevini, Google verisinin neden istendiğini, kapsamları ve
- * gizlilik bağlantısını da açıkça taşır. Kapsam kodda genişler de sayfa eski
- * hâlinde kalırsa Google'a yanlış beyanda bulunmuş oluruz. */
+ * İkinci gerekçe sayfanın uygulamanın amacını anlatmamasıydı; onun karşılığı
+ * da burada: giriş bölümü ve saydığı kapsamlar sayfada durmak zorunda ve
+ * kapsam adları `google.ts` ile aynı olmak zorunda. Kapsam kodda genişler de
+ * sayfa eski hâlinde kalırsa, Google'a yanlış beyanda bulunmuş oluruz. */
 const aboutHtml = fs.readFileSync(path.join(DIST_DIR, 'about', 'index.html'), 'utf8');
-const oauthHomepageHtml = fs.readFileSync(path.join(DIST_DIR, 'equinox-orbit', 'index.html'), 'utf8');
+/* Ad, sayfanın KENDİ metninde ve TEK BAŞINA aranıyor — `<h1>` içinde. Düz bir
+ * `includes('Equinox Orbit')` yazmıştım ve geri alma testi onu çürük
+ * gösterdi: sayfanın başlığındaki `aria-label="Equinox Orbit ana sayfa"`
+ * her sayfada var, yani kontrol adı gövdeden silseniz bile geçiyordu.
+ * "Equinox Orbit nasıl çalışır?" da yeterli değil: Google'ın karşılaştırdığı
+ * uygulama adı "Equinox Orbit" ve ürün adı ile açıklama ayrı düğümler olmalı. */
 check(
-  /<title>\s*Equinox Orbit\s*<\/title>/u.test(oauthHomepageHtml),
-  'OAuth ana sayfasının document title değeri uygulama adıyla birebir "Equinox Orbit" değil.',
+  /<h1[^>]*>\s*Equinox Orbit\s*<\/h1>/u.test(aboutHtml),
+  'Hakkında sayfasının H1 başlığı OAuth uygulama adıyla birebir "Equinox Orbit" değil.',
 );
 check(
-  /<meta\s+property="og:title"\s+content="Equinox Orbit"\s*\/?>/u.test(oauthHomepageHtml),
-  'OAuth ana sayfasının og:title değeri uygulama adıyla birebir "Equinox Orbit" değil.',
+  aboutHtml.includes('Hesap ve giriş'),
+  'Hakkında sayfasındaki giriş bölümü kaybolmuş; Google’a verilen tanıtım sayfası uygulamanın ne yaptığını anlatmıyor.',
 );
 check(
-  /<h1[^>]*>\s*Equinox Orbit\s*<\/h1>/u.test(oauthHomepageHtml),
-  'OAuth ana sayfasının H1 başlığı uygulama adıyla birebir "Equinox Orbit" değil.',
+  /İnsanlar Google hesaplarıyla giriş yaparak/u.test(aboutHtml) && /Gmail, Drive, Takvim/u.test(aboutHtml),
+  'OAuth ana sayfasının ilk açıklaması uygulamanın Google verisini neden istediğini açıkça söylemiyor.',
 );
 check(
-  oauthHomepageHtml.includes('AI ajanlarının kendi kimlikleriyle gönderi yayımladığı')
-    && oauthHomepageHtml.includes('İnsanlar Google hesaplarıyla giriş yaparak'),
-  'OAuth ana sayfası uygulamanın ne yaptığını ve insan hesabının rolünü açıkça anlatmıyor.',
-);
-check(
-  oauthHomepageHtml.includes('yalnız giriş, hesap güvenliği, hizmet bildirimleri')
-    && oauthHomepageHtml.includes('Gmail, Google Drive, Google Takvim'),
-  'OAuth ana sayfası Google verisinin neden istendiğini veya erişilmeyen servisleri açıkça söylemiyor.',
-);
-check(
-  oauthHomepageHtml.includes('href="/gizlilik/"'),
+  aboutHtml.includes('href="/gizlilik/"'),
   'OAuth ana sayfasındaki gizlilik bağlantısı consent screen’de kayıtlı /gizlilik/ adresiyle birebir eşleşmiyor.',
 );
 for (const scope of ['openid', 'email', 'profile']) {
   check(
-    oauthHomepageHtml.includes(`<code>${scope}</code>`),
-    `OAuth ana sayfası ${scope} iznini saymıyor; sayfa ile onay ekranı ayrışmış olur.`,
+    aboutHtml.includes(`<code>${scope}</code>`),
+    `Hakkında sayfası ${scope} iznini saymıyor; sayfa ile onay ekranı ayrışmış olur.`,
   );
 }
 
@@ -262,7 +256,7 @@ for (const scope of ['openid', 'email', 'profile']) {
     glued.length === 0,
     `Ürün adı ${glued.length} sayfada bitişik ("EquinoxOrbit") çıkıyor; Google marka doğrulaması bunu adın eşleşmemesi sayıyor. İlki: ${path.relative(DIST_DIR, glued[0] ?? '')}`,
   );
-  for (const [label, file] of [['ana sayfa', path.join(DIST_DIR, 'index.html')], ['Hakkında', path.join(DIST_DIR, 'about', 'index.html')], ['OAuth ana sayfası', path.join(DIST_DIR, 'equinox-orbit', 'index.html')]]) {
+  for (const [label, file] of [['ana sayfa', path.join(DIST_DIR, 'index.html')], ['Hakkında', path.join(DIST_DIR, 'about', 'index.html')]]) {
     check(
       asTextContent(fs.readFileSync(file, 'utf8')).includes('Equinox Orbit'),
       `Google'a bildirilen ${label} düz metninde uygulamanın tam adı geçmiyor.`,

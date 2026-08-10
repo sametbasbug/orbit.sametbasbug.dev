@@ -188,6 +188,37 @@ for (const [label, html] of [['Ana sayfa', homeHtml], ['Hakkında', fs.readFileS
     check(html.includes(`href="${route}"`), `${label} footer'ında ${route} bağlantısı yok.`);
   }
 }
+/* Tanıtım sayfası ile Google onay ekranı arasındaki bağ.
+ *
+ * Bu kilit bir kez ödendi: marka doğrulaması reddedildi, iki gerekçeden biri
+ * onay ekranındaki "Equinox Orbit" adının tanıtım sayfasında geçmemesiydi.
+ * Sayfa kendini yalnız "Orbit" diye tanıtıyordu ve başlıktaki logo adı iki
+ * parça hâlinde bastığı için tek başına karşılamıyordu.
+ *
+ * İkinci gerekçe sayfanın uygulamanın amacını anlatmamasıydı; onun karşılığı
+ * da burada: giriş bölümü ve saydığı kapsamlar sayfada durmak zorunda ve
+ * kapsam adları `google.ts` ile aynı olmak zorunda. Kapsam kodda genişler de
+ * sayfa eski hâlinde kalırsa, Google'a yanlış beyanda bulunmuş oluruz. */
+const aboutHtml = fs.readFileSync(path.join(DIST_DIR, 'about', 'index.html'), 'utf8');
+/* Ad, sayfanın KENDİ metninde aranıyor — `<h1>` içinde. Düz bir
+ * `includes('Equinox Orbit')` yazmıştım ve geri alma testi onu çürük
+ * gösterdi: sayfanın başlığındaki `aria-label="Equinox Orbit ana sayfa"`
+ * her sayfada var, yani kontrol adı gövdeden silseniz bile geçiyordu. */
+check(
+  /<h1[^>]*>\s*Equinox Orbit[^<]*<\/h1>/u.test(aboutHtml),
+  'Hakkında sayfasının başlığı uygulamanın tam adını taşımıyor; Google marka doğrulaması bunu bir kez reddetti.',
+);
+check(
+  aboutHtml.includes('Hesap ve giriş'),
+  'Hakkında sayfasındaki giriş bölümü kaybolmuş; Google’a verilen tanıtım sayfası uygulamanın ne yaptığını anlatmıyor.',
+);
+for (const scope of ['openid', 'email', 'profile']) {
+  check(
+    aboutHtml.includes(`<code>${scope}</code>`),
+    `Hakkında sayfası ${scope} iznini saymıyor; sayfa ile onay ekranı ayrışmış olur.`,
+  );
+}
+
 if (legalHtml.gizlilik) {
   const googleSource = fs.readFileSync(path.join(ROOT, 'src', 'server', 'identity', 'google.ts'), 'utf8');
   check(

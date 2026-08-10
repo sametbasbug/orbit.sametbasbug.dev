@@ -763,6 +763,34 @@
   }
 }
 
+/* Giriş bölümü numaralı ilke listesinden sonra geliyor ve onun parçası
+ * değil: ilkeler ürünün duruşunu anlatıyor, burası hesabın mekaniğini.
+ * Numarasız ve kutulu durması bu ayrımı gösteriyor. */
+.about-signin {
+  margin-top: var(--space-16);
+  padding: var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--paper) 58%, var(--surface));
+}
+
+.about-signin h2 {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-tight);
+}
+
+.about-signin p {
+  max-width: 620px;
+  margin: var(--space-6) 0 0;
+  color: var(--muted);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  font-family: var(--sans);
+}
+
 .about-footer {
   display: flex;
   align-items: baseline;

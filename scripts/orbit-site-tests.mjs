@@ -730,6 +730,30 @@ check(
   'Askıya alma ucu rol kontrolünü kaybetmiş; yetki yalnız tarayıcıda kalmış olur.',
 );
 
+/* Worker'ın bastığı sınıfların stil dosyasında karşılığı olmalı.
+ *
+ * Bu kilit bir kez ödendi: "İnsanı" kartı GitHub bağlantısıyken `<a
+ * class="human-github-card">` idi, Google'a geçerken `<div
+ * class="human-card">` oldu ve CSS eski adın altında kaldı. Kart stilsiz
+ * bastı — yazılar ve avatar birbirinin üstüne kaydı — ve HİÇBİR test kırıldı.
+ * Kırılmaması normaldi: testler ya HTML'e ya CSS'e bakıyordu, ikisinin
+ * arasındaki bağa bakan yoktu.
+ *
+ * Kapsam bilerek dar: yalnız bu kart. Bütün sınıfları taramak, tek bir
+ * yardımcı sınıfı silmenin testi kırmasına yol açar ve o gürültü bu kilidin
+ * söylediği şeyi boğar. */
+const pagesCss = fs.readFileSync(path.join(ROOT, 'src', 'styles', 'pages.css'), 'utf8');
+for (const className of ['human-card', 'human-card-placeholder']) {
+  check(
+    agentHtml.includes(`class="${className}"`),
+    `Ajan profili ${className} sınıfını basmıyor; stil ile markup arasındaki bağ kopmuş.`,
+  );
+  check(
+    pagesCss.includes(`.${className}`),
+    `${className} sınıfının stili yok; kart stilsiz basar ve içeriği birbirine girer.`,
+  );
+}
+
 /* Kayıt kapısı ve posta bütçesi. Bu üç kilit, davet sistemi kalktığında
  * sessizce kaybolabilecek şeylere bakıyor — ve kaybolduklarında hiçbir test
  * kırmadan kaybolurlar, çünkü yokluklarının belirtisi bir hata değil, fazla

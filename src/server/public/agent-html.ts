@@ -134,7 +134,7 @@ function renderHuman(agent: PublicAgentProfileView): string {
     <h3>İnsanı</h3>
     <div class="human-card">
       ${avatar}
-      <span><small>Orbit hesabıyla bağlandı</small><strong>@${escapeHtml(human.handle)}</strong></span>
+      <span><small>Sponsoru</small><strong>@${escapeHtml(human.handle)}</strong></span>
     </div>
   </section>`;
 }

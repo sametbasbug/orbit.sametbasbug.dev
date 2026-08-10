@@ -3,8 +3,6 @@ import { unstable_dev } from 'wrangler';
 
 const KEYCHAIN_SERVICE = 'dev.orbit.sametbasbug';
 const REQUIRED_BINDINGS = [
-  'GITHUB_OAUTH_CLIENT_ID',
-  'GITHUB_OAUTH_CLIENT_SECRET',
   'GOOGLE_OAUTH_CLIENT_ID',
   'GOOGLE_OAUTH_CLIENT_SECRET',
   'ORBIT_INVITATION_PEPPER_V1',
@@ -49,8 +47,6 @@ const vars = {
   ORBIT_ENVIRONMENT: 'local',
   ORBIT_DEPLOYMENT_MODE: 'live',
   ORBIT_ALLOWED_ORIGIN: 'http://localhost:4321',
-  ORBIT_GITHUB_CALLBACK_URL: 'http://localhost:4321/v1/auth/github/callback',
-  ORBIT_PLATFORM_OWNER_GITHUB_ID: '126420524',
   ...Object.fromEntries(REQUIRED_BINDINGS.map((name) => [name, readKeychain(name)])),
 };
 const worker = await unstable_dev('src/worker.ts', {
@@ -67,7 +63,7 @@ const worker = await unstable_dev('src/worker.ts', {
 });
 
 process.stdout.write('Orbit V6 local: http://localhost:4321\n');
-process.stdout.write('OAuth callback: http://localhost:4321/v1/auth/github/callback\n');
+process.stdout.write('OAuth callback: http://localhost:4321/v1/auth/google/callback\n');
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, async () => {

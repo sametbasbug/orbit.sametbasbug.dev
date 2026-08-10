@@ -485,64 +485,64 @@
   font-size: var(--text-2xs);
 }
 
-.human-github-card {
+/* İnsan kartı. Bir zamanlar GitHub profiline giden bir bağlantıydı; artık
+ * gidilecek bir yer yok, çünkü insanın public sayfası da yok. Bu yüzden
+ * kart durağan: ne hover, ne imleç değişimi, ne ok işareti. Tıklanabilir
+ * görünüp tıklanmayan bir yüzey, olmayan bir bağlantıdan daha kötü.
+ *
+ * İki sütun: avatar ve yazı. Üçüncü sütun (dış bağlantı oku) kalktığında
+ * `grid-template-columns` üç değer taşımaya devam ederse yazı kolonu
+ * daralır ve ad ortadan kesilir — kartın bozuk görünmesinin sebebi buydu. */
+.human-card {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-6);
+  gap: var(--space-5);
   margin-top: var(--space-6);
   padding: var(--space-5);
   border: 1px solid var(--line);
   border-radius: 0.8rem;
   color: var(--ink);
   background: color-mix(in srgb, var(--paper) 58%, var(--surface));
-  text-decoration: none;
-  transition: border-color 160ms ease, transform 160ms ease;
 }
 
-.human-github-card:hover {
-  border-color: color-mix(in srgb, var(--agent-accent) 32%, var(--line));
-  transform: translateY(-1px);
-}
-
-.human-github-card img,
-.human-github-placeholder {
+.human-card img,
+.human-card-placeholder {
   width: 2.65rem;
   height: 2.65rem;
   border-radius: 50%;
+  /* Avatar sağlayıcıdan geliyor ve kare olacağının garantisi yok. `cover`
+   * olmadan yuvarlak çerçevenin içinde eziliyor. */
+  object-fit: cover;
   background: var(--paper);
 }
 
-.human-github-placeholder {
+.human-card-placeholder {
   display: grid;
   place-items: center;
   color: var(--muted);
-  font-size: var(--text-2xs);
+  font-size: var(--text-xs);
   font-weight: var(--weight-black);
+  line-height: 1;
 }
 
-.human-github-card > span:nth-child(2) {
+.human-card > span {
   display: grid;
   min-width: 0;
 }
 
-.human-github-card small {
+.human-card small {
   color: var(--faint);
   font-size: var(--text-3xs);
   font-weight: var(--weight-bold);
 }
 
-.human-github-card strong {
+.human-card strong {
   overflow: hidden;
   margin-top: var(--space-1);
   font-size: var(--text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.human-github-card > span:last-child {
-  color: var(--faint);
-  font-size: var(--text-sm);
 }
 
 .profile-project-links {

@@ -205,7 +205,13 @@ function validateConfig(config, expected) {
       ORBIT_ENVIRONMENT: 'production',
       ORBIT_DEPLOYMENT_MODE: expected.mode,
       ORBIT_ALLOWED_ORIGIN: expected.origin,
+      /* İki sağlayıcı, iki dönüş adresi. GitHub'ınki GEÇİCİ — mevcut
+       * hesapların Google'ı bağlaması bitince o satır da bu liste de
+       * kısalacak. Adresler kaynağa değil `expected.origin`e bağlı, çünkü
+       * yanlış olabilecek tek şey buranın canlı ile dark-launch arasında
+       * karışması. */
       ORBIT_GITHUB_CALLBACK_URL: `${expected.origin}/v1/auth/github/callback`,
+      ORBIT_GOOGLE_CALLBACK_URL: `${expected.origin}/v1/auth/google/callback`,
       ORBIT_PLATFORM_OWNER_GITHUB_ID: '126420524',
       ORBIT_OPEN_REGISTRATION: 'true',
       ORBIT_BACKUP_ENABLED: 'true',
@@ -227,6 +233,7 @@ function normalizeModeDifferences(config) {
   delete normalized.vars.ORBIT_DEPLOYMENT_MODE;
   delete normalized.vars.ORBIT_ALLOWED_ORIGIN;
   delete normalized.vars.ORBIT_GITHUB_CALLBACK_URL;
+  delete normalized.vars.ORBIT_GOOGLE_CALLBACK_URL;
   return normalized;
 }
 

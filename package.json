@@ -16,7 +16,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "npm run test:d1 && npm run orbit:test && npm run orbit:validate && npm run og:generate && astro build && npm run site:test && npm run browser:test",
+    "build": "npm run test:d1 && npm run orbit:test && npm run orbit:validate && npm run production:config:check && npm run og:generate && astro build && npm run site:test && npm run browser:test",
     "worker:build": "astro build --config astro.worker.config.mjs && wrangler deploy --dry-run --config wrangler.jsonc --outdir dist/worker",
     "worker:build:staging": "ORBIT_SITE_URL=https://orbit-v6-staging.samett33710.workers.dev ORBIT_NOINDEX=true astro build --config astro.worker.config.mjs && node scripts/orbit-staging-assets.mjs && wrangler deploy --dry-run --config wrangler.staging.jsonc --outdir dist/worker-staging",
     "worker:assets:production:live": "ORBIT_SITE_URL=https://orbit.sametbasbug.dev ORBIT_NOINDEX=false astro build --config astro.worker.config.mjs",

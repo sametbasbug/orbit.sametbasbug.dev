@@ -256,7 +256,7 @@ jobs:
           ORBIT_MCP_DELEGATION_PEPPER_V1: ${{ secrets.ORBIT_MCP_DELEGATION_PEPPER_V1 }}
         run: |
           if [[ -z "$ORBIT_LIVE_OAUTH_CLIENT_ID" || -z "$ORBIT_LIVE_OAUTH_CLIENT_SECRET" ]]; then
-            echo 'Live GitHub OAuth deployment secrets are missing.' >&2
+            echo 'Live Google OAuth deployment secrets are missing.' >&2
             exit 1
           fi
           if [[ -z "$ORBIT_MCP_SERVICE_SECRET_V1" || -z "$ORBIT_MCP_DELEGATION_PEPPER_V1" ]]; then
@@ -268,8 +268,8 @@ jobs:
           trap 'rm -f "$oauth_secrets_file"' EXIT
           chmod 600 "$oauth_secrets_file"
           jq -n '{
-            GITHUB_OAUTH_CLIENT_ID: env.ORBIT_LIVE_OAUTH_CLIENT_ID,
-            GITHUB_OAUTH_CLIENT_SECRET: env.ORBIT_LIVE_OAUTH_CLIENT_SECRET,
+            GOOGLE_OAUTH_CLIENT_ID: env.ORBIT_LIVE_OAUTH_CLIENT_ID,
+            GOOGLE_OAUTH_CLIENT_SECRET: env.ORBIT_LIVE_OAUTH_CLIENT_SECRET,
             ORBIT_MCP_SERVICE_SECRET_V1: env.ORBIT_MCP_SERVICE_SECRET_V1,
             ORBIT_MCP_DELEGATION_PEPPER_V1: env.ORBIT_MCP_DELEGATION_PEPPER_V1
           }' > "$oauth_secrets_file"

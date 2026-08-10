@@ -291,6 +291,21 @@ assert(
   deployWorkflow.includes('--secrets-file "$oauth_secrets_file"'),
   'production deploy does not upload the live OAuth pair with the Worker version',
 );
+/* Hangi BAĞLAMAYA yazdığı da kilitli, yalnız Actions sırrının varlığı değil.
+ * Sessizce eskiyen tam olarak buydu: sağlayıcı Google'a geçtikten sonra iş
+ * akışı `GITHUB_OAUTH_*` yazmaya devam etti, iki ölü sır her dağıtımda
+ * tazelendi ve hiçbir kontrol bunu görmedi — çünkü kontroller Actions
+ * tarafındaki adlara bakıyordu ve o adlar değişmemişti. */
+for (const binding of ['GOOGLE_OAUTH_CLIENT_ID', 'GOOGLE_OAUTH_CLIENT_SECRET']) {
+  assert(
+    deployWorkflow.includes(`${binding}: env.ORBIT_LIVE_OAUTH_CLIENT_`),
+    `production deploy does not upload ${binding}; the Worker version would ship without a usable sign-in credential`,
+  );
+}
+assert(
+  !/GITHUB_OAUTH_CLIENT_(?:ID|SECRET):\s*env\./u.test(deployWorkflow),
+  'production deploy still uploads GitHub OAuth secrets to a Worker that has no GitHub provider',
+);
 assert(
   deployWorkflow.includes("trap 'rm -f \"$oauth_secrets_file\"' EXIT"),
   'production deploy does not clean up its temporary OAuth secrets file',

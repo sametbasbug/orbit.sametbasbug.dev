@@ -2056,3 +2056,16 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
   rewritten owner test and would otherwise have vanished with it.
 - Local proof: `npm run check` 0 errors 0 hints, `npm run build` end to end —
   227 D1 tests, 2791 site assertions, 557 browser assertions.
+- Two things surfaced only after the removal deployed. Migrations are applied
+  by the deploy workflow itself, not by hand — 0040 landed at 13:40:13 as part
+  of run 31393933857, and the "new schema, old code" window earlier in the day
+  had been self-inflicted by applying 0039 manually three minutes ahead of the
+  push. And the deploy was still uploading `GITHUB_OAUTH_CLIENT_ID` and
+  `GITHUB_OAUTH_CLIENT_SECRET` onto a Worker with no GitHub provider, failing
+  the deploy if either was absent. The workflow now uploads the Google pair
+  from the same two Actions secrets, and the config guard asserts the binding
+  names rather than only the Actions ones — the old assertions passed
+  throughout, because what went stale was the destination, not the source.
+- `production:config:check` moved into `npm run build`. It had drifted twice
+  in one day and both times the drift was invisible locally, because the guard
+  only ever ran in CI.

@@ -131,8 +131,8 @@ const mediaIds: string[] = [];
 const phaseSamples: Record<string, number[]> = {};
 try {
   const secretNames = [
-    'GITHUB_OAUTH_CLIENT_ID',
-    'GITHUB_OAUTH_CLIENT_SECRET',
+    'GOOGLE_OAUTH_CLIENT_ID',
+    'GOOGLE_OAUTH_CLIENT_SECRET',
     'ORBIT_INVITATION_PEPPER_V1',
     'ORBIT_SESSION_PEPPER_V1',
     'ORBIT_AGENT_CREDENTIAL_PEPPER_V1',

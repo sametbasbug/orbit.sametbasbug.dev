@@ -88,7 +88,7 @@ function isPayload(value: unknown): value is PendingRegistrationPayload {
     !== 'expiresAt,issuedAt,profile,provider,termsAcceptedAt,termsVersion') {
     return false;
   }
-  return (record.provider === 'github' || record.provider === 'google')
+  return record.provider === 'google'
     && isProfile(record.profile)
     && Number.isSafeInteger(record.termsAcceptedAt) && Number(record.termsAcceptedAt) > 0
     && typeof record.termsVersion === 'string' && record.termsVersion.length > 0

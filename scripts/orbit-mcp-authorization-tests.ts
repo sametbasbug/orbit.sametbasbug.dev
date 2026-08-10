@@ -5,6 +5,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
+import { BACKUP_SCHEMA_VERSION } from '../src/server/backup/dynamic-backup';
 import {
   createOpaqueToken,
   parseOpaqueToken,
@@ -485,7 +486,7 @@ describe('Orbit MCP authorization foundation', { concurrency: false }, () => {
       counts: Record<string, number>;
     }>('exportBackup', { now: Date.now(), includeSessions: false });
 
-    assert.equal(backup.schemaVersion, 11);
+    assert.equal(backup.schemaVersion, BACKUP_SCHEMA_VERSION);
     assert.equal(backup.security.containsPlaintextSecrets, false);
     assert.ok(backup.tables.mcpAuthorizationGrants.length > 0);
     assert.ok(backup.tables.mcpAuthorizationRevocations.length > 0);

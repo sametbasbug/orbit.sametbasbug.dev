@@ -26,15 +26,19 @@ export interface TermsConsent {
   version: string;
 }
 
-/* Kimlik sağlayıcıları. Google birincil kapı; GitHub yalnız göç süresince
- * duruyor ve mevcut üç hesap Google kimliğini kendi oturumunda bağlayınca
- * hem buradan hem şemadan kalkacak.
+/* Kimlik sağlayıcıları. Bugün tek bir kapı var ve tip bunu söylüyor.
+ *
+ * Tek elemanlı bir birleşim tuhaf görünüyor ama sütun ve tip bilerek duruyor:
+ * Orbit'in gittiği yer kendisinin kimlik sağlayıcısı olması ve ikinci bir
+ * kapı eklendiği gün onu ekleyecek olan kişi buraya bakacak.
  *
  * Listenin kısa kalması bir tercih değil, kararın kendisi: federe bir hesabın
  * güvenliği bağlı sağlayıcıların EN ZAYIFINA eşit. İki adımlı doğrulaması
  * olmayan bir sağlayıcı eklemek, güçlü olanın getirdiği korumayı tümüyle
- * iptal eder. Yeni bir kapı ancak o zemini karşılıyorsa açılır. */
-export type AuthProvider = 'github' | 'google';
+ * iptal eder. GitHub tam olarak bu yüzden kaldırıldı: 2FA'sız bir GitHub
+ * hesabı, Google'ın telefona sorduğu onayı baştan geçersiz kılıyordu. Yeni bir
+ * kapı ancak o zemini karşılıyorsa açılır. */
+export type AuthProvider = 'google';
 
 export interface ProviderIdentityRow {
   identityId: string;
@@ -176,22 +180,6 @@ export interface IdentityRepository {
     agentQuota: number;
     loginAuditEventId: string;
     signInEvent: NewSignInEvent;
-    requestId: string;
-    now: number;
-  }): Promise<void>;
-  /* Var olan bir hesaba ikinci bir sağlayıcı kimliği ekler. GEÇİCİ: göçün
-   * mekanizması bu ve göç bitince kalkacak.
-   *
-   * Hesabın kendisine dokunmuyor — ne görünen ad, ne avatar, ne onay. Bağlama
-   * bir giriş değil: kişi zaten girmiş durumda ve yaptığı şey yalnız ikinci
-   * bir anahtarı aynı kilide tanıtmak. Profil alanlarını buradan tazelemek,
-   * bir tıklamayı sessiz bir profil değişikliğine çevirirdi. */
-  linkProviderIdentity(input: {
-    accountId: string;
-    identityId: string;
-    provider: AuthProvider;
-    profile: ProviderProfileSnapshot;
-    auditEventId: string;
     requestId: string;
     now: number;
   }): Promise<void>;

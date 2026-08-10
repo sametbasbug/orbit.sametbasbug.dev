@@ -192,18 +192,18 @@ function denyMcpAuthorization() {
 
 /* Onay kutusu. Tik atılmadan bu çağrı hiç yapılmıyor ve yapılsa da sunucu
    reddediyor — buradaki kontrol kapı değil, kapıya gitmeden önce anlaşılır
-   bir cevap. Asıl kapı /v1/auth/<saglayici>/start içinde ve oradan geçmeyen
-   bir akış sağlayıcıya hiç gitmiyor.
+   bir cevap. Asıl kapı /v1/auth/google/start içinde ve oradan geçmeyen bir
+   akış Google'a hiç gitmiyor.
 
    Sürüm de gönderiliyor: sayfa saatlerdir açık durup metin bu arada
    güncellenmiş olabilir. Kişi ekranında gördüğü metni onaylıyor; sunucunun
    kaydettiği sürüm başka bir metin olursa o onay bir şey ifade etmez. */
-async function login(provider) {
+async function login() {
   if (!byId('terms-consent').checked) {
     flash('Devam etmek için Gizlilik Politikası ve Kullanım Koşulları’nı onaylaman gerekiyor.', 'error');
     return;
   }
-  const { body } = await request(`/v1/auth/${provider}/start`, {
+  const { body } = await request('/v1/auth/google/start', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -235,18 +235,6 @@ async function completeSignup() {
   window.location.replace('/dashboard');
 }
 
-/* GEÇİCİ: hesabını GitHub'la açmış olanın Google kimliğini AYNI hesaba
-   eklemesi. Göç bitince bu fonksiyon, düğmesi ve sunucudaki ucu birlikte
-   silinecek. */
-async function linkGoogle() {
-  const { body } = await request('/v1/auth/google/link/start', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({}),
-  });
-  window.location.href = body.authorizationUrl;
-}
-
 /* Tik atılmadan buton çalışmıyor. Devre dışı bir butonun sebebini
    söylemeyen arayüz sinir bozucu olur; o yüzden buton kapalı DEĞİL, basınca
    sebebi söylüyor. Kapalı bir buton "site bozuk" gibi okunur. */
@@ -256,17 +244,19 @@ function renderAccount() {
   const accountRole = me.account.roles.includes('platform_owner')
     ? 'Platform yöneticisi'
     : me.account.roles.includes('moderator') ? 'Moderatör' : 'Sponsor';
-  /* Burada gösterilen ad GitHub kimliğidir, Orbit'in hesap tanımlayıcısı
-     değil. `account.handle` kayıt anında GitHub adından türetilir ve bir daha
-     değişmez; insan GitHub'da adını değiştirdiğinde eski adı göstermeye devam
-     ederdi. `providerLogin` ise her girişte tazeleniyor. */
-  const providerLogin = me.account.providerLogin || me.account.handle;
-  byId('welcome-name').textContent = me.account.displayName || `@${providerLogin}`;
+  /* Kimin olduğunu söyleyen ad artık `handle`: kişi onu kendi seçti, kalıcı
+     ve Orbit'te her yerde görünen ad o. `providerLogin` bu satırda bir zamanlar
+     birinciydi çünkü handle GitHub adından türetilmişti ve kişi GitHub'da adını
+     değiştirdiğinde burası eskisini gösterirdi. O sebep kalktı — ve Google'da
+     `providerLogin` bir kullanıcı adı değil, e-posta adresi; bir selamlamanın
+     içine koyulacak şey değil. */
+  const handle = me.account.handle;
+  byId('welcome-name').textContent = me.account.displayName || `@${handle}`;
   byId('announcement-emails').checked = me.account.announcementEmails !== false;
   byId('account').innerHTML = `
     <div class="dashboard-row">
       ${me.account.avatarUrl ? `<img class="dashboard-avatar" src="${escapeHtml(me.account.avatarUrl)}" alt="" />` : ''}
-      <div><strong>${escapeHtml(me.account.displayName)}</strong><div class="meta">@${escapeHtml(providerLogin)}</div></div>
+      <div><strong>${escapeHtml(me.account.displayName)}</strong><div class="meta">@${escapeHtml(handle)}</div></div>
     </div>
     <div class="meta">${accountRole} · ${escapeHtml(quota)}</div>`;
 }
@@ -616,17 +606,8 @@ async function load() {
   }
 }
 
-/* Bağlama dönüşünün geri bildirimi. Sunucu 302 ile buraya `?baglandi=1`
-   bırakıyor; onsuz kişi hiçbir şey olmamış gibi panele düşer ve bağlanıp
-   bağlanmadığını bilemezdi. GEÇİCİ — göçle birlikte kalkacak. */
-if (new URLSearchParams(window.location.search).has('baglandi')) {
-  flash('Google hesabın bu Orbit hesabına bağlandı. Bundan sonra Google ile girebilirsin.');
-}
-
-byId('login-button').addEventListener('click', () => login('google').catch((error) => flash(error.message, 'error')));
-byId('github-login-button')?.addEventListener('click', () => login('github').catch((error) => flash(error.message, 'error')));
+byId('login-button').addEventListener('click', () => login().catch((error) => flash(error.message, 'error')));
 byId('signup-submit')?.addEventListener('click', () => completeSignup().catch((error) => flash(error.message, 'error')));
-byId('link-google-button')?.addEventListener('click', () => linkGoogle().catch((error) => flash(error.message, 'error')));
 byId('registration-code-create').addEventListener('click', createRegistrationCode);
 byId('logout').addEventListener('click', () => mutate('/v1/auth/logout').then(() => window.location.reload()).catch((error) => flash(error.message, 'error')));
 byId('mcp-approve').addEventListener('click', approveMcpAuthorization);

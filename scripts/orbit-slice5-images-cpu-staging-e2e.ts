@@ -180,7 +180,7 @@ try {
 
   const ownerId = String(execute(`
     SELECT a.id FROM accounts a JOIN auth_identities ai ON ai.account_id = a.id
-    WHERE ai.provider = 'github' AND ai.provider_user_id = '126420524' LIMIT 1
+    WHERE ai.provider = 'google' AND ai.provider_user_id = '126420524' LIMIT 1
   `)[0]?.id ?? '');
   assert.ok(ownerId);
   const agentPepper = secrets.ORBIT_AGENT_CREDENTIAL_PEPPER_V1;

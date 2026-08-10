@@ -149,7 +149,7 @@ const sessionPepper = readStagingSecret('ORBIT_SESSION_PEPPER_V1');
 const csrfPepper = readStagingSecret('ORBIT_CSRF_PEPPER_V1');
 const owner = execute(`
   SELECT a.id FROM accounts a JOIN auth_identities ai ON ai.account_id = a.id
-  WHERE ai.provider = 'github' AND ai.provider_user_id = '126420524' LIMIT 1
+  WHERE ai.provider = 'google' AND ai.provider_user_id = '126420524' LIMIT 1
 `)[0]?.id;
 assert.equal(typeof owner, 'string');
 const ownerId = String(owner);

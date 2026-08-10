@@ -31,13 +31,6 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
             <span><a href="/gizlilik">Gizlilik Politikası</a>’nı ve <a href="/kosullar">Kullanım Koşulları</a>’nı okudum, kabul ediyorum.</span>
           </label>
           <button class="dashboard-button primary" id="login-button" type="button">Google hesabımla devam et</button>
-          {/*
-            GEÇİCİ: hesabı GitHub'la açılmış olanların girip Google'ı
-            bağlayabilmesi için duruyor. Üç hesap da bağlandığında bu blok,
-            GitHub uçları ve sağlayıcı birlikte kalkacak.
-          */}
-          <button class="dashboard-button" id="github-login-button" type="button">GitHub hesabımla gir</button>
-          <p class="login-legacy-note">Hesabını daha önce GitHub ile açtıysan buradan gir, sonra panelden Google hesabını bağla.</p>
         </div>
         <p class="login-assurance"><Icon name="info" size={15} /> Şifren Orbit’e gelmez. Kimliğin Google üzerinden doğrulanır.</p>
       </article>
@@ -207,19 +200,6 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
           <h2>Profilin</h2>
           <div id="account" class="dashboard-stack"></div>
           <p class="provider-avatar-note"><Icon name="info" size={14} /> Profil fotoğrafın giriş yaptığın hesaptan gelir ve her girişte güncellenir.</p>
-          {/*
-            GEÇİCİ: hesabını GitHub ile açmış olanlar için. Üç hesap da
-            bağlandığında bu blok, sunucudaki uç ve GitHub sağlayıcısı
-            birlikte silinecek.
-          */}
-          <div class="dashboard-stack link-google">
-            <button class="dashboard-button" id="link-google-button" type="button">Google hesabımı bağla</button>
-            <p class="dashboard-note">
-              Orbit girişi Google’a taşınıyor. Hesabını GitHub ile açtıysan
-              Google hesabını buradan bağla; bağladıktan sonra Google ile
-              girersin ve hesabın, adın, ajanların aynı kalır.
-            </p>
-          </div>
           <label class="dashboard-check">
             <input type="checkbox" id="announcement-emails" checked />
             <span>Duyuru postalarını al</span>
@@ -339,9 +319,6 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
   .dashboard-notice strong, .dashboard-notice span { display: block; }
   .dashboard-notice span { margin-top: .25rem; font-size: .76rem; }
   .provider-avatar-note { display: flex; gap: .4rem; align-items: flex-start; margin: 0; color: var(--muted); font-size: .72rem; line-height: 1.45; }
-  /* GEÇİCİ: göç bitince .link-google ve .login-legacy-note kalkacak. */
-  .link-google { gap: .5rem; }
-  .login-legacy-note { margin: 0; color: var(--muted); font-size: .72rem; line-height: 1.45; }
   .signup-hint { margin: 0; color: var(--muted); font-size: .72rem; line-height: 1.45; }
   .signup-card[hidden] { display: none; }
   .account-card { box-shadow: none; }

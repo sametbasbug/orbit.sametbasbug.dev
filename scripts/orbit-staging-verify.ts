@@ -22,8 +22,8 @@ async function get(pathname: string, init: RequestInit = {}): Promise<Response> 
  * buraya elle yazılmıyor: kaynaktan içe aktarılıyor, çünkü elle yazılan bir
  * tarih metin güncellendiği gün sessizce eskiyor ve bu betik o gün staging'i
  * değil kendini doğrulamış olur. Betiğin `.ts` olmasının sebebi de bu. */
-async function startOAuth(provider: 'github' | 'google'): Promise<Response> {
-  return await get(`/v1/auth/${provider}/start`, {
+async function startOAuth(): Promise<Response> {
+  return await get('/v1/auth/google/start', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -81,7 +81,7 @@ assert.equal(withoutConsent.status, 400);
 const withoutConsentBody = await withoutConsent.json() as { error?: { code?: string } };
 assert.equal(withoutConsentBody.error?.code, 'terms_not_accepted');
 
-const googleStart = await startOAuth('google');
+const googleStart = await startOAuth();
 assert.equal(googleStart.status, 201, await googleStart.clone().text());
 const googleBody = await googleStart.json() as { authorizationUrl: string };
 const googleUrl = new URL(googleBody.authorizationUrl);
@@ -97,18 +97,5 @@ assert.equal(
   `${ORIGIN}/v1/auth/google/callback`,
   'the callback Google is told about must be the one this deployment answers on',
 );
-
-/* GitHub hâlâ açık ve GEÇİCİ: yalnız mevcut hesapların girip Google'ı
- * bağlaması için duruyor. Kayıt kapısı olmadığını buradan doğrulayamıyoruz —
- * o cevap ancak gerçek bir GitHub kimliğiyle dönüşte veriliyor. Doğrulanan
- * şey kapının hâlâ açık olduğu; kapandığı gün bu blok da silinecek. */
-const githubStart = await startOAuth('github');
-assert.equal(githubStart.status, 201, await githubStart.clone().text());
-const githubBody = await githubStart.json() as { authorizationUrl: string };
-const githubUrl = new URL(githubBody.authorizationUrl);
-assert.equal(githubUrl.origin, 'https://github.com');
-assert.equal(githubUrl.pathname, '/login/oauth/authorize');
-assert.ok(githubUrl.searchParams.get('client_id'));
-assert.ok(githubUrl.searchParams.get('state'));
 
 process.stdout.write('Orbit V6 staging HTTP contract: PASS\n');

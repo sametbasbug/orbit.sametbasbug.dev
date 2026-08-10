@@ -145,7 +145,7 @@ check(homeHtml.includes('href="/duyurular"'), 'Duyurular sayfasına hiçbir yerd
 check(!homeHtml.includes('announcement-strip'), 'Statik ana sayfada duyuru şeridi çerçevesi basılmış.');
 
 /* Yasal metinler. Bu üç sayfanın diğer sayfalardan farkı, siteye değil
- * KODA dair iddialar taşımaları: "GitHub'dan yalnız read:user isteniyor",
+ * KODA dair iddialar taşımaları: "Google'dan yalnız openid, email ve profile isteniyor",
  * "oturum yedi günde düşer", "şu üç çerez var", "yedekler en fazla altı ay".
  * Kod değişip metin yerinde kalırsa ortaya bir üslup hatası değil, yanlış
  * bir aydınlatma metni çıkar — ve yanlış olduğunu kimse fark etmez, çünkü
@@ -200,15 +200,6 @@ if (legalHtml.gizlilik) {
       `Gizlilik metni ${scope} iznini saymıyor.`,
     );
   }
-  /* GitHub kapsamı GEÇİCİ olarak duruyor ve metin onu geçmiş zamanla
-     anlatıyor. Kapsam kodda değişirse metindeki cümle de yanlış olur; göç
-     bitip GitHub kalktığında bu blok da metindeki paragrafla birlikte
-     silinecek. */
-  const githubSource = fs.readFileSync(path.join(ROOT, 'src', 'server', 'identity', 'github.ts'), 'utf8');
-  check(
-    githubSource.includes("url.searchParams.set('scope', 'read:user user:email')"),
-    'GitHub izin kapsamı değişmiş. Gizlilik metni eski kapsamı anlatıyor; kapsam değiştiyse metin artık doğru değil.',
-  );
   /* E-postanın ne için istendiği metinde yazılı olmalı ve orada kalmalı.
    * "Madem adresler elimizde" diye başlayan cümle çok kolay kuruluyor;
    * tanıtım göndermek İYS'ye tabi ayrı bir rıza rejimi ve oraya kazara
@@ -486,7 +477,7 @@ if (fs.existsSync(dashboardFile)) {
   check(dashboardHtml.includes('aria-current="page"'), 'Dashboard ortak Header içinde aktif Hesabım durumunu göstermiyor.');
   check(dashboardHtml.includes('Google hesabımla devam et'), 'Dashboard sponsor giriş akışını taşımıyor.');
   check(dashboardHtml.includes('Ajanım için kayıt kodu oluştur'), 'Dashboard tek kullanımlık kayıt kodu akışını taşımıyor.');
-  check(dashboardHtml.includes('public profilinde “İnsanı” olarak görünür'), 'Dashboard GitHub insan bağlantısının public olacağını açıklamıyor.');
+  check(dashboardHtml.includes('public profilinde “İnsanı” olarak görünür'), 'Dashboard, seçilen adın ajan profilinde görüneceğini açıklamıyor.');
   check(dashboardHtml.includes('Yayın incelemeleri'), 'Dashboard moderator yayın kuyruğunu taşımıyor.');
   check(dashboardHtml.includes('Metin değiştirilemez'), 'Dashboard moderatorün içeriği düzenleyemeyeceğini açıklamıyor.');
   check(dashboardHtml.includes('Bağlantıyı onayla'), 'Dashboard MCP yetkilendirme ekranını taşımıyor.');
@@ -753,7 +744,7 @@ check(
  * kapı — ve kapının kaybolması hiçbir ekranda görünmez. */
 check(
   /body\.acceptedTerms !== true[\s\S]{0,300}?'terms_not_accepted'/u.test(apiSource),
-  'Giriş başlangıcı sözleşme onayını istemiyor; kutu işaretlenmeden GitHub turu başlayabilir.',
+  'Giriş başlangıcı sözleşme onayını istemiyor; kutu işaretlenmeden Google turu başlayabilir.',
 );
 check(
   /flow\.termsAcceptedAt === null[\s\S]{0,200}?'terms_not_accepted'/u.test(apiSource),

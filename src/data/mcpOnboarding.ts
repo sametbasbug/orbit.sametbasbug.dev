@@ -51,7 +51,7 @@ Bağlantıyı ancak insanın kurabilir. Ona şunları ilet:
 1. İstemcisinde yeni bir özel MCP uygulaması oluştursun.
 2. Sunucu adresi: \`${ORBIT_MCP_ENDPOINT}\`
 3. Kimlik doğrulama: OAuth.
-4. Onay ekranı Orbit dashboard'unda açılır; oraya GitHub hesabıyla girer.
+4. Onay ekranı Orbit dashboard'unda açılır; oraya Google hesabıyla girer.
 
 Kurulum adımlarının insan için yazılmış ayrıntılı hâli ${ORBIT_ORIGIN}/mcp
 adresindedir. İnsanın takılırsa onu oraya yönlendir.

@@ -9,7 +9,6 @@ import {
   CSRF_COOKIE,
   CSRF_HEADER,
   DEFAULT_AGENT_QUOTA,
-  LINK_COOKIE,
   OAUTH_COOKIE,
   SIGNUP_COOKIE,
   REGISTRATION_IP_MAX,
@@ -56,11 +55,11 @@ function migrate(): void {
  * `wrangler d1 execute` süreciyle girmek workerd bağlantısını resetleyebiliyor.
  * DB-only doğrulamalarını production yüzeyine eklemek yerine test Worker'ın
  * kapalı `__test/*` rotalarından aynı binding üzerinden okuyoruz. */
-async function signInState(githubUserId?: string): Promise<{
+async function signInState(providerUserId?: string): Promise<{
   events: Array<{ event_type: string; ip: string | null; created_at: number }>;
   total: number;
 }> {
-  const response = await postJson('/__test/sign-in-events', githubUserId ? { githubUserId } : {});
+  const response = await postJson('/__test/sign-in-events', providerUserId ? { providerUserId } : {});
   assert.equal(response.status, 200, await response.clone().text());
   return await response.json() as {
     events: Array<{ event_type: string; ip: string | null; created_at: number }>;
@@ -191,7 +190,7 @@ function cookieHeader(values: Map<string, string>, names?: string[]): string {
  * ölçen testler /v1/auth/google/start'ı kendileri çağırıyor. */
 async function startOAuth(
   now = NOW,
-  provider: 'google' | 'github' = 'google',
+  provider: 'google' = 'google',
 ): Promise<{ state: string; oauthCookie: string }> {
   const response = await postJson(`/v1/auth/${provider}/start`, {
     acceptedTerms: true,
@@ -217,12 +216,12 @@ let callbackCount = 0;
 
 async function callback(
   code: 'owner' | 'selene' | 'mismatch' | 'renameBefore' | 'renameAfter'
-    | 'traced' | 'tracedUnverified' | 'tracedNoreply' | `crowd-${number}`,
+    | 'traced' | 'tracedUnverified' | `crowd-${number}`,
   flow: { state: string; oauthCookie: string },
   now = NOW + 1,
   ip?: string,
   openRegistration?: 'true' | 'false',
-  provider: 'google' | 'github' = 'google',
+  provider: 'google' = 'google',
   extraCookies: Map<string, string> = new Map(),
 ): Promise<Response> {
   const cookies = [`${OAUTH_COOKIE}=${encodeURIComponent(flow.oauthCookie)}`];
@@ -289,7 +288,6 @@ function signupHandle(code: string): string {
     renameAfter: 'yeni-kullanici',
     traced: 'izli-kullanici',
     tracedUnverified: 'dogrulanmamis-kullanici',
-    tracedNoreply: 'gizli-kullanici',
   };
   if (named[code]) return named[code];
   const crowd = /^crowd-(\d{1,3})$/u.exec(code);
@@ -420,51 +418,29 @@ let firstCredentialToken = '';
     }
   });
 
-  /* Göçün kendisi. Seed edilmiş hesabın GitHub kimliği var, Google kimliği
-     yok; yani bu hesap Google'la GİREMEZ, önce bağlaması gerekir. Testin
-     yürüdüğü yol production'da üç hesabın yürüyeceği yolun aynısı:
-     GitHub'la gir, panelden bağla, bundan sonra Google'la gir.
+  /* Sahip yetkisi hesabın kendisinde duruyor, girdiği kapıda değil.
+     0005 sahip hesabını, `platform_owner` rolünü ve sınırsız ajan hakkını
+     kuruyor; kimlik satırı yalnız "bu Google hesabı o hesaptır" diyor.
+     Ölçülen şey bu: doğru sağlayıcı kimliğiyle gelen giriş o hesaba düşüyor,
+     rolü ve hakkı yanında geliyor, ve YENİ bir hesap açılmıyor.
 
-     Bağlamanın hesabı değiştirmediği de burada ölçülüyor — handle, rol ve
-     ajan hakkı bağlantıdan önce ne ise sonra da o. */
-  test('platform owner seed is authorized by immutable GitHub numeric ID', async () => {
-    const githubFlow = await startOAuth(NOW, 'github');
-    const response = await callback('owner', githubFlow, NOW + 1, undefined, undefined, 'github');
+     Kimlik seed ediliyor çünkü bu hesap kayıt yolundan geçemez: `sametbasbug`
+     rezerve bir ad ve ortak havuz onu ikinci kez vermiyor. Gerçekte de öyle
+     oldu — hesap zaten vardı, sahibi yalnız Google kimliğini bağladı. */
+  test('the seeded platform owner signs in through Google and keeps role and quota', async () => {
+    await postJson('/__test/seed-provider-identity', {
+      identityId: 'owner-google-identity',
+      accountId: '019f64d2-0109-7644-9a4e-a0d25df888e2',
+      provider: 'google',
+      providerUserId: '126420524',
+      providerLogin: 'sametbasbug',
+      now: NOW,
+    }, {}, NOW);
+
+    const flow = await startOAuth(NOW);
+    const response = await callback('owner', flow, NOW + 1);
     assert.equal(response.status, 302, await response.clone().text());
     ownerCookies = cookieValues(response);
-
-    const linkStart = await postJson(
-      '/v1/auth/google/link/start',
-      {},
-      authenticatedHeaders(ownerCookies, true),
-      NOW + 2,
-    );
-    assert.equal(linkStart.status, 201, await linkStart.clone().text());
-    const linkBody = await linkStart.json() as { authorizationUrl: string };
-    const linkState = new URL(linkBody.authorizationUrl).searchParams.get('state');
-    const linkCookies = cookieValues(linkStart);
-    assert.ok(linkState);
-
-    const linked = await callback(
-      'owner',
-      { state: linkState, oauthCookie: linkCookies.get(OAUTH_COOKIE) ?? '' },
-      NOW + 3,
-      undefined,
-      undefined,
-      'google',
-      new Map([
-        [SESSION_COOKIE, ownerCookies.get(SESSION_COOKIE) ?? ''],
-        [LINK_COOKIE, linkCookies.get(LINK_COOKIE) ?? ''],
-      ]),
-    );
-    assert.equal(linked.status, 302, await linked.clone().text());
-    assert.match(linked.headers.get('location') ?? '', /baglandi=1/u);
-
-    /* Bağlantıdan sonra Google kapısı bu hesaba açılıyor ve AYNI hesaba
-       düşüyor — yeni bir hesap açmıyor. Göçün ölçmesi gereken tek şey bu. */
-    const googleLogin = await callback('owner', await startOAuth(NOW + 4), NOW + 5);
-    assert.equal(googleLogin.status, 302, await googleLogin.clone().text());
-    ownerCookies = cookieValues(googleLogin);
     assert.ok(ownerCookies.get(SESSION_COOKIE)?.startsWith('orb_sess_v1_'));
     assert.equal(ownerCookies.get(CSRF_COOKIE)?.length, 43);
 
@@ -475,8 +451,10 @@ let firstCredentialToken = '';
     assert.deepEqual(body.account.roles, ['platform_owner']);
     assert.equal(body.account.agentQuota, -1);
 
-    const replay = await callback('owner', githubFlow, NOW + 6, undefined, undefined, 'github');
-    assert.equal(replay.status, 400);
+    /* Akış satırı tek kullanımlık. Aynı state ve çerezle ikinci kez dönmek,
+       eline bir kez geçmiş bir dönüş adresini tekrar oynatan birinin yolu. */
+    const replay = await callback('owner', flow, NOW + 3);
+    assert.equal(replay.status, 400, await replay.clone().text());
   });
 
   /* Kayıt artık davetsiz. Eskiden burada bir davet üretilir, o davetle
@@ -502,57 +480,6 @@ let firstCredentialToken = '';
       headers: authenticatedHeaders(cookieValues(replay)),
     }, NOW + 17)).json() as { account: { id: string } };
     assert.equal(again.account.id, sponsor.account.id, 'ikinci giriş ikinci bir hesap açmış');
-  });
-
-  /* Bağlamanın güvenlik kapısı. Bu kontrol olmasaydı, bağlantı isteğini
-     kurbanın tarayıcısına yaptırabilen biri KENDİ Google hesabını kurbanın
-     Orbit hesabına bağlayıp o hesaba kalıcı erişim kazanırdı. Niyet çerezi
-     imzalı ama uzun ömürlü bir tarayıcıda duruyor olabilir; bu yüzden çerezin
-     gösterdiği hesapla oturumun gösterdiği hesabın AYNI olması şart.
-
-     Test kendi iki hesabını kuruyor: paylaşılan fikstür oturumlarına
-     yaslanmak, bu testin başka testlerin sırasına bağımlı olması demekti. */
-  test('a link intent minted for one account cannot be spent by another session', async () => {
-    const victim = await callback('crowd-90', await startOAuth(NOW + 700), NOW + 701);
-    assert.equal(victim.status, REGISTERED, await victim.clone().text());
-    const victimCookies = cookieValues(victim);
-
-    const attacker = await callback('crowd-91', await startOAuth(NOW + 702), NOW + 703);
-    assert.equal(attacker.status, REGISTERED, await attacker.clone().text());
-    const attackerCookies = cookieValues(attacker);
-
-    const minted = await postJson(
-      '/v1/auth/google/link/start',
-      {},
-      authenticatedHeaders(victimCookies, true),
-      NOW + 704,
-    );
-    assert.equal(minted.status, 201, await minted.clone().text());
-    const intent = cookieValues(minted);
-    const state = new URL(
-      (await minted.json() as { authorizationUrl: string }).authorizationUrl,
-    ).searchParams.get('state');
-    assert.ok(state);
-
-    /* Kurbanın niyet çerezi, saldırganın oturumuyla harcanmaya çalışılıyor. */
-    const stolen = await callback(
-      'crowd-92',
-      { state, oauthCookie: intent.get(OAUTH_COOKIE) ?? '' },
-      NOW + 705,
-      undefined,
-      undefined,
-      'google',
-      new Map([
-        [SESSION_COOKIE, attackerCookies.get(SESSION_COOKIE) ?? ''],
-        [LINK_COOKIE, intent.get(LINK_COOKIE) ?? ''],
-      ]),
-    );
-    assert.equal(stolen.status, 403, await stolen.clone().text());
-    /* Cevap gövdesi insana bakan hata sayfası, makine okunur bir zarf değil;
-       o yüzden kanıt gövdede değil veritabanında aranıyor: üçüncü Google
-       kimliği hiçbir hesaba bağlanmamış olmalı. */
-    const linkedRows = await authIdentitySnapshots(['300000092']);
-    assert.equal(linkedRows.length, 0, 'yabancı Google kimliği bir hesaba bağlanmış');
   });
 
   test('a provider-side rename reaches the dashboard on the next login', async () => {
@@ -675,49 +602,6 @@ let firstCredentialToken = '';
     assert.equal(relogin.status, 302);
     const afterRelogin = await authIdentitySnapshots(['200000004']);
     assert.equal(afterRelogin[0]?.provider_email_snapshot, 'izli@example.test');
-  });
-
-  test('a GitHub noreply address is never stored, even when it is the verified primary', async () => {
-    /* "E-posta adresimi gizli tut" açık olan kullanıcıda listedeki
-     * @users.noreply.github.com adresi hem birincil hem doğrulanmış
-     * görünür. GitHub o adrese posta teslim etmez: saklarsak elimizde
-     * ulaşabildiğimizi sandığımız ama ulaşamadığımız bir adres olur ve
-     * geri dönen her gönderim, gerçek adresi olan kullanıcılara ulaşma
-     * ihtimalimizi de düşürür. */
-    /* Bu kural GitHub'a özgü ve GitHub artık kayıt kapısı değil, yalnız
-       mevcut hesapların giriş kapısı. Bu yüzden test hesabı ve kimliği
-       seed ediliyor, sonra GitHub'la GİRİLİYOR — göç sırasındaki gerçek
-       durumun aynısı. */
-    await postJson('/__test/seed-account', {
-      accountId: 'noreply-account',
-      handle: 'gizli-kullanici',
-      now: NOW + 230,
-    }, {}, NOW + 230);
-    await postJson('/__test/seed-provider-identity', {
-      identityId: 'noreply-identity',
-      accountId: 'noreply-account',
-      provider: 'github',
-      providerUserId: '200000006',
-      providerLogin: 'gizli-kullanici',
-      now: NOW + 230,
-    }, {}, NOW + 230);
-
-    const login = await callback(
-      'tracedNoreply',
-      await startOAuth(NOW + 231, 'github'),
-      NOW + 232,
-      undefined,
-      undefined,
-      'github',
-    );
-    assert.equal(login.status, 302, await login.clone().text());
-
-    const stored = await authIdentitySnapshots(['200000006']);
-    assert.equal(
-      stored[0]?.provider_email_snapshot,
-      'gercek@example.test',
-      'noreply adresi saklanmış ya da gerçek doğrulanmış adrese düşülmemiş',
-    );
   });
 
   test('OAuth state and PKCE browser binding expire after ten minutes', async () => {
@@ -2491,15 +2375,15 @@ let firstCredentialToken = '';
   /* Sözleşme onayı. Kutu tarayıcıda; kapı sunucuda. Bu testler ikisinin
      birbirine bağlı olduğunu değil, KAPININ tek başına tuttuğunu ölçüyor —
      tarayıcıyı atlayan bir istekle. */
-  test('no consent, no sign-in: the door refuses before GitHub is ever contacted', async () => {
-    const unchecked = await postJson('/v1/auth/github/start', {}, { origin: ORIGIN }, NOW + 520);
+  test('no consent, no sign-in: the door refuses before Google is ever contacted', async () => {
+    const unchecked = await postJson('/v1/auth/google/start', {}, { origin: ORIGIN }, NOW + 520);
     assert.equal(unchecked.status, 400, 'onaysız akış kurulabiliyor');
     assert.equal(
       (await unchecked.json() as { error: { code: string } }).error.code,
       'terms_not_accepted',
     );
 
-    const refused = await postJson('/v1/auth/github/start', {
+    const refused = await postJson('/v1/auth/google/start', {
       acceptedTerms: false,
       termsVersion: LEGAL_LAST_UPDATED,
     }, { origin: ORIGIN }, NOW + 521);
@@ -2508,7 +2392,7 @@ let firstCredentialToken = '';
     /* Eski bir sürümü onaylamak da geçmiyor. Sayfa saatlerdir açık durup
        metin bu arada değişmiş olabilir; kişinin ekranında gördüğü metin ile
        kaydettiğimiz sürüm aynı olmak zorunda. */
-    const stale = await postJson('/v1/auth/github/start', {
+    const stale = await postJson('/v1/auth/google/start', {
       acceptedTerms: true,
       termsVersion: '2020-01-01',
     }, { origin: ORIGIN }, NOW + 522);

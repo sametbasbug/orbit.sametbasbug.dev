@@ -251,37 +251,6 @@ export class D1IdentityRepository implements IdentityRepository {
     ]);
   }
 
-  async linkProviderIdentity(
-    input: Parameters<IdentityRepository['linkProviderIdentity']>[0],
-  ): Promise<void> {
-    await this.#db.batch([
-      this.#db.prepare(`
-        INSERT INTO auth_identities (
-          id, account_id, provider, provider_user_id,
-          provider_login_snapshot, provider_email_snapshot, created_at, last_seen_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(
-        input.identityId,
-        input.accountId,
-        input.provider,
-        input.profile.userId,
-        input.profile.login,
-        input.profile.email,
-        input.now,
-        input.now,
-      ),
-      this.#auditInsert(
-        input.auditEventId,
-        `auth.${input.provider}.linked`,
-        input.accountId,
-        'account',
-        input.accountId,
-        input.requestId,
-        input.now,
-      ),
-    ]);
-  }
-
   async getSession(selector: string): Promise<SessionView | null> {
     const row = await this.#db.prepare(`
       SELECT s.id AS session_id, s.account_id, s.secret_digest, s.hash_version,

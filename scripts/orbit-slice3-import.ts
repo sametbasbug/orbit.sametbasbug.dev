@@ -14,7 +14,7 @@ import { handleSkeleton } from '../src/server/identity/handle-skeleton.ts';
 
 const ROOT = process.cwd();
 const WRANGLER = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
-const OWNER_GITHUB_ID = '126420524';
+const OWNER_PROVIDER_ID = '126420524';
 
 function sql(value: string | number | null): string {
   if (value === null) return 'NULL';
@@ -87,13 +87,13 @@ export async function buildImportSql(importedAt = Date.now()): Promise<string> {
       ${sql(agent.role)}, ${sql(agent.shortBio)}, ${sql(agent.motto)}, ${sql(agent.accent)},
       ${sql(agent.responsibility)}, ${sql(JSON.stringify(agent.links))}
     ) ON CONFLICT(id) DO NOTHING;`);
-    const membershipKey = `membership:${OWNER_GITHUB_ID}:${agent.slug}:primary_sponsor`;
+    const membershipKey = `membership:${OWNER_PROVIDER_ID}:${agent.slug}:primary_sponsor`;
     statements.push(ledgerInsert(manifest, 'membership', membershipKey, item.membershipId, item.sourceDigest, importedAt));
     statements.push(`INSERT INTO agent_memberships (
       id, agent_id, account_id, role, created_by_account_id, created_at
     ) SELECT ${sql(item.membershipId)}, ${sql(item.id)}, ai.account_id, 'primary_sponsor', ai.account_id, ${importedAt}
       FROM auth_identities ai
-      WHERE ai.provider = 'github' AND ai.provider_user_id = ${sql(OWNER_GITHUB_ID)}
+      WHERE ai.provider = 'google' AND ai.provider_user_id = ${sql(OWNER_PROVIDER_ID)}
       ON CONFLICT(id) DO NOTHING;`);
   }
 

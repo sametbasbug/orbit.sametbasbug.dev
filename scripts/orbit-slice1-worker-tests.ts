@@ -46,9 +46,6 @@ function testDatabase(): OrbitBindings['DB'] {
 
 const baseBindings = {
   DB: testDatabase(),
-  ORBIT_PLATFORM_OWNER_GITHUB_ID: '126420524',
-  GITHUB_OAUTH_CLIENT_ID: 'test-client-id',
-  GITHUB_OAUTH_CLIENT_SECRET: 'test-client-secret',
   GOOGLE_OAUTH_CLIENT_ID: 'test-google-client-id',
   GOOGLE_OAUTH_CLIENT_SECRET: 'test-google-client-secret',
   ORBIT_INVITATION_PEPPER_V1: 'test-invitation-pepper-at-least-32-bytes-long',
@@ -87,8 +84,6 @@ function stagingBindings(overrides: Partial<OrbitBindings> = {}): OrbitBindings 
     ORBIT_ENVIRONMENT: 'staging',
     ORBIT_DEPLOYMENT_MODE: 'dark_launch',
     ORBIT_ALLOWED_ORIGIN: 'https://orbit-v6-staging.samett33710.workers.dev',
-    ORBIT_GITHUB_CALLBACK_URL:
-      'https://orbit-v6-staging.samett33710.workers.dev/v1/auth/github/callback',
     ORBIT_GOOGLE_CALLBACK_URL:
       'https://orbit-v6-staging.samett33710.workers.dev/v1/auth/google/callback',
     ASSETS: assetBinding(),
@@ -106,7 +101,6 @@ function productionBindings(
     ORBIT_ENVIRONMENT: 'production',
     ORBIT_DEPLOYMENT_MODE: mode,
     ORBIT_ALLOWED_ORIGIN: origin,
-    ORBIT_GITHUB_CALLBACK_URL: `${origin}/v1/auth/github/callback`,
     ORBIT_GOOGLE_CALLBACK_URL: `${origin}/v1/auth/google/callback`,
     ASSETS: assetBinding(),
     ...overrides,
@@ -119,9 +113,6 @@ function localBindings(environment: 'local' | 'test'): OrbitBindings {
     ORBIT_ENVIRONMENT: environment,
     ORBIT_DEPLOYMENT_MODE: 'live',
     ORBIT_ALLOWED_ORIGIN: environment === 'local' ? 'http://localhost:4321' : 'https://test.example',
-    ORBIT_GITHUB_CALLBACK_URL: environment === 'local'
-      ? 'http://localhost:4321/v1/auth/github/callback'
-      : 'https://test.example/v1/auth/github/callback',
     ORBIT_GOOGLE_CALLBACK_URL: environment === 'local'
       ? 'http://localhost:4321/v1/auth/google/callback'
       : 'https://test.example/v1/auth/google/callback',
@@ -142,7 +133,7 @@ async function protectedSurfaceResponses(env: OrbitBindings): Promise<Response[]
     await worker.fetch(new Request(`${origin}/`), env),
     await worker.fetch(new Request(`${origin}/missing`), env),
     await worker.fetch(new Request(`${origin}/v1/not-found`), env),
-    await worker.fetch(new Request(`${origin}/v1/auth/github/start`, {
+    await worker.fetch(new Request(`${origin}/v1/auth/google/start`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin },
       /* Onaylı gövde: bu satırın amacı 201 sınıfını da tarayıcı-engeli
@@ -185,8 +176,7 @@ describe('Orbit V6 deployment-mode contract', () => {
       assert.throws(
         () => assertDeploymentBindings(productionBindings('dark_launch', {
           ORBIT_ALLOWED_ORIGIN: origin,
-          ORBIT_GITHUB_CALLBACK_URL: `${origin}/v1/auth/github/callback`,
-        })),
+              })),
         /invalid_production_origin/u,
       );
     }
@@ -200,29 +190,31 @@ describe('Orbit V6 deployment-mode contract', () => {
     assert.throws(
       () => assertDeploymentBindings(productionBindings('live', {
         ORBIT_ALLOWED_ORIGIN: DARK_LAUNCH_ORIGIN,
-        ORBIT_GITHUB_CALLBACK_URL: `${DARK_LAUNCH_ORIGIN}/v1/auth/github/callback`,
       })),
       /invalid_production_origin/u,
     );
     assert.throws(
       () => assertDeploymentBindings(productionBindings('dark_launch', {
         ORBIT_ALLOWED_ORIGIN: LIVE_ORIGIN,
-        ORBIT_GITHUB_CALLBACK_URL: `${LIVE_ORIGIN}/v1/auth/github/callback`,
       })),
       /invalid_production_origin/u,
     );
   });
 
+  /* Origin doğru, dönüş adresi öteki modun origin'inden. Bu ayrı bir test
+     çünkü ayrı bir arıza: origin kontrolünden geçen bir yapılandırma yanlış
+     bir callback taşıyabilir ve o durumda Google, kişiyi ÖTEKİ dağıtıma
+     yollar — oturum yanlış worker'da açılır. */
   test('rejects callbacks that do not exactly match their production mode', () => {
     assert.throws(
       () => assertDeploymentBindings(productionBindings('dark_launch', {
-        ORBIT_GITHUB_CALLBACK_URL: `${LIVE_ORIGIN}/v1/auth/github/callback`,
+        ORBIT_GOOGLE_CALLBACK_URL: `${LIVE_ORIGIN}/v1/auth/google/callback`,
       })),
       /invalid_production_callback/u,
     );
     assert.throws(
       () => assertDeploymentBindings(productionBindings('live', {
-        ORBIT_GITHUB_CALLBACK_URL: `${DARK_LAUNCH_ORIGIN}/v1/auth/github/callback`,
+        ORBIT_GOOGLE_CALLBACK_URL: `${DARK_LAUNCH_ORIGIN}/v1/auth/google/callback`,
       })),
       /invalid_production_callback/u,
     );
@@ -239,7 +231,7 @@ describe('Orbit V6 deployment-mode contract', () => {
       /invalid_staging_origin/u,
     );
     assert.throws(
-      () => assertDeploymentBindings(stagingBindings({ ORBIT_GITHUB_CALLBACK_URL: 'https://evil.example/callback' })),
+      () => assertDeploymentBindings(stagingBindings({ ORBIT_GOOGLE_CALLBACK_URL: 'https://evil.example/callback' })),
       /invalid_staging_callback/u,
     );
   });

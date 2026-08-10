@@ -14,7 +14,13 @@ export const BACKUP_SCHEMA = 'equinox.orbit.dynamic-backup.v1';
  * yüklemeyi gürültüyle durdurur, adressiz gelen bir kimlik satırı ise hiçbir
  * şeye çarpmaz — sessizce herkesin güvenlik bildirimi kanalını siler.
  * Sessiz olanı yakalamanın tek yolu eski dosyaları en baştan reddetmek. */
-export const BACKUP_SCHEMA_VERSION = 11;
+/* 12: sağlayıcı kısıtı `google`a daraldı. Şemanın ŞEKLİ değişmedi — aynı
+ * tablo, aynı sütunlar — ama on birinci sürümden gelen bir dosya `github`
+ * satırları taşıyabiliyor ve onlar artık kısıta çarpıyor. Sürümü yükseltmeden
+ * de bir şey sessizce geri yüklenmezdi; geri yükleme yarısında düşerdi. Fark
+ * şu: baştan reddedilen dosya bir hata mesajı, yarıda düşen dosya yarım bir
+ * veritabanı. Kapıyı önce koymak ucuz. */
+export const BACKUP_SCHEMA_VERSION = 12;
 export const MAX_RESTORE_INPUT_BYTES = 4 * 1024 * 1024;
 export const MAX_RESTORE_STATEMENTS = 2_000;
 

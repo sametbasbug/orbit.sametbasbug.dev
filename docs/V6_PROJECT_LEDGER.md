@@ -2003,3 +2003,56 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
   557 browser assertions. Production D1 was checked read-only first: 14
   handles, 14 distinct skeletons, so 0039 has nothing to collide with. Not yet
   deployed at the time of this commit.
+
+### 2026-08-10 — The migration ships, and GitHub comes out
+
+- Deployed the same day in three steps: staging first, where nine migrations
+  had piled up since 3 August, then production. All three sign-in paths were
+  walked against staging with real Google accounts before production was
+  touched — registration (`auth.google.registered`), linking
+  (`auth.google.linked`), and a returning login (`auth.google.login`). The
+  third mattered most: it proves a second visit finds the existing account
+  instead of opening another one.
+- The first production deploy failed, and the thing that caught it was
+  `production:config:check` — a guard holding an exact expected `vars` map for
+  both production configs. The Google callback had been added to the wrangler
+  files and not to the guard. Nothing in `npm run build` runs it, so it
+  surfaced only in CI. Between the migration and the second deploy production
+  ran new schema against old code, and registration was broken for that
+  window. Commit `9a05d84`.
+- The staging verifier had rotted separately: it still posted `{}` to the
+  OAuth start endpoint and asserted 201, which stopped being true when consent
+  moved into the request body on 8 August. It now imports `LEGAL_LAST_UPDATED`
+  from source rather than repeating the date — which is why it is a `.ts` file
+  now — and asserts the Google contract including that the redirect_uri handed
+  to Google is the callback this deployment answers on.
+- Then the three accounts linked Google, and GitHub was removed: migration
+  0040 rebuilds `auth_identities` with `CHECK (provider = 'google')` and drops
+  the GitHub rows, the routes and the client are gone, and so are
+  `ORBIT_GITHUB_CALLBACK_URL`, both GitHub secrets and the vestigial
+  `ORBIT_PLATFORM_OWNER_GITHUB_ID` — vestigial because owner authority has
+  long since come from the `platform_owner` role row, not from a numeric ID.
+- 0040's precondition is the interesting part. The obvious rule — "fail if any
+  account has a GitHub identity and no Google identity" — would abort on every
+  freshly built database, because migration 0005 seeds the owner account
+  together with a GitHub identity and published migrations cannot be edited.
+  The rule therefore asks the question that actually matters: does this leave
+  an account **someone has really used** without a key? A fixture that has
+  never been logged into carries `last_login_at IS NULL`; a real account gets
+  it written on first sign-in. Proven both ways in a scratch SQLite database —
+  the fixture passes, a logged-in account without Google fails, and it passes
+  again once Google is linked — and dry-run read-only against production,
+  where it returns 1.
+- Backup schema goes to 12. The shape did not change; a v11 file can carry
+  GitHub rows that now hit the constraint. Without the bump a restore would
+  not have been silently wrong, it would have died halfway — and half a
+  database is worse than a rejected file.
+- Two tests were deleted rather than ported, and both deserve naming. The
+  link-intent security test measured that a link ticket minted for one account
+  could not be spent by another session; that property is now structural,
+  since nothing attaches an identity to an existing session. The GitHub
+  noreply-address test measured a filter that lived in the deleted client.
+  What was *kept* is the OAuth flow replay assertion, which lived inside the
+  rewritten owner test and would otherwise have vanished with it.
+- Local proof: `npm run check` 0 errors 0 hints, `npm run build` end to end —
+  227 D1 tests, 2791 site assertions, 557 browser assertions.

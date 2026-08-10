@@ -87,20 +87,6 @@ const PROFILES = {
     avatar_url: null,
     emails: [{ email: 'olmaz@example.test', primary: true, verified: false }],
   },
-  /* "E-posta adresimi gizli tut" açık olan kullanıcının hâli: noreply
-   * adresi hem birincil hem doğrulanmış görünüyor. GitHub o adrese posta
-   * teslim etmediği için atlanmalı ve gerçek doğrulanmış adrese
-   * düşülmeli. */
-  tracedNoreply: {
-    id: 200000006,
-    login: 'gizli-kullanici',
-    name: 'Gizli Kullanıcı',
-    avatar_url: null,
-    emails: [
-      { email: 'gizli-kullanici@users.noreply.github.com', primary: true, verified: true },
-      { email: 'gercek@example.test', primary: false, verified: true },
-    ],
-  },
 } as const;
 
 class MemoryR2 implements R2BucketLike {
@@ -159,8 +145,8 @@ class MemoryR2 implements R2BucketLike {
 
 const mediaBucket = new MemoryR2();
 
-/* Kayıt hız tavanını ölçmek için bir avuç birbirinden farklı GitHub kimliği
- * gerekiyor; her birini elle yazmak, sayı değişince güncellenmesi gereken
+/* Kayıt hız tavanını ölçmek için bir avuç birbirinden farklı sağlayıcı
+ * kimliği gerekiyor; her birini elle yazmak, sayı değişince güncellenmesi gereken
  * bir liste demekti. `crowd-<n>` kodları anında üretiliyor ve numaraları
  * elle yazılmış profillerin aralığından uzak duruyor. */
 function crowdProfile(key: string) {
@@ -175,20 +161,10 @@ function crowdProfile(key: string) {
   };
 }
 
-function profileForToken(token: string | null) {
-  if (!token?.startsWith('Bearer test-token-')) return null;
-  const key = token.slice('Bearer test-token-'.length);
-  return PROFILES[key as keyof typeof PROFILES] ?? crowdProfile(key);
-}
-
-/* Google tarafının sahtesi. Aynı PROFILES tablosundan besleniyor, çünkü
- * testlerin ölçtüğü şey hangi sağlayıcıdan geldiğimiz değil, kaydın ve
- * girişin davranışı.
- *
- * `sub` sayısal kimliğin dizesi: Google'da kimlik zaten dize ve GitHub'ınki
- * de sütuna dize olarak yazılıyor. Aynı profili iki sağlayıcıdan sokmak, tek
- * bir insanın iki kimliği olması demek — göç testinin tam da ölçmesi gereken
- * durum. */
+/* Google'ın sahtesi. `PROFILES` tablosu GitHub çağında yazılmıştı ve
+ * şeklini koruyor; testlerin ölçtüğü şey profilin nereden geldiği değil,
+ * kaydın ve girişin davranışı. `sub` sayısal kimliğin dizesi, çünkü Google'da
+ * kimlik zaten bir dize. */
 function googleProfile(key: string) {
   const profile = PROFILES[key as keyof typeof PROFILES] ?? crowdProfile(key);
   if (!profile) return null;
@@ -197,17 +173,16 @@ function googleProfile(key: string) {
   return {
     sub: String(profile.id),
     email: primary?.email ?? `${profile.login}@example.test`,
-    /* Adres yoksa doğrulanmış sayılıyor: GitHub'da adres opsiyoneldi,
-     * Google'da her hesabın adresi var. Doğrulanmamış hâli ölçen test
-     * `tracedUnverified` profilini kullanıyor ve o profil `verified: false`
-     * taşıyor. */
+    /* Adres yoksa doğrulanmış sayılıyor: Google'da her hesabın adresi var.
+     * Doğrulanmamış hâli ölçen test `tracedUnverified` profilini kullanıyor
+     * ve o profil `verified: false` taşıyor. */
     email_verified: primary ? primary.verified : true,
     name: profile.name,
     picture: profile.avatar_url,
   };
 }
 
-async function mockGoogleFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response | null> {
+async function mockProviderFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input : input.url);
   if (url.href === 'https://oauth2.googleapis.com/token') {
     /* Gövde form kodlu. Google JSON kabul etmiyor ve istemci de form kodlu
@@ -228,41 +203,6 @@ async function mockGoogleFetch(input: RequestInfo | URL, init?: RequestInit): Pr
     const profile = googleProfile(token.slice('Bearer google-token-'.length));
     return profile ? Response.json(profile) : Response.json({ error: 'invalid_token' }, { status: 401 });
   }
-  return null;
-}
-
-async function mockGithubFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const google = await mockGoogleFetch(input, init);
-  if (google) return google;
-  const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input : input.url);
-  if (url.href === 'https://github.com/login/oauth/access_token') {
-    const body = JSON.parse(String(init?.body ?? '{}')) as { code?: string };
-    if (!body.code || (!(body.code in PROFILES) && !crowdProfile(body.code))) {
-      return Response.json({ error: 'bad_verification_code' }, { status: 400 });
-    }
-    return Response.json({ access_token: `test-token-${body.code}`, token_type: 'bearer' });
-  }
-  if (url.href === 'https://api.github.com/user') {
-    const profile = profileForToken(new Headers(init?.headers).get('authorization'));
-    return profile ? Response.json(profile) : Response.json({ message: 'Bad credentials' }, { status: 401 });
-  }
-  /* Doğrulanmış birincil adres yalnız burada; /user'ın email alanı
-   * kullanıcının herkese açık adresini döndürür ve çoğu kişide boştur.
-   * Adres tanımlanmamış profillerde uç 404 dönüyor — kullanıcının
-   * user:email iznini vermediği hâlin karşılığı bu. */
-  if (url.href === 'https://api.github.com/user/emails') {
-    const profile = profileForToken(new Headers(init?.headers).get('authorization')) as
-      { emails?: ReadonlyArray<{ email: string; primary: boolean; verified: boolean }> } | null;
-    if (!profile) return Response.json({ message: 'Bad credentials' }, { status: 401 });
-    if (!profile.emails) return Response.json({ message: 'Not Found' }, { status: 404 });
-    return Response.json(profile.emails);
-  }
-  const loginMatch = /^\/users\/([^/]+)$/u.exec(url.pathname);
-  if (url.origin === 'https://api.github.com' && loginMatch) {
-    const login = decodeURIComponent(loginMatch[1]).toLowerCase();
-    const profile = Object.values(PROFILES).find((item) => item.login.toLowerCase() === login);
-    return profile ? Response.json(profile) : Response.json({ message: 'Not Found' }, { status: 404 });
-  }
   return Response.json({ message: 'Unexpected test URL' }, { status: 500 });
 }
 
@@ -275,14 +215,14 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
   const now = Number(request.headers.get('x-test-now') ?? Date.now());
 
   if (url.pathname === '/__test/state') {
-    const githubUserId = String(body.githubUserId ?? '');
+    const providerUserId = String(body.providerUserId ?? '');
 
-    const account = githubUserId
+    const account = providerUserId
       ? await env.DB.prepare(`
         SELECT a.id, a.status
         FROM auth_identities ai JOIN accounts a ON a.id = ai.account_id
         WHERE ai.provider_user_id = ?
-      `).bind(githubUserId).first()
+      `).bind(providerUserId).first()
       : null;
     const counts = await env.DB.prepare(`
       SELECT
@@ -295,15 +235,15 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
   }
 
   if (url.pathname === '/__test/sign-in-events') {
-    const githubUserId = String(body.githubUserId ?? '');
-    const events = githubUserId
+    const providerUserId = String(body.providerUserId ?? '');
+    const events = providerUserId
       ? await env.DB.prepare(`
         SELECT e.event_type, e.ip, e.created_at
         FROM account_sign_in_events e
         JOIN auth_identities i ON i.account_id = e.account_id
         WHERE i.provider_user_id = ?
         ORDER BY e.created_at ASC
-      `).bind(githubUserId).all()
+      `).bind(providerUserId).all()
       : { results: [] };
     const total = await env.DB.prepare(
       'SELECT COUNT(*) AS total FROM account_sign_in_events',
@@ -530,10 +470,9 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
     return Response.json({ ok: true });
   }
 
-  /* Var olan bir hesaba sağlayıcı kimliği takar. GitHub kayıt yolu kapandığı
-   * için, GitHub'a özgü davranışı (noreply adres süzgeci) ölçen testlerin
-   * hesabı başka türlü kuramaması bu ucu gerektirdi: göç sırasında gerçek
-   * durum da bu — hesap zaten var, GitHub kimliği zaten bağlı. */
+  /* Var olan bir hesaba sağlayıcı kimliği takar. Kayıt yolunu yürümeden
+   * "hesabı zaten olan biri" kurmanın yolu bu; giriş davranışını ölçen
+   * testler kayıt adımına bağlı kalmadan başlayabiliyor. */
   if (url.pathname === '/__test/seed-provider-identity') {
     await env.DB.prepare(`
       INSERT INTO auth_identities (
@@ -913,7 +852,7 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
         INSERT OR IGNORE INTO auth_identities (
           id, account_id, provider, provider_user_id,
           provider_login_snapshot, provider_email_snapshot, created_at, last_seen_at
-        ) VALUES (?, ?, 'github', ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, 'google', ?, ?, ?, ?, ?)
       `).bind(id, accountId, providerId, accountId, email, now, now);
 
     await env.DB.batch([
@@ -946,7 +885,7 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
         INSERT INTO auth_identities (
           id, account_id, provider, provider_user_id,
           provider_login_snapshot, provider_email_snapshot, created_at, last_seen_at
-        ) VALUES (?, ?, 'github', ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, 'google', ?, ?, ?, ?, ?)
         ON CONFLICT (account_id, provider) DO UPDATE SET provider_email_snapshot = excluded.provider_email_snapshot
       `).bind(
         `ident-${String(body.accountId)}`, String(body.accountId), `95${String(body.accountId).slice(-7)}`,
@@ -997,7 +936,7 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
         INSERT INTO auth_identities (
           id, account_id, provider, provider_user_id,
           provider_login_snapshot, provider_email_snapshot, created_at, last_seen_at
-        ) VALUES (?, ?, 'github', ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, 'google', ?, ?, ?, ?, ?)
         ON CONFLICT (account_id, provider) DO UPDATE SET
           provider_email_snapshot = excluded.provider_email_snapshot
       `).bind(`ident-${id}`, id, `8000${String(index).padStart(5, '0')}`, id, `${id}@example.test`, now, now));
@@ -1163,7 +1102,7 @@ export default {
     if (testResponse) return testResponse;
     const nowHeader = request.headers.get('x-test-now');
     return await handleWorkerRequest(request, extended, {
-      fetch: mockGithubFetch,
+      fetch: mockProviderFetch,
       now: nowHeader ? () => Number(nowHeader) : undefined,
     });
   },

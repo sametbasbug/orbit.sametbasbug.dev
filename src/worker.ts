@@ -94,7 +94,7 @@ function machineGuideResponse(method: string, guide: string): Response {
 }
 
 async function startStagingOAuth(request: Request, env: OrbitBindings): Promise<Response> {
-  const apiRequest = new Request(new URL('/v1/auth/github/start', request.url), {
+  const apiRequest = new Request(new URL('/v1/auth/google/start', request.url), {
     method: 'POST',
     headers: {
       'content-type': 'application/json',

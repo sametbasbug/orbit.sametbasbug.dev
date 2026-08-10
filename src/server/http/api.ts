@@ -4,7 +4,6 @@ import {
   CSRF_COOKIE,
   CSRF_HEADER,
   DEFAULT_AGENT_QUOTA,
-  LINK_COOKIE,
   OAUTH_COOKIE,
   OAUTH_FLOW_RETENTION_MS,
   OAUTH_FLOW_TTL_MS,
@@ -40,7 +39,6 @@ import {
   reviewRejectedEmail,
 } from '../notifications/messages';
 import { clearHostCookie, readCookie, serializeHostCookie } from '../identity/cookies';
-import { GithubClient } from '../identity/github';
 import { GoogleClient } from '../identity/google';
 import {
   createPendingRegistration,
@@ -55,9 +53,7 @@ import {
   isReservedHandle,
 } from '../identity/handle-policy';
 import {
-  createLinkCookie,
   createOAuthMaterial,
-  parseLinkCookie,
   parseOAuthCookie,
   parseOAuthState,
 } from '../identity/oauth';
@@ -3807,60 +3803,6 @@ async function handleProviderCallback(
     : null;
   if (!cookie) throw new ApiError(400, 'invalid_oauth_cookie', 'OAuth browser binding is invalid or expired.');
 
-  /* GEÇİCİ bağlama dalı. Niyet çerezi varsa bu bir giriş değil, var olan bir
-   * hesaba ikinci anahtarı tanıtma işlemi. Göç bitince bu blok silinecek.
-   *
-   * Çerez tek başına yetmiyor: oturum da isteniyor ve İKİSİNİN AYNI HESABI
-   * göstermesi şart. Çerez imzalı ama uzun ömürlü bir tarayıcıda duruyor
-   * olabilir; arada çıkış yapıp başka bir hesaba girmiş biri, çerezin
-   * gösterdiği hesaba yabancı bir Google kimliği bağlayabilirdi. */
-  const linkCookieValue = readCookie(request, LINK_COOKIE);
-  const linkIntent = linkCookieValue
-    ? await parseLinkCookie(linkCookieValue, env.ORBIT_OAUTH_STATE_PEPPER_V1, now)
-    : null;
-  if (linkIntent) {
-    const auth = await authenticateHuman(request, env, repository, now, false);
-    if (auth.account.id !== linkIntent.accountId) {
-      throw new ApiError(403, 'link_session_mismatch', 'Bağlama isteği başka bir hesaba ait.');
-    }
-    const accessToken = await client.exchangeCode(code, cookie.verifier);
-    const profile = await client.currentUser(accessToken);
-    const existing = await repository.findProviderIdentity(provider, profile.userId);
-    if (existing && existing.accountId !== auth.account.id) {
-      throw new ApiError(
-        409,
-        'provider_identity_taken',
-        'Bu Google hesabı başka bir Orbit hesabına bağlı.',
-      );
-    }
-    /* Zaten bağlıysa sessizce geçiyoruz. Kişi düğmeye ikinci kez basmış ya da
-     * geri tuşuyla dönmüş olabilir; ona hata göstermek, aslında istediği
-     * durumun zaten sağlandığı bir anda onu telaşlandırmak olurdu. */
-    if (!existing) {
-      await repository.linkProviderIdentity({
-        accountId: auth.account.id,
-        identityId: createEntityId(),
-        provider,
-        profile,
-        auditEventId: createEntityId(),
-        requestId,
-        now,
-      });
-    }
-    const linked = new Response(null, {
-      status: 302,
-      headers: {
-        location: `${env.ORBIT_ALLOWED_ORIGIN}/dashboard?baglandi=1`,
-        'cache-control': 'no-store',
-        'referrer-policy': 'no-referrer',
-      },
-    });
-    return attachCookies(linked, [
-      clearHostCookie(OAUTH_COOKIE, true),
-      clearHostCookie(LINK_COOKIE, true),
-    ]);
-  }
-
   /* Onayın ikinci kontrolü. Tarayıcı burada hiçbir şey söylemiyor; okunan
    * şey akış satırının kendisi ve o satırı /start yazdı. Aynı kontrolü iki
    * yerde yapmak gereksiz görünebilir — değil: /start'taki kontrol
@@ -3879,20 +3821,6 @@ async function handleProviderCallback(
   }
 
   if (!identity) {
-    /* Hesabı olmayan biri. Buradan sonrası sağlayıcıya göre ayrılıyor ve
-     * ayrım kalıcı değil, göçün bir parçası.
-     *
-     * GitHub artık KAYIT kapısı değil, yalnız mevcut üç hesabın giriş kapısı.
-     * Yeni birinin GitHub'la hesap açmasına izin vermek, göç bittiğinde
-     * taşınacak hesap sayısını artırmaktan başka bir işe yaramazdı. */
-    if (provider === 'github') {
-      throw new ApiError(
-        403,
-        'registration_moved',
-        'Yeni hesaplar artık Google ile açılıyor.',
-      );
-    }
-
     /* Kayıt burada BİTMİYOR. Google'da kullanıcı adı olmadığı için handle'ı
      * kişi seçecek; elimizde şu an yalnız doğrulanmış bir kimlik var.
      *
@@ -3973,62 +3901,6 @@ async function handleProviderCallback(
   return attachCookies(response, [
     ...sessionCookies(sessionToken.token, csrfToken),
     clearHostCookie(OAUTH_COOKIE, true),
-  ]);
-}
-
-/* Bağlama niyetinin ömrü. Akış satırıyla aynı: bu pencere yalnız Google'a
- * gidip dönmeyi ölçüyor, kayıt bileti gibi bir insanın karar vermesini
- * beklemiyor. */
-const LINK_INTENT_TTL_MS = OAUTH_FLOW_TTL_MS;
-
-/* GEÇİCİ: mevcut hesapların Google kimliğini kendi oturumlarında bağladığı
- * yol. Göç bitince bu iki fonksiyon, çerez, `linkProviderIdentity` ve GitHub
- * sağlayıcısı birlikte silinecek.
- *
- * Buranın oturum GEREKTİRMESİ tasarımın kendisi. Bağlamayı oturumsuz
- * yapabilseydik, "hangi hesaba bağlanacağı" tarayıcıdan gelen bir iddia
- * olurdu; e-posta eşleyerek bağlamanın reddedilme sebebi de aynıydı. Kişi iki
- * kimliği de kendi kanıtlıyor: birini oturumuyla, ötekini Google'a giderek. */
-async function handleAccountLinkStart(
-  request: Request,
-  env: OrbitBindings,
-  repository: IdentityRepository,
-  google: GoogleClient,
-  now: number,
-): Promise<Response> {
-  const auth = await authenticateHuman(request, env, repository, now, true);
-  const expiresAt = now + OAUTH_FLOW_TTL_MS;
-  const material = await createOAuthMaterial(env.ORBIT_OAUTH_STATE_PEPPER_V1, expiresAt);
-  await repository.createOAuthFlow({
-    id: material.selector,
-    stateDigest: material.stateDigest,
-    pkceVerifierDigest: material.verifierDigest,
-    redirectUri: env.ORBIT_GOOGLE_CALLBACK_URL,
-    /* Bağlamada onay istenmiyor ve akış satırı onaysız kalıyor. Kişi zaten
-     * içeride; koşulları en son girişinde onaylamış ve o kayıt hesabın
-     * üstünde duruyor. Burada tekrar sormak, onayı bir anahtar takma
-     * işlemine iliştirmek olurdu. Callback tarafı bunu biliyor: onay
-     * kontrolü yalnız giriş ve kayıt yollarında çalışıyor. */
-    termsAcceptedAt: null,
-    termsVersion: null,
-    createdAt: now,
-    expiresAt,
-    consumedAt: null,
-  });
-  const response = json({
-    authorizationUrl: google.authorizationUrl(material.state, material.challenge),
-    expiresAt,
-  }, 201);
-  return attachCookies(response, [
-    serializeHostCookie(OAUTH_COOKIE, material.cookie, {
-      httpOnly: true,
-      maxAge: OAUTH_FLOW_TTL_MS / 1000,
-    }),
-    serializeHostCookie(
-      LINK_COOKIE,
-      await createLinkCookie(auth.account.id, now + LINK_INTENT_TTL_MS, env.ORBIT_OAUTH_STATE_PEPPER_V1),
-      { httpOnly: true, maxAge: LINK_INTENT_TTL_MS / 1000 },
-    ),
   ]);
 }
 
@@ -4455,11 +4327,6 @@ export async function handleApiRequest(
     const followRepository: FollowRepository = new D1FollowRepository(env.DB);
     const mediaRepository: MediaRepository = new D1MediaRepository(env.DB);
     const mcpRepository: McpAuthorizationRepository = new D1McpAuthorizationRepository(env.DB);
-    const github = new GithubClient({
-      clientId: env.GITHUB_OAUTH_CLIENT_ID,
-      clientSecret: env.GITHUB_OAUTH_CLIENT_SECRET,
-      callbackUrl: env.ORBIT_GITHUB_CALLBACK_URL,
-    }, dependencies.fetch);
     const google = new GoogleClient({
       clientId: env.GOOGLE_OAUTH_CLIENT_ID,
       clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
@@ -5982,35 +5849,6 @@ export async function handleApiRequest(
       return json({ record: publicRecord(record) });
     }
 
-    /* GitHub uçları GEÇİCİ. Yalnız mevcut hesapların girmesi ve panelden
-     * Google kimliğini bağlaması için duruyorlar; yeni kayıt bu yoldan
-     * geçmiyor. Üç hesap da bağlandığında bu blok, GithubClient ve şemadaki
-     * 'github' sağlayıcısı birlikte kalkacak. */
-    if (request.method === 'POST' && path === '/v1/auth/github/start') {
-      return await handleOAuthStart(
-        request,
-        env,
-        repository,
-        env.ORBIT_GITHUB_CALLBACK_URL,
-        (state, challenge) => github.authorizationUrl(state, challenge),
-        now,
-      );
-    }
-    if (request.method === 'GET' && path === '/v1/auth/github/callback') {
-      /* Bu ucun cevabını bir tarayıcı gösteriyor, bir istemci okumuyor.
-       * Hata zarfı burada bir insana bakan sayfaya çevriliyor; beklenmeyen
-       * hatalar dışarıdaki genel yakalayıcıya bırakılıyor, çünkü orada
-       * kaydedilen şey benim görmem gereken şey. */
-      try {
-        return await handleProviderCallback(
-          request, env, repository, 'github', github,
-          env.ORBIT_GITHUB_CALLBACK_URL, now, requestId,
-        );
-      } catch (error) {
-        if (error instanceof ApiError) return oauthCallbackErrorPage(error.code, error.status);
-        throw error;
-      }
-    }
     if (request.method === 'POST' && path === '/v1/auth/google/start') {
       return await handleOAuthStart(
         request,
@@ -6031,10 +5869,6 @@ export async function handleApiRequest(
         if (error instanceof ApiError) return oauthCallbackErrorPage(error.code, error.status);
         throw error;
       }
-    }
-    /* GEÇİCİ: göç bitince bu uç de silinecek. */
-    if (request.method === 'POST' && path === '/v1/auth/google/link/start') {
-      return await handleAccountLinkStart(request, env, repository, google, now);
     }
     if (request.method === 'POST' && path === '/v1/auth/register') {
       return await handleCompleteRegistration(

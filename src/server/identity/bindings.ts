@@ -1,3 +1,4 @@
+import type { AuthProvider } from '../repositories/identity-repository';
 import type { D1DatabaseLike } from '../repositories/d1/d1-foundation-repository';
 
 export interface AssetsBinding {
@@ -62,17 +63,15 @@ const PRODUCTION_ORIGINS: Record<OrbitDeploymentMode, string> = {
   live: 'https://orbit.sametbasbug.dev',
 };
 
-/* Callback adresleri artık origin'den türetiliyor, tek tek yazılmıyor.
- * Sağlayıcı sayısı ikiye çıkınca elle yazılmış liste dört satıra çıkacaktı ve
- * o dört satırın biri yanlış yazıldığında hata "OAuth akışı geçersiz" diye
- * görünürdü — sebebi görünmeyen bir hata. Türetmek o ihtimali ortadan
- * kaldırıyor. */
-function callbackUrl(origin: string, provider: 'github' | 'google'): string {
+/* Callback adresi origin'den türetiliyor, elle yazılmıyor. Sağlayıcı tek
+ * olduğu için bugün tek satır, ama türetme kalıyor: elle yazılan bir adres
+ * yanlış olduğunda hata "OAuth akışı geçersiz" diye görünür ve sebebini
+ * söylemez. İkinci bir kapı eklendiği gün de aynı sebeple burası genişler. */
+function callbackUrl(origin: string, provider: AuthProvider): string {
   return `${origin}/v1/auth/${provider}/callback`;
 }
 
 function assertCallbacks(env: OrbitBindings, origin: string, errorCode: string): void {
-  if (env.ORBIT_GITHUB_CALLBACK_URL !== callbackUrl(origin, 'github')) throw new Error(errorCode);
   if (env.ORBIT_GOOGLE_CALLBACK_URL !== callbackUrl(origin, 'google')) throw new Error(errorCode);
 }
 
@@ -85,12 +84,6 @@ export interface OrbitBindings {
   ORBIT_ENVIRONMENT: 'local' | 'test' | 'staging' | 'production';
   ORBIT_DEPLOYMENT_MODE: OrbitDeploymentMode;
   ORBIT_ALLOWED_ORIGIN: string;
-  /* GitHub bağlamaları GEÇİCİ: mevcut üç hesap Google kimliğini bağlayana
-   * kadar duruyorlar, sonra sağlayıcıyla birlikte kalkacaklar. */
-  ORBIT_GITHUB_CALLBACK_URL: string;
-  ORBIT_PLATFORM_OWNER_GITHUB_ID: string;
-  GITHUB_OAUTH_CLIENT_ID: string;
-  GITHUB_OAUTH_CLIENT_SECRET: string;
   ORBIT_GOOGLE_CALLBACK_URL: string;
   GOOGLE_OAUTH_CLIENT_ID: string;
   GOOGLE_OAUTH_CLIENT_SECRET: string;
@@ -103,7 +96,7 @@ export interface OrbitBindings {
   ORBIT_MCP_DELEGATION_PEPPER_V1?: string;
   ORBIT_MCP_SERVICE_SECRET_V1?: string;
   ORBIT_BACKUP_ENCRYPTION_KEY_V1?: string;
-  /* Davet kapısı. 'true' olduğunda GitHub hesabı olan herkes davetsiz kayıt
+  /* Davet kapısı. 'true' olduğunda Google hesabı olan herkes davetsiz kayıt
    * olabiliyor; başka her değerde ve tanımsızken kapı kapalı ve kayıt için
    * davet gerekiyor.
    *
@@ -178,10 +171,6 @@ export function assertIdentityBindings(env: OrbitBindings): void {
   assertDeploymentBindings(env);
   const required: Array<keyof OrbitBindings> = [
     'ORBIT_ALLOWED_ORIGIN',
-    'ORBIT_GITHUB_CALLBACK_URL',
-    'ORBIT_PLATFORM_OWNER_GITHUB_ID',
-    'GITHUB_OAUTH_CLIENT_ID',
-    'GITHUB_OAUTH_CLIENT_SECRET',
     'ORBIT_GOOGLE_CALLBACK_URL',
     'GOOGLE_OAUTH_CLIENT_ID',
     'GOOGLE_OAUTH_CLIENT_SECRET',
@@ -196,8 +185,5 @@ export function assertIdentityBindings(env: OrbitBindings): void {
     if (typeof env[name] !== 'string' || env[name].length < 1) {
       throw new Error(`missing_binding:${name}`);
     }
-  }
-  if (env.ORBIT_PLATFORM_OWNER_GITHUB_ID !== '126420524') {
-    throw new Error('platform_owner_github_id_mismatch');
   }
 }

@@ -37,14 +37,14 @@ export const DEFAULT_AGENT_QUOTA = 1;
  *
  * Küresel tavan ise dikkatle seçilmiş bir sayı, çünkü yanlış tarafa da
  * kesiyor. İlk yazdığımda saatte otuz koymuştum; sonra fark ettim ki bu,
- * otuz atılabilir GitHub hesabı ve birkaç IP'si olan birine HERKESİN
+ * otuz atılabilir Google hesabı ve birkaç IP'si olan birine HERKESİN
  * kaydını süresiz kapatma imkânı veriyor. Yani düşük bir küresel tavan,
  * engellemeye çalıştığı saldırıdan daha ucuz bir saldırı üretiyor.
  *
  * Bu yüzden küresel sayı bir hız tavanı değil, bir SEL tavanı: normal
  * hiçbir günün yaklaşamayacağı, ama veritabanını bir gecede şişirmeye
  * çalışan birinin çarpacağı yükseklikte. İki yüze ulaşmak saatte iki yüz
- * ayrı GitHub hesabı gerektiriyor ve IP tavanı yüzünden bunların en az
+ * ayrı Google hesabı gerektiriyor ve IP tavanı yüzünden bunların en az
  * kırk ayrı bağlantıdan gelmesi lazım. O iş artık ucuz değil.
  *
  * IP'siz istekte — yerel geliştirme, test, kenar başlığının gelmediği
@@ -65,19 +65,11 @@ export const OAUTH_COOKIE = '__Host-orbit_oauth';
  * der. İkisi karışırsa, hesabı olmayan biri hesap sahibinin yollarına
  * girebilir. */
 export const SIGNUP_COOKIE = '__Host-orbit_signup';
-/* Hesap bağlama niyeti. GEÇİCİ — göç bitince silinecek. */
-export const LINK_COOKIE = '__Host-orbit_link';
 export const CSRF_HEADER = 'X-Orbit-CSRF';
 
-export const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
-export const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
-export const GITHUB_USER_URL = 'https://api.github.com/user';
-
 export const TOKEN_HASH_VERSION = 1;
-export const PLATFORM_OWNER_GITHUB_ID = '126420524';
 
 export const REQUIRED_SECRET_BINDINGS = [
-  'GITHUB_OAUTH_CLIENT_SECRET',
   'GOOGLE_OAUTH_CLIENT_SECRET',
   'ORBIT_INVITATION_PEPPER_V1',
   'ORBIT_SESSION_PEPPER_V1',

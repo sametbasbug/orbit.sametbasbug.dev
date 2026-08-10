@@ -2069,3 +2069,36 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
 - `production:config:check` moved into `npm run build`. It had drifted twice
   in one day and both times the drift was invisible locally, because the guard
   only ever ran in CI.
+- Google's branding verification rejected the app twice with the same two
+  lines, and only the second rejection made the cause legible: the logo prints
+  the product name as `<small>Equinox</small><strong>Orbit</strong>` with
+  nothing between the elements, so anything reading the page as plain text saw
+  `EquinoxOrbit`. That is Google's second complaint — "the app name configured
+  does not match the app name on your home page" — verbatim, and it was true
+  on every page, including the `/about` page written to answer the first
+  rejection. Putting the full name in that page's `<h1>` never touched it,
+  because the place the brand is actually printed is the header. The fix is a
+  whitespace text node; `.brand-copy` is a grid, so it is not a grid item and
+  the layout is untouched.
+- The first complaint — "your home page does not explain the purpose of your
+  app" — has a second, independent candidate: all three URLs handed to Google
+  answered 307. `/about`, `/gizlilik` and `/kosullar` redirect to their
+  trailing-slash forms, so the registered address is not the address that
+  serves content, and a checker that does not follow redirects reads an empty
+  body — which would produce *both* complaints at once. The console now
+  carries the trailing-slash forms.
+- The lock written for the wordmark was green for the wrong reason on its
+  first draft: it stripped tags by replacing them with a space, and that space
+  reconstructed the very gap it was hunting. Reverting the fix left it passing.
+  It now strips the way `textContent` does and fails on all 45 pages when the
+  fix is reverted. The revert-check is what caught it; reading it did not.
+- Worth recording for proportion: Data Access reports verification is not
+  required, since the app requests no sensitive or restricted scopes. Sign-in
+  works regardless. What this whole thread gates is whether a logo shows on
+  the consent screen — and no logo is uploaded yet.
+- Dependabot #52 and #53 were resolved into one lockfile rather than merged
+  separately, because every push to main deploys and three deploys for one
+  day's dependency bumps is three chances to be wrong. astro 7.2.0 and
+  @astrojs/cloudflare 14.2.0 are the only ones that reach production;
+  @astrojs/check still accepts this astro, so the peer range that keeps
+  TypeScript 7 out has not moved.

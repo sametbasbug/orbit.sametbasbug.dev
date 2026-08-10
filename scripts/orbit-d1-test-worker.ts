@@ -61,23 +61,6 @@ function stringArrayValue(data: Record<string, unknown>, key: string): string[] 
   return value as string[];
 }
 
-async function count(db: TestDatabase, table: string, column: string, value: string): Promise<number> {
-  const allowed = new Set([
-    'accounts:id',
-    'sessions:account_id',
-    'audit_events:id',
-    'invitation_redemptions:invitation_id',
-    'agent_credentials:agent_id',
-  ]);
-  if (!allowed.has(`${table}:${column}`)) {
-    throw new Error('unsupported_count');
-  }
-  const row = await db.prepare(`SELECT COUNT(*) AS value FROM ${table} WHERE ${column} = ?`)
-    .bind(value)
-    .first<{ value: number }>();
-  return row?.value ?? 0;
-}
-
 async function seedOwner(db: TestDatabase, accountId: string, now: number): Promise<void> {
   await db.prepare(`
     INSERT OR IGNORE INTO accounts (

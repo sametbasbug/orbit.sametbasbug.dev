@@ -2402,16 +2402,6 @@ let firstCredentialToken = '';
     );
   });
 
-  /* Paketin başındaki `ownerCookies` bu noktada artık geçerli değil: çıkış
-   * testi o oturumu bilerek iptal ediyor. Buradaki testler kendi taze
-   * oturumunu açıyor — bir öncekinin artığına yaslanmak, sıraları değiştiği
-   * gün sessizce bozulacak bir bağımlılık olurdu. */
-  async function ownerSession(now: number): Promise<Map<string, string>> {
-    const response = await callback('owner', await startOAuth(now - 1), now);
-    assert.equal(response.status, 302, await response.clone().text());
-    return cookieValues(response);
-  }
-
   /* Kayıt hız tavanı. Bu testler davet kapısı KAPALIYKEN de anlamlı, ama asıl
    * sebepleri kapının açılacağı gün: o gün kayıt hacmini bir insanın kararı
    * değil internet belirleyecek. */

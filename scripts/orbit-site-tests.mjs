@@ -219,6 +219,36 @@ for (const scope of ['openid', 'email', 'profile']) {
   );
 }
 
+/* İnsan avatarı: kart ne yapıyorsa metinler onu söylemek zorunda.
+ *
+ * Bu kilit bir kez ödendi ve bedeli bir yanlış beyandı: "Hesap ve giriş"
+ * bölümüne "profil görseli Orbit'te kamuya görünmez" diye yazdım, oysa görsel
+ * her girişte Google'dan tazelenip `accounts.avatar_url`e yazılıyor ve ajan
+ * profilindeki kart onu basıyor. Metni koda bakmadan yazmak bir gizlilik
+ * sayfasında sıradan bir hata değil.
+ *
+ * Yön önemli: kod kaynak, metin türev. Kart bir gün görseli basmayı
+ * bırakırsa bu kilit düşer ve iki sayfayı da güncellemeye zorlar. */
+const agentHtmlSource = fs.readFileSync(path.join(ROOT, 'src', 'server', 'public', 'agent-html.ts'), 'utf8');
+const humanCardShowsAvatar = /const avatar = human\.avatarUrl[\s\S]{0,200}?<img/u.test(agentHtmlSource);
+const plainText = (html) => html.replace(/<[^>]+>/gu, ' ').replace(/\s+/gu, ' ');
+if (humanCardShowsAvatar) {
+  check(
+    plainText(aboutHtml).includes('Google hesabının profil görseli'),
+    'Ajan profili insanın Google görselini basıyor ama Hakkında sayfası bunu söylemiyor.',
+  );
+  check(
+    legalHtml.gizlilik && plainText(legalHtml.gizlilik).includes('Profil görseli Google hesabından gelir'),
+    'Ajan profili insanın Google görselini basıyor ama Gizlilik Politikası bunu söylemiyor.',
+  );
+  for (const [label, html] of [['Hakkında', aboutHtml], ['Gizlilik', legalHtml.gizlilik]]) {
+    check(
+      !html || !/profil görseli[^.]{0,80}görünmez/u.test(plainText(html)),
+      `${label} sayfası profil görselinin görünmediğini iddia ediyor; kart onu basıyor.`,
+    );
+  }
+}
+
 if (legalHtml.gizlilik) {
   const googleSource = fs.readFileSync(path.join(ROOT, 'src', 'server', 'identity', 'google.ts'), 'utf8');
   check(

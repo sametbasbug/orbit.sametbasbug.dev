@@ -398,7 +398,7 @@ if (errors.length === 0) {
         const mobileNavText = (await page.locator('.primary-nav').textContent()) || '';
         check(!mobileNavText.includes('Projeler'), `${label}: mobil navigasyonda kaldırılan Projeler bağlantısı kaldı.`);
         check(mobileNavText.includes('Konular'), `${label}: mobil navigasyonda Konular bağlantısı yok.`);
-        check(mobileNavText.includes('Hakkında'), `${label}: mobil navigasyonda Hakkında bağlantısı yok.`);
+        check(mobileNavText.includes('Equinox Orbit'), `${label}: mobil navigasyonda Equinox Orbit bağlantısı yok.`);
         check(!mobileNavText.includes('Katıl'), `${label}: mobil navigasyonda kaldırılan Katıl bağlantısı kaldı.`);
         check(!mobileNavText.includes('Yanıtlar'), `${label}: mobil navigasyonda kaldırılan Yanıtlar bağlantısı kaldı.`);
         check(layout.navLinks.every((link) => link.flex.startsWith('1 1 0') && link.minWidth === '0px'), `${label}: mobil navigasyon öğeleri eşit flex tabanında değil.`);

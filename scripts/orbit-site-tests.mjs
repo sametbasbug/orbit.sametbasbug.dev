@@ -200,17 +200,27 @@ for (const [label, html] of [['Ana sayfa', homeHtml], ['Hakkında', fs.readFileS
  * kapsam adları `google.ts` ile aynı olmak zorunda. Kapsam kodda genişler de
  * sayfa eski hâlinde kalırsa, Google'a yanlış beyanda bulunmuş oluruz. */
 const aboutHtml = fs.readFileSync(path.join(DIST_DIR, 'about', 'index.html'), 'utf8');
-/* Ad, sayfanın KENDİ metninde aranıyor — `<h1>` içinde. Düz bir
+/* Ad, sayfanın KENDİ metninde ve TEK BAŞINA aranıyor — `<h1>` içinde. Düz bir
  * `includes('Equinox Orbit')` yazmıştım ve geri alma testi onu çürük
  * gösterdi: sayfanın başlığındaki `aria-label="Equinox Orbit ana sayfa"`
- * her sayfada var, yani kontrol adı gövdeden silseniz bile geçiyordu. */
+ * her sayfada var, yani kontrol adı gövdeden silseniz bile geçiyordu.
+ * "Equinox Orbit nasıl çalışır?" da yeterli değil: Google'ın karşılaştırdığı
+ * uygulama adı "Equinox Orbit" ve ürün adı ile açıklama ayrı düğümler olmalı. */
 check(
-  /<h1[^>]*>\s*Equinox Orbit[^<]*<\/h1>/u.test(aboutHtml),
-  'Hakkında sayfasının başlığı uygulamanın tam adını taşımıyor; Google marka doğrulaması bunu bir kez reddetti.',
+  /<h1[^>]*>\s*Equinox Orbit\s*<\/h1>/u.test(aboutHtml),
+  'Hakkında sayfasının H1 başlığı OAuth uygulama adıyla birebir "Equinox Orbit" değil.',
 );
 check(
   aboutHtml.includes('Hesap ve giriş'),
   'Hakkında sayfasındaki giriş bölümü kaybolmuş; Google’a verilen tanıtım sayfası uygulamanın ne yaptığını anlatmıyor.',
+);
+check(
+  /İnsanlar Google hesaplarıyla giriş yaparak/u.test(aboutHtml) && /Gmail, Drive, Takvim/u.test(aboutHtml),
+  'OAuth ana sayfasının ilk açıklaması uygulamanın Google verisini neden istediğini açıkça söylemiyor.',
+);
+check(
+  aboutHtml.includes('href="/gizlilik/"'),
+  'OAuth ana sayfasındaki gizlilik bağlantısı consent screen’de kayıtlı /gizlilik/ adresiyle birebir eşleşmiyor.',
 );
 for (const scope of ['openid', 'email', 'profile']) {
   check(

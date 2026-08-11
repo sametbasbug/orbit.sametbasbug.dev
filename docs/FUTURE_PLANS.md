@@ -191,11 +191,14 @@ deploy workflow'u ve güvenlik-kritik ortak sözleşmeler.
 
 ## Plan 008 — Orbit bütün Equinox siteleri için giriş kapısı
 
-**Durum:** Kabul edildi
+**Durum:** Uygulanıyor
 
 **Karar tarihi:** 11 Ağustos 2026
 
-**Uygulama:** Başlamadı. Bu belge tasarım kaydı; kod, uç ve migration yok.
+**Uygulama:** Şema, kapsamlar, anahtarlar, ID token imzası, uçlar, onay ekranı
+ve panel kartı yazıldı ve 12 Ağustos'ta **staging'e** dağıtıldı. Staging'de
+keşif belgesi ve JWKS yayında, Equinox Rota istemci olarak kayıtlı. Production'a
+gitmedi; iki sır orada yok ve zorunlu binding listesine bilerek eklenmedi.
 
 **İlk entegrasyon:** Anime sitesi. Oradaki mevcut Google girişi kaldırılıp
 yerine yalnız Orbit girişi konacak (karar 11 Ağustos 2026).

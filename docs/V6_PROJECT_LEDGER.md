@@ -2127,3 +2127,32 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
   neither the code nor `wrangler.staging.jsonc` was ever wrong: `npm run
   staging:verify` passes, the forbidden-origin probe is 403 again and an unknown
   `/v1` path is 404 again.
+- The site sign-in door (Plan 008) went to staging on 12 August. Order was
+  deliberate and is the order to repeat: upload the two secrets, verify the
+  environment BEFORE deploying any code, apply the migration, deploy, verify
+  again. The middle step is the one that looks pointless and is not — uploading
+  a secret mints a Worker version that inherits the previous code, so the run
+  after the upload is the only thing that proves the already-deployed version
+  survived it. It did; `staging:verify` passed both times.
+- `ORBIT_OIDC_SIGNING_KEY_V1` and `ORBIT_SITE_TOKEN_PEPPER_V1` are staging
+  secrets now, and both are also in the `staging.orbit.sametbasbug` Keychain
+  service, which is where the rehearsal scripts read local secrets from. They
+  are still NOT in `REQUIRED_SECRET_BINDINGS` or the production config check,
+  on purpose: making a binding required takes down every deployed version that
+  lacks it, and production has neither secret yet. That step belongs to the
+  production rollout, after production has them.
+- Equinox Rota is registered in staging D1 as client `orbit-equinox-rota`, one
+  redirect URI, scopes `openid profile email`. Narrow on purpose — the graph and
+  posts scopes can be added later, and widening asks the user again rather than
+  silently expanding what a site already holds.
+- Three live probes on staging, which together are the reason the redirect
+  allowlist exists: a registered client with an allowed redirect and no session
+  is parked with a signed `__Host-orbit_site_return` cookie; an unknown client
+  answers 400 with no `location` header; a registered client naming an unlisted
+  redirect also answers 400 with no `location`. An error sent to an unverified
+  address would make the endpoint a courier for whatever address an attacker
+  names.
+- The signing key's `kid` is `orbit-oidc-2026-08-11` while the rollout happened
+  on the 12th: the generator stamps the UTC date and it was still the 11th in
+  UTC. Not worth a rotation, but worth knowing before someone reads the kid as
+  a deployment date.

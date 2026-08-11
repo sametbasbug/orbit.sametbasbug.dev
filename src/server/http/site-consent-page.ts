@@ -159,6 +159,8 @@ export function siteAuthorizationErrorPage(
     headers: {
       'content-type': 'text/html; charset=utf-8',
       'cache-control': 'no-store',
+      /* Hata sayfasında form yok, o yüzden burada `no-referrer` kalabiliyor:
+       * Origin sorunu yalnız form gönderen sayfayı ilgilendiriyor. */
       'referrer-policy': 'no-referrer',
       'x-content-type-options': 'nosniff',
       'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
@@ -173,12 +175,19 @@ export interface SiteConsentPageInput {
   accountHandle: string;
   ticket: string;
   csrfToken: string;
-  /* Kullanıcı vazgeçerse siteye bu adresle dönüyor. */
-  cancelUrl: string;
+  /* Onaydan (ve vazgeçmeden) sonra tarayıcının gideceği site adresi.
+   *
+   * Sayfada görünmüyor; CSP'nin `form-action` listesine bu adresin kökenini
+   * eklemek için duruyor. Gerekçe aşağıda, başlığın yanında. */
+  redirectUri: string;
 }
 
 export function siteConsentPage(input: SiteConsentPageInput): Response {
   const label = escapeHtml(input.clientLabel);
+  /* `new URL(...).origin` bir temizleyici olarak da duruyor: CSP başlığına
+   * ancak şema+host+port giriyor, yani kayıtlı adres bir gün beklenmedik bir
+   * şey içerse bile başlığa boşluk ya da noktalı virgül taşıyamıyor. */
+  const redirectOrigin = new URL(input.redirectUri).origin;
   const items = input.scopes
     .map((scope) => ({ scope, text: SCOPE_TEXTS[scope] }))
     .filter((entry) => entry.text.title !== null)
@@ -246,12 +255,34 @@ geri alabilirsin.</p>
        * CSRF değeri var, ve geri tuşuyla dönülüp yeniden gönderilmesi
        * beklenmiyor. */
       'cache-control': 'no-store',
-      'referrer-policy': 'no-referrer',
+      /* `no-referrer` DEĞİL, ve bu fark staging'de öğrenildi.
+       *
+       * Referrer politikası `no-referrer` olduğunda tarayıcı, bu sayfadan
+       * çıkan form gönderiminin `Origin` başlığını literal `null` yapıyor —
+       * yani kendi politikamız, kendi köken kontrolümüzün önünü kesiyordu ve
+       * "İzin ver" düğmesi `origin_forbidden` alıyordu.
+       *
+       * `same-origin` ikisini birden veriyor: aynı kökene giden istekte gerçek
+       * Origin gönderiliyor, çapraz kökene çıkarken referrer yine hiç
+       * sızmıyor — yani siteye dönerken adresimiz ve içindeki kod başka bir
+       * yere taşınmıyor. */
+      'referrer-policy': 'same-origin',
       'x-content-type-options': 'nosniff',
       /* Sayfada hiç script yok ve olmasına gerek yok; CSP bunu kalıcı kılıyor.
        * `frame-ancestors 'none'`: onay ekranı bir iframe'in içine alınıp
-       * kullanıcıya başka bir şey gibi gösterilemez. */
-      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+       * kullanıcıya başka bir şey gibi gösterilemez.
+       *
+       * `form-action` neden `'self'` ile yetinmiyor — bu da staging'de öğrenildi.
+       * Form kendi ucumuza (`/v1/oauth/consent`) gidiyor, yani ilk adım `'self'`.
+       * Ama o uç 302 ile siteye dönüyor ve Chrome `form-action`'ı yalnız ilk
+       * adrese değil, yönlendirme zincirinin tamamına uyguluyor. `'self'` tek
+       * başınayken sonuç şuydu: istek gidiyor, izin kaydediliyor, dönüş sessizce
+       * engelleniyor — ekranda hiçbir şey olmuyor, hata da yok.
+       *
+       * Kökeni sabit yazmıyorum: hangi siteye dönüleceğini istemci kaydı
+       * söylüyor. Bu adres buraya gelmeden önce kayıtlı adres listesiyle
+       * birebir eşleştirildi, yani genişletme değil, o eşleşmenin tekrarı. */
+      'content-security-policy': `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${redirectOrigin}; frame-ancestors 'none'; base-uri 'none'`,
     },
   });
 }

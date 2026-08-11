@@ -500,11 +500,27 @@ describe('Signing in to another Equinox site with Orbit', { concurrency: false }
     const crossSite = await consent(ticket, 'allow', { secFetchSite: 'cross-site' });
     assert.equal(crossSite.status, 403);
 
-    /* Ve gerçek hâl: aynı kökenden gelen form, `Origin` başlığı olmadan. Bu
-     * satır staging'de kırılan yolun kendisi. */
-    const real = await consent(ticket, 'allow', { secFetchSite: 'same-origin' });
-    assert.equal(real.status, 302, 'the browser sends no Origin on a same-origin form post');
-    assert.ok(locationOf(real).searchParams.get('code'));
+    /* Ve gerçek hâl. Bu satır staging'de İKİ KEZ kırılan yolun kendisi:
+     * ilkinde başlık yok sanmıştım, gerçekte tarayıcı literal `null`
+     * gönderiyordu — çünkü sayfamızın referrer politikası `no-referrer`'dı ve
+     * o politika Origin'i `null`a çeviriyor. */
+    const nullOrigin = await consent(ticket, 'allow', {
+      origin: 'null',
+      secFetchSite: 'same-origin',
+    });
+    assert.equal(
+      nullOrigin.status,
+      302,
+      'a no-referrer page makes the browser send Origin: null, which is not an attack signal',
+    );
+    assert.ok(locationOf(nullOrigin).searchParams.get('code'));
+
+    /* Başlığın tümden yokluğu da geçiyor (eski tarayıcılar). Aynı bilet
+     * yeniden kullanılıyor: tek kullanımlık olan kod, bilet değil — bilet
+     * süresi içinde yeni bir kod üretiyor ve izin kaydı zaten UPSERT. */
+    const absent = await consent(ticket, 'allow', { secFetchSite: 'same-origin' });
+    assert.equal(absent.status, 302);
+    assert.ok(locationOf(absent).searchParams.get('code'));
   });
 
   test('a code cannot be exchanged twice, and the replay burns the tokens', async () => {

@@ -940,14 +940,27 @@ describe('Orbit as a sign-in door for other sites', { concurrency: false }, () =
       accountHandle: 'samet',
       ticket: 'orb_site_req_v1.payload.signature',
       csrfToken: 'csrf-value',
-      cancelUrl: 'https://anime.sametbasbug.dev/auth/v1/callback?error=access_denied',
+      redirectUri: 'https://rslltclzdfzwaxqtozmq.supabase.co/auth/v1/callback',
     });
     const html = await response.text();
 
     assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8');
     assert.equal(response.headers.get('cache-control'), 'no-store');
+    /* `no-referrer` OLMAMALI: o politika, bu sayfadan çıkan form gönderiminin
+     * Origin başlığını literal `null` yapıyor ve köken kontrolü onu reddedince
+     * "İzin ver" düğmesi çalışmıyor. Staging'de iki kez kırıldı; bu satır o
+     * dersin kilidi. */
+    assert.equal(response.headers.get('referrer-policy'), 'same-origin');
     /* Sayfada script yok ve CSP bunu kalıcı kılıyor; iframe'e alınamıyor. */
-    assert.match(response.headers.get('content-security-policy') ?? '', /frame-ancestors 'none'/u);
+    const csp = response.headers.get('content-security-policy') ?? '';
+    assert.match(csp, /frame-ancestors 'none'/u);
+    /* `form-action` dönüş kökenini içermeli. Yalnız `'self'` yazıldığında Chrome
+     * onay POST'unun ardından gelen 302'yi engelliyor: izin kaydediliyor ama
+     * tarayıcı siteye dönmüyor ve ekranda hiçbir şey olmuyor. Staging'de
+     * "bastım, sayfa kaybolmadı" diye görüldü; bu satır o dersin kilidi. */
+    assert.match(csp, /form-action 'self' https:\/\/rslltclzdfzwaxqtozmq\.supabase\.co;/u);
+    /* Başlığa yalnız köken giriyor — yol, sorgu ya da ayırıcı taşınmıyor. */
+    assert.equal(csp.includes('/auth/v1/callback'), false);
     assert.equal(/<script/iu.test(html), false);
 
     assert.match(html, /E-posta adresin/u);
@@ -971,7 +984,7 @@ describe('Orbit as a sign-in door for other sites', { concurrency: false }, () =
       accountHandle: 'samet',
       ticket: 'orb_site_req_v1.a.b',
       csrfToken: 'csrf',
-      cancelUrl: 'https://anime.example/cb',
+      redirectUri: 'https://anime.example/cb',
     });
     const html = await response.text();
     /* İstemci adı operatör eliyle giriliyor, yani bugün güvenilir. Kaçış yine

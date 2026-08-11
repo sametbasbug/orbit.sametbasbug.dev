@@ -4025,7 +4025,18 @@ function siteIssuer(env: OrbitBindings): string {
  * açık olurdu, öyle değil. */
 function requireBrowserFormOrigin(request: Request, env: OrbitBindings): void {
   const origin = request.headers.get('origin');
-  if (origin !== null && origin !== env.ORBIT_ALLOWED_ORIGIN) {
+  /* `null` başlığın yokluğu değil, "kökeni söylemeyeceğim" demek — ve
+   * tarayıcı bunu bizim kendi başlığımız yüzünden yapıyordu: sayfa
+   * `referrer-policy: no-referrer` gönderdiğinde form gönderiminin Origin'i
+   * literal `null` oluyor. İlk düzeltmem yalnız başlığın YOKLUĞUNU karşıladı
+   * ve staging'de aynı hata ikinci kez geldi.
+   *
+   * Sayfanın politikası artık `same-origin` (bkz. site-consent-page.ts), yani
+   * gerçek Origin geliyor. Buradaki `null` toleransı yine kalıyor: tek bir
+   * başlık değişikliğinin girişi yeniden kırmasına gerek yok, ve `null` bir
+   * saldırı sinyali değil — çapraz kökenden gelen gerçek bir form gönderimi
+   * kendi kökenini taşıyor. */
+  if (origin !== null && origin !== 'null' && origin !== env.ORBIT_ALLOWED_ORIGIN) {
     throw new ApiError(403, 'origin_forbidden', 'Request origin is not allowed.');
   }
   const site = request.headers.get('sec-fetch-site');
@@ -4456,7 +4467,7 @@ async function handleSiteAuthorize(
     accountHandle: auth.account.handle,
     ticket,
     csrfToken: auth.csrfToken ?? '',
-    cancelUrl: redirectUri,
+    redirectUri,
   });
   return attachCookies(page, [clearHostCookie(SITE_RETURN_COOKIE, true)]);
 }

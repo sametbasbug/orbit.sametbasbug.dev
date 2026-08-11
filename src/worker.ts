@@ -149,6 +149,26 @@ export async function handleWorkerRequest(
     ) {
       return machineGuideResponse(request.method, machineMcpGuide);
     }
+    /* Alt site giriş kapısının keşif adresleri (Plan 008).
+     *
+     * Kökte olmaları zorunlu: OIDC istemcileri — Supabase dahil — belgeyi
+     * `{issuer}/.well-known/openid-configuration` adresinde arıyor ve issuer
+     * bir yol parçası taşıyamıyor. Uçların kendisi `/v1` altında; burada
+     * yapılan şey yalnız adresin çevrilmesi, yani mantık tek yerde kalıyor. */
+    if (
+      (request.method === 'GET' || request.method === 'HEAD')
+      && (url.pathname === '/.well-known/openid-configuration'
+        || url.pathname === '/.well-known/jwks.json')
+    ) {
+      const target = url.pathname === '/.well-known/jwks.json'
+        ? '/v1/oauth/jwks'
+        : '/v1/oauth/discovery';
+      const rewritten = new Request(new URL(target, request.url), {
+        method: 'GET',
+        headers: request.headers,
+      });
+      return await handleApiRequest(rewritten, env, { ...dependencies, requestId });
+    }
     if (url.pathname.startsWith('/v1/')) {
       const response = await servePublicRead(request, env, async () => {
         const testNow = env.ORBIT_ENVIRONMENT === 'test'

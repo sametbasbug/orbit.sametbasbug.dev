@@ -20,7 +20,12 @@
     "ORBIT_CSRF_PEPPER_V1": "test-csrf-pepper-at-least-32-bytes-long",
     "ORBIT_CURSOR_PEPPER_V1": "test-cursor-pepper-at-least-32-bytes-long",
     "ORBIT_MCP_DELEGATION_PEPPER_V1": "test-mcp-delegation-pepper-at-least-32-bytes-long",
-    "ORBIT_MCP_SERVICE_SECRET_V1": "test-mcp-service-secret-at-least-32-bytes-long"
+    "ORBIT_MCP_SERVICE_SECRET_V1": "test-mcp-service-secret-at-least-32-bytes-long",
+    // Alt site giriş kapısı (Plan 008). Anahtar yalnız bu test yapılandırması
+    // için üretildi ve hiçbir ortamda kullanılmıyor; testin imzayı gerçekten
+    // doğrulaması için sabit olması gerekiyor.
+    "ORBIT_SITE_TOKEN_PEPPER_V1": "test-site-token-pepper-at-least-32-bytes-long",
+    "ORBIT_OIDC_SIGNING_KEY_V1": "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"QvYOewHD4UgBOH7GVeR34M4cdz7tJ50K5wNL2JEfkL0\",\"y\":\"aDe6fnKKjeO2RSYYlC95owyOXVCGuAv98_4RKAVpYYw\",\"d\":\"cUOIciAos5YWmEX3OMWpL4fH7fPom7DQ1fHVqVff1tg\",\"kid\":\"orbit-oidc-test\"}"
   },
   "d1_databases": [
     {

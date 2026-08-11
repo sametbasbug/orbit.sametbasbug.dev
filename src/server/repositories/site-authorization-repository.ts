@@ -91,6 +91,8 @@ export interface SiteAuthorizationRepository {
 
   getGrant(input: { clientId: string; accountId: string }): Promise<SiteGrantView | null>;
 
+  getGrantById(grantId: string): Promise<SiteGrantView | null>;
+
   listAccountGrants(accountId: string): Promise<SiteGrantView[]>;
 
   /* Onay ekranının yazdığı yer: izin satırı (yeni ya da tazelenmiş) ve ona

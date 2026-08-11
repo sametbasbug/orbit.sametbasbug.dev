@@ -227,12 +227,18 @@ async function completeSignup() {
     flash('Bir ad yazman gerekiyor.', 'error');
     return;
   }
-  await request('/v1/auth/register', {
+  const { body } = await request('/v1/auth/register', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ handle }),
   });
-  window.location.replace('/dashboard');
+  /* Bir alt siteden gelip hesabı olmadığı için buraya düşen kişi, hesabı
+     açılınca geldiği yere dönüyor. Sunucu yalnız kendi bildiği sabit bir yol
+     gönderiyor; adresi cevaptan almak, cevabı etkileyebilen birine
+     yönlendirme yazdırmak olurdu. */
+  window.location.replace(
+    body.continueUrl === '/v1/oauth/authorize?resume=1' ? body.continueUrl : '/dashboard',
+  );
 }
 
 /* Tik atılmadan buton çalışmıyor. Devre dışı bir butonun sebebini

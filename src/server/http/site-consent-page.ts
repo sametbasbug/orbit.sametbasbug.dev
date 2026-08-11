@@ -95,6 +95,64 @@ button.primary { background: var(--accent); color: var(--accent-ink); border-col
 .fine { margin: 1.25rem 0 0; font-size: 0.82rem; color: var(--muted); }
 `;
 
+/* Siteye GERİ DÖNÜLEMEYEN hatalar.
+ *
+ * Bir OAuth hatası normalde istemcinin yönlendirme adresine `error=` ile
+ * gönderilir. Ama istemci tanınmıyorsa ya da yönlendirme adresi listede
+ * yoksa, o adres güvenilir değil: hatayı oraya göndermek, ucu saldırganın
+ * seçtiği adrese parametre taşıyan bir araca çevirir. Bu iki durumda kullanıcı
+ * Orbit'te kalıyor ve sayfayı biz gösteriyoruz. */
+const SITE_ERROR_TEXTS = {
+  unknown_client: {
+    title: 'Bu site Orbit’e bağlı değil',
+    body: 'Geldiğin site Orbit’te kayıtlı bir uygulama olarak tanınmıyor. Bağlantı eski olabilir. Girişi site üzerinden yeniden başlatmayı dene.',
+  },
+  invalid_redirect_uri: {
+    title: 'Geri dönüş adresi tanınmıyor',
+    body: 'Site, Orbit’te kayıtlı olmayan bir adrese dönmek istedi. Güvenlik gereği o adrese hiçbir şey göndermedik ve giriş burada durdu.',
+  },
+  unavailable: {
+    title: 'Orbit ile giriş şu anda kapalı',
+    body: 'Bu Orbit kurulumunda site girişi yapılandırılmamış. Bir yanlışlık olduğunu düşünüyorsan bize yaz.',
+  },
+} as const;
+
+export type SiteAuthorizationErrorKind = keyof typeof SITE_ERROR_TEXTS;
+
+export function siteAuthorizationErrorPage(
+  kind: SiteAuthorizationErrorKind,
+  status: number,
+): Response {
+  const text = SITE_ERROR_TEXTS[kind];
+  const html = `<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>${escapeHtml(text.title)} · Equinox Orbit</title>
+<style>${STYLE}</style>
+</head>
+<body>
+<main>
+<h1>${escapeHtml(text.title)}</h1>
+<p class="site">${escapeHtml(text.body)}</p>
+<p class="fine"><a href="/">Orbit ana sayfasına dön</a> · <a href="/iletisim">İletişim</a></p>
+</main>
+</body>
+</html>`;
+  return new Response(html, {
+    status,
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'referrer-policy': 'no-referrer',
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
+    },
+  });
+}
+
 export interface SiteConsentPageInput {
   clientLabel: string;
   clientSiteUrl: string;
@@ -128,7 +186,10 @@ export function siteConsentPage(input: SiteConsentPageInput): Response {
 </head>
 <body>
 <main>
-<h1>${label} Orbit hesabınla devam etmek istiyor</h1>
+<!-- Virgül bir süs değil. Virgülsüz hâlde "Equinox Rota Orbit hesabınla" tek
+     bir isim gibi okunuyor ve Orbit de bağlanmak isteyen taraflardan biri
+     sanılıyor. Site adı ile Orbit'in arasındaki sınırı bu virgül çiziyor. -->
+<h1>${label}, Orbit hesabınla devam etmek istiyor</h1>
 <p class="site">${escapeHtml(input.clientSiteUrl)}</p>
 
 <h2>Bu site şunları görecek</h2>

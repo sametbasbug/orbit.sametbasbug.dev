@@ -82,6 +82,15 @@ export const SITE_ID_TOKEN_TTL_MS = 15 * 60 * 1000;
  * her siteye yeniden onay vermeye zorlaması olurdu. */
 export const SITE_CONSENT_VERSION = '2026-08-12';
 
+/* Alt siteden gelip Orbit'te oturumu olmayan kişinin bekleyen isteği.
+ *
+ * Ayrı bir çerez, çünkü taşıdığı şey bir yetki değil bir hedef: "giriş
+ * bittiğinde şu izin ekranına dön". Oturum çerezine ya da imzasız bir adres
+ * parametresine yüklenemez — adres parametresi tarayıcı geçmişine ve sunucu
+ * kayıtlarına düşer, ve oraya düşen şey saldırganın seçtiği bir adres olabilir. */
+export const SITE_RETURN_COOKIE = '__Host-orbit_site_return';
+export const SITE_RETURN_TTL_MS = 10 * 60 * 1000;
+
 export const SESSION_COOKIE = '__Host-orbit_session';
 export const CSRF_COOKIE = '__Host-orbit_csrf';
 export const OAUTH_COOKIE = '__Host-orbit_oauth';

@@ -478,16 +478,74 @@ async function testRoute(request: Request, env: TestEnv): Promise<Response | nul
       INSERT INTO auth_identities (
         id, account_id, provider, provider_user_id,
         provider_login_snapshot, provider_email_snapshot, created_at, last_seen_at
-      ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       String(body.identityId),
       String(body.accountId),
       String(body.provider),
       String(body.providerUserId),
       String(body.providerLogin),
+      /* Adres isteğe bağlı ve varsayılan NULL — eski çağıranlar için davranış
+       * değişmiyor. Doldurulabilir olması `email` kapsamı için gerekli: o
+       * kapsamın kaynağı bu sütun ve sütun yalnız DOĞRULANMIŞ adresle
+       * doluyor (bkz. google.ts). */
+      typeof body.providerEmail === 'string' && body.providerEmail.length > 0
+        ? body.providerEmail
+        : null,
       Number(body.now ?? Date.now()),
       Number(body.now ?? Date.now()),
     ).run();
+    return Response.json({ ok: true });
+  }
+
+  /* Alt site istemcisi (Plan 008). Sırrın digest'ini test hesaplıyor ve
+   * buraya hazır getiriyor: sır hiç worker'a girmiyor, yani testin kurduğu
+   * istemci de gerçek istemci gibi yalnız digest olarak duruyor. */
+  if (url.pathname === '/__test/seed-site-client') {
+    const clientRowId = String(body.id);
+    const uris = Array.isArray(body.redirectUris) ? body.redirectUris : [];
+    await env.DB.prepare(`
+      INSERT INTO oauth_clients (
+        id, client_id, secret_digest, hash_version, label, site_url,
+        allowed_scopes, environment, status, created_at
+      ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, 'active', ?)
+    `).bind(
+      clientRowId,
+      String(body.clientId),
+      String(body.secretDigest),
+      String(body.label),
+      String(body.siteUrl),
+      String(body.allowedScopes),
+      String(body.environment ?? 'production'),
+      now,
+    ).run();
+    for (const [index, uri] of uris.entries()) {
+      await env.DB.prepare(`
+        INSERT INTO oauth_client_redirect_uris (id, client_id, redirect_uri, created_at)
+        VALUES (?, ?, ?, ?)
+      `).bind(`${clientRowId}:uri:${index}`, clientRowId, String(uri), now).run();
+    }
+    return Response.json({ ok: true });
+  }
+
+  if (url.pathname === '/__test/site-grant-state') {
+    const grants = await env.DB.prepare(`
+      SELECT grant_row.id, grant_row.scopes, grant_row.consent_version,
+             grant_row.revoked_at, grant_row.last_used_at,
+             (SELECT COUNT(*) FROM oauth_site_tokens token
+               WHERE token.grant_id = grant_row.id AND token.revoked_at IS NULL) AS live_tokens
+      FROM oauth_client_grants grant_row
+      JOIN oauth_clients client ON client.id = grant_row.client_id
+      WHERE client.client_id = ?
+      ORDER BY grant_row.created_at
+    `).bind(String(body.clientId)).all();
+    return Response.json({ grants: grants.results });
+  }
+
+  if (url.pathname === '/__test/set-site-account-status') {
+    await env.DB.prepare(`
+      UPDATE accounts SET status = ?, updated_at = ? WHERE id = ?
+    `).bind(String(body.status), now, String(body.accountId)).run();
     return Response.json({ ok: true });
   }
 

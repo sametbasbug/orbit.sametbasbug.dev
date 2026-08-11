@@ -237,6 +237,14 @@ export class D1SiteAuthorizationRepository implements SiteAuthorizationRepositor
     return row ? grantFromSql(row) : null;
   }
 
+  async getGrantById(grantId: string): Promise<SiteGrantView | null> {
+    const row = await this.#db.prepare(`
+      ${GRANT_SELECT}
+      WHERE grant_row.id = ?
+    `).bind(grantId).first<GrantSqlRow>();
+    return row ? grantFromSql(row) : null;
+  }
+
   async listAccountGrants(accountId: string): Promise<SiteGrantView[]> {
     const rows = await this.#db.prepare(`
       ${GRANT_SELECT}

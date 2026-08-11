@@ -18,6 +18,13 @@ import {
   SESSION_RETENTION_MS,
   SIGN_IN_EVENT_RETENTION_MS,
   SIGNUP_COOKIE,
+  SITE_ACCESS_TOKEN_TTL_MS,
+  SITE_AUTHORIZATION_CODE_TTL_MS,
+  SITE_CONSENT_VERSION,
+  SITE_ID_TOKEN_TTL_MS,
+  SITE_REFRESH_TOKEN_TTL_MS,
+  SITE_RETURN_COOKIE,
+  SITE_RETURN_TTL_MS,
 } from '../identity/constants';
 import { assertIdentityBindings, openRegistrationEnabled, type OrbitBindings } from '../identity/bindings';
 /* Onayın sürümü, yasal metinlerin yürürlük tarihi. Sayfada yazan tarih ile
@@ -26,6 +33,31 @@ import { assertIdentityBindings, openRegistrationEnabled, type OrbitBindings } f
 import { LEGAL_LAST_UPDATED } from '../../data/legal';
 import { readConnectionTrace, type ConnectionTrace } from '../identity/connection';
 import { oauthCallbackErrorPage } from './oauth-error-page';
+import { siteAuthorizationErrorPage, siteConsentPage } from './site-consent-page';
+import {
+  normalizeSiteAuthorizationScopes,
+  SITE_AUTHORIZATION_SCOPES,
+  scopesNeedConsent,
+  scopesWithinLimit,
+  type SiteAuthorizationScope,
+} from '../identity/site-authorization-scopes';
+import {
+  createSiteAuthorizationRequestTicket,
+  verifySiteAuthorizationRequestTicket,
+  type SiteAuthorizationRequest,
+} from '../identity/site-authorization-request';
+import {
+  importSiteSigningKey,
+  signSiteIdToken,
+  siteDiscoveryDocument,
+  siteJwks,
+  type SiteSigningKey,
+} from '../identity/site-id-token';
+import { D1SiteAuthorizationRepository } from '../repositories/d1/d1-site-authorization-repository';
+import type {
+  SiteAuthorizationRepository,
+  SiteClientView,
+} from '../repositories/site-authorization-repository';
 import {
   ANNOUNCEMENT_RECIPIENT_CAP,
   D1NotificationRepository,
@@ -69,9 +101,11 @@ import {
 } from '../identity/mcp-authorization-scopes';
 import {
   createOpaqueToken,
+  digestOpaqueToken,
   hmacDigest,
   parseOpaqueToken,
   randomBase64Url,
+  sha256Base64Url,
   timingSafeEqual,
   verifyOpaqueToken,
 } from '../identity/tokens';
@@ -3890,10 +3924,24 @@ async function handleProviderCallback(
     now,
   });
 
+  /* Bekleyen bir alt site isteği varsa panele değil oraya dönüyoruz. Hedef
+   * çerezdeki imzalı biletten geliyor, adresten değil: `?next=` gibi bir
+   * parametre, giriş sonrası kullanıcıyı istediği yere gönderebilen bir açık
+   * yönlendirici olurdu. Buradaki tek karar "dön ya da dönme". */
+  const pendingSiteRequest = readCookie(request, SITE_RETURN_COOKIE);
+  const resumesSiteRequest = pendingSiteRequest !== null
+    && await verifySiteAuthorizationRequestTicket(
+      pendingSiteRequest,
+      env.ORBIT_OAUTH_STATE_PEPPER_V1,
+      now,
+    ) !== null;
+
   const response = new Response(null, {
     status: 302,
     headers: {
-      location: `${env.ORBIT_ALLOWED_ORIGIN}/dashboard`,
+      location: resumesSiteRequest
+        ? `${env.ORBIT_ALLOWED_ORIGIN}/v1/oauth/authorize?resume=1`
+        : `${env.ORBIT_ALLOWED_ORIGIN}/dashboard`,
       'cache-control': 'no-store',
       'referrer-policy': 'no-referrer',
     },
@@ -3902,6 +3950,791 @@ async function handleProviderCallback(
     ...sessionCookies(sessionToken.token, csrfToken),
     clearHostCookie(OAUTH_COOKIE, true),
   ]);
+}
+
+/* ---------------------------------------------------------------------------
+ * Alt site giriş kapısı (Plan 008).
+ *
+ * Buradaki uçlar Orbit'i bir kimlik SAĞLAYICISI yapıyor: Equinox Rota gibi
+ * siteler kendi hesap sistemini kurmuyor, kullanıcı orada "Orbit ile devam
+ * et"e basıyor. Akış OIDC'nin küçük bir alt kümesi — authorization code +
+ * PKCE, imzalı ID token — çünkü alt siteler o zaman hazır istemci
+ * kullanabiliyor.
+ * ------------------------------------------------------------------------- */
+
+/* İmza anahtarı istek başına yeniden içe aktarılmasın. Anahtar sırrın kendisi
+ * anahtar oluyor: sır döndüğünde giriş de kendiliğinden yeni anahtara geçiyor,
+ * eski CryptoKey'i elde tutan bir önbellek olmadan. */
+const siteSigningKeyCache = new Map<string, Promise<SiteSigningKey>>();
+
+function siteAuthorizationConfig(env: OrbitBindings): {
+  signingKeySecret: string;
+  tokenPepper: string;
+} {
+  const signingKeySecret = env.ORBIT_OIDC_SIGNING_KEY_V1;
+  const tokenPepper = env.ORBIT_SITE_TOKEN_PEPPER_V1;
+  /* İkisi birlikte anlamlı: biri eksikse kapı kapalı. Yarı yapılandırılmış bir
+   * kimlik sağlayıcısı, çalıştığını sanıp imzasız ya da doğrulanamaz anahtar
+   * dağıtan bir sağlayıcıdır. */
+  if (typeof signingKeySecret !== 'string' || signingKeySecret.length === 0
+    || typeof tokenPepper !== 'string' || tokenPepper.length === 0) {
+    throw new ApiError(
+      503,
+      'site_authorization_unavailable',
+      'Orbit site sign-in is not configured.',
+    );
+  }
+  return { signingKeySecret, tokenPepper };
+}
+
+async function siteSigningKey(secret: string): Promise<SiteSigningKey> {
+  const cached = siteSigningKeyCache.get(secret);
+  if (cached) return await cached;
+  const pending = importSiteSigningKey(secret);
+  siteSigningKeyCache.set(secret, pending);
+  try {
+    return await pending;
+  } catch (error) {
+    /* Bozuk anahtar önbellekte kalmasın: sır düzeltildiğinde bir sonraki
+     * istek yeniden denemeli. */
+    siteSigningKeyCache.delete(secret);
+    throw error;
+  }
+}
+
+function siteIssuer(env: OrbitBindings): string {
+  return env.ORBIT_ALLOWED_ORIGIN;
+}
+
+async function readFormBody(request: Request): Promise<URLSearchParams> {
+  const contentType = request.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/x-www-form-urlencoded')) {
+    throw new ApiError(400, 'invalid_request', 'Body must be form encoded.');
+  }
+  const text = await request.text();
+  if (text.length > 8_192) throw new ApiError(413, 'invalid_request', 'Body is too large.');
+  return new URLSearchParams(text);
+}
+
+/* Siteye `error=` ile dönüş. Yalnız yönlendirme adresi DOĞRULANDIKTAN sonra
+ * kullanılıyor; öncesinde hata Orbit'te gösteriliyor. */
+function siteErrorRedirect(redirectUri: string, state: string, error: string): Response {
+  const target = new URL(redirectUri);
+  target.searchParams.set('error', error);
+  if (state.length > 0) target.searchParams.set('state', state);
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: target.toString(),
+      'cache-control': 'no-store',
+      'referrer-policy': 'no-referrer',
+    },
+  });
+}
+
+function siteCodeRedirect(redirectUri: string, state: string, code: string): Response {
+  const target = new URL(redirectUri);
+  target.searchParams.set('code', code);
+  if (state.length > 0) target.searchParams.set('state', state);
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: target.toString(),
+      'cache-control': 'no-store',
+      'referrer-policy': 'no-referrer',
+    },
+  });
+}
+
+function siteClientSecretDigest(secret: string, pepper: string): Promise<string> {
+  return hmacDigest(`orbit:site-client-secret:v1:${secret}`, pepper);
+}
+
+/* İstemci kimlik doğrulaması. Basic başlığı ve gövde, ikisi de kabul —
+ * kütüphaneler ikisini de kullanıyor ve keşif belgesi ikisini de ilan ediyor. */
+async function authenticateSiteClient(
+  request: Request,
+  body: URLSearchParams,
+  env: OrbitBindings,
+  siteRepository: SiteAuthorizationRepository,
+): Promise<SiteClientView> {
+  const { tokenPepper } = siteAuthorizationConfig(env);
+  let clientId = body.get('client_id') ?? '';
+  let clientSecret = body.get('client_secret') ?? '';
+
+  const header = request.headers.get('authorization');
+  if (header?.startsWith('Basic ')) {
+    try {
+      const decoded = atob(header.slice(6));
+      const separator = decoded.indexOf(':');
+      if (separator > 0) {
+        clientId = decodeURIComponent(decoded.slice(0, separator));
+        clientSecret = decodeURIComponent(decoded.slice(separator + 1));
+      }
+    } catch {
+      throw new ApiError(401, 'invalid_client', 'Client credentials are invalid.');
+    }
+  }
+
+  if (clientId.length === 0 || clientSecret.length === 0) {
+    throw new ApiError(401, 'invalid_client', 'Client credentials are required.');
+  }
+  const client = await siteRepository.getClientByClientId(clientId);
+  if (!client || client.status !== 'active') {
+    throw new ApiError(401, 'invalid_client', 'Client credentials are invalid.');
+  }
+  const digest = await siteClientSecretDigest(clientSecret, tokenPepper);
+  if (!timingSafeEqual(digest, client.secretDigest)) {
+    throw new ApiError(401, 'invalid_client', 'Client credentials are invalid.');
+  }
+  return client;
+}
+
+/* Kapsamın izin verdiği profil alanları — ID token ve /userinfo aynı yerden
+ * besleniyor. İki ayrı eşleme olsaydı biri genişletilip diğeri unutulurdu ve
+ * iki uç aynı kullanıcı için farklı şey söylerdi. */
+async function siteProfileClaims(
+  scopes: readonly SiteAuthorizationScope[],
+  account: AccountView,
+  notifications: D1NotificationRepository,
+): Promise<{
+  name?: string;
+  preferredUsername?: string;
+  picture?: string | null;
+  email?: string | null;
+  emailVerified?: boolean;
+}> {
+  const claims: {
+    name?: string;
+    preferredUsername?: string;
+    picture?: string | null;
+    email?: string | null;
+    emailVerified?: boolean;
+  } = {};
+  if (scopes.includes('profile')) {
+    claims.name = account.displayName;
+    claims.preferredUsername = account.handle;
+    claims.picture = account.avatarUrl;
+  }
+  if (scopes.includes('email')) {
+    /* Kaynak `provider_email_snapshot` ve o alan yalnız DOĞRULANMIŞ adresle
+     * doluyor (bkz. google.ts). Yani buradan çıkan adres doğrulanmış demektir;
+     * doğrulanmamış bir adres hiç bu alana girmiyor. */
+    const email = await notifications.recipientFor(account.id);
+    claims.email = email;
+    claims.emailVerified = email !== null;
+  }
+  return claims;
+}
+
+interface SiteTokenResponse {
+  access_token: string;
+  token_type: 'Bearer';
+  expires_in: number;
+  refresh_token: string;
+  id_token: string;
+  scope: string;
+}
+
+async function issueSiteTokens(input: {
+  env: OrbitBindings;
+  siteRepository: SiteAuthorizationRepository;
+  repository: IdentityRepository;
+  notifications: D1NotificationRepository;
+  grantId: string;
+  accountId: string;
+  clientId: string;
+  subject: string;
+  scopes: SiteAuthorizationScope[];
+  nonce: string | null;
+  replacesRefreshTokenId: string | null;
+  requestId: string;
+  now: number;
+}): Promise<SiteTokenResponse> {
+  const { signingKeySecret, tokenPepper } = siteAuthorizationConfig(input.env);
+  const account = await input.repository.getAccount(input.accountId);
+  if (!account) throw new ApiError(401, 'invalid_grant', 'Account is unavailable.');
+
+  const access = await createOpaqueToken('site_access', tokenPepper);
+  const refresh = await createOpaqueToken('site_refresh', tokenPepper);
+
+  await input.siteRepository.issueTokenPair({
+    grantId: input.grantId,
+    access: {
+      id: createEntityId(),
+      secretDigest: access.digest,
+      hashVersion: access.hashVersion,
+      expiresAt: input.now + SITE_ACCESS_TOKEN_TTL_MS,
+    },
+    refresh: {
+      id: createEntityId(),
+      secretDigest: refresh.digest,
+      hashVersion: refresh.hashVersion,
+      expiresAt: input.now + SITE_REFRESH_TOKEN_TTL_MS,
+    },
+    replacesRefreshTokenId: input.replacesRefreshTokenId,
+    auditEventId: createEntityId(),
+    auditEventType: input.replacesRefreshTokenId === null
+      ? 'site.tokens_issued'
+      : 'site.tokens_rotated',
+    requestId: input.requestId,
+    now: input.now,
+  });
+
+  const idToken = await signSiteIdToken(await siteSigningKey(signingKeySecret), {
+    issuer: siteIssuer(input.env),
+    subject: input.subject,
+    audience: input.clientId,
+    issuedAt: input.now,
+    expiresAt: input.now + SITE_ID_TOKEN_TTL_MS,
+    nonce: input.nonce,
+    ...await siteProfileClaims(input.scopes, account, input.notifications),
+  });
+
+  return {
+    access_token: access.token,
+    token_type: 'Bearer',
+    expires_in: Math.floor(SITE_ACCESS_TOKEN_TTL_MS / 1000),
+    refresh_token: refresh.token,
+    id_token: idToken,
+    scope: input.scopes.join(' '),
+  };
+}
+
+/* Onay verildikten sonra kodu yazıp kullanıcıyı siteye geri gönderen adım.
+ * Onay ekranından gelen yol da, izin zaten varken ekranı atlayan yol da
+ * buradan geçiyor — tek yazma yolu, tek kayıt biçimi. */
+async function completeSiteAuthorization(input: {
+  env: OrbitBindings;
+  siteRepository: SiteAuthorizationRepository;
+  authorizationRequest: SiteAuthorizationRequest;
+  accountId: string;
+  requestId: string;
+  now: number;
+}): Promise<Response> {
+  const { tokenPepper } = siteAuthorizationConfig(input.env);
+  const code = await createOpaqueToken('site_code', tokenPepper);
+
+  await input.siteRepository.ensureSubject({
+    id: createEntityId(),
+    clientId: input.authorizationRequest.clientRowId,
+    accountId: input.accountId,
+    /* Kimlik rastgele ve hesap kimliğinden türetilmiyor. Türetilseydi —
+     * örneğin hash(accountId + clientId) — iki site kendi gördükleri
+     * kimlikleri karşılaştırarak aynı kişi olduğunu ispatlayamazdı ama
+     * algoritmayı bilen biri hesap kimliğini geri üretebilirdi. */
+    subject: randomBase64Url(24),
+    createdAt: input.now,
+  });
+
+  await input.siteRepository.recordConsentWithCode({
+    grant: {
+      id: createEntityId(),
+      clientId: input.authorizationRequest.clientRowId,
+      accountId: input.accountId,
+      scopes: input.authorizationRequest.scopes,
+      consentVersion: SITE_CONSENT_VERSION,
+      now: input.now,
+    },
+    code: {
+      id: createEntityId(),
+      codeDigest: code.digest,
+      hashVersion: code.hashVersion,
+      redirectUri: input.authorizationRequest.redirectUri,
+      pkceChallenge: input.authorizationRequest.codeChallenge,
+      nonce: input.authorizationRequest.nonce,
+      scopes: input.authorizationRequest.scopes,
+      createdAt: input.now,
+      expiresAt: input.now + SITE_AUTHORIZATION_CODE_TTL_MS,
+    },
+    auditEventId: createEntityId(),
+    requestId: input.requestId,
+  });
+
+  const response = siteCodeRedirect(
+    input.authorizationRequest.redirectUri,
+    input.authorizationRequest.state,
+    code.token,
+  );
+  /* Bekleyen istek çerezi burada temizleniyor: iş bitti ve elde kalan bir
+   * hedef, sonraki bir girişte kullanıcıyı beklemediği bir yere gönderir. */
+  return attachCookies(response, [clearHostCookie(SITE_RETURN_COOKIE, true)]);
+}
+
+async function handleSiteAuthorize(
+  request: Request,
+  env: OrbitBindings,
+  repository: IdentityRepository,
+  siteRepository: SiteAuthorizationRepository,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const url = new URL(request.url);
+  /* Yapılandırma eksikse kullanıcıya sayfa gösteriliyor, JSON değil: bu uç bir
+   * API ucu değil, tarayıcının yönlendirildiği adres. */
+  try {
+    siteAuthorizationConfig(env);
+  } catch {
+    return siteAuthorizationErrorPage('unavailable', 503);
+  }
+
+  /* Bekleyen istek: giriş yaptıktan sonra buraya dönen kişi. Parametreler
+   * adreste değil çerezde, çünkü çerezdeki imzalı bilet kullanıcının
+   * değiştiremediği tek taşıyıcı. */
+  const resumeTicket = url.searchParams.get('resume') === '1'
+    ? readCookie(request, SITE_RETURN_COOKIE)
+    : null;
+  const resumed = resumeTicket
+    ? await verifySiteAuthorizationRequestTicket(
+      resumeTicket,
+      env.ORBIT_OAUTH_STATE_PEPPER_V1,
+      now,
+    )
+    : null;
+
+  let client: SiteClientView | null;
+  let redirectUri: string;
+  let state: string;
+  let scopes: SiteAuthorizationScope[];
+  let codeChallenge: string;
+  let nonce: string | null;
+
+  if (resumed) {
+    client = await siteRepository.getClientByClientId(resumed.clientId);
+    redirectUri = resumed.redirectUri;
+    state = resumed.state;
+    scopes = resumed.scopes;
+    codeChallenge = resumed.codeChallenge;
+    nonce = resumed.nonce;
+    if (!client || client.status !== 'active' || !client.redirectUris.includes(redirectUri)) {
+      return siteAuthorizationErrorPage('unknown_client', 400);
+    }
+  } else {
+    const clientId = url.searchParams.get('client_id') ?? '';
+    redirectUri = url.searchParams.get('redirect_uri') ?? '';
+    state = url.searchParams.get('state') ?? '';
+    codeChallenge = url.searchParams.get('code_challenge') ?? '';
+    nonce = url.searchParams.get('nonce');
+
+    client = clientId.length > 0 ? await siteRepository.getClientByClientId(clientId) : null;
+    if (!client || client.status !== 'active') {
+      return siteAuthorizationErrorPage('unknown_client', 400);
+    }
+    /* Tam eşleşme. Önek ya da alan adı eşleşmesi, kullanıcının Orbit'te
+     * verdiği onayın karşılığındaki kodun saldırganın adresine gitmesi
+     * demek — ve o an kullanıcı doğru yerde doğru şeyi onaylamış oluyor. */
+    if (!client.redirectUris.includes(redirectUri)) {
+      return siteAuthorizationErrorPage('invalid_redirect_uri', 400);
+    }
+
+    /* Bu satırdan sonra hata siteye dönebilir: adres artık doğrulandı. */
+    if (url.searchParams.get('response_type') !== 'code') {
+      return siteErrorRedirect(redirectUri, state, 'unsupported_response_type');
+    }
+    if (url.searchParams.get('code_challenge_method') !== 'S256') {
+      return siteErrorRedirect(redirectUri, state, 'invalid_request');
+    }
+    if (codeChallenge.length < 43 || codeChallenge.length > 128) {
+      return siteErrorRedirect(redirectUri, state, 'invalid_request');
+    }
+    if (state.length === 0) {
+      return siteErrorRedirect(redirectUri, state, 'invalid_request');
+    }
+    try {
+      scopes = normalizeSiteAuthorizationScopes(
+        (url.searchParams.get('scope') ?? '').split(' ').filter(Boolean),
+      );
+    } catch {
+      return siteErrorRedirect(redirectUri, state, 'invalid_scope');
+    }
+    if (!scopesWithinLimit(scopes, client.allowedScopes)) {
+      /* Kırpmıyoruz, reddediyoruz: sessizce daralan bir kapsam, sitenin sahip
+       * olduğunu sandığı yetkiyle davranmasına yol açar. */
+      return siteErrorRedirect(redirectUri, state, 'invalid_scope');
+    }
+  }
+
+  const authorizationRequest: SiteAuthorizationRequest = {
+    clientRowId: client.id,
+    clientId: client.clientId,
+    redirectUri,
+    scopes,
+    state,
+    codeChallenge,
+    nonce,
+    issuedAt: now,
+    expiresAt: now + SITE_RETURN_TTL_MS,
+  };
+
+  let auth: AuthenticatedHuman;
+  try {
+    auth = await authenticateHuman(request, env, repository, now, false);
+  } catch (error) {
+    if (!(error instanceof ApiError) || (error.status !== 401 && error.status !== 403)) throw error;
+    /* Oturumu yok: isteği imzalı biletle saklayıp giriş yüzeyine gönderiyoruz.
+     * Girişten sonra callback bu çereze bakıp buraya `?resume=1` ile dönüyor. */
+    const ticket = await createSiteAuthorizationRequestTicket(
+      authorizationRequest,
+      env.ORBIT_OAUTH_STATE_PEPPER_V1,
+    );
+    const response = new Response(null, {
+      status: 302,
+      headers: {
+        location: `${env.ORBIT_ALLOWED_ORIGIN}/dashboard?devam=site`,
+        'cache-control': 'no-store',
+        'referrer-policy': 'no-referrer',
+      },
+    });
+    return attachCookies(response, [
+      serializeHostCookie(SITE_RETURN_COOKIE, ticket, {
+        httpOnly: true,
+        maxAge: SITE_RETURN_TTL_MS / 1000,
+      }),
+    ]);
+  }
+
+  const existing = await siteRepository.getGrant({
+    clientId: client.id,
+    accountId: auth.account.id,
+  });
+
+  /* Ekranı atlamanın koşulu üçlü: izin duruyor, iptal edilmemiş, ve istenen
+   * kapsam onaylanmışın içinde. Onay metni sürümü de aynı olmalı — metin
+   * değiştiyse kişi yeni metni görmeden devam etmiş sayılamaz. */
+  const canSkipConsent = existing !== null
+    && existing.revokedAt === null
+    && existing.consentVersion === SITE_CONSENT_VERSION
+    && !scopesNeedConsent(scopes, existing.scopes);
+
+  if (canSkipConsent) {
+    return await completeSiteAuthorization({
+      env,
+      siteRepository,
+      authorizationRequest,
+      accountId: auth.account.id,
+      requestId,
+      now,
+    });
+  }
+
+  const ticket = await createSiteAuthorizationRequestTicket(
+    authorizationRequest,
+    env.ORBIT_OAUTH_STATE_PEPPER_V1,
+  );
+  const page = siteConsentPage({
+    clientLabel: client.label,
+    clientSiteUrl: client.siteUrl,
+    scopes,
+    accountHandle: auth.account.handle,
+    accountDisplayName: auth.account.displayName,
+    ticket,
+    csrfToken: auth.csrfToken ?? '',
+    cancelUrl: redirectUri,
+  });
+  return attachCookies(page, [clearHostCookie(SITE_RETURN_COOKIE, true)]);
+}
+
+async function handleSiteConsent(
+  request: Request,
+  env: OrbitBindings,
+  repository: IdentityRepository,
+  siteRepository: SiteAuthorizationRepository,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  requireAllowedOrigin(request, env);
+  const body = await readFormBody(request);
+  const auth = await authenticateHuman(request, env, repository, now, false);
+
+  /* CSRF formdan geliyor, başlıktan değil: bu bir tarayıcı formu ve JavaScript
+   * yok. Kontrolün kendisi oturumdaki digest'e karşı yapılıyor, yani çerezi
+   * okuyup aynı değeri forma yazan bir sayfa yetmiyor — değerin o oturuma ait
+   * olduğunu digest bağlıyor. */
+  const submitted = body.get('csrf') ?? '';
+  const cookieToken = auth.csrfToken ?? '';
+  if (submitted.length === 0 || cookieToken.length === 0
+    || !timingSafeEqual(submitted, cookieToken)) {
+    throw new ApiError(403, 'csrf_rejected', 'CSRF token is missing or invalid.');
+  }
+  const digest = await hmacDigest(
+    `orbit:csrf:v1:${auth.session.sessionId}:${cookieToken}`,
+    env.ORBIT_CSRF_PEPPER_V1,
+  );
+  if (!timingSafeEqual(digest, auth.session.csrfDigest)) {
+    throw new ApiError(403, 'csrf_rejected', 'CSRF token is missing or invalid.');
+  }
+
+  const ticket = body.get('ticket') ?? '';
+  const authorizationRequest = await verifySiteAuthorizationRequestTicket(
+    ticket,
+    env.ORBIT_OAUTH_STATE_PEPPER_V1,
+    now,
+  );
+  if (!authorizationRequest) {
+    throw new ApiError(400, 'invalid_authorization_request', 'The consent request expired.');
+  }
+
+  /* Bilet imzalı ama istemcinin durumu o imzanın içinde değil: onay ekranı
+   * açıkken istemci iptal edilmiş olabilir. */
+  const client = await siteRepository.getClientByClientId(authorizationRequest.clientId);
+  if (!client || client.status !== 'active'
+    || !client.redirectUris.includes(authorizationRequest.redirectUri)) {
+    return siteAuthorizationErrorPage('unknown_client', 400);
+  }
+
+  if (body.get('decision') !== 'allow') {
+    const denied = siteErrorRedirect(
+      authorizationRequest.redirectUri,
+      authorizationRequest.state,
+      'access_denied',
+    );
+    return attachCookies(denied, [clearHostCookie(SITE_RETURN_COOKIE, true)]);
+  }
+
+  return await completeSiteAuthorization({
+    env,
+    siteRepository,
+    authorizationRequest,
+    accountId: auth.account.id,
+    requestId,
+    now,
+  });
+}
+
+async function handleSiteToken(
+  request: Request,
+  env: OrbitBindings,
+  repository: IdentityRepository,
+  siteRepository: SiteAuthorizationRepository,
+  now: number,
+  requestId: string,
+): Promise<Response> {
+  const { tokenPepper } = siteAuthorizationConfig(env);
+  const body = await readFormBody(request);
+  const client = await authenticateSiteClient(request, body, env, siteRepository);
+  const notifications = new D1NotificationRepository(env.DB);
+  const grantType = body.get('grant_type') ?? '';
+
+  if (grantType === 'authorization_code') {
+    const code = body.get('code') ?? '';
+    const verifier = body.get('code_verifier') ?? '';
+    const redirectUri = body.get('redirect_uri') ?? '';
+    const parsed = parseOpaqueToken(code);
+    if (!parsed || parsed.family !== 'site_code' || verifier.length < 43) {
+      throw new ApiError(400, 'invalid_grant', 'Authorization code is invalid.');
+    }
+    const digest = await digestOpaqueToken('site_code', parsed.selector, parsed.secret, tokenPepper);
+    const stored = await siteRepository.getAuthorizationCodeByDigest(digest);
+    if (!stored) throw new ApiError(400, 'invalid_grant', 'Authorization code is invalid.');
+
+    /* Kod bu istemciye mi verildi, ve aynı adresle mi takas ediliyor. İkisi de
+     * ayrı bir kapı: birincisi bir sitenin başka bir siteye verilmiş kodu
+     * kullanmasını, ikincisi izinli adreslerden birine verilen kodun bir
+     * diğerine taşınmasını engelliyor.
+     *
+     * Bu kontroller kodu YAKMADAN önce yapılıyor: yanlış istemciden gelen bir
+     * istek, meşru sahibinin kodunu harcamamalı. */
+    const grantRow = await siteRepository.getGrantById(stored.grantId);
+    if (!grantRow || grantRow.clientId !== client.id || grantRow.revokedAt !== null) {
+      throw new ApiError(400, 'invalid_grant', 'Authorization code is invalid.');
+    }
+    if (stored.redirectUri !== redirectUri) {
+      throw new ApiError(400, 'invalid_grant', 'Authorization code is invalid.');
+    }
+
+    const challenge = await sha256Base64Url(verifier);
+    if (!timingSafeEqual(challenge, stored.pkceChallenge)) {
+      throw new ApiError(400, 'invalid_grant', 'PKCE verifier does not match.');
+    }
+
+    const consumed = await siteRepository.consumeAuthorizationCode({
+      codeId: stored.id,
+      consumedAt: now,
+    });
+    if (!consumed) {
+      /* Kod ikinci kez geldi. Elimizde iki kopya olduğunu biliyoruz ama
+       * hangisinin saldırganda olduğunu bilmiyoruz: o izne ait bütün
+       * anahtarlar düşüyor. */
+      await siteRepository.revokeGrantTokens({
+        grantId: stored.grantId,
+        reason: 'authorization_code_replayed',
+        auditEventId: createEntityId(),
+        requestId,
+        revokedAt: now,
+      });
+      throw new ApiError(400, 'invalid_grant', 'Authorization code is invalid.');
+    }
+
+    const subject = await siteRepository.ensureSubject({
+      id: createEntityId(),
+      clientId: client.id,
+      accountId: grantRow.accountId,
+      subject: randomBase64Url(24),
+      createdAt: now,
+    });
+
+    return json(await issueSiteTokens({
+      env,
+      siteRepository,
+      repository,
+      notifications,
+      grantId: grantRow.id,
+      accountId: grantRow.accountId,
+      clientId: client.clientId,
+      subject,
+      scopes: stored.scopes,
+      nonce: stored.nonce,
+      replacesRefreshTokenId: null,
+      requestId,
+      now,
+    }));
+  }
+
+  if (grantType === 'refresh_token') {
+    const token = body.get('refresh_token') ?? '';
+    const parsed = parseOpaqueToken(token);
+    if (!parsed || parsed.family !== 'site_refresh') {
+      throw new ApiError(400, 'invalid_grant', 'Refresh token is invalid.');
+    }
+    const digest = await digestOpaqueToken(
+      'site_refresh',
+      parsed.selector,
+      parsed.secret,
+      tokenPepper,
+    );
+    const resolution = await siteRepository.resolveToken({
+      secretDigest: digest,
+      tokenType: 'refresh',
+    });
+    if (!resolution || resolution.grant.clientId !== client.id) {
+      throw new ApiError(400, 'invalid_grant', 'Refresh token is invalid.');
+    }
+
+    /* Tekrar kullanım kontrolü, durum kontrollerinden ÖNCE.
+     *
+     * Sıra bu testin bulduğu bir açığı kapatıyor. Rotasyonda eski anahtar
+     * `revoked_reason = 'rotated'` ile iptal ediliyor; durum kontrolü önce
+     * gelseydi — ve önce geliyordu — eski anahtarı sunan istek "iptal edilmiş"
+     * diye reddedilip zincir YAKILMADAN bırakılırdı. Yani anahtarı çalan biri
+     * bir kez reddedilir, ama meşru kullanıcının elindeki yeni anahtar
+     * çalışmaya devam ederdi: sızıntının farkına varmamızı sağlayan tek sinyali
+     * sessizce yutmuş olurduk.
+     *
+     * Kullanılmış ya da yerine yenisi geçmiş bir anahtarın sunulması, o
+     * anahtarın iki yerde olduğunun kanıtı. Hangisinin saldırganda olduğunu
+     * bilmediğimiz için o izne ait her şey düşüyor ve kullanıcı yeniden giriş
+     * yapıyor. */
+    if (resolution.token.usedAt !== null || resolution.token.replacedById !== null) {
+      await siteRepository.revokeGrantTokens({
+        grantId: resolution.grant.id,
+        reason: 'refresh_token_replayed',
+        auditEventId: createEntityId(),
+        requestId,
+        revokedAt: now,
+      });
+      throw new ApiError(400, 'invalid_grant', 'Refresh token was already used.');
+    }
+
+    /* Askıya almanın alt siteye yayıldığı yer. Erişim anahtarı 15 dakika
+     * yaşıyor; bu kontrol o süre dolduğunda devreye giriyor ve oturum ölüyor. */
+    if (resolution.accountStatus !== 'active'
+      || resolution.clientStatus !== 'active'
+      || resolution.grant.revokedAt !== null
+      || resolution.token.revokedAt !== null
+      || resolution.token.expiresAt <= now) {
+      throw new ApiError(400, 'invalid_grant', 'Refresh token is no longer valid.');
+    }
+
+    /* İkinci kapı: aynı anahtarla aynı anda gelen iki istek. Yukarıdaki okuma
+     * ikisinde de "kullanılmamış" görebilir; ilk kullananı belirleyen tek
+     * ifade bu güncelleme. */
+    const marked = await siteRepository.markRefreshTokenUsed({
+      tokenId: resolution.token.id,
+      usedAt: now,
+    });
+    if (!marked) {
+      await siteRepository.revokeGrantTokens({
+        grantId: resolution.grant.id,
+        reason: 'refresh_token_replayed',
+        auditEventId: createEntityId(),
+        requestId,
+        revokedAt: now,
+      });
+      throw new ApiError(400, 'invalid_grant', 'Refresh token was already used.');
+    }
+
+    return json(await issueSiteTokens({
+      env,
+      siteRepository,
+      repository,
+      notifications,
+      grantId: resolution.grant.id,
+      accountId: resolution.grant.accountId,
+      clientId: client.clientId,
+      subject: resolution.subject,
+      scopes: resolution.grant.scopes,
+      /* Yenilemede nonce YOK. Nonce istemcinin o tek girişi için ürettiği
+       * değer; yenilenen bir token'a eskisini yazmak, doğrulayan tarafta
+       * tekrar kullanım gibi görünürdü. */
+      nonce: null,
+      replacesRefreshTokenId: resolution.token.id,
+      requestId,
+      now,
+    }));
+  }
+
+  throw new ApiError(400, 'unsupported_grant_type', 'Grant type is not supported.');
+}
+
+async function handleSiteUserinfo(
+  request: Request,
+  env: OrbitBindings,
+  repository: IdentityRepository,
+  siteRepository: SiteAuthorizationRepository,
+  now: number,
+): Promise<Response> {
+  const { tokenPepper } = siteAuthorizationConfig(env);
+  const header = request.headers.get('authorization');
+  const token = header?.startsWith('Bearer ') ? header.slice(7) : '';
+  const parsed = parseOpaqueToken(token);
+  if (!parsed || parsed.family !== 'site_access') {
+    throw new ApiError(401, 'invalid_token', 'A site access token is required.');
+  }
+  const digest = await digestOpaqueToken('site_access', parsed.selector, parsed.secret, tokenPepper);
+  const resolution = await siteRepository.resolveToken({
+    secretDigest: digest,
+    tokenType: 'access',
+  });
+  if (!resolution
+    || resolution.token.revokedAt !== null
+    || resolution.token.expiresAt <= now
+    || resolution.grant.revokedAt !== null
+    || resolution.accountStatus !== 'active'
+    || resolution.clientStatus !== 'active') {
+    throw new ApiError(401, 'invalid_token', 'Access token is not valid.');
+  }
+
+  const account = await repository.getAccount(resolution.grant.accountId);
+  if (!account) throw new ApiError(401, 'invalid_token', 'Account is unavailable.');
+
+  const claims = await siteProfileClaims(
+    resolution.grant.scopes,
+    account,
+    new D1NotificationRepository(env.DB),
+  );
+  await siteRepository.touchGrant({ grantId: resolution.grant.id, usedAt: now });
+
+  /* Alan adları ID token'la aynı: iki uç aynı kullanıcı için aynı sözcükleri
+   * kullanmalı, yoksa istemci hangisine güveneceğini bilemez. */
+  const payload: Record<string, unknown> = { sub: resolution.subject };
+  if (claims.name !== undefined) payload.name = claims.name;
+  if (claims.preferredUsername !== undefined) payload.preferred_username = claims.preferredUsername;
+  if (claims.picture !== undefined && claims.picture !== null) payload.picture = claims.picture;
+  if (claims.email !== undefined && claims.email !== null) {
+    payload.email = claims.email;
+    payload.email_verified = claims.emailVerified === true;
+  }
+  return json(payload);
 }
 
 /* Kaydın kapıya çarpabileceği çakışmalar. Liste dar tutuldu: geniş bir
@@ -4008,7 +4841,22 @@ async function handleCompleteRegistration(
     throw error;
   }
 
-  return attachCookies(json({ handle }, 201), [
+  /* Alt siteden gelmiş biri olabilir: Equinox Rota'da "Orbit ile devam et"e
+   * basıp hesabı olmadığı için buraya kadar gelmiş olabilir. Bekleyen istek
+   * çerezi duruyorsa nereye döneceğini cevaba yazıyoruz — yoksa kişi hesabını
+   * açıp panelde kalır ve geldiği siteye kendi eliyle geri dönmek zorunda
+   * olur. Yönlendirmeyi çerezdeki bilet taşıyor, cevaptaki bu alan değil:
+   * buradan giden şey yalnız sabit bir yol. */
+  const pendingSiteRequest = readCookie(request, SITE_RETURN_COOKIE);
+  const continueUrl = pendingSiteRequest !== null && await verifySiteAuthorizationRequestTicket(
+    pendingSiteRequest,
+    env.ORBIT_OAUTH_STATE_PEPPER_V1,
+    now,
+  ) !== null
+    ? '/v1/oauth/authorize?resume=1'
+    : null;
+
+  return attachCookies(json({ handle, continueUrl }, 201), [
     ...sessionCookies(sessionToken.token, csrfToken),
     clearHostCookie(SIGNUP_COOKIE, true),
   ]);
@@ -4327,6 +5175,7 @@ export async function handleApiRequest(
     const followRepository: FollowRepository = new D1FollowRepository(env.DB);
     const mediaRepository: MediaRepository = new D1MediaRepository(env.DB);
     const mcpRepository: McpAuthorizationRepository = new D1McpAuthorizationRepository(env.DB);
+    const siteRepository: SiteAuthorizationRepository = new D1SiteAuthorizationRepository(env.DB);
     const google = new GoogleClient({
       clientId: env.GOOGLE_OAUTH_CLIENT_ID,
       clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
@@ -5874,6 +6723,39 @@ export async function handleApiRequest(
       return await handleCompleteRegistration(
         request, env, repository, agentRepository, now, requestId,
       );
+    }
+
+    /* Alt site giriş kapısı (Plan 008).
+     *
+     * Keşif belgesi ve JWKS `.well-known` altından geliyor; worker.ts o iki kök
+     * yolu buraya çeviriyor. Adreslerin kökte olması zorunlu: Supabase belgeyi
+     * `{issuer}/.well-known/openid-configuration` adresinde arıyor ve issuer
+     * bir yol taşıyamıyor. */
+    if (request.method === 'GET' && path === '/v1/oauth/discovery') {
+      siteAuthorizationConfig(env);
+      return json(siteDiscoveryDocument(siteIssuer(env), SITE_AUTHORIZATION_SCOPES));
+    }
+    if (request.method === 'GET' && path === '/v1/oauth/jwks') {
+      const { signingKeySecret } = siteAuthorizationConfig(env);
+      return json(siteJwks([await siteSigningKey(signingKeySecret)]));
+    }
+    if (request.method === 'GET' && path === '/v1/oauth/authorize') {
+      return await handleSiteAuthorize(
+        request, env, repository, siteRepository, now, requestId,
+      );
+    }
+    if (request.method === 'POST' && path === '/v1/oauth/consent') {
+      return await handleSiteConsent(
+        request, env, repository, siteRepository, now, requestId,
+      );
+    }
+    if (request.method === 'POST' && path === '/v1/oauth/token') {
+      return await handleSiteToken(
+        request, env, repository, siteRepository, now, requestId,
+      );
+    }
+    if (request.method === 'GET' && path === '/v1/oauth/userinfo') {
+      return await handleSiteUserinfo(request, env, repository, siteRepository, now);
     }
     if (request.method === 'POST' && path === '/v1/agent/register') {
       return await handleRedeemRegistrationCode(request, env, agentRepository, now, requestId);

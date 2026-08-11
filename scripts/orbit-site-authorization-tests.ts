@@ -17,6 +17,13 @@ import {
   parseOpaqueToken,
   verifyOpaqueToken,
 } from '../src/server/identity/tokens';
+import {
+  importSiteSigningKey,
+  signSiteIdToken,
+  siteDiscoveryDocument,
+  siteJwks,
+} from '../src/server/identity/site-id-token';
+import { SITE_AUTHORIZATION_SCOPES } from '../src/server/identity/site-authorization-scopes';
 
 const ROOT = process.cwd();
 const WRANGLER = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
@@ -146,6 +153,47 @@ interface StateView {
   }>;
   codes: Array<{ id: string; consumed_at: number | null }>;
   events: string[];
+}
+
+/* İmza testleri için bir anahtar. Üretim anahtarı gibi JSON Web Key biçiminde
+ * ama teste özel: `scripts/orbit-oidc-key.mjs`'in ürettiğiyle aynı yapı. */
+async function generateSigningKeySecret(kid = 'orbit-oidc-test'): Promise<string> {
+  const pair = await crypto.subtle.generateKey(
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    true,
+    ['sign', 'verify'],
+  ) as CryptoKeyPair;
+  const jwk = await crypto.subtle.exportKey('jwk', pair.privateKey);
+  return JSON.stringify({ kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y, d: jwk.d, kid });
+}
+
+function decodeSegment(segment: string): Record<string, unknown> {
+  const padded = segment.replaceAll('-', '+').replaceAll('_', '/')
+    .padEnd(Math.ceil(segment.length / 4) * 4, '=');
+  return JSON.parse(Buffer.from(padded, 'base64').toString('utf8')) as Record<string, unknown>;
+}
+
+async function verifyIdTokenSignature(
+  token: string,
+  publicJwk: Record<string, string>,
+): Promise<boolean> {
+  const [header, payload, signature] = token.split('.');
+  const key = await crypto.subtle.importKey(
+    'jwk',
+    { ...publicJwk, ext: true },
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['verify'],
+  );
+  const bytes = Uint8Array.from(
+    Buffer.from(signature.replaceAll('-', '+').replaceAll('_', '/'), 'base64'),
+  );
+  return await crypto.subtle.verify(
+    { name: 'ECDSA', hash: 'SHA-256' },
+    key,
+    bytes,
+    new TextEncoder().encode(`${header}.${payload}`),
+  );
 }
 
 async function seedClientAndAccount(accountId: string, now: number): Promise<void> {
@@ -690,6 +738,143 @@ describe('Orbit as a sign-in door for other sites', { concurrency: false }, () =
 
     const grants = await callAction<{ grants: GrantView[] }>('listSiteGrants', { accountId });
     assert.equal(grants.grants.length, 1);
+  });
+
+  test('the ID token verifies against the published JWKS and carries the nonce', async () => {
+    const secret = await generateSigningKeySecret('orbit-oidc-2026-08-12');
+    const key = await importSiteSigningKey(secret);
+    const issuedAt = 1_760_002_000_000;
+
+    const token = await signSiteIdToken(key, {
+      issuer: 'https://orbit.sametbasbug.dev',
+      subject: 'subject-anime-door-thirteen',
+      audience: 'orbit-anime-site',
+      issuedAt,
+      expiresAt: issuedAt + 15 * 60 * 1000,
+      nonce: 'supabase-sent-this-nonce',
+      name: 'Samet',
+      preferredUsername: 'samet',
+      picture: 'https://orbit.sametbasbug.dev/avatar.webp',
+      email: 'samet@example.com',
+      emailVerified: true,
+    });
+
+    const [headerSegment, payloadSegment] = token.split('.');
+    const header = decodeSegment(headerSegment);
+    assert.equal(header.alg, 'ES256');
+    /* `kid` olmadan doğrulayan taraf hangi anahtarı deneyeceğini bilemez ve
+     * Supabase bunu şart koşuyor. */
+    assert.equal(header.kid, 'orbit-oidc-2026-08-12');
+
+    const payload = decodeSegment(payloadSegment);
+    assert.equal(payload.iss, 'https://orbit.sametbasbug.dev');
+    assert.equal(payload.aud, 'orbit-anime-site');
+    assert.equal(payload.sub, 'subject-anime-door-thirteen');
+    assert.equal(payload.nonce, 'supabase-sent-this-nonce');
+    assert.equal(payload.email_verified, true);
+    /* Saniye cinsinden — milisaniye yazsak token 50 bin yıl yaşardı. */
+    assert.equal(payload.iat, Math.floor(issuedAt / 1000));
+    assert.equal(payload.exp, Math.floor((issuedAt + 15 * 60 * 1000) / 1000));
+
+    const jwks = siteJwks([key]);
+    assert.equal(jwks.keys.length, 1);
+    /* Özel alan JWKS'e sızmıyor. Bu satır bir yazım kontrolü değil: `d`
+     * yayınlanırsa imzayı herkes taklit eder. */
+    assert.equal((jwks.keys[0] as Record<string, unknown>).d, undefined);
+    assert.equal(jwks.keys[0]?.kid, 'orbit-oidc-2026-08-12');
+
+    assert.equal(await verifyIdTokenSignature(token, jwks.keys[0]), true);
+
+    /* Gövdesi değiştirilmiş token doğrulamayı geçmiyor. */
+    const tampered = [
+      headerSegment,
+      Buffer.from(JSON.stringify({ ...payload, sub: 'someone-else' }))
+        .toString('base64url'),
+      token.split('.')[2],
+    ].join('.');
+    assert.equal(await verifyIdTokenSignature(tampered, jwks.keys[0]), false);
+
+    /* Başka bir anahtarla imzalanmış token da geçmiyor — JWKS'teki anahtar
+     * gerçekten imzalayanı bağlıyor. */
+    const otherKey = await importSiteSigningKey(await generateSigningKeySecret('other'));
+    const otherToken = await signSiteIdToken(otherKey, {
+      issuer: 'https://orbit.sametbasbug.dev',
+      subject: 'subject-anime-door-thirteen',
+      audience: 'orbit-anime-site',
+      issuedAt,
+      expiresAt: issuedAt + 60_000,
+      nonce: null,
+    });
+    assert.equal(await verifyIdTokenSignature(otherToken, jwks.keys[0]), false);
+  });
+
+  test('a token without profile scopes leaks no profile claims', async () => {
+    const key = await importSiteSigningKey(await generateSigningKeySecret());
+    const issuedAt = 1_760_002_100_000;
+    const token = await signSiteIdToken(key, {
+      issuer: 'https://orbit.sametbasbug.dev',
+      subject: 'subject-minimal',
+      audience: 'orbit-anime-site',
+      issuedAt,
+      expiresAt: issuedAt + 60_000,
+      nonce: null,
+    });
+    const payload = decodeSegment(token.split('.')[1]);
+    assert.deepEqual(Object.keys(payload).sort(), ['aud', 'exp', 'iat', 'iss', 'sub']);
+    /* İstemci nonce göndermediyse claim hiç yazılmıyor — boş bir `nonce`
+     * alanı, doğrulayan tarafta "gönderilmiş ama boş" ile karışırdı. */
+    assert.equal('nonce' in payload, false);
+  });
+
+  test('a malformed signing key is rejected instead of being guessed at', async () => {
+    await assert.rejects(
+      () => importSiteSigningKey('not json'),
+      /site_signing_key_not_json/u,
+    );
+    await assert.rejects(
+      () => importSiteSigningKey(JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'a', y: 'b' })),
+      /site_signing_key_missing:d/u,
+    );
+    const rsa = JSON.parse(await generateSigningKeySecret()) as Record<string, string>;
+    await assert.rejects(
+      () => importSiteSigningKey(JSON.stringify({ ...rsa, kty: 'RSA' })),
+      /site_signing_key_unsupported_kty/u,
+    );
+    await assert.rejects(
+      () => importSiteSigningKey(JSON.stringify({ ...rsa, crv: 'P-384' })),
+      /site_signing_key_unsupported_curve/u,
+    );
+    /* `kid`siz anahtar da reddediliyor: anahtar değişimi ona bağlı. */
+    const withoutKid = { ...rsa };
+    delete withoutKid.kid;
+    await assert.rejects(
+      () => importSiteSigningKey(JSON.stringify(withoutKid)),
+      /site_signing_key_missing:kid/u,
+    );
+  });
+
+  test('the discovery document describes what Supabase needs to find', () => {
+    const document = siteDiscoveryDocument(
+      'https://orbit.sametbasbug.dev',
+      SITE_AUTHORIZATION_SCOPES,
+    );
+    assert.equal(document.issuer, 'https://orbit.sametbasbug.dev');
+    assert.equal(document.jwks_uri, 'https://orbit.sametbasbug.dev/.well-known/jwks.json');
+    assert.equal(
+      document.authorization_endpoint,
+      'https://orbit.sametbasbug.dev/v1/oauth/authorize',
+    );
+    assert.deepEqual(document.id_token_signing_alg_values_supported, ['ES256']);
+    /* Simetrik imza hiç sunulmuyor: Supabase kabul etmiyor ve her istemciye
+     * kendi sırrımızı vermek demekti. */
+    assert.equal(document.id_token_signing_alg_values_supported.includes('HS256'), false);
+    /* Ortak (public) kimlik sunulmuyor; her site farklı bir `sub` görüyor. */
+    assert.deepEqual(document.subject_types_supported, ['pairwise']);
+    assert.deepEqual(document.code_challenge_methods_supported, ['S256']);
+    assert.deepEqual(document.scopes_supported, [
+      'openid', 'profile', 'email', 'orbit.graph.read', 'orbit.posts.read',
+    ]);
+    assert.equal(document.scopes_supported.some((scope) => scope.endsWith('.write')), false);
   });
 
   test('expired codes are removed by retention', async () => {

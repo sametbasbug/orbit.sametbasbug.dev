@@ -95,6 +95,20 @@ export interface OrbitBindings {
   ORBIT_CURSOR_PEPPER_V1: string;
   ORBIT_MCP_DELEGATION_PEPPER_V1?: string;
   ORBIT_MCP_SERVICE_SECRET_V1?: string;
+  /* Alt site giriş kapısı (Plan 008). İkisi de isteğe bağlı ve birlikte
+   * anlamlı: biri eksikse kapı kapalı ve keşif belgesi yayınlanmıyor.
+   *
+   * Neden zorunlu bindings listesine EKLENMEDİ: bir binding'i zorunlu yapmak,
+   * onu altı wrangler dosyasına da yazmadan önce dağıtılan her sürümü açılışta
+   * düşürüyor. 10 Ağustos'ta staging tam bunun yüzünden iki gece kapalı kaldı —
+   * ölü sandığım bir secret silinince, onu hâlâ zorunlu sayan eski kod yeni bir
+   * sürüme bindi. Zorunlu hâle gelmesi, secret'lar gerçekten yerleştikten ve o
+   * ortamın doğrulama koşusu geçtikten sonraki bir adım.
+   *
+   * ORBIT_OIDC_SIGNING_KEY_V1 bir JSON Web Key (P-256, `d` ve `kid` dahil).
+   * Üretmek için: node scripts/orbit-oidc-key.mjs */
+  ORBIT_OIDC_SIGNING_KEY_V1?: string;
+  ORBIT_SITE_TOKEN_PEPPER_V1?: string;
   ORBIT_BACKUP_ENCRYPTION_KEY_V1?: string;
   /* Davet kapısı. 'true' olduğunda Google hesabı olan herkes davetsiz kayıt
    * olabiliyor; başka her değerde ve tanımsızken kapı kapalı ve kayıt için

@@ -56,6 +56,32 @@ export const REGISTRATION_IP_MAX = 5;
 export const REGISTRATION_GLOBAL_WINDOW_MS = 60 * 60 * 1000;
 export const REGISTRATION_GLOBAL_MAX = 200;
 
+/* Alt site giriş kapısının ömürleri (Plan 008).
+ *
+ * Kod 60 saniye: tarayıcıdan siteye ve siteden bize dönen tek sıçrama bu
+ * kadar sürmez. Uzun bir kod, ekranda ya da kayıtta duran ve hâlâ geçerli olan
+ * bir sır demek.
+ *
+ * Erişim anahtarı 15 dakika, ve bu sayı askıya almanın hızını belirliyor:
+ * hesabı askıya alınmış birinin alt sitedeki oturumu en çok bu kadar yaşıyor.
+ * Daha kısası alt siteyi Orbit'e daha sık bağımlı yapardı, daha uzunu askıya
+ * almayı geciktirirdi.
+ *
+ * Yenileme anahtarı 30 gün ve her kullanımda dönüyor. Oturum çerezinin mutlak
+ * ömrüyle aynı sayı bilerek: alt sitedeki oturum, Orbit'teki oturumdan uzun
+ * yaşamamalı. */
+export const SITE_AUTHORIZATION_CODE_TTL_MS = 60 * 1000;
+export const SITE_ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000;
+export const SITE_REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+export const SITE_ID_TOKEN_TTL_MS = 15 * 60 * 1000;
+
+/* Onay ekranı metninin sürümü. Platform koşullarının sürümünden (LEGAL_LAST_
+ * UPDATED) ayrı, çünkü ayrı bir metin: burada yazan şey "şu site şunları
+ * görecek". Biri değişince diğerinin de değişmesi gerekmiyor ve ikisini tek
+ * sayıya bağlamak, koşul metnindeki bir yazım düzeltmesinin bütün kullanıcıları
+ * her siteye yeniden onay vermeye zorlaması olurdu. */
+export const SITE_CONSENT_VERSION = '2026-08-12';
+
 export const SESSION_COOKIE = '__Host-orbit_session';
 export const CSRF_COOKIE = '__Host-orbit_csrf';
 export const OAUTH_COOKIE = '__Host-orbit_oauth';

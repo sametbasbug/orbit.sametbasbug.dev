@@ -2156,3 +2156,36 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
   on the 12th: the generator stamps the UTC date and it was still the 11th in
   UTC. Not worth a rotation, but worth knowing before someone reads the kid as
   a deployment date.
+- The first real browser walk through the site sign-in door found two bugs that
+  22 unit tests and 17 end-to-end tests could not: both suites drive the
+  endpoints with `fetch`, and `fetch` obeys neither referrer policy nor CSP. The
+  consent page's own `referrer-policy: no-referrer` made Chrome send a literal
+  `Origin: null` on the same-origin form POST, which the origin check rejected;
+  and `form-action 'self'` covered the POST but not the 302 that follows it,
+  because Chrome applies form-action to the whole redirect chain. The second one
+  was the expensive one to read: the grant was stored, the code was minted, and
+  the browser silently refused to leave the page — no error, no console entry
+  the user would find, nothing on screen. "Nothing happened" is what a blocked
+  redirect looks like.
+- The lesson generalises past this door: any header a page sets about itself can
+  change what the browser sends or allows on the next request, and a test that
+  never renders the page in a browser cannot see it. Both fixes are locked by
+  assertions on the response headers that fail when reverted, which is the
+  cheapest available substitute — not a real browser, but a tripwire on the two
+  values a real browser cared about.
+- With those two fixed, the whole chain ran on staging on 12 August: Supabase
+  accepted the ES256 ID token, linked `custom:orbit` onto the existing Google
+  user by e-mail rather than minting a second account, stored the Orbit access
+  and refresh tokens as provider tokens, and Orbit's own "Bağlı siteler" panel
+  lists Equinox Rota with the three consented scopes and a working revoke. D1
+  shows exactly one unused access/refresh pair, the redeemed code marked
+  consumed, and the codes from the blocked attempts expired unredeemed — the
+  60-second code TTL doing what it is for.
+- The anime site still has no "Orbit ile devam et" button. Its sign-in today is
+  Google Identity Services one-tap through `signInWithIdToken`, so the flow
+  above was driven by hand against Supabase's `/authorize`. That hand-driven
+  start is also why Supabase answered with implicit-flow tokens in the URL
+  fragment while the site's client is configured `flowType: "pkce"` and ignored
+  them: not a bug in the door, an artefact of skipping the site's own entry
+  point. Replacing that button is the next step, and it is the step that makes
+  the fragment/query mismatch disappear.

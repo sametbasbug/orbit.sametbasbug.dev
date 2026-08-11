@@ -6,6 +6,8 @@ import { createDynamicBackup } from '../src/server/backup/dynamic-backup';
 import type { McpAuthorizationScope } from '../src/server/identity/mcp-authorization-scopes';
 import { D1McpAuthorizationRepository } from '../src/server/repositories/d1/d1-mcp-authorization-repository';
 import { D1PublicRepository } from '../src/server/repositories/d1/d1-public-repository';
+import { D1SiteAuthorizationRepository } from '../src/server/repositories/d1/d1-site-authorization-repository';
+import type { SiteAuthorizationScope } from '../src/server/identity/site-authorization-scopes';
 import { handleSkeleton } from '../src/server/identity/handle-skeleton.ts';
 
 interface TestStatement {
@@ -272,11 +274,50 @@ async function seedAnnouncementWorld(db: TestDatabase, now: number): Promise<voi
   }
 }
 
+async function seedSiteClient(
+  db: TestDatabase,
+  input: {
+    id: string;
+    clientId: string;
+    label: string;
+    siteUrl: string;
+    allowedScopes: string;
+    environment: string;
+    redirectUris: string[];
+    now: number;
+  },
+): Promise<void> {
+  await db.prepare(`
+    INSERT OR IGNORE INTO oauth_clients (
+      id, client_id, secret_digest, hash_version, label, site_url,
+      allowed_scopes, environment, status, created_at
+    ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, 'active', ?)
+  `).bind(
+    input.id,
+    input.clientId,
+    `digest:${input.clientId}`,
+    input.label,
+    input.siteUrl,
+    input.allowedScopes,
+    input.environment,
+    input.now,
+  ).run();
+
+  for (const [index, uri] of input.redirectUris.entries()) {
+    await db.prepare(`
+      INSERT OR IGNORE INTO oauth_client_redirect_uris (
+        id, client_id, redirect_uri, created_at
+      ) VALUES (?, ?, ?, ?)
+    `).bind(`${input.id}:uri:${index}`, input.id, uri, input.now).run();
+  }
+}
+
 async function handleAction(body: ActionRequest, env: Environment): Promise<Response> {
   const data = body.data ?? {};
   const repository = new D1FoundationRepository(env.DB);
   const mcpRepository = new D1McpAuthorizationRepository(env.DB);
   const publicRepository = new D1PublicRepository(env.DB);
+  const siteRepository = new D1SiteAuthorizationRepository(env.DB);
 
   switch (body.action) {
     case 'health':
@@ -639,6 +680,208 @@ async function handleAction(body: ActionRequest, env: Environment): Promise<Resp
     case 'publicThreadReplies': {
       const replies = await publicRepository.listThreadReplies(stringValue(data, 'rootId'));
       return json({ replies });
+    }
+
+    case 'seedSiteClient': {
+      await seedSiteClient(env.DB, {
+        id: stringValue(data, 'id'),
+        clientId: stringValue(data, 'clientId'),
+        label: stringValue(data, 'label'),
+        siteUrl: stringValue(data, 'siteUrl'),
+        allowedScopes: stringValue(data, 'allowedScopes'),
+        environment: stringValue(data, 'environment'),
+        redirectUris: stringArrayValue(data, 'redirectUris'),
+        now: numberValue(data, 'now'),
+      });
+      return json({ ok: true }, 201);
+    }
+
+    case 'setSiteClientStatus': {
+      const revokedAt = data.revokedAt;
+      await env.DB.prepare(`
+        UPDATE oauth_clients SET status = ?, revoked_at = ? WHERE id = ?
+      `).bind(
+        stringValue(data, 'status'),
+        typeof revokedAt === 'number' ? revokedAt : null,
+        stringValue(data, 'id'),
+      ).run();
+      return json({ ok: true });
+    }
+
+    case 'setAccountStatus': {
+      await env.DB.prepare(`
+        UPDATE accounts SET status = ?, updated_at = ? WHERE id = ?
+      `).bind(
+        stringValue(data, 'status'),
+        numberValue(data, 'now'),
+        stringValue(data, 'accountId'),
+      ).run();
+      return json({ ok: true });
+    }
+
+    case 'getSiteClient': {
+      return json({ client: await siteRepository.getClientByClientId(stringValue(data, 'clientId')) });
+    }
+
+    case 'ensureSiteSubject': {
+      return json({
+        subject: await siteRepository.ensureSubject({
+          id: stringValue(data, 'id'),
+          clientId: stringValue(data, 'clientId'),
+          accountId: stringValue(data, 'accountId'),
+          subject: stringValue(data, 'subject'),
+          createdAt: numberValue(data, 'now'),
+        }),
+      });
+    }
+
+    case 'recordSiteConsent': {
+      const now = numberValue(data, 'now');
+      const scopes = stringArrayValue(data, 'scopes') as SiteAuthorizationScope[];
+      const grant = await siteRepository.recordConsentWithCode({
+        grant: {
+          id: stringValue(data, 'grantId'),
+          clientId: stringValue(data, 'clientId'),
+          accountId: stringValue(data, 'accountId'),
+          scopes,
+          consentVersion: stringValue(data, 'consentVersion'),
+          now,
+        },
+        code: {
+          id: stringValue(data, 'codeId'),
+          codeDigest: stringValue(data, 'codeDigest'),
+          hashVersion: 1,
+          redirectUri: stringValue(data, 'redirectUri'),
+          pkceChallenge: stringValue(data, 'pkceChallenge'),
+          nonce: optionalString(data, 'nonce'),
+          scopes,
+          createdAt: now,
+          expiresAt: numberValue(data, 'codeExpiresAt'),
+        },
+        auditEventId: stringValue(data, 'auditEventId'),
+        requestId: stringValue(data, 'requestId'),
+      });
+      return json({ grant }, 201);
+    }
+
+    case 'getSiteCode': {
+      return json({
+        code: await siteRepository.getAuthorizationCodeByDigest(stringValue(data, 'codeDigest')),
+      });
+    }
+
+    case 'consumeSiteCode': {
+      return json({
+        consumed: await siteRepository.consumeAuthorizationCode({
+          codeId: stringValue(data, 'codeId'),
+          consumedAt: numberValue(data, 'now'),
+        }),
+      });
+    }
+
+    case 'issueSiteTokens': {
+      const replaces = optionalString(data, 'replacesRefreshTokenId');
+      await siteRepository.issueTokenPair({
+        grantId: stringValue(data, 'grantId'),
+        access: {
+          id: stringValue(data, 'accessId'),
+          secretDigest: stringValue(data, 'accessDigest'),
+          hashVersion: 1,
+          expiresAt: numberValue(data, 'accessExpiresAt'),
+        },
+        refresh: {
+          id: stringValue(data, 'refreshId'),
+          secretDigest: stringValue(data, 'refreshDigest'),
+          hashVersion: 1,
+          expiresAt: numberValue(data, 'refreshExpiresAt'),
+        },
+        replacesRefreshTokenId: replaces,
+        auditEventId: stringValue(data, 'auditEventId'),
+        auditEventType: replaces === null ? 'site.tokens_issued' : 'site.tokens_rotated',
+        requestId: stringValue(data, 'requestId'),
+        now: numberValue(data, 'now'),
+      });
+      return json({ ok: true }, 201);
+    }
+
+    case 'resolveSiteToken': {
+      return json({
+        resolution: await siteRepository.resolveToken({
+          secretDigest: stringValue(data, 'secretDigest'),
+          tokenType: stringValue(data, 'tokenType') as 'access' | 'refresh',
+        }),
+      });
+    }
+
+    case 'markSiteRefreshUsed': {
+      return json({
+        marked: await siteRepository.markRefreshTokenUsed({
+          tokenId: stringValue(data, 'tokenId'),
+          usedAt: numberValue(data, 'now'),
+        }),
+      });
+    }
+
+    case 'revokeSiteGrantTokens': {
+      return json({
+        revoked: await siteRepository.revokeGrantTokens({
+          grantId: stringValue(data, 'grantId'),
+          reason: stringValue(data, 'reason'),
+          auditEventId: stringValue(data, 'auditEventId'),
+          requestId: stringValue(data, 'requestId'),
+          revokedAt: numberValue(data, 'now'),
+        }),
+      });
+    }
+
+    case 'revokeSiteGrant': {
+      await siteRepository.revokeGrant({
+        grantId: stringValue(data, 'grantId'),
+        actorAccountId: stringValue(data, 'actorAccountId'),
+        reason: stringValue(data, 'reason'),
+        auditEventId: stringValue(data, 'auditEventId'),
+        requestId: stringValue(data, 'requestId'),
+        revokedAt: numberValue(data, 'now'),
+      });
+      return json({ ok: true });
+    }
+
+    case 'listSiteGrants': {
+      return json({
+        grants: await siteRepository.listAccountGrants(stringValue(data, 'accountId')),
+      });
+    }
+
+    case 'siteAuthorizationState': {
+      const grantId = stringValue(data, 'grantId');
+      const tokens = await env.DB.prepare(`
+        SELECT id, token_type, replaced_by_id, used_at, revoked_at, revoked_reason
+        FROM oauth_site_tokens
+        WHERE grant_id = ?
+        ORDER BY created_at, id
+      `).bind(grantId).all();
+      const codes = await env.DB.prepare(`
+        SELECT id, consumed_at FROM oauth_authorization_codes
+        WHERE grant_id = ? ORDER BY created_at, id
+      `).bind(grantId).all();
+      const events = await env.DB.prepare(`
+        SELECT event_type FROM audit_events
+        WHERE subject_type = 'oauth_client_grant' AND subject_id = ?
+        ORDER BY sequence
+      `).bind(grantId).all();
+      return json({
+        tokens: tokens.results,
+        codes: codes.results,
+        events: events.results.map((row) => row.event_type),
+      });
+    }
+
+    case 'deleteExpiredSiteCodes': {
+      return json({
+        deleted: await siteRepository.deleteExpiredAuthorizationCodes({
+          deleteBefore: numberValue(data, 'now'),
+        }),
+      });
     }
 
     default:

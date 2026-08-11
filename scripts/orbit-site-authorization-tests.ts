@@ -24,6 +24,11 @@ import {
   siteJwks,
 } from '../src/server/identity/site-id-token';
 import { SITE_AUTHORIZATION_SCOPES } from '../src/server/identity/site-authorization-scopes';
+import {
+  createSiteAuthorizationRequestTicket,
+  verifySiteAuthorizationRequestTicket,
+} from '../src/server/identity/site-authorization-request';
+import { siteConsentPage } from '../src/server/http/site-consent-page';
 
 const ROOT = process.cwd();
 const WRANGLER = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
@@ -875,6 +880,108 @@ describe('Orbit as a sign-in door for other sites', { concurrency: false }, () =
       'openid', 'profile', 'email', 'orbit.graph.read', 'orbit.posts.read',
     ]);
     assert.equal(document.scopes_supported.some((scope) => scope.endsWith('.write')), false);
+  });
+
+  test('the consent ticket binds what the screen showed', async () => {
+    const pepper = 'test-oauth-pepper-at-least-32-bytes-long';
+    const issuedAt = 1_760_003_000_000;
+    const request = {
+      clientRowId: CLIENT.id,
+      clientId: CLIENT.clientId,
+      redirectUri: CLIENT.redirectUris[0],
+      scopes: ['openid', 'email'] as const,
+      state: 'supabase-state-value',
+      codeChallenge: 'e'.repeat(43),
+      nonce: 'supabase-nonce',
+      issuedAt,
+      expiresAt: issuedAt + 10 * 60 * 1000,
+    };
+
+    const ticket = await createSiteAuthorizationRequestTicket({ ...request, scopes: [...request.scopes] }, pepper);
+    const verified = await verifySiteAuthorizationRequestTicket(ticket, pepper, issuedAt + 1_000);
+    assert.deepEqual(verified?.scopes, ['openid', 'email']);
+    assert.equal(verified?.redirectUri, CLIENT.redirectUris[0]);
+    assert.equal(verified?.state, 'supabase-state-value');
+
+    /* Asıl mesele bu: gövdedeki kapsamı büyütmek. Ekranda "e-postan" yazarken
+     * kaydedilen iznin gönderilerini de kapsaması, imza olmadan mümkün olurdu. */
+    const [prefix, payload, signature] = ticket.split('.');
+    const widened = Buffer.from(JSON.stringify({
+      ...request,
+      scopes: ['openid', 'email', 'orbit.posts.read'],
+    })).toString('base64url');
+    assert.equal(
+      await verifySiteAuthorizationRequestTicket(
+        `${prefix}.${widened}.${signature}`,
+        pepper,
+        issuedAt + 1_000,
+      ),
+      null,
+      'a widened scope list must not survive the signature',
+    );
+
+    assert.equal(
+      await verifySiteAuthorizationRequestTicket(ticket, 'another-pepper-at-least-32-bytes-long', issuedAt),
+      null,
+    );
+    assert.equal(
+      await verifySiteAuthorizationRequestTicket(ticket, pepper, issuedAt + 11 * 60 * 1000),
+      null,
+      'an expired ticket must not be accepted',
+    );
+    assert.equal(await verifySiteAuthorizationRequestTicket(`${prefix}.${payload}`, pepper, issuedAt), null);
+  });
+
+  test('the consent screen names what is shared and what is not', async () => {
+    const response = siteConsentPage({
+      clientLabel: 'Anime sitesi',
+      clientSiteUrl: 'https://anime.sametbasbug.dev',
+      scopes: ['openid', 'profile', 'email'],
+      accountHandle: 'samet',
+      accountDisplayName: 'Samet Başbuğ',
+      ticket: 'orb_site_req_v1.payload.signature',
+      csrfToken: 'csrf-value',
+      cancelUrl: 'https://anime.sametbasbug.dev/auth/v1/callback?error=access_denied',
+    });
+    const html = await response.text();
+
+    assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8');
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    /* Sayfada script yok ve CSP bunu kalıcı kılıyor; iframe'e alınamıyor. */
+    assert.match(response.headers.get('content-security-policy') ?? '', /frame-ancestors 'none'/u);
+    assert.equal(/<script/iu.test(html), false);
+
+    assert.match(html, /E-posta adresin/u);
+    /* E-postanın geri alınamazlığı ekranda yazılı: kararın bedeli onay
+     * anında görünmeli, sonradan değil. */
+    assert.match(html, /o kopya sitede kalır/u);
+    /* Verilmeyenler listesi — takip akışı burada, çünkü kapsam listesinde
+     * bilerek yok. */
+    assert.match(html, /takip akışın/u);
+    assert.match(html, /Mesajların/u);
+    /* İstenmeyen kapsamın metni sayfaya hiç girmiyor. */
+    assert.equal(html.includes('Herkese açık gönderilerin'), false);
+    assert.match(html, /@samet/u);
+  });
+
+  test('a hostile client label cannot inject markup into the consent screen', async () => {
+    const response = siteConsentPage({
+      clientLabel: '<img src=x onerror="alert(1)">Anime',
+      clientSiteUrl: 'https://anime.example/"><script>alert(2)</script>',
+      scopes: ['openid'],
+      accountHandle: 'samet',
+      accountDisplayName: 'Samet',
+      ticket: 'orb_site_req_v1.a.b',
+      csrfToken: 'csrf',
+      cancelUrl: 'https://anime.example/cb',
+    });
+    const html = await response.text();
+    /* İstemci adı operatör eliyle giriliyor, yani bugün güvenilir. Kaçış yine
+     * var: "bize güvenilir veri" varsayımı, o veriyi başka bir yerden alan bir
+     * yol yazıldığı gün sessizce yanlış olur. */
+    assert.equal(html.includes('<img src=x'), false);
+    assert.equal(html.includes('<script>alert(2)'), false);
+    assert.match(html, /&lt;img src=x/u);
   });
 
   test('expired codes are removed by retention', async () => {

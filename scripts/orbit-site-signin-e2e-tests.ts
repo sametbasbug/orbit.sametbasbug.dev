@@ -143,25 +143,40 @@ function authorizeQuery(overrides: Record<string, string> = {}): Record<string, 
   };
 }
 
+/* Onay gönderimi, GERÇEK tarayıcı gibi: `Origin` başlığı YOK.
+ *
+ * Bu, staging'de öğrenilmiş bir ders ve testin biçimi o dersin kaydı.
+ * Tarayıcı aynı kökene giden üst düzey form gönderiminde `Origin` göndermiyor;
+ * eski hâlinde bu yardımcı başlığı elle koyuyordu ve test, gerçekte
+ * çalışmayan bir yolu yeşil gösteriyordu. Başlığı isteyen durumlar artık
+ * `origin` seçeneğiyle AÇIKÇA belirtiliyor. */
 async function consent(
   ticket: string,
   decision: string,
-  options: { cookie?: string; csrf?: string; now?: number } = {},
+  options: {
+    cookie?: string;
+    csrf?: string;
+    now?: number;
+    origin?: string;
+    secFetchSite?: string;
+  } = {},
 ): Promise<Response> {
   const body = new URLSearchParams({
     ticket,
     csrf: options.csrf ?? csrfToken,
     decision,
   });
+  const headers: Record<string, string> = {
+    'content-type': 'application/x-www-form-urlencoded',
+    cookie: options.cookie ?? sessionCookie,
+    'x-test-now': String(options.now ?? NOW),
+  };
+  if (options.origin !== undefined) headers.origin = options.origin;
+  if (options.secFetchSite !== undefined) headers['sec-fetch-site'] = options.secFetchSite;
   return await fetch(`${baseUrl}/v1/oauth/consent`, {
     method: 'POST',
     redirect: 'manual',
-    headers: {
-      'content-type': 'application/x-www-form-urlencoded',
-      origin: ORIGIN,
-      cookie: options.cookie ?? sessionCookie,
-      'x-test-now': String(options.now ?? NOW),
-    },
+    headers,
     body: body.toString(),
   });
 }
@@ -467,6 +482,29 @@ describe('Signing in to another Equinox site with Orbit', { concurrency: false }
     const ticket = ticketFromConsentPage(await screen.text());
     const forged = await consent(ticket, 'allow', { csrf: randomBase64Url(32) });
     assert.equal(forged.status, 403);
+  });
+
+  test('the consent form works without an Origin header but not from another site', async () => {
+    const screen = await authorize(authorizeQuery({
+      scope: 'openid profile email orbit.graph.read',
+      state: 'origin-state',
+    }));
+    assert.equal(screen.status, 200);
+    const ticket = ticketFromConsentPage(await screen.text());
+
+    /* Başka bir siteden gönderilen form: `Origin` orada VAR ve eşleşmiyor. */
+    const foreign = await consent(ticket, 'allow', { origin: 'https://saldirgan.example' });
+    assert.equal(foreign.status, 403);
+
+    /* Modern tarayıcının çapraz köken sinyali. */
+    const crossSite = await consent(ticket, 'allow', { secFetchSite: 'cross-site' });
+    assert.equal(crossSite.status, 403);
+
+    /* Ve gerçek hâl: aynı kökenden gelen form, `Origin` başlığı olmadan. Bu
+     * satır staging'de kırılan yolun kendisi. */
+    const real = await consent(ticket, 'allow', { secFetchSite: 'same-origin' });
+    assert.equal(real.status, 302, 'the browser sends no Origin on a same-origin form post');
+    assert.ok(locationOf(real).searchParams.get('code'));
   });
 
   test('a code cannot be exchanged twice, and the replay burns the tokens', async () => {

@@ -4006,6 +4006,34 @@ function siteIssuer(env: OrbitBindings): string {
   return env.ORBIT_ALLOWED_ORIGIN;
 }
 
+/* Tarayıcı formundan gelen POST'un köken kontrolü.
+ *
+ * `requireAllowedOrigin` burada KULLANILAMIYOR ve bunu staging'de öğrendim:
+ * tarayıcı, aynı kökene giden üst düzey bir form gönderiminde `Origin`
+ * başlığını hiç göndermiyor. Onay ekranındaki "İzin ver" düğmesi bu yüzden
+ * `origin_forbidden` alıyordu. Uçtan uca testim bunu yakalamamıştı, çünkü
+ * başlığı elle koyuyordu — yani kontrolün başlık VARKEN çalıştığını
+ * doğrulamış, gerçek tarayıcının onu göndermediğini hiç ölçmemiştim.
+ *
+ * Kural: başlık varsa eşleşmek zorunda. Yoksa geçiyor, çünkü tehlikeli olan
+ * durum her zaman başlığı taşıyor — başka bir siteden gelen bir form
+ * gönderimi çapraz kökenlidir ve tarayıcılar o durumda `Origin`'i yıllardır
+ * gönderiyor. `Sec-Fetch-Site` varsa o da ikinci bir kapı.
+ *
+ * Asıl koruma yine de bu değil: oturumun digest'ine bağlı CSRF değeri. Köken
+ * kontrolü onun üstüne binen ikinci katman; tek katman olsaydı bu boşluk bir
+ * açık olurdu, öyle değil. */
+function requireBrowserFormOrigin(request: Request, env: OrbitBindings): void {
+  const origin = request.headers.get('origin');
+  if (origin !== null && origin !== env.ORBIT_ALLOWED_ORIGIN) {
+    throw new ApiError(403, 'origin_forbidden', 'Request origin is not allowed.');
+  }
+  const site = request.headers.get('sec-fetch-site');
+  if (site !== null && site !== 'same-origin' && site !== 'none') {
+    throw new ApiError(403, 'origin_forbidden', 'Request origin is not allowed.');
+  }
+}
+
 async function readFormBody(request: Request): Promise<URLSearchParams> {
   const contentType = request.headers.get('content-type') ?? '';
   if (!contentType.includes('application/x-www-form-urlencoded')) {
@@ -4441,7 +4469,7 @@ async function handleSiteConsent(
   now: number,
   requestId: string,
 ): Promise<Response> {
-  requireAllowedOrigin(request, env);
+  requireBrowserFormOrigin(request, env);
   const body = await readFormBody(request);
   const auth = await authenticateHuman(request, env, repository, now, false);
 

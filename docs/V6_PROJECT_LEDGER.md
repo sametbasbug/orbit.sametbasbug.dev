@@ -2102,3 +2102,28 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
   @astrojs/cloudflare 14.2.0 are the only ones that reach production;
   @astrojs/check still accepts this astro, so the peer range that keeps
   TypeScript 7 out has not moved.
+- Staging was broken for two nights and the nightly said so both nights before
+  anyone read it. Every route under `/v1` answered 500 — including paths that
+  do not exist, which is the tell: the throw happened at the API entry, before
+  routing, so it was a binding assertion and not a handler. `/healthz` and the
+  static pages were fine, which is why nothing looked wrong from outside.
+- The cause was mine, and the shape of it is worth keeping. On 10 August at
+  14:01 I deleted the two dead GitHub OAuth secrets. Deleting a secret mints a
+  new Worker version that inherits the previous code; the version that resulted
+  still carried `ORBIT_GITHUB_CALLBACK_URL` and `ORBIT_PLATFORM_OWNER_GITHUB_ID`,
+  because staging's last real deploy was 12:10, before GitHub was removed. That
+  code still listed the GitHub secrets as required bindings. So the new version
+  was old code missing a secret it demanded, and it failed closed on every
+  authenticated surface.
+- Production survived the same deletion only because it had been redeployed at
+  13:40 with the Google-only code. The secrets were removed from both; one of
+  them was ready and the other was not.
+- The mistake underneath: I decided the secrets were dead by reading `main`. A
+  secret is dead relative to the **deployed artifact**, not to the repository.
+  Anything that mutates secrets should be followed by that environment's
+  verification run, because a secret change is a deployment — it produces a new
+  version — while looking like configuration.
+- Redeploying the identical commit fixed it, which is also the proof that
+  neither the code nor `wrangler.staging.jsonc` was ever wrong: `npm run
+  staging:verify` passes, the forbidden-origin probe is 403 again and an unknown
+  `/v1` path is 404 again.

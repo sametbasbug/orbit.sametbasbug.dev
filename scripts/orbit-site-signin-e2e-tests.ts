@@ -195,6 +195,23 @@ function ticketFromConsentPage(html: string): string {
   return match[1];
 }
 
+/* Koda kadar giden yol, izin durumundan bağımsız.
+ *
+ * Testler sırayla koşuyor ve içlerinden biri izni iptal ediyor; ondan sonraki
+ * her `/authorize` onay ekranıyla başlıyor. Bu yardımcı iki hâli de yürütüyor,
+ * böylece bir testin bıraktığı durum sonrakini "yönlendirme bekleniyordu"
+ * diye kırmıyor — kırdığında da sebebi kendi konusu olmayan bir şey olurdu. */
+async function authorizeToCode(query: Record<string, string>): Promise<string> {
+  const first = await authorize(query);
+  if (first.status === 200) {
+    const redirect = await consent(ticketFromConsentPage(await first.text()), 'allow');
+    assert.equal(redirect.status, 302);
+    return locationOf(redirect).searchParams.get('code') ?? '';
+  }
+  assert.equal(first.status, 302);
+  return locationOf(first).searchParams.get('code') ?? '';
+}
+
 function locationOf(response: Response): URL {
   const location = response.headers.get('location');
   assert.ok(location, `expected a redirect, got ${response.status}`);
@@ -569,9 +586,167 @@ describe('Signing in to another Equinox site with Orbit', { concurrency: false }
     assert.equal(afterBurn.status, 400, 'the replay must burn the rotated token too');
   });
 
+  test('the connected sites panel lists the grant and cutting it kills the session', async () => {
+    const code = await authorizeToCode(authorizeQuery({ state: 'panel-state' }));
+    const issued = await tokenRequest({
+      grant_type: 'authorization_code',
+      code,
+      code_verifier: VERIFIER,
+      redirect_uri: REDIRECT_URI,
+    });
+    assert.equal(issued.status, 200);
+
+    const listed = await fetch(`${baseUrl}/v1/me/connected-sites`, {
+      headers: { cookie: sessionCookie, 'x-test-now': String(NOW) },
+    });
+    assert.equal(listed.status, 200);
+    const { connectedSites } = await listed.json() as {
+      connectedSites: Array<{ id: string; label: string; scopes: string[]; lastUsedAt: number | null }>;
+    };
+    assert.equal(connectedSites.length, 1);
+    assert.equal(connectedSites[0]?.label, CLIENT_LABEL);
+    assert.ok(connectedSites[0]?.lastUsedAt);
+
+    /* Panel bir tarayıcı yüzeyi: mutasyon CSRF başlığı ve izinli origin
+     * istiyor. İkisi olmadan iptal edilemiyor, yoksa başka bir sitedeki bir
+     * sayfa kullanıcının bağlantılarını kesebilirdi. */
+    const withoutCsrf = await fetch(
+      `${baseUrl}/v1/me/connected-sites/${encodeURIComponent(connectedSites[0].id)}/revoke`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: ORIGIN,
+          cookie: sessionCookie,
+          'x-test-now': String(NOW),
+        },
+        body: '{}',
+      },
+    );
+    assert.equal(withoutCsrf.status, 403);
+
+    const revoked = await fetch(
+      `${baseUrl}/v1/me/connected-sites/${encodeURIComponent(connectedSites[0].id)}/revoke`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: ORIGIN,
+          cookie: sessionCookie,
+          'X-Orbit-CSRF': csrfToken,
+          'x-test-now': String(NOW),
+        },
+        body: '{}',
+      },
+    );
+    assert.equal(revoked.status, 200);
+
+    /* "Bağlantıyı kes" gerçekten kesiyor: erişim anahtarı da, yenileme de
+     * ölüyor. Panelde düğmeye basan kişi için bunun anlamı "o sitedeki oturumum
+     * kapandı" ve o cümlenin doğru olması gerekiyor. */
+    const userinfo = await fetch(`${baseUrl}/v1/oauth/userinfo`, {
+      headers: {
+        authorization: `Bearer ${String(issued.body.access_token)}`,
+        'x-test-now': String(NOW + 1_000),
+      },
+    });
+    assert.equal(userinfo.status, 401);
+    const refreshed = await tokenRequest({
+      grant_type: 'refresh_token',
+      refresh_token: String(issued.body.refresh_token),
+    }, { now: NOW + 1_000 });
+    assert.equal(refreshed.status, 400);
+
+    const emptied = await fetch(`${baseUrl}/v1/me/connected-sites`, {
+      headers: { cookie: sessionCookie, 'x-test-now': String(NOW) },
+    });
+    const after = await emptied.json() as { connectedSites: unknown[] };
+    assert.equal(after.connectedSites.length, 0, 'a cut connection leaves the list');
+
+    /* İkinci iptal 409: iptal edilmiş bir bağlantı kesilecek bir şey
+     * bırakmıyor ve sessiz bir 200, panelde olmayan bir şeyi kesmiş gibi
+     * görünürdü. */
+    const again = await fetch(
+      `${baseUrl}/v1/me/connected-sites/${encodeURIComponent(connectedSites[0].id)}/revoke`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: ORIGIN,
+          cookie: sessionCookie,
+          'X-Orbit-CSRF': csrfToken,
+          'x-test-now': String(NOW),
+        },
+        body: '{}',
+      },
+    );
+    assert.equal(again.status, 409);
+
+    /* Kullanıcı kestiği siteye geri dönebiliyor: yeniden onay izni diriltiyor.
+     * Diriltmeyen bir tasarım, "bağlantıyı kes"i kalıcı bir yasağa çevirirdi. */
+    const reconnected = await authorize(authorizeQuery({ state: 'reconnect-state' }));
+    assert.equal(reconnected.status, 200, 'reconnecting must ask for consent again');
+  });
+
+  test('another account cannot cut someone else’s connection', async () => {
+    const strangerId = '019f7000-0000-7000-8000-0000000000c1';
+    assert.equal((await testPost('/__test/seed-account', {
+      accountId: strangerId,
+      handle: 'yabanci',
+      displayName: 'Yabancı',
+      now: NOW,
+    })).status, 200);
+    const strangerSession = await createOpaqueToken('session', SESSION_PEPPER);
+    const strangerCsrf = randomBase64Url(32);
+    assert.equal((await testPost('/__test/seed-human-session', {
+      sessionId: strangerSession.selector,
+      secretDigest: strangerSession.digest,
+      csrfDigest: await hmacDigest(
+        `orbit:csrf:v1:${strangerSession.selector}:${strangerCsrf}`,
+        CSRF_PEPPER,
+      ),
+      accountId: strangerId,
+      now: NOW,
+    })).status, 200);
+
+    /* Önce sahibi bir bağlantı kursun. */
+    assert.ok(await authorizeToCode(authorizeQuery({ state: 'stranger-state' })));
+    const listed = await fetch(`${baseUrl}/v1/me/connected-sites`, {
+      headers: { cookie: sessionCookie, 'x-test-now': String(NOW) },
+    });
+    const { connectedSites } = await listed.json() as { connectedSites: Array<{ id: string }> };
+    assert.ok(connectedSites.length >= 1);
+
+    const stolen = await fetch(
+      `${baseUrl}/v1/me/connected-sites/${encodeURIComponent(connectedSites[0].id)}/revoke`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: ORIGIN,
+          cookie: `__Host-orbit_session=${strangerSession.token}; __Host-orbit_csrf=${strangerCsrf}`,
+          'X-Orbit-CSRF': strangerCsrf,
+          'x-test-now': String(NOW),
+        },
+        body: '{}',
+      },
+    );
+    /* 404, 403 değil: "yetkin yok" cevabı o kimliğin var olduğunu doğrular ve
+     * izin kimliklerinin taranmasına izin verirdi. */
+    assert.equal(stolen.status, 404);
+
+    const strangerList = await fetch(`${baseUrl}/v1/me/connected-sites`, {
+      headers: {
+        cookie: `__Host-orbit_session=${strangerSession.token}; __Host-orbit_csrf=${strangerCsrf}`,
+        'x-test-now': String(NOW),
+      },
+    });
+    const strangerBody = await strangerList.json() as { connectedSites: unknown[] };
+    assert.equal(strangerBody.connectedSites.length, 0);
+  });
+
   test('suspending the account stops the refresh and the userinfo read', async () => {
-    const granted = await authorize(authorizeQuery({ state: 'suspend-state' }));
-    const code = locationOf(granted).searchParams.get('code') ?? '';
+    const code = await authorizeToCode(authorizeQuery({ state: 'suspend-state' }));
     const issued = await tokenRequest({
       grant_type: 'authorization_code',
       code,

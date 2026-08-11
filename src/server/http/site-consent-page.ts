@@ -1,9 +1,9 @@
 /* "Orbit ile devam et" onay ekranı.
  *
- * Bu sayfa tarayıcıda görünen ilk ve tek Orbit yüzeyi olabilir: Anime
- * sitesinden gelen biri Orbit'i belki hiç görmemiştir. O yüzden metin
- * pazarlama değil, envanter — ne verildiği tek tek yazıyor ve verilmeyenler
- * de yazıyor.
+ * Bu sayfa tarayıcıda görünen ilk ve tek Orbit yüzeyi olabilir: Equinox
+ * Rota'dan gelen biri Orbit'i belki hiç görmemiştir. O yüzden metin pazarlama
+ * değil, envanter — ne verildiği yazıyor, verilmeyenler de yazıyor. Ama kısa:
+ * uzun bir envanter okunmuyor ve okunmayan bir envanter hiç yoktur.
  *
  * Neden kendi içinde tam: hata sayfasındaki gerekçenin aynısı. Site CSS'i bir
  * varlık isteği demek; onay ekranının ikinci bir isteğe bağlı olması, kararın
@@ -15,25 +15,41 @@
 
 import type { SiteAuthorizationScope } from '../identity/site-authorization-scopes';
 
+/* Kapsam metinleri iki katmanlı.
+ *
+ * `title` ekranda görünen tek satır; `detail` yalnız "Bunlar ne demek?"
+ * açıldığında görünüyor. Sebep: bu ekranı okuyan insanların çoğu okumuyor ve
+ * uzun bir metin okunmayı azaltıyor. Kısa liste, gerçekten bakan kişinin
+ * saniyeler içinde ne verdiğini görmesini sağlıyor; ayrıntı isteyene duruyor.
+ *
+ * Ayrıntıyı tümden atmadım: e-postanın geri alınamazlığı gibi şeyler kararın
+ * gerçek bedeli ve ekranda hiç bulunmaması, bilerek gizlemek olurdu. Katmanlı
+ * olması ikisini birden karşılıyor — kısa metin okunuyor, bedel erişilebilir
+ * kalıyor.
+ *
+ * `title` null ise satır listede hiç görünmüyor: `openid` kullanıcıya bir şey
+ * söylemiyor ("bu sitede kim olduğun" zaten girmenin tanımı) ve listede bir
+ * satır harcaması, okunacak dört satırı beşe çıkarıp hiçbirinin okunmaması
+ * riskini artırıyor. */
 interface ScopeText {
-  title: string;
+  title: string | null;
   detail: string;
 }
 
-/* Kapsam metinleri. "Kimliğin" gibi soyut sözcük yok: kullanıcı ne verdiğini
- * somut görmeli. */
 const SCOPE_TEXTS: Record<SiteAuthorizationScope, ScopeText> = {
   openid: {
-    title: 'Bu sitede kim olduğun',
-    detail: 'Yalnız bu siteye özel bir kimlik numarası. Orbit hesabının kendi numarası verilmiyor ve başka siteler aynı numarayı görmüyor.',
+    title: null,
+    detail: 'Bu siteye özel bir kimlik numarası. Orbit hesabının kendi numarası verilmiyor; başka siteler aynı numarayı görmüyor.',
   },
   profile: {
-    title: 'Görünen adın, kullanıcı adın ve profil resmin',
+    title: 'Adın, kullanıcı adın ve profil resmin',
     detail: 'Orbit profilinde herkese açık olan bilgiler.',
   },
   email: {
-    title: 'E-posta adresin',
-    detail: 'Site bu adresi kendi veritabanına kaydeder. Buradan verdiğin izni sonra geri alsan da o kopya sitede kalır — adresini geri çağırmanın bir yolu yok.',
+    /* Parantez içindeki üç sözcük bilerek kısa listede: adresin siteye
+     * KOPYALANDIĞI, sonradan geri alınamayan tek sonuç. */
+    title: 'E-posta adresin (site kendi kaydına alır)',
+    detail: 'Site adresi kendi veritabanına yazar. İzni sonra geri alsan da o kopya sitede kalır; adresini geri çağırmanın bir yolu yok.',
   },
   'orbit.graph.read': {
     title: 'Kimi takip ettiğin',
@@ -45,14 +61,9 @@ const SCOPE_TEXTS: Record<SiteAuthorizationScope, ScopeText> = {
   },
 };
 
-/* Hiçbir kapsamın açmadığı şeyler. Ekranda yazıyor, çünkü bir onay ekranının
- * en çok işe yarayan cümlesi neyin verilmediğini söyleyen cümledir. */
-const WITHHELD = [
-  'Kimleri okuduğun — yani takip akışın',
-  'Mesajların',
-  'Taslakların ve yayımlamadığın kayıtların',
-  'Hesap ayarların',
-];
+/* Verilmeyenler tek satıra indi. Dört maddelik liste okunmuyordu; bu cümle
+ * okunuyor ve aynı şeyi söylüyor. */
+const WITHHELD_LINE = 'Takip akışın, mesajların, taslakların ve hesap ayarların paylaşılmıyor.';
 
 function escapeHtml(value: string): string {
   return value
@@ -76,19 +87,21 @@ main { width: 100%; max-width: 33rem; background: var(--card);
   border: 1px solid var(--line); border-radius: 0.9rem; padding: 1.75rem; }
 h1 { margin: 0 0 0.35rem; font-size: 1.3rem; line-height: 1.35; }
 .site { margin: 0 0 1.5rem; color: var(--muted); font-size: 0.9rem; word-break: break-all; }
-h2 { margin: 1.5rem 0 0.6rem; font-size: 0.8rem; text-transform: uppercase;
+h2 { margin: 1.35rem 0 0.5rem; font-size: 0.8rem; text-transform: uppercase;
   letter-spacing: 0.06em; color: var(--muted); }
 ul { margin: 0; padding: 0; list-style: none; }
-li { padding: 0.7rem 0; border-top: 1px solid var(--line); }
-li:first-child { border-top: none; }
-li strong { display: block; font-weight: 600; }
-li span { color: var(--muted); font-size: 0.88rem; }
-.withheld li { padding: 0.3rem 0; border: none; color: var(--muted); font-size: 0.9rem; }
-.withheld li::before { content: "—"; margin-right: 0.5rem; }
-.who { margin: 1.5rem 0 0; padding: 0.9rem 1rem; border: 1px solid var(--line);
-  border-radius: 0.6rem; font-size: 0.9rem; color: var(--muted); }
+li { padding: 0.4rem 0 0.4rem 1.3rem; position: relative; }
+li::before { content: "✓"; position: absolute; left: 0; color: var(--accent); font-weight: 700; }
+.withheld { margin: 1rem 0 0; color: var(--muted); font-size: 0.9rem; }
+details { margin: 1rem 0 0; font-size: 0.88rem; }
+summary { cursor: pointer; color: var(--muted); }
+details ul { margin-top: 0.6rem; }
+details li { padding: 0.35rem 0 0.35rem 1.3rem; color: var(--muted); }
+details li::before { content: "·"; }
+details li strong { display: block; color: var(--ink); font-weight: 600; }
+.who { margin: 1.35rem 0 0; font-size: 0.9rem; color: var(--muted); }
 .who strong { color: var(--ink); }
-.actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1.5rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1.35rem; }
 button { font: inherit; font-weight: 600; padding: 0.7rem 1.25rem; border-radius: 0.55rem;
   border: 1px solid var(--line); cursor: pointer; background: transparent; color: inherit; }
 button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
@@ -158,7 +171,6 @@ export interface SiteConsentPageInput {
   clientSiteUrl: string;
   scopes: readonly SiteAuthorizationScope[];
   accountHandle: string;
-  accountDisplayName: string;
   ticket: string;
   csrfToken: string;
   /* Kullanıcı vazgeçerse siteye bu adresle dönüyor. */
@@ -167,12 +179,16 @@ export interface SiteConsentPageInput {
 
 export function siteConsentPage(input: SiteConsentPageInput): Response {
   const label = escapeHtml(input.clientLabel);
-  const items = input.scopes.map((scope) => {
-    const text = SCOPE_TEXTS[scope];
-    return `<li><strong>${escapeHtml(text.title)}</strong><span>${escapeHtml(text.detail)}</span></li>`;
-  }).join('\n');
-  const withheld = WITHHELD
-    .map((line) => `<li>${escapeHtml(line)}</li>`)
+  const items = input.scopes
+    .map((scope) => ({ scope, text: SCOPE_TEXTS[scope] }))
+    .filter((entry) => entry.text.title !== null)
+    .map((entry) => `<li>${escapeHtml(entry.text.title as string)}</li>`)
+    .join('\n');
+  const details = input.scopes
+    .map((scope) => SCOPE_TEXTS[scope])
+    .map((text) => (text.title === null
+      ? `<li>${escapeHtml(text.detail)}</li>`
+      : `<li><strong>${escapeHtml(text.title)}</strong>${escapeHtml(text.detail)}</li>`))
     .join('\n');
 
   const html = `<!doctype html>
@@ -196,14 +212,16 @@ export function siteConsentPage(input: SiteConsentPageInput): Response {
 <ul>
 ${items}
 </ul>
+<p class="withheld">${escapeHtml(WITHHELD_LINE)}</p>
 
-<h2>Şunları görmeyecek</h2>
-<ul class="withheld">
-${withheld}
+<details>
+<summary>Bunlar ne demek?</summary>
+<ul>
+${details}
 </ul>
+</details>
 
-<p class="who">Orbit hesabın: <strong>@${escapeHtml(input.accountHandle)}</strong>
-(${escapeHtml(input.accountDisplayName)})</p>
+<p class="who">Orbit hesabın: <strong>@${escapeHtml(input.accountHandle)}</strong></p>
 
 <form method="post" action="/v1/oauth/consent">
 <input type="hidden" name="ticket" value="${escapeHtml(input.ticket)}" />
@@ -214,9 +232,8 @@ ${withheld}
 </div>
 </form>
 
-<p class="fine">Bu izni daha sonra Orbit panelindeki <strong>bağlı siteler</strong>
-bölümünden geri alabilirsin. İzni geri almak siteye verilmiş anahtarları anında
-düşürür; sitenin kendi veritabanına kopyaladığı bilgileri silmez.</p>
+<p class="fine">İzni Orbit panelindeki <strong>bağlı siteler</strong> bölümünden
+geri alabilirsin.</p>
 </main>
 </body>
 </html>`;

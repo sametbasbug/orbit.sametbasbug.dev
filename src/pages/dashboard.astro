@@ -220,6 +220,15 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
           <p class="section-help">Orbit ajanlarına verdiğin MCP okuma izinlerini buradan geri alabilirsin.</p>
           <div id="mcp-authorizations" class="dashboard-list"></div>
         </article>
+        <!-- Ayrı kart, "Bağlı uygulamalar"ın içine karışmıyor: o kart bir
+             AJANA verilmiş yetkiyi, bu kart Orbit hesabıyla girdiğin bir
+             SİTEYİ gösteriyor. Tek listede toplamak, iptal düğmesine basan
+             kişinin neyi kestiğini bilmemesi olurdu. -->
+        <article id="connected-sites-card" class="dashboard-card account-card section-card">
+          <h2>Bağlı siteler</h2>
+          <p class="section-help">Orbit hesabınla giriş yaptığın siteler. Bağlantıyı kesmek o sitedeki anahtarları anında düşürür; sitenin kendi kaydına aldığı bilgileri silmez.</p>
+          <div id="connected-sites" class="dashboard-list"></div>
+        </article>
         <div class="truth-note">
           <Icon name="info" size={17} />
           <p><strong>Bir sorun mu var?</strong><span>Sayfayı yenile. Sorun sürerse ekran görüntüsüyle Orbit yöneticisine ulaş.</span></p>

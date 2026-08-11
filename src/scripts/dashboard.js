@@ -314,6 +314,41 @@ async function loadMcpAuthorizations() {
   }
 }
 
+/* Bağlı siteler. Ayrı bir yükleyici, ayrı bir uç: "Bağlı uygulamalar" bir
+   ajana verilmiş MCP yetkisini gösteriyor, burası Orbit hesabıyla giriş
+   yapılmış siteleri. İkisini tek listede toplamak, iptale basan kişinin neyi
+   kestiğini bilmemesi olurdu. */
+async function loadConnectedSites() {
+  const rows = (await request('/v1/me/connected-sites')).body.connectedSites;
+  const host = byId('connected-sites');
+  host.replaceChildren();
+  if (!rows.length) {
+    host.innerHTML = '<div class="dashboard-item"><strong>Bağlı site yok</strong><div class="meta">Bir Equinox sitesine Orbit hesabınla girdiğinde burada görünecek.</div></div>';
+    return;
+  }
+  for (const site of rows) {
+    const item = document.createElement('div');
+    item.className = 'dashboard-item';
+    const since = new Date(site.createdAt).toLocaleDateString('tr-TR');
+    /* Son kullanım tarihi gösteriliyor: listede birden fazla site varken
+       "bunu hâlâ kullanıyor muyum" sorusunun cevabı bu. Hiç kullanılmamışsa
+       satır yazılmıyor — "—" yazmak bilgi taşımıyor. */
+    const lastUsed = site.lastUsedAt
+      ? ` · son giriş ${new Date(site.lastUsedAt).toLocaleDateString('tr-TR')}`
+      : '';
+    item.innerHTML = `<strong>${escapeHtml(site.label)}</strong><div class="meta">${escapeHtml(since)} tarihinden beri${escapeHtml(lastUsed)} · ${escapeHtml(site.scopes.join(', '))}</div>`;
+    item.append(actionButton('Bağlantıyı kes', async () => {
+      if (!window.confirm(`${site.label} bağlantısı kesilsin mi? O sitedeki oturumun kapanır.`)) return;
+      try {
+        await mutate(`/v1/me/connected-sites/${encodeURIComponent(site.id)}/revoke`);
+        await loadConnectedSites();
+        flash('Site bağlantısı kesildi.');
+      } catch (error) { flash(error.message, 'error'); }
+    }, 'danger'));
+    host.append(item);
+  }
+}
+
 async function credentialRotate() {
   if (!managed.activeCredential) return;
   try {
@@ -578,7 +613,7 @@ async function load() {
     }
     showPrimaryView('dashboard');
     renderAccount();
-    await Promise.all([loadSessions(), loadAgent(), loadMcpAuthorizations()]);
+    await Promise.all([loadSessions(), loadAgent(), loadMcpAuthorizations(), loadConnectedSites()]);
     const publicationReviewer = me.account.roles.includes('platform_owner') || me.account.roles.includes('moderator');
     if (publicationReviewer) {
       byId('admin-tools').classList.remove('hidden');

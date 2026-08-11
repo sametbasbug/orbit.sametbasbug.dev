@@ -4426,7 +4426,6 @@ async function handleSiteAuthorize(
     clientSiteUrl: client.siteUrl,
     scopes,
     accountHandle: auth.account.handle,
-    accountDisplayName: auth.account.displayName,
     ticket,
     csrfToken: auth.csrfToken ?? '',
     cancelUrl: redirectUri,
@@ -7116,6 +7115,58 @@ export async function handleApiRequest(
           expiresAt: codeExpiresAt,
         },
       }, 201);
+    }
+
+    /* "Bağlı siteler" — insan yüzü. `/v1/oauth/*` uçları sitelerin konuştuğu
+     * yer; bu iki uç kullanıcının konuştuğu yer, o yüzden `/v1/me` altında.
+     * Aynı ön eki paylaşsalardı, sitenin sunabildiği bir anahtarla insanın
+     * oturumunun aynı kapıdan geçtiği izlenimi doğardı. */
+    if (request.method === 'GET' && path === '/v1/me/connected-sites') {
+      const auth = await authenticateHuman(request, env, repository, now, false);
+      const grants = await siteRepository.listAccountGrants(auth.account.id);
+      return json({
+        /* Yalnız yürürlükteki bağlantılar — MCP listesindeki gerekçenin
+         * aynısı: iptal edilmiş bir kayıt panelde kesilecek bir şey
+         * bırakmıyor, yalnız gerçekten bağlı olanı görünmez kılıyor. Satırın
+         * kendisi silinmiyor, denetim izi `revoked_at` ile duruyor. */
+        connectedSites: grants
+          .filter((grant) => grant.revokedAt === null)
+          .map((grant) => ({
+            id: grant.id,
+            label: grant.clientLabel,
+            siteUrl: grant.clientSiteUrl,
+            scopes: grant.scopes,
+            createdAt: grant.createdAt,
+            lastUsedAt: grant.lastUsedAt,
+          })),
+      });
+    }
+
+    const connectedSiteRevokeMatch = /^\/v1\/me\/connected-sites\/([^/]+)\/revoke$/u.exec(path);
+    if (request.method === 'POST' && connectedSiteRevokeMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_connected_site_revoke_fields');
+      const grantId = decodeURIComponent(connectedSiteRevokeMatch[1]);
+      const grant = await siteRepository.getGrantById(grantId);
+      /* Başkasının izni "bulunamadı" diye dönüyor, "yetkin yok" diye değil:
+       * ikincisi, elindeki kimliğin var olduğunu doğrulayarak izin
+       * kimliklerinin taranmasına izin verirdi. */
+      if (!grant || grant.accountId !== auth.account.id) {
+        throw new ApiError(404, 'connected_site_not_found', 'Connected site was not found.');
+      }
+      if (grant.revokedAt !== null) {
+        throw new ApiError(409, 'connected_site_already_revoked', 'Connected site is already revoked.');
+      }
+      await siteRepository.revokeGrant({
+        grantId,
+        actorAccountId: auth.account.id,
+        reason: 'user_revoked',
+        auditEventId: createEntityId(),
+        requestId,
+        revokedAt: now,
+      });
+      return json({ connectedSite: { id: grantId, revoked: true } });
     }
 
     const mcpAuthorizationRevokeMatch = /^\/v1\/mcp\/authorizations\/([^/]+)\/revoke$/u.exec(path);

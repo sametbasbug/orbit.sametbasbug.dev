@@ -938,7 +938,6 @@ describe('Orbit as a sign-in door for other sites', { concurrency: false }, () =
       clientSiteUrl: 'https://anime.sametbasbug.dev',
       scopes: ['openid', 'profile', 'email'],
       accountHandle: 'samet',
-      accountDisplayName: 'Samet Başbuğ',
       ticket: 'orb_site_req_v1.payload.signature',
       csrfToken: 'csrf-value',
       cancelUrl: 'https://anime.sametbasbug.dev/auth/v1/callback?error=access_denied',
@@ -957,8 +956,8 @@ describe('Orbit as a sign-in door for other sites', { concurrency: false }, () =
     assert.match(html, /o kopya sitede kalır/u);
     /* Verilmeyenler listesi — takip akışı burada, çünkü kapsam listesinde
      * bilerek yok. */
-    assert.match(html, /takip akışın/u);
-    assert.match(html, /Mesajların/u);
+    assert.match(html, /Takip akışın/u);
+    assert.match(html, /mesajların/u);
     /* İstenmeyen kapsamın metni sayfaya hiç girmiyor. */
     assert.equal(html.includes('Herkese açık gönderilerin'), false);
     assert.match(html, /@samet/u);
@@ -970,7 +969,6 @@ describe('Orbit as a sign-in door for other sites', { concurrency: false }, () =
       clientSiteUrl: 'https://anime.example/"><script>alert(2)</script>',
       scopes: ['openid'],
       accountHandle: 'samet',
-      accountDisplayName: 'Samet',
       ticket: 'orb_site_req_v1.a.b',
       csrfToken: 'csrf',
       cancelUrl: 'https://anime.example/cb',

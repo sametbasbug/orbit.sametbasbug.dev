@@ -310,6 +310,33 @@ assert(
   deployWorkflow.includes("trap 'rm -f \"$oauth_secrets_file\"' EXIT"),
   'production deploy does not clean up its temporary OAuth secrets file',
 );
+
+/* Site giriş kapısının iki sırrı da her dağıtımda Worker sürümüyle birlikte
+ * yükleniyor, ve bu kontrol o davranışın kilidi.
+ *
+ * Neden bu iki sır `assertIdentityBindings`'in zorunlu listesinde DEĞİL: o
+ * kontrol her isteğin başında koşuyor. Eksik bir imza anahtarı akışı,
+ * gönderileri ve mesajları da düşürürdü — oysa eksik anahtarın gerçek sonucu
+ * yalnızca giriş kapısının kapalı olması, ve kapı bunu kendi başına 503 ile
+ * söylüyor. Bir kapının anahtarını kaybetmek evi yıkmamalı. Gürültü bu yüzden
+ * çalışma zamanında değil, dağıtım anında çıkıyor: aşağıdaki iki iddia iş
+ * akışının sırları taşımayı bırakmasını yakalıyor, ve iş akışının kendi boşluk
+ * kontrolü de eksik sırla dağıtımı durduruyor. */
+assert(
+  deployWorkflow.includes('ORBIT_OIDC_SIGNING_KEY_V1: ${{ secrets.ORBIT_OIDC_SIGNING_KEY_V1 }}')
+    && deployWorkflow.includes('ORBIT_SITE_TOKEN_PEPPER_V1: ${{ secrets.ORBIT_SITE_TOKEN_PEPPER_V1 }}'),
+  'production deploy does not source the site sign-in secrets',
+);
+for (const binding of ['ORBIT_OIDC_SIGNING_KEY_V1', 'ORBIT_SITE_TOKEN_PEPPER_V1']) {
+  assert(
+    deployWorkflow.includes(`${binding}: env.${binding}`),
+    `production deploy does not upload ${binding}; the site sign-in door would ship closed`,
+  );
+}
+assert(
+  /if \[\[ -z "\$ORBIT_OIDC_SIGNING_KEY_V1" \|\| -z "\$ORBIT_SITE_TOKEN_PEPPER_V1" \]\]/u.test(deployWorkflow),
+  'production deploy does not stop when the site sign-in secrets are missing',
+);
 assert(
   deployWorkflow.includes("- 'docs/**'") && deployWorkflow.includes("- '*.md'"),
   'documentation-only pushes are not excluded from production deploys',

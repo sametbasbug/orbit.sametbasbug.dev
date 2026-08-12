@@ -254,6 +254,8 @@ jobs:
           ORBIT_LIVE_OAUTH_CLIENT_SECRET: ${{ secrets.ORBIT_LIVE_OAUTH_CLIENT_SECRET }}
           ORBIT_MCP_SERVICE_SECRET_V1: ${{ secrets.ORBIT_MCP_SERVICE_SECRET_V1 }}
           ORBIT_MCP_DELEGATION_PEPPER_V1: ${{ secrets.ORBIT_MCP_DELEGATION_PEPPER_V1 }}
+          ORBIT_OIDC_SIGNING_KEY_V1: ${{ secrets.ORBIT_OIDC_SIGNING_KEY_V1 }}
+          ORBIT_SITE_TOKEN_PEPPER_V1: ${{ secrets.ORBIT_SITE_TOKEN_PEPPER_V1 }}
         run: |
           if [[ -z "$ORBIT_LIVE_OAUTH_CLIENT_ID" || -z "$ORBIT_LIVE_OAUTH_CLIENT_SECRET" ]]; then
             echo 'Live Google OAuth deployment secrets are missing.' >&2
@@ -261,6 +263,14 @@ jobs:
           fi
           if [[ -z "$ORBIT_MCP_SERVICE_SECRET_V1" || -z "$ORBIT_MCP_DELEGATION_PEPPER_V1" ]]; then
             echo 'Orbit MCP production secrets are missing.' >&2
+            exit 1
+          fi
+          # Site giriş kapısının iki sırrı. Eksikse dağıtım burada duruyor,
+          # çalışma zamanında durmuyor: eksik bir imza anahtarının gerçek sonucu
+          # yalnızca o kapının kapalı olması, ve kapı bunu kendi başına 503 ile
+          # söylüyor. Bir kapının anahtarını kaybetmek evi yıkmamalı.
+          if [[ -z "$ORBIT_OIDC_SIGNING_KEY_V1" || -z "$ORBIT_SITE_TOKEN_PEPPER_V1" ]]; then
+            echo 'Orbit site sign-in production secrets are missing.' >&2
             exit 1
           fi
 
@@ -271,10 +281,13 @@ jobs:
             GOOGLE_OAUTH_CLIENT_ID: env.ORBIT_LIVE_OAUTH_CLIENT_ID,
             GOOGLE_OAUTH_CLIENT_SECRET: env.ORBIT_LIVE_OAUTH_CLIENT_SECRET,
             ORBIT_MCP_SERVICE_SECRET_V1: env.ORBIT_MCP_SERVICE_SECRET_V1,
-            ORBIT_MCP_DELEGATION_PEPPER_V1: env.ORBIT_MCP_DELEGATION_PEPPER_V1
+            ORBIT_MCP_DELEGATION_PEPPER_V1: env.ORBIT_MCP_DELEGATION_PEPPER_V1,
+            ORBIT_OIDC_SIGNING_KEY_V1: env.ORBIT_OIDC_SIGNING_KEY_V1,
+            ORBIT_SITE_TOKEN_PEPPER_V1: env.ORBIT_SITE_TOKEN_PEPPER_V1
           }' > "$oauth_secrets_file"
           unset ORBIT_LIVE_OAUTH_CLIENT_ID ORBIT_LIVE_OAUTH_CLIENT_SECRET
           unset ORBIT_MCP_SERVICE_SECRET_V1 ORBIT_MCP_DELEGATION_PEPPER_V1
+          unset ORBIT_OIDC_SIGNING_KEY_V1 ORBIT_SITE_TOKEN_PEPPER_V1
 
           npx wrangler d1 migrations apply DB \
             --remote \

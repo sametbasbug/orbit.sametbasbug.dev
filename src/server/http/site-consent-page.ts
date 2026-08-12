@@ -233,7 +233,7 @@ ${details}
 </form>
 
 <p class="fine">İzni Orbit panelindeki <strong>bağlı siteler</strong> bölümünden
-geri alabilirsin.</p>
+geri alabilirsin; sitedeki oturumu ayrıca kapatman gerekir.</p>
 </main>
 </body>
 </html>`;

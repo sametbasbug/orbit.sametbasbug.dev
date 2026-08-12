@@ -973,6 +973,12 @@ describe('Orbit as a sign-in door for other sites', { concurrency: false }, () =
     /* İstenmeyen kapsamın metni sayfaya hiç girmiyor. */
     assert.equal(html.includes('Herkese açık gönderilerin'), false);
     assert.match(html, /@samet/u);
+    /* İptalin NE YAPMADIĞI da ekranda. Panelde "o sitedeki oturumun kapanır"
+     * yazıyordu ve bu yanlıştı: Supabase kendi oturumunu üretiyor, yenilerken
+     * Orbit'e bir daha sormuyor, ve bizim uzaktan kapatma yolumuz yok. Yanlış
+     * söz burada zararsız değil — paylaşılan bir bilgisayarda "kestim, çıktım"
+     * diye kalkan biri açık oturum bırakır. */
+    assert.match(html, /oturumu ayrıca kapatman gerekir/u);
   });
 
   test('a hostile client label cannot inject markup into the consent screen', async () => {

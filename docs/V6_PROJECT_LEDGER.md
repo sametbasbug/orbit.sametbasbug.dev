@@ -2285,3 +2285,23 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
   tokens minted — so the server side had completed and the failure had to be in
   the browser's last hop. Checking the database first turned a vague "the screen
   is still there" into a bounded search.
+- The revoke button promised something it cannot deliver, and the promise was
+  the dangerous part. The confirm dialog read "O sitedeki oturumun kapanır" —
+  your session on that site will close. It does not. Revoking burns the Orbit
+  tokens the site holds, and the audit trail records `site.grant_revoked`, but
+  the site's own session is the site's: Supabase mints its own JWT and refresh
+  token and never re-checks Orbit when refreshing. There is no back-channel
+  logout with a custom OIDC provider, so this is not a bug to fix in code — it
+  is a sentence to fix in the interface.
+- Why it matters beyond wording: someone who revokes on a shared computer and
+  reads "your session will close" walks away believing they are signed out. The
+  dialog, the success message, the dashboard card and the consent screen now all
+  say the same true thing — the keys drop immediately, the site session stays
+  open and has to be closed there. A test asserts the consent screen carries the
+  caveat and fails when it is removed.
+- Re-consent after a revoke reuses the same grant row and clears its
+  `revoked_at`, so the row alone cannot tell you a revocation ever happened. The
+  history lives in `audit_events`, which held `site.consent_recorded`,
+  `site.tokens_issued`, `site.grant_revoked`, then a fresh consent and issue —
+  in that order. Worth knowing before anyone reads a live grant row as proof
+  that access was never withdrawn.

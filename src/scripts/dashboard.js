@@ -337,12 +337,17 @@ async function loadConnectedSites() {
       ? ` · son giriş ${new Date(site.lastUsedAt).toLocaleDateString('tr-TR')}`
       : '';
     item.innerHTML = `<strong>${escapeHtml(site.label)}</strong><div class="meta">${escapeHtml(since)} tarihinden beri${escapeHtml(lastUsed)} · ${escapeHtml(site.scopes.join(', '))}</div>`;
+    /* Uyarı metni bilerek "oturumun kapanır" DEMİYOR, çünkü kapanmıyor.
+       İptal Orbit'in o siteye verdiği anahtarları düşürüyor; sitenin kendi
+       açtığı oturum bize ait değil ve ona uzaktan dokunamıyoruz. Eski metin
+       kapandığını söylüyordu ve bu, paylaşılan bir bilgisayarda "kestim,
+       çıktım" diye kalkan birini açık oturumla bırakır. */
     item.append(actionButton('Bağlantıyı kes', async () => {
-      if (!window.confirm(`${site.label} bağlantısı kesilsin mi? O sitedeki oturumun kapanır.`)) return;
+      if (!window.confirm(`${site.label} bağlantısı kesilsin mi? Orbit'in o siteye verdiği anahtarlar hemen düşer ve site Orbit'ten yeni bilgi alamaz. Sitedeki oturumun açık kalır; oradan ayrıca çıkman gerekir.`)) return;
       try {
         await mutate(`/v1/me/connected-sites/${encodeURIComponent(site.id)}/revoke`);
         await loadConnectedSites();
-        flash('Site bağlantısı kesildi.');
+        flash('Bağlantı kesildi. Sitedeki oturumun varsa oradan ayrıca çıkman gerekir.');
       } catch (error) { flash(error.message, 'error'); }
     }, 'danger'));
     host.append(item);

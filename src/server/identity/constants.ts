@@ -104,11 +104,15 @@ export const CSRF_HEADER = 'X-Orbit-CSRF';
 
 export const TOKEN_HASH_VERSION = 1;
 
-export const REQUIRED_SECRET_BINDINGS = [
-  'GOOGLE_OAUTH_CLIENT_SECRET',
-  'ORBIT_INVITATION_PEPPER_V1',
-  'ORBIT_SESSION_PEPPER_V1',
-  'ORBIT_AGENT_CREDENTIAL_PEPPER_V1',
-  'ORBIT_OAUTH_STATE_PEPPER_V1',
-  'ORBIT_CSRF_PEPPER_V1',
-] as const;
+/* Burada bir `REQUIRED_SECRET_BINDINGS` listesi vardı ve silindi.
+ *
+ * Hiçbir yerden kullanılmıyordu — ilk kimlik commit'inde doğdu, hiç okunmadı.
+ * Zorunlu bağlamaların tek gerçek yeri `bindings.ts` içindeki
+ * `assertIdentityBindings`; yeni bir sır eklerken bakılacak yer orası.
+ *
+ * Silinmesinin sebebi ölü kod olması değil, KAPI GİBİ GÖRÜNMESİYDİ. Adı bir
+ * güvence vaat ediyordu ve o vaat kayda bile geçmişti ("şu sır bu listede
+ * değil, bilerek") — oysa listeye girmek de girmemek de hiçbir şeyi
+ * değiştiriyordu. Üstelik çürümüştü: `ORBIT_CURSOR_PEPPER_V1` çalışma
+ * zamanında zorunluyken bu listede hiç yoktu. Kimsenin okumadığı bir liste
+ * sessizce yanlışa kayar, ve yanlış olduğu gün ona güvenen biri çıkar. */

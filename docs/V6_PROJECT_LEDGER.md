@@ -2137,10 +2137,14 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
 - `ORBIT_OIDC_SIGNING_KEY_V1` and `ORBIT_SITE_TOKEN_PEPPER_V1` are staging
   secrets now, and both are also in the `staging.orbit.sametbasbug` Keychain
   service, which is where the rehearsal scripts read local secrets from. They
-  are still NOT in `REQUIRED_SECRET_BINDINGS` or the production config check,
-  on purpose: making a binding required takes down every deployed version that
-  lacks it, and production has neither secret yet. That step belongs to the
-  production rollout, after production has them.
+  are deliberately not required bindings while production lacks them: making a
+  binding required takes down every deployed version without it. That step
+  belongs to the production rollout, after production has them.
+  (Correction, 12 August: the original wording here credited
+  `REQUIRED_SECRET_BINDINGS` with that safety property. That constant was
+  referenced nowhere — it gated nothing, and it had already drifted out of step
+  with the runtime list. It is deleted; `assertIdentityBindings` in
+  `bindings.ts` is the only list that decides anything.)
 - Equinox Rota is registered in staging D1 as client `orbit-equinox-rota`, one
   redirect URI, scopes `openid profile email`. Narrow on purpose — the graph and
   posts scopes can be added later, and widening asks the user again rather than

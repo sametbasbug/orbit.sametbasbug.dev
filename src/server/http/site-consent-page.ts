@@ -175,19 +175,10 @@ export interface SiteConsentPageInput {
   accountHandle: string;
   ticket: string;
   csrfToken: string;
-  /* Onaydan (ve vazgeçmeden) sonra tarayıcının gideceği site adresi.
-   *
-   * Sayfada görünmüyor; CSP'nin `form-action` listesine bu adresin kökenini
-   * eklemek için duruyor. Gerekçe aşağıda, başlığın yanında. */
-  redirectUri: string;
 }
 
 export function siteConsentPage(input: SiteConsentPageInput): Response {
   const label = escapeHtml(input.clientLabel);
-  /* `new URL(...).origin` bir temizleyici olarak da duruyor: CSP başlığına
-   * ancak şema+host+port giriyor, yani kayıtlı adres bir gün beklenmedik bir
-   * şey içerse bile başlığa boşluk ya da noktalı virgül taşıyamıyor. */
-  const redirectOrigin = new URL(input.redirectUri).origin;
   const items = input.scopes
     .map((scope) => ({ scope, text: SCOPE_TEXTS[scope] }))
     .filter((entry) => entry.text.title !== null)
@@ -272,17 +263,33 @@ geri alabilirsin.</p>
        * `frame-ancestors 'none'`: onay ekranı bir iframe'in içine alınıp
        * kullanıcıya başka bir şey gibi gösterilemez.
        *
-       * `form-action` neden `'self'` ile yetinmiyor — bu da staging'de öğrenildi.
-       * Form kendi ucumuza (`/v1/oauth/consent`) gidiyor, yani ilk adım `'self'`.
-       * Ama o uç 302 ile siteye dönüyor ve Chrome `form-action`'ı yalnız ilk
-       * adrese değil, yönlendirme zincirinin tamamına uyguluyor. `'self'` tek
-       * başınayken sonuç şuydu: istek gidiyor, izin kaydediliyor, dönüş sessizce
-       * engelleniyor — ekranda hiçbir şey olmuyor, hata da yok.
+       * `form-action` BİLEREK YOK. Üç kez denendi, üç kez kullanıcıyı kesti.
        *
-       * Kökeni sabit yazmıyorum: hangi siteye dönüleceğini istemci kaydı
-       * söylüyor. Bu adres buraya gelmeden önce kayıtlı adres listesiyle
-       * birebir eşleştirildi, yani genişletme değil, o eşleşmenin tekrarı. */
-      'content-security-policy': `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${redirectOrigin}; frame-ancestors 'none'; base-uri 'none'`,
+       * Chrome bu direktifi yalnız formun action adresine değil, gönderimden
+       * sonra gelen yönlendirme ZİNCİRİNİN TAMAMINA uyguluyor. Bizim zincir
+       * şöyle: kendi ucumuz -> Supabase -> site. İlk iki adımı listeye
+       * yazdığımızda üçüncüsü kaldı ve tam olarak aynı arıza tekrarladı: izin
+       * kaydedildi, kod takas edildi, anahtarlar üretildi, ve tarayıcı siteye
+       * hiç varmadı. Ekranda onay sayfası olduğu gibi duruyor; ne hata, ne
+       * uyarı. Chrome'un konsol iletisi de yanıltıyor, çünkü suçu zincirin
+       * ilk adresine atıyor — izinli olan adrese.
+       *
+       * İzole bir deneyle ölçüldü: aynı sayfa, aynı CSP, iki kollu. Son adım
+       * izinli kökene giderse ulaşıyor, izinsiz kökene giderse engelleniyor.
+       * Yani zinciri baştan sona saymak gerekiyor.
+       *
+       * Zincirin sonrası bize ait değil: siteye döndükten sonra sitenin kendisi
+       * bir daha yönlendirebilir (Rota'da `/hesap` -> `/hesap/` böyle bir adım).
+       * Kontrol etmediğimiz bir zinciri listeye yazmaya çalışmak, sessizce
+       * kırılan bir liste tutmak demek.
+       *
+       * Karşılığında ne kaybediyoruz: `form-action` sayfanın formunun başka bir
+       * yere gönderilmesini engelliyor. Ama bu sayfada script yok (yukarıdaki
+       * `default-src 'none'` ve `base-uri 'none'` bunu kalıcı kılıyor) ve form
+       * action'ı sunucuda basılıyor — yani onu değiştirebilecek bir yol zaten
+       * kapalı. Kapalı bir yola ikinci kilit takmanın bedeli, kullanıcının
+       * girişinin sessizce ölmesiydi. */
+      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
     },
   });
 }

@@ -4467,7 +4467,6 @@ async function handleSiteAuthorize(
     accountHandle: auth.account.handle,
     ticket,
     csrfToken: auth.csrfToken ?? '',
-    redirectUri,
   });
   return attachCookies(page, [clearHostCookie(SITE_RETURN_COOKIE, true)]);
 }

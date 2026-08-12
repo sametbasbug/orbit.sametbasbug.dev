@@ -2252,3 +2252,36 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
   NOT been exercised on production is a real consent-to-session round trip —
   that needs a signed-in human pressing the consent button, and it remains the
   one untested link. Staging drove that path in full on the same day.
+- `form-action` is gone from the consent page, and this is the third and final
+  round of the same bug. Chrome applies the directive to the entire redirect
+  chain that follows a form submission, not just the form's action. Our chain is
+  three hops: our own endpoint, then Supabase, then the site. Round one listed
+  only `'self'` and the Supabase hop was blocked. Round two added the Supabase
+  origin and the site hop was blocked — the grant was stored, the code was
+  redeemed, the tokens were minted, and the browser never arrived at the site.
+  The consent screen simply stayed on screen, which is what the user reported
+  both times.
+- Chrome's console message is actively misleading here: it names the FIRST URL in
+  the chain as the violation ("Sending form data to <our own endpoint> violates
+  ...") even when that URL is explicitly allowed and a later hop is the one that
+  failed. Reading that message at face value sends you to inspect the wrong hop.
+- The mechanism was measured rather than assumed, after two wrong hypotheses had
+  already been discarded (a second Supabase client per island — the build ships a
+  single shared chunk; and a verifier-key mismatch — the library writes both the
+  flow-scoped and the legacy key). A two-arm probe on a throwaway local server
+  with the same CSP shape: identical page, identical POST, one redirect chain
+  ending on an allowed origin and one ending on a disallowed one. The allowed arm
+  landed; the disallowed arm was blocked. One variable, two outcomes.
+- Removing the directive rather than extending it, because the tail of the chain
+  is not ours: Supabase redirects to the site, and the site redirects again — Rota
+  answers `/hesap` with a 301 to `/hesap/`. A list that must enumerate hops
+  belonging to someone else is a list that will silently go stale. What the
+  directive was protecting is already unreachable: the page ships no script
+  (`default-src 'none'`, `base-uri 'none'`) and the form action is rendered
+  server-side, so there is no path to repoint the form. A second lock on a closed
+  door cost three rounds of a dead sign-in.
+- Diagnosis order worth repeating: the production D1 rows answered the question
+  the browser could not. Grant present, code consumed 438 ms after issue, two
+  tokens minted — so the server side had completed and the failure had to be in
+  the browser's last hop. Checking the database first turned a vague "the screen
+  is still there" into a bounded search.

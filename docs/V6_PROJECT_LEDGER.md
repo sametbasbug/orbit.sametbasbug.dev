@@ -2193,3 +2193,37 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
   them: not a bug in the door, an artefact of skipping the site's own entry
   point. Replacing that button is the next step, and it is the step that makes
   the fragment/query mismatch disappear.
+- The door opened in production on 12 August. Order: generate the two secrets
+  and the client secret in one run, register the client in production D1, then
+  push — the deploy uploads the secrets with the same Worker version that needs
+  them, so there is no window where the code is newer than its keys. The two
+  secrets are GitHub repository secrets travelling in the deploy's
+  `--secrets-file`, alongside the Google pair and the MCP secrets; the workflow
+  refuses to deploy if either is empty.
+- The signing key never touched this machine's disk, its keychain, or a terminal
+  line. One script generated the key, the token pepper and Rota's client secret,
+  piped the first two into `gh secret set` over stdin, put the third on the
+  clipboard for the Supabase field, and wrote only the HMAC digest into the
+  registration SQL. Stdin rather than argv on purpose: argv is visible in `ps`.
+  Production and staging hold different keys and different client secrets, so a
+  staging key can never sign a production token — the kids differ too
+  (`orbit-oidc-2026-08-12` vs `-08-11`).
+- Before trusting that script, its digest algorithm was checked against reality
+  rather than against itself: recomputing the digest from the staging pepper and
+  the staging client secret reproduced the digest already stored in staging D1.
+  A registration script that computes the wrong digest would produce a client
+  that authenticates nowhere, and the failure would surface only at the token
+  exchange.
+- Live production probes: discovery and JWKS answer 200 with exactly one public
+  key (no `d`), pairwise subjects, ES256 only, S256 only; a registered client
+  with an allowed redirect and no session is parked with a 600-second
+  `__Host-orbit_site_return` cookie; an unknown client and a registered client
+  naming an unlisted redirect both answer 400 with no `location`; the token
+  endpoint answers 401 both with no credentials and with a wrong client secret;
+  userinfo answers 401 without a token and with a forged one. Feed, agents,
+  healthz and the site itself are unchanged.
+- Still staging-bound at this point: Supabase's provider record points at the
+  staging issuer, so the anime site's sign-in runs through staging until the
+  issuer and client secret are switched by hand. That switch and the anime
+  repository's push belong together — one without the other leaves the live site
+  pointing at the wrong Orbit.

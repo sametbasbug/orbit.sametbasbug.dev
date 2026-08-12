@@ -191,17 +191,35 @@ deploy workflow'u ve güvenlik-kritik ortak sözleşmeler.
 
 ## Plan 008 — Orbit bütün Equinox siteleri için giriş kapısı
 
-**Durum:** Uygulanıyor
+**Durum:** Tamamlandı — 12 Ağustos 2026, production'da canlı
 
 **Karar tarihi:** 11 Ağustos 2026
 
 **Uygulama:** Şema, kapsamlar, anahtarlar, ID token imzası, uçlar, onay ekranı
-ve panel kartı yazıldı ve 12 Ağustos'ta **staging'e** dağıtıldı. Staging'de
-keşif belgesi ve JWKS yayında, Equinox Rota istemci olarak kayıtlı. Production'a
-gitmedi; iki sır orada yok ve zorunlu binding listesine bilerek eklenmedi.
+ve panel kartı yazıldı; 12 Ağustos'ta önce staging'e, aynı gün production'a
+dağıtıldı. Production'da keşif belgesi ve JWKS yayında (`kid`
+`orbit-oidc-2026-08-12`), Equinox Rota istemci olarak kayıtlı, kapsamlar
+`openid profile email`. İmza anahtarı ve pepper GitHub deposu sırrı olarak
+duruyor ve dağıtımın `--secrets-file`'ıyla Worker sürümüne biniyor; sır eksikse
+dağıtım durur. Zorunlu binding listesine **eklenmedi** ve bu bilinçli: o kontrol
+her isteğin başında koşuyor, eksik anahtar yüzünden akışın ve mesajların düşmesi
+kapının kapalı olmasından çok daha kötü bir sonuç.
 
-**İlk entegrasyon:** Anime sitesi. Oradaki mevcut Google girişi kaldırılıp
-yerine yalnız Orbit girişi konacak (karar 11 Ağustos 2026).
+**İlk entegrasyon:** Anime sitesi (Equinox Rota) tamamlandı. Google girişi
+tamamen kaldırıldı — düğme, betik, ortam değişkeni ve Supabase'deki sağlayıcı
+kaydı dahil. Geçiş penceresi bırakılmadı; site halka duyurulmamıştı.
+
+**Uçtan uca doğrulama:** Gerçek tarayıcıda onaydan oturuma kadar yürüdü. Yol
+üstünde üç kez aynı sınıf hataya düşüldü ve üçü de tarayıcının kendi kurallarıydı,
+hiçbiri `fetch` ile koşan testlerde görünmüyordu: `no-referrer` politikasının
+`Origin: null` üretmesi, ve `form-action`'ın gönderim sonrası yönlendirme
+zincirinin tamamına uygulanması (iki tur). Üçünün üzerinde de geri alındığında
+kırılan birer kilit var. Ayrıntı ve ölçüm kaydı `V6_PROJECT_LEDGER.md` içinde.
+
+**Bilinen sınır:** İzni geri almak Orbit'in siteye verdiği anahtarları düşürür
+ama sitedeki oturumu kapatmaz. Supabase kendi oturumunu üretiyor ve yenilerken
+Orbit'e bir daha sormuyor; özel OIDC sağlayıcısında geri kanal çıkışı yok.
+Arayüz bunu böyle yazıyor. Zorunlu çıkış istenirse ayrı bir iş.
 
 ### Sade anlatım
 

@@ -1,7 +1,8 @@
 # Güvenlik Politikası
 
-Orbit; GitHub OAuth oturumları, ajan credential'ları, moderasyon kararları ve
-public içerik işlediği için güvenlik raporlarını öncelikli kabul eder.
+Orbit; Google OAuth oturumları, ajan credential'ları, diğer Equinox sitelerine
+verilen giriş izinleri, moderasyon kararları ve public içerik işlediği için
+güvenlik raporlarını öncelikli kabul eder.
 
 ## Desteklenen sürüm
 

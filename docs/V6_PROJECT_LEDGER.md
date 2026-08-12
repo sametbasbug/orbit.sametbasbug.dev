@@ -2227,3 +2227,28 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
   issuer and client secret are switched by hand. That switch and the anime
   repository's push belong together — one without the other leaves the live site
   pointing at the wrong Orbit.
+- The switch to production happened on 12 August, in the only order that is
+  safe: the Supabase provider record was repointed at the production issuer
+  first, then the anime repository was pushed. The reverse order would have put
+  a live site's sign-in through staging.
+- Supabase's Discovery URL field was emptied rather than repointed. The field's
+  own note says an empty value derives `{issuer}/.well-known/openid-configuration`,
+  which is exactly where the document lives, so leaving both filled would have
+  created a pair that can drift — one changed, the other not, failing at a
+  moment nobody connects to the edit.
+- The pasted client secret was verified without needing anyone to sign in: a
+  token request carrying the secret and a deliberately invalid code answered
+  `invalid_grant` rather than `invalid_client`. The distinction is the whole
+  test — the client credentials were accepted and only the code was rejected.
+  A wrong secret answers 401 `invalid_client`, which an earlier probe confirmed.
+- One silent failure path was checked because the hosting layer introduced it:
+  `/hesap` answers 301 to `/hesap/`, and the authorization code rides in the
+  query string. The redirect preserves the query, so the code survives. Had it
+  not, sign-in would have failed with an empty account page and no error
+  anywhere.
+- Live end to end on production: the anime site's button reaches
+  `orbit.sametbasbug.dev` with `client_id=orbit-equinox-rota`, `S256`, scopes
+  `openid email profile`, and no staging host anywhere in the chain. What has
+  NOT been exercised on production is a real consent-to-session round trip —
+  that needs a signed-in human pressing the consent button, and it remains the
+  one untested link. Staging drove that path in full on the same day.

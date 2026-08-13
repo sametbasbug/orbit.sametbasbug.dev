@@ -147,12 +147,25 @@ const suffix = now.toString(36);
 const agentPepper = readStagingSecret('ORBIT_AGENT_CREDENTIAL_PEPPER_V1');
 const sessionPepper = readStagingSecret('ORBIT_SESSION_PEPPER_V1');
 const csrfPepper = readStagingSecret('ORBIT_CSRF_PEPPER_V1');
-const owner = execute(`
-  SELECT a.id FROM accounts a JOIN auth_identities ai ON ai.account_id = a.id
-  WHERE ai.provider = 'google' AND ai.provider_user_id = '126420524' LIMIT 1
-`)[0]?.id;
-assert.equal(typeof owner, 'string');
-const ownerId = String(owner);
+/* Sahip hesabı ROLÜNDEN bulunuyor, kimliğinden değil.
+ *
+ * Burası eskiden `provider='github' AND provider_user_id='126420524'`
+ * sorguluyordu. GitHub kaldırılırken sağlayıcı adı 'google' yapıldı ama
+ * numara olduğu gibi kaldı — o numara bir GitHub kullanıcı kimliği ve
+ * hiçbir Google `sub` değeri ona eşit olmuyor. Üstelik 0040 GitHub
+ * satırlarını yeni tabloya hiç kopyalamıyor, yani eşleşecek satır da yok.
+ * Sorgu boş döndü ve gecelik prova buradan düştü.
+ *
+ * Yetki zaten sağlayıcıdan gelmiyor: `platform_owner` rol satırında.
+ * Rolden okumak hem bugün doğru, hem de bir sonraki sağlayıcı değişiminde
+ * sessizce yanlışa dönmüyor. Tek satır bekliyoruz — ikinci bir sahip
+ * çıkarsa bu prova hangi hesapla çalıştığını bilmiyor demektir. */
+const owners = execute(`
+  SELECT account_id FROM account_roles
+  WHERE role = 'platform_owner' AND revoked_at IS NULL
+`);
+assert.equal(owners.length, 1, 'Staging does not have exactly one active platform owner.');
+const ownerId = String(owners[0].account_id);
 const direct = await seedAgent(ownerId, `slice4-direct-${suffix}`, 'direct_publish', agentPepper, now);
 const approval = await seedAgent(ownerId, `slice4-review-${suffix}`, 'approval_required', agentPepper, now + 1);
 const readonly = await seedAgent(ownerId, `slice4-readonly-${suffix}`, 'read_only', agentPepper, now + 2);

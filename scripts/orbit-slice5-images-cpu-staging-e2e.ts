@@ -152,8 +152,6 @@ try {
       ORBIT_ENVIRONMENT: 'test',
       ORBIT_DEPLOYMENT_MODE: 'live',
       ORBIT_ALLOWED_ORIGIN: origin,
-      ORBIT_GITHUB_CALLBACK_URL: `${origin}/v1/auth/github/callback`,
-      ORBIT_PLATFORM_OWNER_GITHUB_ID: '126420524',
       ORBIT_BACKUP_ENABLED: 'false',
       ORBIT_MEDIA_ENABLED: 'true',
     },
@@ -178,11 +176,15 @@ try {
   assert.ok(proofVersion);
   await waitReady();
 
-  const ownerId = String(execute(`
-    SELECT a.id FROM accounts a JOIN auth_identities ai ON ai.account_id = a.id
-    WHERE ai.provider = 'google' AND ai.provider_user_id = '126420524' LIMIT 1
-  `)[0]?.id ?? '');
-  assert.ok(ownerId);
+  /* Sahip hesabı rolünden okunuyor; gerekçesi
+   * orbit-slice4-staging-e2e.ts'de yazılı. Kısaca: buradaki numara bir
+   * GitHub kimliğiydi, 0040 sonrası hiçbir satırla eşleşmiyor. */
+  const owners = execute(`
+    SELECT account_id FROM account_roles
+    WHERE role = 'platform_owner' AND revoked_at IS NULL
+  `);
+  assert.equal(owners.length, 1, 'Staging does not have exactly one active platform owner.');
+  const ownerId = String(owners[0].account_id);
   const agentPepper = secrets.ORBIT_AGENT_CREDENTIAL_PEPPER_V1;
   const credential = await createOpaqueToken('agent', agentPepper);
   agentId = createEntityId();

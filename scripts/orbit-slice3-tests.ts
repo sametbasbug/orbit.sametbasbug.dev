@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
+import { reserveWorkerPorts } from './orbit-test-ports';
 import { loadManifest, verifyManifest } from './orbit-slice3-manifest';
 
 const ROOT = process.cwd();
@@ -46,18 +46,6 @@ function runImporter(): Record<string, number> {
   return JSON.parse(result.stdout.trim()) as Record<string, number>;
 }
 
-async function availablePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      if (!address || typeof address === 'string') return reject(new Error('port_unavailable'));
-      server.close((error) => error ? reject(error) : resolve(address.port));
-    });
-  });
-}
-
 async function waitForWorker(process: ChildProcessWithoutNullStreams): Promise<void> {
   const deadline = Date.now() + 20_000;
   let output = '';
@@ -88,9 +76,7 @@ before(async () => {
   persistDirectory = await mkdtemp(path.join(tmpdir(), 'orbit-v6-slice3-'));
   migrate();
   runImporter();
-  const port = await availablePort();
-  let inspectorPort = await availablePort();
-  while (inspectorPort === port) inspectorPort = await availablePort();
+  const { port, inspectorPort } = await reserveWorkerPorts();
   baseUrl = `http://127.0.0.1:${port}`;
   worker = spawn(process.execPath, [
     WRANGLER, 'dev', '--config', CONFIG, '--local', `--port=${port}`, `--inspector-port=${inspectorPort}`,

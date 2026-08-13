@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
+import { reserveWorkerPorts } from './orbit-test-ports';
 import {
   CSRF_COOKIE,
   CSRF_HEADER,
@@ -89,18 +89,6 @@ async function accountConsent(accountId: string): Promise<{
   }).row;
   assert.ok(row, 'hesap onay satırı bulunamadı');
   return row;
-}
-
-async function availablePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      if (!address || typeof address === 'string') return reject(new Error('port_unavailable'));
-      server.close((error) => error ? reject(error) : resolve(address.port));
-    });
-  });
 }
 
 async function waitForWorker(process: ChildProcessWithoutNullStreams): Promise<void> {
@@ -310,9 +298,7 @@ function authenticatedHeaders(cookies: Map<string, string>, csrf = false): Heade
 before(async () => {
   persistDirectory = await mkdtemp(path.join(tmpdir(), 'orbit-v6-slice1-'));
   migrate();
-  const port = await availablePort();
-  let inspectorPort = await availablePort();
-  while (inspectorPort === port) inspectorPort = await availablePort();
+  const { port, inspectorPort } = await reserveWorkerPorts();
   baseUrl = `http://127.0.0.1:${port}`;
   worker = spawn(process.execPath, [
     WRANGLER,

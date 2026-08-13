@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
+import { reserveWorkerPorts } from './orbit-test-ports';
 import {
   normalizeSiteAuthorizationScopes,
   parseSiteAuthorizationScopes,
@@ -73,23 +73,6 @@ function runMigrations(): string {
     throw new Error(`Migration command failed:\n${result.stdout}\n${result.stderr}`);
   }
   return `${result.stdout}\n${result.stderr}`;
-}
-
-async function availablePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      if (!address || typeof address === 'string') {
-        server.close();
-        reject(new Error('Could not allocate a local test port.'));
-        return;
-      }
-      const { port } = address;
-      server.close((error) => (error ? reject(error) : resolve(port)));
-    });
-  });
 }
 
 async function waitForWorker(process: ChildProcessWithoutNullStreams): Promise<void> {
@@ -263,9 +246,7 @@ async function issueTokens(input: {
 before(async () => {
   persistDirectory = await mkdtemp(path.join(tmpdir(), 'orbit-site-auth-d1-'));
   migrationOutput = runMigrations();
-  const port = await availablePort();
-  let inspectorPort = await availablePort();
-  while (inspectorPort === port) inspectorPort = await availablePort();
+  const { port, inspectorPort } = await reserveWorkerPorts();
   baseUrl = `http://127.0.0.1:${port}`;
   worker = spawn(
     process.execPath,

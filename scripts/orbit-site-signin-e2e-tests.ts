@@ -13,11 +13,11 @@
  */
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { createServer } from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
+import { reserveWorkerPorts } from './orbit-test-ports';
 import {
   createOpaqueToken,
   hmacDigest,
@@ -62,30 +62,11 @@ function wrangler(args: string[]): void {
   if (result.status !== 0) throw new Error(`${result.stdout}\n${result.stderr}`);
 }
 
-async function availablePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      if (!address || typeof address === 'string') {
-        server.close();
-        reject(new Error('Could not allocate a local test port.'));
-        return;
-      }
-      const { port } = address;
-      server.close((error) => (error ? reject(error) : resolve(port)));
-    });
-  });
-}
-
 async function startWorker(persist: string): Promise<{
   process: ChildProcessWithoutNullStreams;
   url: string;
 }> {
-  const port = await availablePort();
-  let inspectorPort = await availablePort();
-  while (inspectorPort === port) inspectorPort = await availablePort();
+  const { port, inspectorPort } = await reserveWorkerPorts();
   let output = '';
   const child = spawn(process.execPath, [
     WRANGLER, 'dev', '--config', CONFIG, '--local', `--port=${port}`,

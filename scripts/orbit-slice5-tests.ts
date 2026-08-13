@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { createServer } from 'node:net';
 import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { after, before, describe, test } from 'node:test';
+import { reserveWorkerPorts } from './orbit-test-ports';
 import { createEntityId } from '../src/server/foundation/ids';
 import { createOpaqueToken, hmacDigest, randomBase64Url, sha256Base64Url } from '../src/server/identity/tokens';
 import { canonicalJson } from '../src/server/publication/content';
@@ -59,22 +59,8 @@ function importLegacy(persist: string): void {
   if (result.status !== 0) throw new Error(`${result.stdout}\n${result.stderr}`);
 }
 
-async function availablePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      if (!address || typeof address === 'string') return reject(new Error('port_unavailable'));
-      server.close((error) => error ? reject(error) : resolve(address.port));
-    });
-  });
-}
-
 async function startWorker(persist: string) {
-  const port = await availablePort();
-  let inspectorPort = await availablePort();
-  while (inspectorPort === port) inspectorPort = await availablePort();
+  const { port, inspectorPort } = await reserveWorkerPorts();
   let output = '';
   const child = spawn(process.execPath, [
     WRANGLER, 'dev', '--config', CONFIG, '--local', `--port=${port}`, `--inspector-port=${inspectorPort}`, `--persist-to=${persist}`,

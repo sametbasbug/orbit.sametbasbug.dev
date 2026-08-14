@@ -15,26 +15,63 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 
 const STYLE_DIR = new URL('../src/styles/', import.meta.url);
+const SRC_DIR = new URL('../src/', import.meta.url);
 
 /** tokens.css skalanın tanımlandığı yer; ham değer orada olmalı. */
-const SCANNED = readdirSync(STYLE_DIR)
+const CSS_FILES = readdirSync(STYLE_DIR)
   .filter((name) => name.endsWith('.css') && name !== 'tokens.css')
-  .sort();
+  .sort()
+  .map((name) => ({ label: `styles/${name}`, css: readFileSync(new URL(name, STYLE_DIR), 'utf8') }));
 
 /**
- * Skalanın dışında kalmasına karar verilen satırlar. Her biri kasıtlı:
+ * `.astro` dosyalarının içindeki `<style>` blokları.
+ *
+ * Kilit bir dönem yalnız `src/styles/` klasörünü tarıyordu ve panel stilini
+ * sayfanın kendi içinde tuttuğu için hiç görmüyordu: dashboard'da 110,
+ * platform sayfasında 40, avatar yükleme sayfasında 17 ham değer birikmişti.
+ * Aralarında dört ayrı "küçük yazı" vardı — 0.76, 0.78, 0.80, 0.82 — hepsi
+ * aynı kademeyi istiyordu ve aralarındaki fark yarım pikseldi.
+ *
+ * Kapsamı klasöre değil kalıba bağlamak önemliydi: yeni bir sayfa stilini
+ * yine kendi içinde tutabilir, ama artık kilidin dışında kalamaz.
+ */
+function astroFiles(dir: URL): { label: string; css: string }[] {
+  const found: { label: string; css: string }[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.isDirectory()) {
+      found.push(...astroFiles(new URL(`${entry.name}/`, dir)));
+      continue;
+    }
+    if (!entry.name.endsWith('.astro')) continue;
+    const source = readFileSync(new URL(entry.name, dir), 'utf8');
+    const blocks = [...source.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gu)].map((match) => match[1]!);
+    if (blocks.length === 0) continue;
+    const relative = new URL('.', dir).href.slice(SRC_DIR.href.length);
+    found.push({ label: `${relative}${entry.name}`, css: blocks.join('\n') });
+  }
+  return found;
+}
+
+const SCANNED = [...CSS_FILES, ...astroFiles(SRC_DIR)];
+
+/**
+ * Skalanın dışında kalmasına karar verilen bildirimler. Her biri kasıtlı:
  * viewport ile sürekli interpolasyon yapanlar kademe seçemez, hizalama ve
  * grafik ölçüleri ise ritimden değil kendi geometrisinden gelir.
+ *
+ * Kalıplar bildirimin SONUNA çapalı, satırın değil: tarama artık `;` ve `{}`
+ * üzerinden bölüyor, yani noktalı virgül kalıba dahil edilirse istisna hiç
+ * eşleşmez.
  */
 const EXEMPT: readonly RegExp[] = [
   /clamp\(/u,                    // akışkan hero başlıkları ve kabuk boşlukları
   /env\(safe-area-inset/u,       // cihaz çentiği, tasarım kararı değil
   /font-size:\s*(?:10|16)rem/u,  // dev monogram filigranı: tip değil grafik
   /letter-spacing:\s*-0\.1em/u,  // aynı filigranın sıkışması
-  /line-height:\s*0;/u,          // ikon kutusunu çökerten yerleşim sıfırlaması
+  /line-height:\s*0$/u,          // ikon kutusunu çökerten yerleşim sıfırlaması
   /gap:\s*0\.02rem/u,            // 0.32px: boşluk değil, kıl payı itme
   /margin:\s*-1px !important/u,  // ekran okuyucu gizleme kalıbı, yerleşim değil
-  /padding:\s*2px;/u,            // avatar halkası: kalınlığı kenarlığa bağlı, ritme değil
+  /padding:\s*2px$/u,            // avatar halkası: kalınlığı kenarlığa bağlı, ritme değil
 ];
 
 type Axis = { readonly property: RegExp; readonly token: string };
@@ -63,31 +100,47 @@ function hasRawLength(line: string): boolean {
   return carriesLength(line.replaceAll(/var\(--[\w-]+\)/gu, ''));
 }
 
-for (const file of SCANNED) {
-  test(`${file} tip ve boşluk değerlerini skaladan alıyor`, () => {
-    const source = readFileSync(new URL(file, STYLE_DIR), 'utf8');
+/**
+ * Bildirim bildirim tara, satır satır değil.
+ *
+ * Eski tarama satırı bir bütün olarak alıyor ve ekseni `^\s*font-size:`
+ * gibi satır başına çapalı bir kalıpla arıyordu. `src/styles/` altındaki
+ * dosyalar satırda tek bildirim tuttuğu için bu yürüyordu; ama tek satıra
+ * sığdırılmış bir kuralda — `.foo { font-size: .78rem; margin: .5rem; }` —
+ * hiçbir eksen eşleşmiyor ve kural sessizce kilidin altından geçiyordu.
+ */
+function declarations(css: string): string[] {
+  return css
+    .replaceAll(/\/\*[\s\S]*?\*\//gu, '')
+    .split(/[;{}]/u)
+    .map((part) => part.trim())
+    .filter((part) => part.includes(':'));
+}
+
+for (const { label, css } of SCANNED) {
+  test(`${label} tip ve boşluk değerlerini skaladan alıyor`, () => {
     const offenders: string[] = [];
 
-    for (const raw of source.split('\n')) {
-      const line = raw.trim();
-      if (!carriesLength(line)) continue;
-      if (EXEMPT.some((pattern) => pattern.test(line))) continue;
-      const axis = AXES.find(({ property }) => property.test(raw));
+    for (const declaration of declarations(css)) {
+      if (!carriesLength(declaration)) continue;
+      if (EXEMPT.some((pattern) => pattern.test(declaration))) continue;
+      const axis = AXES.find(({ property }) => property.test(declaration));
       if (!axis) continue;
-      if (!line.includes(`var(${axis.token}`) || hasRawLength(line)) offenders.push(line);
+      if (!declaration.includes(`var(${axis.token}`) || hasRawLength(declaration)) {
+        offenders.push(declaration);
+      }
     }
 
-    assert.deepEqual(offenders, [], `${file} içinde skala dışı değer:\n  ${offenders.join('\n  ')}`);
+    assert.deepEqual(offenders, [], `${label} içinde skala dışı değer:\n  ${offenders.join('\n  ')}`);
   });
 }
 
 test('skalanın kendisi tokens.css dışında tanımlanmıyor', () => {
-  for (const file of SCANNED) {
-    const source = readFileSync(new URL(file, STYLE_DIR), 'utf8');
+  for (const { label, css } of SCANNED) {
     assert.doesNotMatch(
-      source,
+      css,
       /^\s*--(?:text|weight|tracking|leading|space)-[\w-]+:/mu,
-      `${file} skalayı yeniden tanımlıyor; kademe eklenecekse yeri tokens.css.`,
+      `${label} skalayı yeniden tanımlıyor; kademe eklenecekse yeri tokens.css.`,
     );
   }
 });

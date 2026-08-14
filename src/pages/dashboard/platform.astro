@@ -99,71 +99,71 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 <script src="../../scripts/dashboard-platform.js"></script>
 
 <style is:inline>
-  .dashboard-page { padding: 1.5rem 0 5rem; }
-  .platform-shell { display: grid; gap: 1.25rem; max-width: 60rem; margin: 0 auto; }
-  .platform-intro { padding: .45rem 0 1.15rem; border-bottom: 1px solid var(--line); }
-  .platform-intro h1 { margin: 0; font-size: 1.8rem; letter-spacing: -.045em; }
-  .platform-intro > p:last-child { margin: .45rem 0 0; color: var(--muted); font-size: .88rem; }
-  .platform-intro a { color: var(--orbit-blue); font-weight: 700; }
+  .dashboard-page { padding: var(--space-12) 0 var(--space-40); }
+  .platform-shell { display: grid; gap: var(--space-10); max-width: 60rem; margin: 0 auto; }
+  .platform-intro { padding: var(--space-4) 0 var(--space-10); border-bottom: 1px solid var(--line); }
+  .platform-intro h1 { margin: 0; font-size: var(--text-4xl); letter-spacing: var(--tracking-tighter); }
+  .platform-intro > p:last-child { margin: var(--space-4) 0 0; color: var(--muted); font-size: var(--text-md); }
+  .platform-intro a { color: var(--orbit-blue); font-weight: var(--weight-bold); }
   /* İkisi de kısa kartlar, o yüzden yan yana durabiliyorlar. Uzun olanlar
      tam genişlikte: içeriği 80px olan bir kartı 990px'e esnetmenin kimseye
      faydası yok. */
-  .platform-pair { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 1.25rem; }
-  .dashboard-main, .dashboard-stack, .dashboard-list { display: grid; gap: 1rem; min-width: 0; }
-  .dashboard-card { min-width: 0; padding: 1.35rem; border: 1px solid rgba(218, 223, 234, .95); border-radius: 1rem; background: rgba(255,255,255,.94); box-shadow: 0 6px 20px rgba(31,42,70,.055); }
-  .dashboard-card h2 { margin: 0 0 1rem; font-size: 1rem; letter-spacing: -.02em; }
-  .dashboard-note { margin: 0; padding: .7rem .8rem; border: 1px solid color-mix(in srgb,var(--orbit-blue) 24%,var(--line)); border-radius: .7rem; background: color-mix(in srgb,var(--orbit-blue) 6%,var(--surface)); color: var(--muted); font-size: .78rem; line-height: 1.55; }
+  .platform-pair { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: var(--space-10); }
+  .dashboard-main, .dashboard-stack, .dashboard-list { display: grid; gap: var(--space-8); min-width: 0; }
+  .dashboard-card { min-width: 0; padding: var(--space-10); border: 1px solid rgba(218, 223, 234, .95); border-radius: 1rem; background: rgba(255,255,255,.94); box-shadow: 0 6px 20px rgba(31,42,70,.055); }
+  .dashboard-card h2 { margin: 0 0 var(--space-8); font-size: var(--text-base); letter-spacing: var(--tracking-tight); }
+  .dashboard-note { margin: 0; padding: var(--space-6) var(--space-6); border: 1px solid color-mix(in srgb,var(--orbit-blue) 24%,var(--line)); border-radius: .7rem; background: color-mix(in srgb,var(--orbit-blue) 6%,var(--surface)); color: var(--muted); font-size: var(--text-sm); line-height: var(--leading-normal); }
   .dashboard-note strong { color: var(--text); }
   .dashboard-note a { color: var(--orbit-blue); }
   .dashboard-note.is-warning { border-color: color-mix(in srgb,var(--warning-ink) 38%,var(--line)); background: var(--warning-surface); color: var(--warning-ink); }
-  .dashboard-check { display: grid; grid-template-columns: auto 1fr; gap: .55rem; align-items: start; color: var(--muted); font-size: .78rem; line-height: 1.55; }
-  .dashboard-check input { margin-top: .18rem; accent-color: var(--orbit-blue); }
+  .dashboard-check { display: grid; grid-template-columns: auto 1fr; gap: var(--space-4); align-items: start; color: var(--muted); font-size: var(--text-sm); line-height: var(--leading-normal); }
+  .dashboard-check input { margin-top: var(--space-1); accent-color: var(--orbit-blue); }
   .dashboard-check strong { color: var(--text); }
   .dashboard-check.is-disabled input { opacity: .45; }
   .dashboard-check.is-disabled span { opacity: .7; }
-  .section-card { scroll-margin-top: 6rem; }
-  .section-help { margin: -.6rem 0 1rem; color: var(--muted); font-size: .78rem; }
-  .dashboard-row { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem; }
+  .section-card { scroll-margin-top: var(--space-48); }
+  .section-help { margin: -var(--space-5) 0 var(--space-8); color: var(--muted); font-size: var(--text-sm); }
+  .dashboard-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-5); }
   .dashboard-row > select { flex: 1 1 12rem; }
   .between { justify-content: space-between; }
   .between h2 { margin: 0; }
-  .dashboard-field { display: grid; gap: .38rem; }
-  .dashboard-field span { color: var(--muted); font-size: .74rem; font-weight: 650; }
-  .dashboard-page input:not([type="checkbox"]), .dashboard-page textarea, .dashboard-page select, dialog textarea { width: 100%; padding: .7rem .78rem; border: 1px solid var(--line-dark); border-radius: .72rem; color: var(--ink); background: #f7f8fb; font: inherit; }
+  .dashboard-field { display: grid; gap: var(--space-3); }
+  .dashboard-field span { color: var(--muted); font-size: var(--text-xs); font-weight: var(--weight-semibold); }
+  .dashboard-page input:not([type="checkbox"]), .dashboard-page textarea, .dashboard-page select, dialog textarea { width: 100%; padding: var(--space-6) var(--space-6); border: 1px solid var(--line-dark); border-radius: .72rem; color: var(--ink); background: #f7f8fb; font: inherit; }
   .dashboard-page textarea, dialog textarea { min-height: 110px; resize: vertical; }
   .dashboard-page input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: var(--orbit-blue); }
   .dashboard-page input:focus, .dashboard-page textarea:focus, .dashboard-page select:focus, dialog textarea:focus { outline: 0; border-color: color-mix(in srgb,var(--orbit-blue) 48%,var(--line)); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb,var(--orbit-blue) 10%,transparent); }
-  .dashboard-button { min-height: 2.6rem; display: inline-flex; align-items: center; justify-content: center; padding: .6rem .95rem; border: 1px solid var(--line-dark); border-radius: .72rem; font: inherit; font-size: .78rem; font-weight: 750; text-decoration: none; cursor: pointer; }
+  .dashboard-button { min-height: 2.6rem; display: inline-flex; align-items: center; justify-content: center; padding: var(--space-5) var(--space-8); border: 1px solid var(--line-dark); border-radius: .72rem; font: inherit; font-size: var(--text-sm); font-weight: var(--weight-bold); text-decoration: none; cursor: pointer; }
   .dashboard-button.primary { color: #fff; border-color: #5267d9; background: linear-gradient(135deg,#5267d9,#745fe0); box-shadow: 0 5px 14px rgba(82,103,217,.14); }
   .dashboard-button.secondary { color: var(--muted); background: #f7f8fb; }
   .dashboard-button.danger { color: #a42f46; border-color: #e4aeba; background: #fff1f3; }
-  .dashboard-item { padding: .82rem .88rem; border: 1px solid var(--line); border-radius: .82rem; background: #f7f8fb; }
-  .dashboard-item strong { display: block; margin-bottom: .14rem; }
-  .dashboard-item .dashboard-button { margin-top: .65rem; }
+  .dashboard-item { padding: var(--space-7) var(--space-7); border: 1px solid var(--line); border-radius: .82rem; background: #f7f8fb; }
+  .dashboard-item strong { display: block; margin-bottom: var(--space-1); }
+  .dashboard-item .dashboard-button { margin-top: var(--space-5); }
   .dashboard-item.is-error { border-color: #edbdc5; background: #fff1f3; }
   .dashboard-item.is-error strong { color: #9c2f43; }
   /* Yedek durumu: önce tek cümlelik hâl, sonra yalnız başarısızlar. Kart
      bir dönem otuz dört özdeş satırdı ve içindeki tek başarısızlık
      diğerleriyle aynı ağırlıkta görünüyordu. */
-  .backup-summary { padding: .9rem .95rem; border: 1px solid #adddc9; border-radius: .82rem; background: #edf9f4; }
-  .backup-summary strong { display: block; margin-bottom: .3rem; color: #116947; }
+  .backup-summary { padding: var(--space-7) var(--space-8); border: 1px solid #adddc9; border-radius: .82rem; background: #edf9f4; }
+  .backup-summary strong { display: block; margin-bottom: var(--space-2); color: #116947; }
   .backup-summary.is-failing { border-color: #edbdc5; background: #fff1f3; }
   .backup-summary.is-failing strong { color: #9c2f43; }
-  .meta, .muted { color: var(--muted); font-size: .76rem; }
-  .dashboard-notice { margin: 0 0 1rem; padding: .78rem .9rem; border: 1px solid var(--line); border-radius: .8rem; color: var(--muted); background: var(--surface); }
+  .meta, .muted { color: var(--muted); font-size: var(--text-sm); }
+  .dashboard-notice { margin: 0 0 var(--space-8); padding: var(--space-6) var(--space-7); border: 1px solid var(--line); border-radius: .8rem; color: var(--muted); background: var(--surface); }
   .dashboard-notice.error { color: #9c2f43; border-color: #edbdc5; background: #fff1f3; }
   .dashboard-notice.ok { color: #116947; border-color: #adddc9; background: #edf9f4; }
   .hidden { display: none !important; }
-  dialog { width: min(720px,calc(100% - 30px)); padding: 1.4rem; border: 1px solid var(--line); border-radius: 1rem; color: var(--ink); background: var(--surface); box-shadow: 0 24px 80px rgba(22,28,50,.25); }
+  dialog { width: min(720px,calc(100% - 30px)); padding: var(--space-12); border: 1px solid var(--line); border-radius: 1rem; color: var(--ink); background: var(--surface); box-shadow: 0 24px 80px rgba(22,28,50,.25); }
   dialog::backdrop { background: rgba(15,20,34,.55); backdrop-filter: blur(3px); }
-  .diff { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
-  .diff pre { min-height: 100px; margin: 0; padding: .8rem; border: 1px solid var(--line); border-radius: .75rem; background: #f7f8fb; white-space: pre-wrap; }
-  .review-media { display: block; max-width: 100%; max-height: 360px; margin: .8rem 0; border: 1px solid var(--line); border-radius: .8rem; }
+  .diff { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); }
+  .diff pre { min-height: 100px; margin: 0; padding: var(--space-6); border: 1px solid var(--line); border-radius: .75rem; background: #f7f8fb; white-space: pre-wrap; }
+  .review-media { display: block; max-width: 100%; max-height: 360px; margin: var(--space-6) 0; border: 1px solid var(--line); border-radius: .8rem; }
   html[data-theme="dark"] .dashboard-card { border-color: var(--line); background: var(--surface); }
   html[data-theme="dark"] .dashboard-page input:not([type="checkbox"]), html[data-theme="dark"] .dashboard-page textarea, html[data-theme="dark"] .dashboard-page select, html[data-theme="dark"] .dashboard-item, html[data-theme="dark"] .diff pre, html[data-theme="dark"] dialog textarea { border-color: var(--line); background: #111724; }
   html[data-theme="dark"] .dashboard-button.secondary { color: var(--muted); border-color: var(--line); background: #171e2c; }
   html[data-theme="dark"] .backup-summary { border-color: #2c4d3f; background: #16241d; }
   html[data-theme="dark"] .backup-summary.is-failing { border-color: #5c2a33; background: #2a1619; }
   html[data-theme="dark"] .dashboard-item.is-error { border-color: #5c2a33; background: #2a1619; }
-  @media (max-width: 780px) { .dashboard-page { padding: 1.2rem 0 6rem; } .platform-pair, .diff { grid-template-columns: 1fr; } }
+  @media (max-width: 780px) { .dashboard-page { padding: var(--space-10) 0 var(--space-48); } .platform-pair, .diff { grid-template-columns: 1fr; } }
 </style>

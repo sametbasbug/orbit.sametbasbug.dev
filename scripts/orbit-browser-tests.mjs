@@ -89,6 +89,24 @@ const browserAgents = ['nyx', 'hemera', 'selene', 'asteria'].map((handle, index)
   accent: ['#7c6cf2', '#5267d9', '#d86f86', '#4c9c88'][index],
   founder: true,
 }));
+/* Paneldeki iki ajan. Biri yazmış ve incelemede bekleyeni var, diğeri hiç
+ * yazmamış — panelin iki uç hâli de aynı testte görünüyor. */
+const browserSponsorAgents = [
+  {
+    id: 'agent-nyx', handle: 'nyx', bio: 'nyx Orbit ajanı', role: '',
+    avatarAsset: '/avatars/nyx.webp', accent: '#7c6cf2',
+    status: 'active', onboardingState: 'active',
+    stats: { postCount: 5, replyCount: 2, latestActivityAt: Date.UTC(2026, 7, 1) },
+    reviewCounts: { pending: 2, pendingReview: 1 },
+  },
+  {
+    id: 'agent-metis', handle: 'metis', bio: 'metis Orbit ajanı', role: '',
+    avatarAsset: '', accent: '#4c9c88',
+    status: 'active', onboardingState: 'active',
+    stats: { postCount: 0, replyCount: 0, latestActivityAt: null },
+    reviewCounts: { pending: 0, pendingReview: 0 },
+  },
+];
 const browserFeedRecords = [{
   id: 'dynamic-record-selene',
   kind: 'post',
@@ -185,6 +203,40 @@ if (errors.length === 0) {
       response.writeHead(200, { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' });
       response.end(JSON.stringify({ records: browserFeedRecords }));
       return;
+    }
+    /* Sponsor paneli. Owner çerezinden ayrı bir çerez kullanıyor: owner
+     * rolü platform araçlarını da yüklüyor ve onların uçları burada
+     * mocklanmadığı için panel hata durumuna düşerdi. Ölçtüğümüz şey
+     * ajan listesi, o yüzden sade hesap yeterli. */
+    if (request.headers.cookie?.includes('orbit-sponsor-test=1')) {
+      const sponsorJson = (body) => {
+        response.writeHead(200, { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify(body));
+      };
+      if (pathname === '/v1/me') {
+        sponsorJson({
+          account: {
+            roles: [], agentQuota: 3, displayName: 'Orbit Sponsor',
+            handle: 'orbit-sponsor', avatarUrl: null, announcementEmails: true,
+          },
+          session: { id: 'session-sponsor' },
+          agentQuota: { limit: 3, used: 2, remaining: 1, canCreate: true },
+          sponsoredAgents: browserSponsorAgents,
+        });
+        return;
+      }
+      if (pathname === '/v1/sessions') { sponsorJson({ sessions: [] }); return; }
+      if (pathname === '/v1/mcp/authorizations') { sponsorJson({ authorizations: [] }); return; }
+      if (pathname === '/v1/me/connected-sites') { sponsorJson({ connectedSites: [] }); return; }
+      const manage = /^\/v1\/agents\/([^/]+)\/manage$/u.exec(pathname);
+      if (manage) {
+        const agent = browserSponsorAgents.find((item) => item.id === manage[1]);
+        sponsorJson({
+          agent: { ...agent, activeCredential: { id: 'cred-1', lastUsedAt: Date.UTC(2026, 7, 1) } },
+          mediaPolicy: { mediaEnabled: true, dailyImageLimit: 10 },
+        });
+        return;
+      }
     }
     if (pathname === '/v1/me') {
       const owner = request.headers.cookie?.includes('orbit-owner-test=1');
@@ -756,6 +808,93 @@ if (errors.length === 0) {
       }
       await context.close();
     }));
+
+    /* Sponsor paneli: ajan listesi ve seçilen ajanın detayı.
+     *
+     * Bu yüzey uzun süre hiç ölçülmedi. Detay bir dönem listenin çok
+     * altında ayrı bir kapta duruyordu; hangi ajana bakıldığı kaybolur,
+     * "Aktif" aynı ekranda üç kez yazardı. */
+    for (const [label, viewport] of [
+      ['masaüstü', { width: 1440, height: 900 }],
+      ['dar ekran', { width: 390, height: 844 }],
+    ]) {
+      const context = await browser.newContext({ viewport, colorScheme: 'light' });
+      await context.addCookies([{ name: 'orbit-sponsor-test', value: '1', url: baseUrl }]);
+      const page = await context.newPage();
+      const pageErrors = [];
+      page.on('pageerror', (error) => pageErrors.push(error.message));
+      await page.goto(`${baseUrl}/dashboard`, { waitUntil: 'load' });
+      await page.waitForSelector('.agent-row .agent-detail');
+
+      const panel = await page.evaluate(() => {
+        const rows = [...document.querySelectorAll('.agent-row')];
+        const selected = document.querySelector('.agent-row.selected');
+        return {
+          rows: rows.length,
+          details: document.querySelectorAll('.agent-detail').length,
+          detailInsideSelected: selected?.querySelector('.agent-detail') !== null,
+          selectedHandle: selected?.querySelector('strong')?.textContent,
+          expanded: selected?.querySelector('.agent-list-item')?.getAttribute('aria-expanded'),
+          statesInSelected: selected?.querySelectorAll('.agent-state').length,
+          activityLines: rows.map((row) => row.querySelector('small')?.textContent),
+          waitingBadges: rows.map((row) => row.querySelector('.agent-waiting')?.textContent ?? null),
+          summary: document.querySelector('#activity-summary')?.textContent,
+          quota: document.querySelector('#quota-note')?.textContent,
+          detailLinks: [...(selected?.querySelectorAll('.agent-detail a[href]') ?? [])].map((a) => a.getAttribute('href')),
+          deadCards: document.querySelectorAll('#messages-card, #following-card, #agent-detail').length,
+        };
+      });
+
+      check(panel.rows === 2, `${label}: panel iki ajan satırı çizmedi (${panel.rows}).`);
+      check(panel.details === 1, `${label}: aynı anda birden fazla ajan detayı açık (${panel.details}).`);
+      check(panel.detailInsideSelected, `${label}: detay seçilen satırın içinde değil.`);
+      check(panel.selectedHandle === '@nyx', `${label}: ilk ajan seçili gelmedi (${panel.selectedHandle}).`);
+      check(panel.expanded === 'true', `${label}: seçili satır aria-expanded taşımıyor.`);
+      /* Durum rozeti satır başına bir tane. Detay kendi rozetini bir daha
+       * basarsa bu sayı ikiye çıkar — üçlü "Aktif" tekrarı böyle doğmuştu. */
+      check(panel.statesInSelected === 1, `${label}: seçili satırda durum rozeti tekrarlanıyor (${panel.statesInSelected}).`);
+      check(
+        panel.activityLines[0]?.startsWith('5 gönderi · 2 yanıt'),
+        `${label}: ajan satırı kayıt sayılarını yazmıyor (${panel.activityLines[0]}).`,
+      );
+      check(
+        panel.activityLines[1] === 'Henüz kayıt yok',
+        `${label}: hiç yazmamış ajan için boş hâl yazılmıyor (${panel.activityLines[1]}).`,
+      );
+      check(panel.waitingBadges[0] === '3 incelemede', `${label}: bekleyen inceleme sayısı yanlış (${panel.waitingBadges[0]}).`);
+      check(panel.waitingBadges[1] === null, `${label}: bekleyeni olmayan ajana rozet basılmış.`);
+      check(panel.summary?.includes('2 ajan'), `${label}: özet satırı ajan sayısını yazmıyor (${panel.summary}).`);
+      check(panel.summary?.includes('7 kayıt'), `${label}: özet satırı toplam kaydı yanlış topluyor (${panel.summary}).`);
+      check(panel.summary?.includes('3 kayıt incelemede'), `${label}: özet satırı bekleyeni yazmıyor (${panel.summary}).`);
+      check(panel.quota?.includes('1/3'), `${label}: kalan ajan hakkı butonun yanında yazmıyor (${panel.quota}).`);
+      check(
+        panel.detailLinks.includes('/messages') && panel.detailLinks.includes('/following'),
+        `${label}: mesaj ve takip bağlantıları detayda değil (${panel.detailLinks.join(', ')}).`,
+      );
+      check(panel.deadCards === 0, `${label}: kaldırılan mesaj/takip kartları ya da eski detay kabı hâlâ basılıyor.`);
+
+      /* İkinci ajana geçiş: detay taşınmalı, çoğalmamalı. */
+      await page.locator('.agent-row').nth(1).locator('.agent-list-item').click();
+      await page.waitForFunction(() => (
+        document.querySelector('.agent-row.selected strong')?.textContent === '@metis'
+        && document.querySelector('.agent-row.selected .agent-detail') !== null
+      ));
+      const afterSwitch = await page.evaluate(() => ({
+        details: document.querySelectorAll('.agent-detail').length,
+        selectedHandle: document.querySelector('.agent-row.selected strong')?.textContent,
+        selectedRows: document.querySelectorAll('.agent-row.selected').length,
+      }));
+      check(afterSwitch.details === 1, `${label}: ajan değişince detay çoğaldı (${afterSwitch.details}).`);
+      check(afterSwitch.selectedRows === 1, `${label}: aynı anda iki satır seçili (${afterSwitch.selectedRows}).`);
+      check(afterSwitch.selectedHandle === '@metis', `${label}: tıklanan ajana geçilmedi (${afterSwitch.selectedHandle}).`);
+
+      check(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+        `${label}: panel yatay taşıyor.`,
+      );
+      check(pageErrors.length === 0, `${label}: panelde sayfa hatası: ${pageErrors.join(' | ')}`);
+      await context.close();
+    }
 
     {
       const context = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: 'light' });

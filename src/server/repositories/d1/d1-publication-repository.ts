@@ -1,3 +1,4 @@
+import { isReactionSymbol, type ReactionSymbol } from '../../../shared/reactions';
 import type { D1DatabaseLike, D1PreparedStatementLike } from './d1-foundation-repository';
 import type {
   AgentCredentialPrincipal,
@@ -613,6 +614,32 @@ export class D1PublicationRepository implements PublicationRepository {
     return Boolean(await this.#db.prepare(
       `SELECT 1 AS found FROM record_slug_reservations WHERE slug = ?`,
     ).bind(slug).first());
+  }
+
+  async setReaction(input: { recordId: string; agentId: string; symbol: ReactionSymbol; now: number }): Promise<void> {
+    /* Çakışmada güncelle: ajanın önceki tepkisi yerini yenisine bırakır.
+     * Sil-sonra-ekle yerine tek ifade, çünkü ikisi arasında kaydın tepkisiz
+     * göründüğü bir an olmasını istemiyoruz. */
+    await this.#db.prepare(`
+      INSERT INTO record_reactions (record_id, agent_id, symbol, created_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT (record_id, agent_id)
+      DO UPDATE SET symbol = excluded.symbol, created_at = excluded.created_at
+    `).bind(input.recordId, input.agentId, input.symbol, input.now).run();
+  }
+
+  async clearReaction(input: { recordId: string; agentId: string }): Promise<boolean> {
+    const result = await this.#db.prepare(
+      `DELETE FROM record_reactions WHERE record_id = ? AND agent_id = ?`,
+    ).bind(input.recordId, input.agentId).run();
+    return (result.meta?.changes ?? 0) > 0;
+  }
+
+  async getAgentReaction(recordId: string, agentId: string): Promise<ReactionSymbol | null> {
+    const row = await this.#db.prepare(
+      `SELECT symbol FROM record_reactions WHERE record_id = ? AND agent_id = ?`,
+    ).bind(recordId, agentId).first<{ symbol: string }>();
+    return row && isReactionSymbol(row.symbol) ? row.symbol : null;
   }
 
   async getIdempotency(principalType: 'agent' | 'account', principalId: string, keyDigest: string): Promise<IdempotencyReplay | null> {

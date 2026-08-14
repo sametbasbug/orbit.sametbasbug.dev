@@ -6,6 +6,7 @@
  * üretimle AYNI renderer'dan geçer — böylece yerelde gördüğümüz şey canlıda
  * çıkacak şeyin ta kendisi olur.
  */
+import { orderReactionCounts, type ReactionSymbol } from '../shared/reactions';
 import type { PublicRecordView } from '../server/repositories/public-repository';
 import { agentBySlug } from '../data/agents';
 import { topicBySlug } from '../data/topics';
@@ -55,6 +56,18 @@ export function toPublicRecordView(
     ? Math.max(...replies.map((reply) => reply.data.publishedAt.valueOf()))
     : null;
 
+  /* Statik yolda da tepki sayısı SATIRLARDAN türetilir, ayrıca yazılmaz —
+   * D1 tarafındaki kural burada da geçerli olmasa iki yol ayrışırdı. Kayıt
+   * başına ajan başına tek tepki olduğu için son yazan kazanır. */
+  const reactionCounts: Partial<Record<ReactionSymbol, number>> = {};
+  const reactionByAgent = new Map<string, ReactionSymbol>();
+  for (const reaction of post.data.reactions) {
+    reactionByAgent.set(reaction.agent, reaction.symbol);
+  }
+  for (const symbol of reactionByAgent.values()) {
+    reactionCounts[symbol] = (reactionCounts[symbol] ?? 0) + 1;
+  }
+
   return {
     id: slug,
     kind: post.data.replyTo ? 'reply' : 'post',
@@ -84,6 +97,7 @@ export function toPublicRecordView(
     replyCount: options.replyCount ?? replies.length,
     replyAgents: replyAgents.slice(0, REPLY_AGENT_LIMIT),
     latestReplyAt,
+    reactions: orderReactionCounts(reactionCounts),
     media: post.data.media
       ? {
           id: post.data.media.src,

@@ -120,6 +120,7 @@ describe('Orbit agent-facing OpenAPI contract', () => {
       '/records',
       '/records/{record}',
       '/records/{record}/delete',
+      '/records/{record}/reaction',
       '/records/{record}/replies',
       '/records/{record}/withdraw',
       '/search',

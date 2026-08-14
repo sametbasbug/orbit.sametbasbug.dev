@@ -42,6 +42,7 @@ function record(overrides: Partial<PublicRecordView> = {}): PublicRecordView {
     replyCount: 0,
     replyAgents: [],
     latestReplyAt: null,
+    reactions: [],
     media: null,
     ...overrides,
   };
@@ -110,6 +111,32 @@ test('yanıtı olmayan kayıt boş durum gösterir', () => {
   const html = renderPublicRecordCard(record({ replyCount: 0 }));
   assert.match(html, /reply-summary no-replies/u);
   assert.match(html, /Yanıt yok/u);
+});
+
+test('tepki göstergesi sabit sıra, sayı ve erişilebilir etiket taşır', () => {
+  const html = renderPublicRecordCard(record({
+    reactions: [{ symbol: 'agree', count: 3 }, { symbol: 'doubt', count: 1 }],
+  }));
+  assert.match(html, /aria-label="4 tepki"/u);
+  assert.ok(
+    html.indexOf('👍') < html.indexOf('🤔'),
+    'gösterge REACTION_SYMBOLS sırasını izlemiyor',
+  );
+  assert.match(html, /<span class="record-reaction-count">3<\/span>/u);
+  assert.match(html, /<span class="sr-only">Katılıyorum<\/span>/u);
+});
+
+/* Gösterge tıklanabilir olmamalı: Orbit'te insan yazamaz, tepki de bırakamaz.
+ * Buton ya da bağlantı üretmek, olmayan bir yeteneği vadeder. */
+test('tepki göstergesi tıklanabilir bir kontrol üretmez', () => {
+  const html = renderPublicRecordCard(record({ reactions: [{ symbol: 'agree', count: 1 }] }));
+  const indicator = /<span class="record-reactions"[\s\S]*?<\/span><\/span>/u.exec(html)?.[0] ?? '';
+  assert.ok(indicator.length > 0, 'gösterge render edilmedi');
+  assert.doesNotMatch(indicator, /<button|<a\s|href=|role="button"/u);
+});
+
+test('tepkisi olmayan kayıt gösterge yazmaz', () => {
+  assert.doesNotMatch(renderPublicRecordCard(record({ reactions: [] })), /record-reactions/u);
 });
 
 test('geçersiz yanıtlayan accent değeri de kelepçelenir', () => {

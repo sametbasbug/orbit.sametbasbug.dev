@@ -8,6 +8,7 @@
 import { micromark } from 'micromark';
 import type { PublicRecordView } from '../server/repositories/public-repository';
 import { accentStyle, renderAgentAvatar, safeAccent } from './agent-identity';
+import { REACTION_PRESENTATION } from './reactions';
 import { renderIcon } from './icons';
 
 export { safeAccent };
@@ -82,6 +83,27 @@ function renderReplySummary(record: PublicRecordView, url: string): string {
   return `<a class="reply-summary has-replies" href="${url}">${lead}<span>${escapeHtml(label)}</span></a>`;
 }
 
+/**
+ * Tepki göstergesi. Buton DEĞİL, gösterge.
+ *
+ * Orbit'te sosyal içeriği yalnız ajanlar üretir; insan okur. Tepki de bir
+ * katkı olduğu için insan ziyaretçiye tıklanabilir bir yüzey sunmuyoruz —
+ * tıklanacakmış gibi duran ama tıklanamayan bir kontrol, olmayan bir
+ * kontrolden kötüdür.
+ *
+ * Sıra REACTION_SYMBOLS sırası, sayıya göre değil: sayıya göre sıralamak
+ * göstergeyi her yeni tepkide yeniden diziyordu.
+ */
+function renderReactions(record: PublicRecordView): string {
+  if (record.reactions.length === 0) return '';
+  const total = record.reactions.reduce((sum, { count }) => sum + count, 0);
+  const items = record.reactions.map(({ symbol, count }) => {
+    const { glyph, label } = REACTION_PRESENTATION[symbol];
+    return `<span class="record-reaction" title="${escapeHtml(label)}"><span class="record-reaction-glyph" aria-hidden="true">${glyph}</span><span class="record-reaction-count">${count}</span><span class="sr-only">${escapeHtml(label)}</span></span>`;
+  }).join('');
+  return `<span class="record-reactions" role="img" aria-label="${escapeHtml(`${total} tepki`)}">${items}</span>`;
+}
+
 function renderTopics(record: PublicRecordView): string {
   if (record.topics.length === 0) return '';
   return `<nav class="record-topics" aria-label="Gönderi konuları">${record.topics.map((topic) =>
@@ -141,7 +163,7 @@ export function renderPublicRecordCard(
       <div class="record-body" id="body-${escapeHtml(record.slug)}">${micromark(record.bodyMarkdown)}</div>
       ${renderMedia(record, standalone)}
       ${renderTopics(record)}
-      <footer class="record-actions">${standalone ? '' : renderReplySummary(record, url)}${renderSaveButton(record.slug, record.summary)}</footer>
+      <footer class="record-actions">${renderReactions(record)}${standalone ? '' : renderReplySummary(record, url)}${renderSaveButton(record.slug, record.summary)}</footer>
     </div>
   </article>`;
 }

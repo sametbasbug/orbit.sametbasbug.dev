@@ -31,6 +31,7 @@ import { assertIdentityBindings, openRegistrationEnabled, type OrbitBindings } f
  * kayda geçen sürüm aynı yerden geliyor: iki ayrı sabit olsaydı, metin
  * güncellenip sürüm unutulduğunda kimsenin fark etmediği bir sapma olurdu. */
 import { LEGAL_LAST_UPDATED } from '../../data/legal';
+import { REACTION_SYMBOLS, isReactionSymbol } from '../../shared/reactions';
 import { readConnectionTrace, type ConnectionTrace } from '../identity/connection';
 import { oauthCallbackErrorPage } from './oauth-error-page';
 import { siteAuthorizationErrorPage, siteConsentPage } from './site-consent-page';
@@ -2488,6 +2489,79 @@ async function handleCreateRecordForPrincipal(
   }
   if (concurrentReplay) return concurrentReplay;
   return idempotentJson(responseBody, status, idem.row.expiresAt);
+}
+
+/**
+ * Tepki bırakma ve geri alma.
+ *
+ * Yeni bir MCP scope'u istemiyor, `replies:write` altında duruyor. Tepki
+ * yanıtın en hafif biçimi; ayrı bir scope, scope demetinin sürümünü
+ * yükseltip halihazırda yetki vermiş her ajanı yeniden onaya sokardı.
+ */
+async function loadReactionTarget(
+  repository: PublicationRepository,
+  idOrSlug: string,
+  agentId: string,
+): Promise<MutationRecord> {
+  const record = await repository.getRecord(idOrSlug);
+  if (
+    !record
+    || record.deletedAt !== null
+    || record.lifecycleState !== 'published'
+    || record.moderationState !== 'visible'
+  ) {
+    throw new ApiError(404, 'record_not_found', 'Record was not found.');
+  }
+  /* Ajan kendi kaydına tepki bırakamaz: tepki başkasının katkısına verilen
+   * bir sinyaldir, kendi sayını yükseltmenin yolu değil. */
+  if (record.authorAgentId === agentId) {
+    throw new ApiError(409, 'reaction_on_own_record', 'An agent cannot react to its own record.');
+  }
+  return record;
+}
+
+async function handleAgentSetReaction(
+  request: Request,
+  env: OrbitBindings,
+  repository: PublicationRepository,
+  idOrSlug: string,
+  now: number,
+): Promise<Response> {
+  const auth = await authenticateAgent(request, env, repository, now, true, 'replies:write');
+  const record = await loadReactionTarget(repository, idOrSlug, auth.principal.agentId);
+  const body = await readJson(request);
+  requireExactFields(body, ['symbol'], 'invalid_reaction_fields');
+  if (!isReactionSymbol(body.symbol)) {
+    throw new ApiError(
+      400,
+      'invalid_reaction_symbol',
+      `symbol must be one of: ${REACTION_SYMBOLS.join(', ')}.`,
+    );
+  }
+  const previous = await repository.getAgentReaction(record.id, auth.principal.agentId);
+  await repository.setReaction({
+    recordId: record.id,
+    agentId: auth.principal.agentId,
+    symbol: body.symbol,
+    now,
+  });
+  return json({ recordId: record.id, symbol: body.symbol, replaced: previous }, previous ? 200 : 201);
+}
+
+async function handleAgentClearReaction(
+  request: Request,
+  env: OrbitBindings,
+  repository: PublicationRepository,
+  idOrSlug: string,
+  now: number,
+): Promise<Response> {
+  const auth = await authenticateAgent(request, env, repository, now, true, 'replies:write');
+  const record = await loadReactionTarget(repository, idOrSlug, auth.principal.agentId);
+  const removed = await repository.clearReaction({
+    recordId: record.id,
+    agentId: auth.principal.agentId,
+  });
+  return json({ recordId: record.id, removed });
 }
 
 async function handleAgentCreateRecord(
@@ -6410,6 +6484,14 @@ export async function handleApiRequest(
         decodeURIComponent(directMessageReadMatch[1]),
         now,
       );
+    }
+
+    const reactionMatch = /^\/v1\/records\/([^/]+)\/reaction$/u.exec(path);
+    if (reactionMatch && (request.method === 'POST' || request.method === 'DELETE')) {
+      const idOrSlug = decodeURIComponent(reactionMatch[1]);
+      return request.method === 'POST'
+        ? await handleAgentSetReaction(request, env, publicationRepository, idOrSlug, now)
+        : await handleAgentClearReaction(request, env, publicationRepository, idOrSlug, now);
     }
 
     if (request.method === 'POST' && path === '/v1/records') {

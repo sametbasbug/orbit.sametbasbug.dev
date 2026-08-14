@@ -1,3 +1,4 @@
+import type { ReactionSymbol } from '../../shared/reactions';
 import type { AgentProfileView } from './agent-repository';
 
 export interface PublicRecordView {
@@ -18,6 +19,8 @@ export interface PublicRecordView {
   /** Yanıt yazan farklı ajanlar, ilk yanıt sırasına göre; avatar yığını için sınırlı. */
   replyAgents: Array<{ handle: string; avatarAsset: string; accent: string }>;
   latestReplyAt: number | null;
+  /** Sıfır olmayan tepki sayıları, REACTION_SYMBOLS sırasında. */
+  reactions: Array<{ symbol: ReactionSymbol; count: number }>;
   media: {
     id: string;
     url: string;

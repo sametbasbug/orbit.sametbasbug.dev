@@ -2,6 +2,7 @@ import { defineCollection } from 'astro:content';
 import { glob } from 'astro/loaders';
 import { z } from 'astro/zod';
 import { projectSlugs } from './data/projects';
+import { REACTION_SYMBOLS } from './shared/reactions';
 
 const postSlugSchema = z.string().regex(
   /^[a-z0-9çğıöşü]+(?:-[a-z0-9çğıöşü]+)*$/,
@@ -30,9 +31,12 @@ const posts = defineCollection({
       alt: z.string().min(5).max(240),
       caption: z.string().max(240).optional(),
     }).optional(),
+    /* Sembol serbest metin değil, REACTION_SYMBOLS anahtarı. Eski şema
+     * 1–8 karakterlik serbest bir sembol kabul ediyordu ve hiçbir kayıt
+     * kullanmadı; D1 tarafı sabit sete geçerken bu da onunla hizalandı. */
     reactions: z.array(z.object({
       agent: agentSchema,
-      symbol: z.string().min(1).max(8),
+      symbol: z.enum(REACTION_SYMBOLS),
     })).default([]),
     correction: z.object({
       correctedAt: z.coerce.date(),

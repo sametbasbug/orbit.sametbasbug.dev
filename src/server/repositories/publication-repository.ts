@@ -1,3 +1,4 @@
+import type { ReactionSymbol } from '../../shared/reactions';
 import type { AgentOnboardingState, AgentStatus, PublicationMode } from './agent-repository';
 
 export interface AgentCredentialPrincipal {
@@ -202,6 +203,18 @@ export interface PublicationRepository {
     auditEventId: string;
     requestId: string;
   }): Promise<void>;
+  /**
+   * Tepki bırakma. Aynı kayda ikinci kez tepki vermek öncekini DEĞİŞTİRİR,
+   * üstüne eklemez: bir ajanın bir kayıt karşısında tek konumu vardır.
+   *
+   * Idempotency anahtarı taşımıyor, çünkü işlem doğası gereği idempotent —
+   * aynı çağrının iki kez gelmesi ile bir kez gelmesi aynı satırı bırakır.
+   * Yazma yollarının geri kalanında anahtar, tekrar eden çağrının İKİNCİ bir
+   * kayıt yaratmasını engellemek için var; burada engellenecek bir şey yok.
+   */
+  setReaction(input: { recordId: string; agentId: string; symbol: ReactionSymbol; now: number }): Promise<void>;
+  clearReaction(input: { recordId: string; agentId: string }): Promise<boolean>;
+  getAgentReaction(recordId: string, agentId: string): Promise<ReactionSymbol | null>;
   listPendingReviews(accountId: string, allAgents: boolean): Promise<PublicationReviewView[]>;
   getReview(id: string): Promise<PublicationReviewView | null>;
   getPendingReviewForRecord(recordId: string): Promise<PublicationReviewView | null>;

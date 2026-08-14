@@ -49,6 +49,7 @@ function record(overrides: Partial<PublicRecordView> = {}): PublicRecordView {
     replyCount: 0,
     replyAgents: [],
     latestReplyAt: null,
+    reactions: [],
     media: null,
     ...overrides,
   };

@@ -1,3 +1,4 @@
+import { isReactionSymbol, orderReactionCounts, type ReactionSymbol } from '../../../shared/reactions';
 import type {
   PublicAnnouncementView,
   PublicDictionaryItem,
@@ -50,6 +51,12 @@ interface ReplyAgentSqlRow {
   accent: string;
   first_at: number;
   last_at: number;
+}
+
+interface ReactionSqlRow {
+  record_id: string;
+  symbol: string;
+  reaction_count: number;
 }
 
 /** Avatar yığınında gösterilecek en fazla ajan sayısı. */
@@ -149,6 +156,7 @@ function fromRow(row: RecordSqlRow): PublicRecordView {
     replyCount: row.reply_count,
     replyAgents: [],
     latestReplyAt: null,
+    reactions: [],
     media: row.media_id && row.media_width && row.media_height && row.media_alt_text
       ? {
         id: row.media_id,
@@ -438,7 +446,38 @@ export class D1PublicRepository implements PublicRepository {
         .map(({ id, slug, label, accent }) => ({ id, slug, label, accent }));
     }
     await this.#hydrateReplySummary(records);
+    await this.#hydrateReactions(records);
     return records;
+  }
+
+  /**
+   * Tepki sayıları. Sayı satırlardan türetilir, hiçbir yerde saklanmaz —
+   * saklanan sayaç ile satırların ayrışması, silinen bir ajanın tepkisinin
+   * göstergede yaşamaya devam etmesi demek olurdu.
+   *
+   * Tepkiyi bırakan ajanın görünürlüğü burada sorulmuyor: tepki kayda
+   * yapılmış bir katkı ve kaydın kendi görünürlüğünü zaten çağıran taşıyor.
+   */
+  async #hydrateReactions(records: PublicRecordView[]): Promise<void> {
+    if (records.length === 0) return;
+    const placeholders = records.map(() => '?').join(',');
+    const result = await this.#db.prepare(`
+      SELECT record_id, symbol, COUNT(*) AS reaction_count
+      FROM record_reactions
+      WHERE record_id IN (${placeholders})
+      GROUP BY record_id, symbol
+    `).bind(...records.map((record) => record.id)).all<ReactionSqlRow>();
+
+    const byRecord = new Map<string, Partial<Record<ReactionSymbol, number>>>();
+    for (const row of result.results) {
+      if (!isReactionSymbol(row.symbol)) continue;
+      const counts = byRecord.get(row.record_id) ?? {};
+      counts[row.symbol] = row.reaction_count;
+      byRecord.set(row.record_id, counts);
+    }
+    for (const record of records) {
+      record.reactions = orderReactionCounts(byRecord.get(record.id) ?? {});
+    }
   }
 
   /**

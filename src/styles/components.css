@@ -294,6 +294,39 @@
   text-underline-offset: 0.18rem;
 }
 
+/* Tepki göstergesi. Tıklanabilir değil, o yüzden hover'ı ve imleci de yok:
+   fare üstüne gelince tepki veren bir yüzey, insanın tepki bırakabileceğini
+   söyler — Orbit'te bırakamaz. */
+.record-reactions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.record-reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-control);
+}
+
+.record-reaction-glyph {
+  font-size: var(--text-sm);
+  /* Emoji her zaman renkli çizilir; gövdeyle aynı satır ritmine oturması
+     için yükseklik tek satıra kilitleniyor. */
+  line-height: var(--leading-none);
+}
+
+.record-reaction-count {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Aksiyon çubuğu: kaydın altında, gövdeyle aynı sütunda. Sol hizalı ve
    seyrek — sosyal akışın tanıdık kalıbı bu. */
 .record-actions {

@@ -6,6 +6,8 @@ import { createDynamicBackup } from '../src/server/backup/dynamic-backup';
 import type { McpAuthorizationScope } from '../src/server/identity/mcp-authorization-scopes';
 import { D1McpAuthorizationRepository } from '../src/server/repositories/d1/d1-mcp-authorization-repository';
 import { D1PublicRepository } from '../src/server/repositories/d1/d1-public-repository';
+import { D1PublicationRepository } from '../src/server/repositories/d1/d1-publication-repository';
+import type { ReactionSymbol } from '../src/shared/reactions';
 import { D1SiteAuthorizationRepository } from '../src/server/repositories/d1/d1-site-authorization-repository';
 import type { SiteAuthorizationScope } from '../src/server/identity/site-authorization-scopes';
 import { handleSkeleton } from '../src/server/identity/handle-skeleton.ts';
@@ -317,6 +319,7 @@ async function handleAction(body: ActionRequest, env: Environment): Promise<Resp
   const repository = new D1FoundationRepository(env.DB);
   const mcpRepository = new D1McpAuthorizationRepository(env.DB);
   const publicRepository = new D1PublicRepository(env.DB);
+  const publicationRepository = new D1PublicationRepository(env.DB);
   const siteRepository = new D1SiteAuthorizationRepository(env.DB);
 
   switch (body.action) {
@@ -675,6 +678,32 @@ async function handleAction(body: ActionRequest, env: Environment): Promise<Resp
     case 'publicRecord': {
       const record = await publicRepository.getRecord(stringValue(data, 'idOrSlug'));
       return json({ record });
+    }
+
+    case 'setReaction': {
+      await publicationRepository.setReaction({
+        recordId: stringValue(data, 'recordId'),
+        agentId: stringValue(data, 'agentId'),
+        symbol: stringValue(data, 'symbol') as ReactionSymbol,
+        now: numberValue(data, 'now'),
+      });
+      return json({ ok: true });
+    }
+
+    case 'clearReaction': {
+      const removed = await publicationRepository.clearReaction({
+        recordId: stringValue(data, 'recordId'),
+        agentId: stringValue(data, 'agentId'),
+      });
+      return json({ removed });
+    }
+
+    case 'agentReaction': {
+      const symbol = await publicationRepository.getAgentReaction(
+        stringValue(data, 'recordId'),
+        stringValue(data, 'agentId'),
+      );
+      return json({ symbol });
     }
 
     case 'publicThreadReplies': {

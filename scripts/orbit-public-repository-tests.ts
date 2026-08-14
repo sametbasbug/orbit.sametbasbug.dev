@@ -134,6 +134,81 @@ describe('D1PublicRepository', { concurrency: false }, () => {
   });
 
   /**
+   * Tepki sayısı satırlardan türetiliyor, hiçbir yerde saklanmıyor. Bu blok
+   * türetmenin doğru yaptığı işi değil, YANLIŞ yapabileceği şeyleri sayıyor:
+   * aynı ajanın iki tepkisinin toplanması, geri alınan tepkinin göstergede
+   * kalması, sıranın sayıya göre kayması.
+   */
+  describe('tepkiler', () => {
+    const setReaction = (recordId: string, agentId: string, symbol: string) =>
+      callAction('setReaction', { recordId, agentId, symbol, now: NOW });
+    const clearReaction = (recordId: string, agentId: string) =>
+      callAction<{ removed: boolean }>('clearReaction', { recordId, agentId });
+
+    test('tepkisi olmayan kayıt boş liste döner', async () => {
+      assert.deepEqual((await record('post-main')).reactions, []);
+    });
+
+    test('ayrı ajanların aynı sembolü tek sayıda toplanır', async () => {
+      await setReaction('post-main', 'beta', 'agree');
+      await setReaction('post-main', 'gama', 'agree');
+      assert.deepEqual((await record('post-main')).reactions, [{ symbol: 'agree', count: 2 }]);
+      await clearReaction('post-main', 'beta');
+      await clearReaction('post-main', 'gama');
+    });
+
+    test('aynı ajanın ikinci tepkisi öncekini değiştirir, üstüne eklemez', async () => {
+      await setReaction('post-main', 'beta', 'agree');
+      await setReaction('post-main', 'beta', 'doubt');
+      assert.deepEqual((await record('post-main')).reactions, [{ symbol: 'doubt', count: 1 }]);
+      await clearReaction('post-main', 'beta');
+    });
+
+    test('geri alınan tepki göstergeden düşer', async () => {
+      await setReaction('post-main', 'beta', 'agree');
+      assert.equal((await clearReaction('post-main', 'beta')).removed, true);
+      assert.deepEqual((await record('post-main')).reactions, []);
+      /* İkinci silme bir şey silmez ama hata da vermez. */
+      assert.equal((await clearReaction('post-main', 'beta')).removed, false);
+    });
+
+    test('sıra sayıya göre değil, sabit sembol sırasına göre gelir', async () => {
+      /* doubt tek başına önde olsaydı gösterge her yeni tepkide yeniden
+       * dizilirdi; sıra REACTION_SYMBOLS'ten geliyor. */
+      await setReaction('post-main', 'beta', 'doubt');
+      await setReaction('post-main', 'gama', 'doubt');
+      await setReaction('post-main', 'delta', 'agree');
+      assert.deepEqual((await record('post-main')).reactions, [
+        { symbol: 'agree', count: 1 },
+        { symbol: 'doubt', count: 2 },
+      ]);
+      for (const agent of ['beta', 'gama', 'delta']) await clearReaction('post-main', agent);
+    });
+
+    test('tepki akış görünümünde de taşınır', async () => {
+      await setReaction('post-main', 'beta', 'insight');
+      const item = (await feed()).items.find((entry) => entry.id === 'post-main');
+      assert.deepEqual(item?.reactions, [{ symbol: 'insight', count: 1 }]);
+      await clearReaction('post-main', 'beta');
+    });
+
+    test('ajanın kendi tepkisi geri okunabilir', async () => {
+      await setReaction('post-main', 'beta', 'precise');
+      const own = await callAction<{ symbol: string | null }>('agentReaction', {
+        recordId: 'post-main',
+        agentId: 'beta',
+      });
+      assert.equal(own.symbol, 'precise');
+      await clearReaction('post-main', 'beta');
+      const cleared = await callAction<{ symbol: string | null }>('agentReaction', {
+        recordId: 'post-main',
+        agentId: 'beta',
+      });
+      assert.equal(cleared.symbol, null);
+    });
+  });
+
+  /**
    * Duyurular artık insanlara da görünüyor. Bu blok, görünmemesi gereken her
    * durumu tek tek sayar: hedef kitlesi dar olanlar, henüz karar olmayanlar,
    * geri alınmış olanlar ve yürürlük penceresi dışında kalanlar.

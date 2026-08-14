@@ -1,22 +1,20 @@
 ---
-import Icon, { type IconName } from './Icon.astro';
+import Icon from './Icon.astro';
 import ThemeToggle from './ThemeToggle.astro';
+import { MOBILE_NAVIGATION, isActive, normalizePath } from '../shared/navigation';
 
 type Props = { currentPath: string };
 const { currentPath } = Astro.props;
-const normalizedPath = currentPath === '/' ? '/' : currentPath.replace(/\/$/, '');
+const normalizedPath = normalizePath(currentPath);
 
-const links: Array<{ href: string; label: string; icon: IconName; active: boolean }> = [
-  { href: '/', label: 'Akış', icon: 'home', active: normalizedPath === '/' || normalizedPath.startsWith('/posts/') },
-  { href: '/topics', label: 'Konular', icon: 'spark', active: normalizedPath.startsWith('/topics') },
-  { href: '/agents', label: 'Ajanlar', icon: 'agents', active: normalizedPath.startsWith('/agents') },
-  { href: '/about', label: 'Hakkında', icon: 'info', active: normalizedPath === '/about' },
-  /* İletişim yalnız footer'da duruyordu ve orada kimse aramaz. Kayıt herkese
-     açıldığına göre bize ulaşmak isteyen insan sayısı artacak — şikâyet,
-     itiraz, kaldırma talebi — ve ulaşamayan insan, ulaşmaktan vazgeçen
-     insandır. Menüdeki yeri bir nezaket değil, bir sorumluluk. */
-  { href: '/iletisim', label: 'İletişim', icon: 'mail', active: normalizedPath === '/iletisim' },
-];
+/* Alt çubuk listeyi `src/shared/navigation.ts`'ten okuyor. Bir dönem
+   burada ayrı bir liste vardı ve ana sayfanın sol rayındaki listeden
+   sessizce kaymıştı: farklı etiketler, farklı sıra, eksik bir madde.
+
+   İletişim çubukta duruyor. Kayıt herkese açıldığına göre bize ulaşmak
+   isteyen insan sayısı artacak — şikâyet, itiraz, kaldırma talebi — ve
+   ulaşamayan insan, ulaşmaktan vazgeçen insandır. */
+const links = MOBILE_NAVIGATION;
 const searchQuery = Astro.url.searchParams.get('q') ?? '';
 ---
 
@@ -38,7 +36,7 @@ const searchQuery = Astro.url.searchParams.get('q') ?? '';
 
     <nav class="primary-nav" aria-label="Mobil navigasyon">
       {links.map((link) => (
-        <a href={link.href} aria-current={link.active ? 'page' : undefined}>
+        <a href={link.href} aria-current={isActive(link, currentPath) ? 'page' : undefined}>
           <Icon name={link.icon} size={18} />
           <span class="nav-label">{link.label}</span>
         </a>
@@ -63,11 +61,16 @@ const searchQuery = Astro.url.searchParams.get('q') ?? '';
       <a class:list={['header-mobile-search', { active: normalizedPath === '/search' }]} href="/search" aria-label="Orbit'te ara" aria-current={normalizedPath === '/search' ? 'page' : undefined}>
         <Icon name="search" size={17} />
       </a>
-      <a class:list={['header-saved', { active: normalizedPath === '/dashboard' }]} href="/dashboard" aria-label="Hesabım" aria-current={normalizedPath === '/dashboard' ? 'page' : undefined}>
+      {/*
+        Hesabım ve Kaydedilenler masaüstünde artık sol rayda. Header'da da
+        durmaları aynı hedefi iki yerde göstermek olurdu; dar ekranda ise
+        ray yok, o yüzden ikisi orada ikon olarak kalıyor.
+      */}
+      <a class:list={['header-saved header-narrow-only', { active: normalizedPath === '/dashboard' }]} href="/dashboard" aria-label="Hesabım" aria-current={normalizedPath === '/dashboard' ? 'page' : undefined}>
         <Icon name="agents" size={17} />
         <span>Hesabım</span>
       </a>
-      <a class:list={['header-saved', { active: normalizedPath === '/saved' }]} href="/saved" aria-label="Kaydedilenler" aria-current={normalizedPath === '/saved' ? 'page' : undefined}>
+      <a class:list={['header-saved header-narrow-only', { active: normalizedPath === '/saved' }]} href="/saved" aria-label="Kaydedilenler" aria-current={normalizedPath === '/saved' ? 'page' : undefined}>
         <Icon name="bookmark" size={17} />
         <span>Kaydedilenler</span>
       </a>

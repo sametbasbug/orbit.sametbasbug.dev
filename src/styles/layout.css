@@ -1,10 +1,93 @@
 /* Layout */
+
+/*
+ * Uygulama çerçevesi: solda kalıcı ray, sağında sayfanın kendisi.
+ *
+ * Ray `BaseLayout` içinde durduğu için sayfalar kendi ızgaralarını
+ * değiştirmeden bu çerçevenin içine giriyor. `.page-shell` artık ekranın
+ * değil, rayın sağında kalan alanın ortasına yerleşiyor.
+ *
+ * Sabit genişlik kasıtlı: içerik raydan sonra hep aynı yerde başlıyor ve
+ * sayfa değiştirirken yatay olarak oynamıyor. Kalan alanda ortalamak tek
+ * bir sayfaya bakarken daha dengeli görünür ama akıştan Hakkında'ya
+ * geçerken metni kaydırır.
+ */
+.app-frame {
+  margin: 0 auto;
+  width: min(1460px, calc(100% - 56px));
+}
+
+.app-frame.has-rail {
+  display: grid;
+  align-items: start;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: var(--space-12);
+}
+
+.app-frame > main {
+  min-width: 0;
+}
+
+.app-rail {
+  padding: var(--space-12) 0 var(--space-40);
+  position: sticky;
+  top: 5rem;
+}
+
+.app-rail-nav {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.app-rail-nav a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-height: 2.9rem;
+  padding: 0 var(--space-6);
+  border-radius: 0.8rem;
+  color: var(--muted);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  text-decoration: none;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.app-rail-nav a > .icon {
+  flex: 0 0 auto;
+  color: var(--orbit-blue);
+}
+
+.app-rail-nav a:hover {
+  color: var(--ink);
+  background: var(--surface-hover);
+}
+
+.app-rail-nav a[aria-current="page"] {
+  color: var(--ink);
+  background: var(--surface-nav-active);
+}
+
+/* Hesap bölgesi ana menüden çizgiyle ayrı: ötekiler Orbit'in içeriğine,
+   bu kişinin kendi hesabına gidiyor. */
+.app-rail-account {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+/* Header ızgarası çerçeveyle aynı: 220px ilk sütun ve aynı boşluk.
+ *
+ * Arama kutusu ana içerik sütununun tam üstünde başlasın diye. Boşluk bir
+ * dönem `clamp(2.5rem, …, 5rem)` idi ve sayfanın sol sütunu 220px'ken bu
+ * yürüyordu; ray gelince içerik 244px'ten başladı, arama 300px'te kaldı ve
+ * ikisi 56px kaydı. Bir tarayıcı testi bunu ölçüyor. */
 .header-inner {
   margin: 0 auto;
   display: grid;
   grid-template-columns: 220px minmax(260px, 520px) 1fr;
   align-items: center;
-  gap: clamp(2.5rem, calc((100% - 1300px) / 2), 5rem);
+  column-gap: var(--space-12);
   min-height: 76px;
   width: min(1460px, calc(100% - 56px));
 }
@@ -14,11 +97,31 @@
   width: min(1460px, calc(100% - 56px));
 }
 
+/* Çerçeve zaten kenar boşluğunu ve tavanı veriyor; içerideki kabuğun bir
+   kez daha daraltması sayfayı iki kere içeri alırdı.
+   
+   Tek sütunlu sayfalar akışın içerik kolonuyla AYNI genişlikte ve aynı
+   yerde başlıyor: 760px, sola yaslı. Sağda boşluk kalıyor ve bu kasıtlı —
+   kalan alanda ortalamak tek bir sayfaya bakarken daha dengeli görünür ama
+   akıştan Hakkında'ya geçerken metni yatay olarak kaydırır. Sayfa
+   değiştirmek içeriği yerinden oynatmamalı. */
+.app-frame.has-rail .page-shell {
+  width: 100%;
+  max-width: 760px;
+  margin: 0;
+}
+
+/* Kendi sağ rayı olan iki yüzey kalan genişliğin tamamını kullanıyor. */
+.app-frame.has-rail .home-grid,
+.app-frame.has-rail .dashboard-page {
+  max-width: none;
+}
+
 .home-grid {
   display: grid;
   justify-content: space-between;
   align-items: start;
-  grid-template-columns: 220px minmax(620px, 760px) minmax(280px, 320px);
+  grid-template-columns: minmax(0, 760px) minmax(280px, 320px);
   gap: var(--space-12);
   padding: var(--space-12) 0 var(--space-40);
 }

@@ -8,6 +8,51 @@
   .context-rail {
     display: none;
   }
+
+  /* Ray bu genişlikte kaybolmuyor, ikona iniyor.
+   *
+   * Etiketli hâli 220px yer kaplıyor ve ana sayfada akış + ağ rayıyla
+   * birlikte üç sütun olunca akışı okunamayacak kadar sıkıştırıyor. Ama
+   * rayı tamamen kaldırmak 781–1260 bandında ekranda hiç ana menü
+   * bırakmıyordu — dizüstü genişlikleri tam buraya düşüyor ve o bantta
+   * menüyü aramanın tek yolu footer'dı.
+   *
+   * Etiketler `display: none` ile değil `.sr-only` kalıbıyla gizleniyor:
+   * ekran okuyucu bağlantının adını okumaya devam ediyor. */
+  .app-frame.has-rail {
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+    gap: var(--space-8);
+  }
+
+  .app-rail-nav a {
+    justify-content: center;
+    padding: 0;
+  }
+
+  /* `margin: -1px` bilerek yok: bu kalıp `.sr-only`'den geliyor ama orada
+     akıştan çıkarmak için duruyordu, burada zaten `position: absolute` var.
+     Skala kilidi kopyayı yakaladı — ham değer, gerekmediği yerde. */
+  .app-rail-nav a > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
+
+/* Hesabım ve Kaydedilenler ray ekrandayken yalnız rayda duruyor.
+   Eşik rayın var olduğu yer: 781px. Ray 1260 altında ikona iniyor ama
+   kaybolmuyor, yani o bantta da header'da ikinci bir kopya gerekmiyor —
+   aynı hedefi iki yerde göstermek hangisinin "asıl" olduğunu
+   belirsizleştirirdi. Ray yalnız 780px altında yok; ikizler orada. */
+@media (min-width: 781px) {
+  .header-narrow-only {
+    display: none;
+  }
 }
 
 @media (max-width: 1080px) and (min-width: 781px) {
@@ -25,6 +70,19 @@
     width: 2.5rem;
     padding: 0;
     justify-content: center;
+  }
+}
+
+/* Dar ekranda ray yok: menüyü sabit alt çubuk taşıyor. Ekranın kenarında
+   ayrıca bir ikon şeridi tutmak, zaten dar olan okuma alanını ikinci kez
+   daraltırdı. */
+@media (max-width: 780px) {
+  .app-frame.has-rail {
+    display: block;
+  }
+
+  .app-rail {
+    display: none;
   }
 }
 

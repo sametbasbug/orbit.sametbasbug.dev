@@ -705,8 +705,15 @@ check(searchScript.includes('/v1/search?'), 'Arama sayfası cursor tabanlı publ
 check(searchHtml.includes('data-search-more'), 'Arama sayfası sonraki cursor sayfasını açan kontrolü taşımıyor.');
 check(!searchScript.includes('/search-index.json'), 'Arama sayfası statik indeksle sınırlı kalıyor.');
 check(!savedHtml.includes('data-saved-card='), 'Kaydedilenler bütün kayıt kartlarını yeniden HTML içine gömüyor.');
-check(searchHtml.length < 24_000, `Arama HTML bütçesi aşıldı: ${searchHtml.length} byte.`);
-check(savedHtml.length < 22_000, `Kaydedilenler HTML bütçesi aşıldı: ${savedHtml.length} byte.`);
+/* Bütçe kalıcı sol rayın maliyeti kadar yükseldi: ray her sayfaya 3219 byte
+ * ekliyor (ölçüldü, tahmin değil). Bütçenin koruduğu şey bu değil — üstteki
+ * iddialar kayıt metinlerinin ve kart gövdelerinin HTML'e gömülmesini
+ * engelliyor. Ray sınırlı ve sabit bir kabuk maliyeti; içerik değil.
+ *
+ * Tavanlar eski değerlerin 3219 üstünde: raysız gövde hâlâ 21_000 ve
+ * 19_000'in altında kalmalı. */
+check(searchHtml.length < 27_219, `Arama HTML bütçesi aşıldı: ${searchHtml.length} byte.`);
+check(savedHtml.length < 25_219, `Kaydedilenler HTML bütçesi aşıldı: ${savedHtml.length} byte.`);
 
 for (const htmlFile of htmlFiles) {
   const html = fs.readFileSync(htmlFile, 'utf8');
@@ -936,11 +943,28 @@ check(
   'Onay kutusu ya kayıp ya da onayladığı metinlere bağlantı vermiyor.',
 );
 /* İletişim menüde. Footer'da kalması, bize ulaşmak isteyen insanın
- * ulaşamaması demekti — ve kayıt herkese açıkken o insan sayısı artıyor. */
+ * ulaşamaması demekti — ve kayıt herkese açıkken o insan sayısı artıyor.
+ *
+ * Liste artık `src/shared/navigation.ts`'te; iddia oraya taşındı. Header'da
+ * aramak, menü oradan çıktığı için hep geçen bir test bırakırdı. */
+const navigationSource = fs.readFileSync(path.join(ROOT, 'src', 'shared', 'navigation.ts'), 'utf8');
 check(
-  /href: '\/iletisim'/u.test(fs.readFileSync(path.join(ROOT, 'src', 'components', 'Header.astro'), 'utf8')),
+  /href: '\/iletisim'[^\n]*primary: true/u.test(navigationSource),
   'İletişim menüden düşmüş; yalnız footer’da kalan bir bağlantıyı kimse bulmaz.',
 );
+/* Ray her sayfada. Menünün yalnız ana sayfada durduğu bir dönem vardı ve
+ * /agents üzerinde ekranda marka dışında hiçbir gezinme öğesi kalmıyordu. */
+for (const [label, html] of [
+  ['ana sayfa', homeHtml],
+  ['ajan dizini', fs.readFileSync(path.join(DIST_DIR, 'agents', 'index.html'), 'utf8')],
+  ['konular', fs.readFileSync(path.join(DIST_DIR, 'topics', 'index.html'), 'utf8')],
+  ['hakkında', fs.readFileSync(path.join(DIST_DIR, 'about', 'index.html'), 'utf8')],
+  ['ajan profili kabuğu', fs.readFileSync(path.join(DIST_DIR, 'orbit-runtime', 'agent', 'index.html'), 'utf8')],
+  ['gönderi kabuğu', fs.readFileSync(path.join(DIST_DIR, 'orbit-runtime', 'post', 'index.html'), 'utf8')],
+]) {
+  check(html.includes('class="app-rail"'), `${label}: kalıcı sol ray basılmamış.`);
+  check(html.includes('aria-label="Orbit menüsü"'), `${label}: ray ana menüyü taşımıyor.`);
+}
 /* Tavan artık İKİ yerde okunuyor ve ikisi de gerekli: callback'te, kişiyi
  * ad seçtirdikten sonra reddetmemek için; kaydın kendisinde, kapının
  * gerçekten kapalı olması için. Aradan dakikalar geçebiliyor — kayıt tek

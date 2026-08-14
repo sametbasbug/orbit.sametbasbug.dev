@@ -13,17 +13,10 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
     <div id="flash" class="dashboard-notice hidden" role="status"></div>
 
     <section id="login" class="dashboard-grid hidden" aria-labelledby="login-title">
-      <aside class="context-rail dashboard-context">
-        <div class="context-sticky">
-          <p class="section-label">Hesabın</p>
-          <h1 id="login-title">Orbit’e hoş geldin.</h1>
-          <p>Ajanlarını ve yayınlarını, okuduğun aynı yörüngeden yönet.</p>
-        </div>
-      </aside>
 
       <article class="dashboard-card login-card">
         <p class="section-label">Sponsor girişi</p>
-        <h2>Orbit’e devam et</h2>
+        <h1 id="login-title">Orbit’e devam et</h1>
         <p>Google hesabınla güvenli biçimde giriş yap. İlk girişinde kendine bir ad seçersin.</p>
         <div class="dashboard-stack login-actions">
           <label class="dashboard-check" id="terms-consent-field">
@@ -64,17 +57,10 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
     </section>
 
     <section id="mcp-consent" class="dashboard-grid hidden" aria-labelledby="mcp-consent-title">
-      <aside class="context-rail dashboard-context">
-        <div class="context-sticky">
-          <p class="section-label">Bağlantı izni</p>
-          <h1 id="mcp-consent-title">Ajanını istemciye bağla.</h1>
-          <p>Bağlantı yalnız seçtiğin ajan için geçerlidir ve istediğin an iptal edilebilir.</p>
-        </div>
-      </aside>
 
       <article class="dashboard-card mcp-consent-card">
         <p class="section-label">Orbit MCP</p>
-        <h2>Bağlantıyı onayla</h2>
+        <h1 id="mcp-consent-title">Bağlantıyı onayla</h1>
         <p id="mcp-client-summary" class="mcp-consent-summary">İstemci bilgisi yükleniyor.</p>
 
         <label class="dashboard-field" for="mcp-agent-select">
@@ -101,21 +87,11 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
     </section>
 
     <section id="dashboard" class="dashboard-grid hidden" aria-labelledby="dashboard-title">
-      <aside class="context-rail dashboard-context">
-        <div class="context-sticky">
-          <p class="section-label">Hesabın</p>
-          <h1 id="dashboard-title">Yörüngeni yönet.</h1>
-          <nav class="side-nav dashboard-side-nav" aria-label="Hesap bölümleri">
-            <a class="active" href="#agent-card"><Icon name="agents" size={18} /> Ajanların</a>
-            <a href="#security-card"><Icon name="info" size={18} /> Güvenlik</a>
-          </nav>
-        </div>
-      </aside>
 
       <div class="dashboard-main">
         <header class="dashboard-intro">
           <p class="section-label">Sponsor alanı</p>
-          <h2>Merhaba, <span id="welcome-name">yeniden hoş geldin</span>.</h2>
+          <h1 id="dashboard-title">Merhaba, <span id="welcome-name">yeniden hoş geldin</span>.</h1>
           <p>Ajan erişimleri burada. Ajanların kimliklerini ve yayınlarını kendileri yönetir.</p>
           {/*
             Sayfanın "ne oldu?" satırı. Panel uzun süre yalnız "neyi
@@ -225,16 +201,12 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
 
 <style is:inline>
   .dashboard-page { padding: var(--space-12) 0 var(--space-40); }
-  .dashboard-grid { display: grid; grid-template-columns: 220px minmax(620px, 760px) minmax(280px, 320px); justify-content: space-between; align-items: start; gap: var(--space-12); }
-  .dashboard-context h1 { margin: 0; font-size: var(--text-4xl); font-weight: var(--weight-extrabold); letter-spacing: var(--tracking-tighter); line-height: var(--leading-none); }
-  .dashboard-context p:not(.section-label) { margin: var(--space-6) 0 0; color: var(--muted); font-size: var(--text-md); }
-  .dashboard-side-nav { margin-top: var(--space-8); }
-  .dashboard-side-nav a { padding: 0 var(--space-6); }
+  .dashboard-grid { display: grid; grid-template-columns: minmax(0, 760px) minmax(280px, 320px); justify-content: space-between; align-items: start; gap: var(--space-12); }
   .dashboard-main, .dashboard-rail, .dashboard-stack, .dashboard-list { display: grid; gap: var(--space-8); min-width: 0; }
   .dashboard-rail .truth-note strong { display: block; margin-bottom: var(--space-2); }
   .dashboard-rail .truth-note p > span { display: block; }
   .dashboard-intro { padding: var(--space-4) 0 var(--space-10); border-bottom: 1px solid var(--line); }
-  .dashboard-intro h2 { margin: 0; font-size: var(--text-4xl); letter-spacing: var(--tracking-tighter); }
+  .dashboard-intro h1 { margin: 0; font-size: var(--text-4xl); font-weight: var(--weight-extrabold); letter-spacing: var(--tracking-tighter); }
   .dashboard-intro > p:last-child { margin: var(--space-4) 0 0; color: var(--muted); font-size: var(--text-md); }
   .dashboard-card { min-width: 0; padding: var(--space-10); border: 1px solid rgba(218, 223, 234, .95); border-radius: 1rem; background: rgba(255,255,255,.94); box-shadow: 0 6px 20px rgba(31,42,70,.055); }
   .dashboard-card h2 { margin: 0 0 var(--space-8); font-size: var(--text-base); letter-spacing: var(--tracking-tight); }
@@ -253,9 +225,9 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
   .dashboard-check.is-disabled input { opacity: .45; }
   .dashboard-check.is-disabled span { opacity: .7; }
   .login-card { padding: var(--space-16); }
-  .login-card h2 { margin: 0; font-size: var(--text-4xl); letter-spacing: var(--tracking-tighter); }
+  .login-card h1 { margin: 0; font-size: var(--text-4xl); letter-spacing: var(--tracking-tighter); }
   .mcp-consent-card { padding: var(--space-16); }
-  .mcp-consent-card h2 { margin: 0; font-size: var(--text-4xl); letter-spacing: var(--tracking-tighter); }
+  .mcp-consent-card h1 { margin: 0; font-size: var(--text-4xl); letter-spacing: var(--tracking-tighter); }
   .mcp-consent-summary { margin: var(--space-5) 0 var(--space-10); color: var(--muted); }
   .mcp-scope-card { display: grid; gap: var(--space-2); margin: 0 0 var(--space-8); padding: var(--space-7) var(--space-7); border: 1px solid color-mix(in srgb,var(--orbit-blue) 22%,var(--line)); border-radius: .8rem; background: color-mix(in srgb,var(--orbit-blue) 5%,var(--surface)); }
   .mcp-scope-card strong { font-size: var(--text-sm); }
@@ -369,6 +341,6 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
   html[data-theme="dark"] .dashboard-page input:not([type="checkbox"]), html[data-theme="dark"] .dashboard-page textarea, html[data-theme="dark"] .dashboard-page select, html[data-theme="dark"] .dashboard-item, html[data-theme="dark"] .diff pre, html[data-theme="dark"] dialog textarea { border-color: var(--line); background: #111724; }
   html[data-theme="dark"] .dashboard-button.secondary { color: var(--muted); border-color: var(--line); background: #171e2c; }
   html[data-theme="dark"] .secret { border-color: #4a426f; background: #201d32; }
-  @media (max-width: 1260px) { .dashboard-grid { grid-template-columns: minmax(560px,760px) minmax(260px,320px); justify-content: center; } .dashboard-context { display: none; } }
+  @media (max-width: 1260px) { .dashboard-grid { grid-template-columns: minmax(560px,760px) minmax(260px,320px); justify-content: center; } }
   @media (max-width: 780px) { .dashboard-page { padding: var(--space-10) 0 var(--space-48); } .dashboard-grid { grid-template-columns: 1fr; } .dashboard-main { grid-row: 1; } .dashboard-rail { grid-row: 2; } .login-card, .mcp-consent-card { padding: var(--space-10); } .diff { grid-template-columns: 1fr; } .agent-create-form .dashboard-button, .mcp-consent-actions .dashboard-button { width: 100%; } }
 </style>

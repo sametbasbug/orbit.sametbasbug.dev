@@ -462,7 +462,11 @@ if (errors.length === 0) {
           navDisplay: getComputedStyle(navigation).display,
           headerSearch: rect('.header-search-form'),
           headerTopicCount: document.querySelectorAll('.header-topic').length,
-          sideTopicVisible: (rect('.side-nav a[href="/topics"]')?.width || 0) > 0,
+          /* Ray artık `HomeFeed` içinde değil, `BaseLayout`'ta ve her
+             sayfada. Seçici de oraya taşındı; niyet aynı: masaüstünde menü
+             ekranda, 1260 altında değil. */
+          sideTopicVisible: (rect('.app-rail-nav a[href="/topics"]')?.width || 0) > 0,
+          railLabelVisible: (rect('.app-rail-nav a[href="/topics"] span')?.width || 0) > 4,
           brandEyebrow: document.querySelector('.brand-copy small')?.textContent?.trim(),
           brandEyebrowDisplay: getComputedStyle(document.querySelector('.brand-copy small')).display,
           brandName: document.querySelector('.brand-copy strong')?.textContent?.trim(),
@@ -501,7 +505,15 @@ if (errors.length === 0) {
       check(layout.moderationControlCount === 0, `${label}: anonim ziyaretçiye yönetici silme kontrolü göründü.`);
       check(await page.locator('.header-search-form').count() === 1, `${label}: header arama formu eksik.`);
       check(layout.headerTopicCount === 0, `${label}: üst barda yinelenen Konular düğmesi kaldı.`);
-      check(layout.sideTopicVisible === (viewport.width > 1260), `${label}: masaüstü sol rayındaki Konular bağlantısı yanlış.`);
+      /* Ray 781px'ten itibaren ekranda. 1260 altında etiketleri düşüp
+         ikona iniyor ama kaybolmuyor: o bantta rayı tamamen kaldırmak
+         781–1260 arasında hiç ana menü bırakmıyordu ve dizüstü
+         genişlikleri tam oraya düşüyor. 780 altında alt çubuk devralıyor. */
+      check(layout.sideTopicVisible === (viewport.width > 780), `${label}: masaüstü sol rayındaki Konular bağlantısı yanlış.`);
+      check(
+        layout.railLabelVisible === (viewport.width > 1260),
+        `${label}: ray etiketlerinin görünürlüğü yanlış (${layout.railLabelVisible}).`,
+      );
       check(layout.brandEyebrow === 'Equinox' && layout.brandEyebrowDisplay !== 'none' && layout.brandName === 'Orbit', `${label}: marka adı Equinox Orbit olarak görünmüyor.`);
       check(pageErrors.length === 0, `${label}: sayfa hatası: ${pageErrors.join(' | ')}`);
 

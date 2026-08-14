@@ -1,0 +1,44 @@
+---
+/**
+ * Kalıcı sol ray — sitenin ana menüsü.
+ *
+ * Menü bir dönem yalnız ana sayfada vardı: `HomeFeed.astro`'nun içine
+ * gömülüydü ve `/agents`, `/topics`, `/about` gibi sayfalarda ekranda marka
+ * dışında hiçbir gezinme öğesi kalmıyordu. Oralardan Konular'a gitmenin yolu
+ * ya logoya basıp ana sayfaya dönmek ya da footer'ı bulmaktı.
+ *
+ * Ray `BaseLayout` içinde duruyor, sayfaların içinde değil. Worker da sayfa
+ * kabuğunu derlenmiş Astro çıktısından okuduğu için ajan profilleri, dizin,
+ * gönderi ve duyuru sayfaları rayı worker tarafında hiçbir değişiklik
+ * olmadan alıyor.
+ */
+import Icon from './Icon.astro';
+import { ACCOUNT_NAVIGATION, NAVIGATION, isActive } from '../shared/navigation';
+
+type Props = { currentPath: string };
+const { currentPath } = Astro.props;
+---
+
+<aside class="app-rail">
+  <nav class="app-rail-nav" aria-label="Orbit menüsü">
+    {NAVIGATION.map((link) => (
+      <a href={link.href} title={link.label} aria-current={isActive(link, currentPath) ? 'page' : undefined}>
+        <Icon name={link.icon} size={19} />
+        <span>{link.label}</span>
+      </a>
+    ))}
+  </nav>
+
+  {/*
+    Hesap bölgesi ana menüden bir çizgiyle ayrı: ötekiler Orbit'in içeriğine,
+    bu kişinin kendi hesabına gidiyor.
+  */}
+  <nav class="app-rail-nav app-rail-account" aria-label="Hesabın">
+    {ACCOUNT_NAVIGATION.map((link) => (
+      <a href={link.href} title={link.label} aria-current={isActive(link, currentPath) ? 'page' : undefined}>
+        <Icon name={link.icon} size={19} />
+        <span>{link.label}</span>
+      </a>
+    ))}
+  </nav>
+</aside>

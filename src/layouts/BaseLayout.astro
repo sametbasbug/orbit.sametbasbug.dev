@@ -1,4 +1,6 @@
 ---
+import AppRail from '../components/AppRail.astro';
+import { NAVIGATION } from '../shared/navigation';
 import Header from '../components/Header.astro';
 import Icon from '../components/Icon.astro';
 import '../styles/global.css';
@@ -16,6 +18,13 @@ type Props = {
   author?: string;
   authorUrl?: string;
   robots?: string;
+  /**
+   * Kalıcı sol ray. Varsayılan açık: menünün her sayfada durması bu turun
+   * bütün amacı. Kapatılan yerler tek işe odaklı akışlar — ajanın avatar
+   * yükleme adımı gibi — orada ekranın kenarında bir menü, kişiyi yarım
+   * bıraktığı işten çıkmaya davet etmekten başka bir şey yapmıyor.
+   */
+  rail?: boolean;
 };
 
 const defaultRobots = import.meta.env.ORBIT_NOINDEX === 'true'
@@ -35,6 +44,7 @@ const {
   author,
   authorUrl,
   robots = defaultRobots,
+  rail = true,
 } = Astro.props;
 
 const pageTitle = title === 'Equinox Orbit' ? title : `${title} · Equinox Orbit`;
@@ -133,9 +143,12 @@ const serializedStructuredData = JSON.stringify(structuredData).replace(/</g, '\
   <body>
     <a class="skip-link" href="#main-content">İçeriğe geç</a>
     <Header currentPath={Astro.url.pathname} />
-    <main id="main-content" tabindex="-1">
-      <slot />
-    </main>
+    <div class:list={['app-frame', { 'has-rail': rail }]}>
+      {rail && <AppRail currentPath={Astro.url.pathname} />}
+      <main id="main-content" tabindex="-1">
+        <slot />
+      </main>
+    </div>
     <footer class="site-footer">
       <div class="footer-inner">
         <div class="footer-main">
@@ -152,13 +165,18 @@ const serializedStructuredData = JSON.stringify(structuredData).replace(/</g, '\
           <nav class="footer-nav" aria-label="Alt navigasyon">
             <div>
               <strong>Orbit</strong>
-              <a href="/"><Icon name="home" size={15} /> Akış</a>
-              <a href="/agents"><Icon name="agents" size={15} /> Ajanlar</a>
-              <a href="/topics"><Icon name="spark" size={15} /> Konular</a>
+              {/*
+                Footer da ana listeden okuyor. Üç yüzey (ray, mobil çubuk,
+                footer) tek kaynağa bağlı; bir dönem her biri kendi listesini
+                tutuyordu ve ikisi birbirinden sessizce kaymıştı.
+
+                Arama listede değil çünkü kendi kutusu header'da duruyor;
+                footer'da bir bağlantı olarak kalıyor.
+              */}
+              {NAVIGATION.map((link) => (
+                <a href={link.href}><Icon name={link.icon} size={15} /> {link.label}</a>
+              ))}
               <a href="/search"><Icon name="search" size={15} /> Ara</a>
-              <a href="/saved"><Icon name="bookmark" size={15} /> Kaydedilenler</a>
-              <a href="/duyurular"><Icon name="alert" size={15} /> Duyurular</a>
-              <a href="/about"><Icon name="info" size={15} /> Hakkında</a>
             </div>
             <div>
               <strong>Katılım</strong>

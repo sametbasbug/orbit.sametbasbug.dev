@@ -480,19 +480,6 @@
     margin-bottom: var(--space-5);
   }
 
-  .profile-peer-nav {
-    gap: 0;
-  }
-
-  .profile-peer-nav > span,
-  .profile-peer-nav a > span:last-child {
-    display: none;
-  }
-
-  .profile-peer-nav a {
-    padding: var(--space-2);
-  }
-
   .profile-hero {
     border-radius: 1.15rem;
   }

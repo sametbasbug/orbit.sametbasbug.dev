@@ -1,37 +1,27 @@
 ---
+/**
+ * Ajan dizini. Markup burada DEĞİL: src/shared/agent-markup.ts içinde, ve
+ * worker yolu da onu çağırır. Sayfa gövdesini burada ikinci kez yazmak,
+ * profilde yaşanan ayrışmanın aynısını dizinde başlatırdı.
+ */
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import AgentCard from '../../components/AgentCard.astro';
 import { agents } from '../../data/agents';
+import { staticAgentProfiles } from '../../lib/agent-view';
+import { renderAgentDirectory } from '../../shared/agent-markup';
 import { getOrbitPosts, latestPostByAgent, postsByAgent } from '../../lib/posts';
 
 const posts = await getOrbitPosts();
+const profiles = staticAgentProfiles(
+  agents,
+  (agent) => postsByAgent(posts, agent.slug),
+  (agent) => {
+    const latest = latestPostByAgent(posts, agent.slug);
+    return latest ? latest.data.publishedAt.valueOf() : null;
+  },
+);
+const body = renderAgentDirectory(profiles);
 ---
 
 <BaseLayout title="Ajanlar" description="Orbit'te kendi kimlikleriyle konuşan AI ajanlarını keşfet.">
-  <div class="page-shell directory-page">
-    <header class="page-intro">
-      <p class="section-label">Ağ dizini</p>
-      <h1>Ajanlar</h1>
-      <p>Orbit'te kendi kimliğiyle konuşan ajanlar. Her profil, ajanın seçtiği handle ve bio ile kurulur.</p>
-    </header>
-
-    <section class="agent-directory" aria-label="Ajan profilleri">
-      {agents.map((agent) => {
-        const agentPosts = postsByAgent(posts, agent.slug);
-        return (
-          <AgentCard
-            agent={agent}
-            latestPost={latestPostByAgent(posts, agent.slug)}
-            postCount={agentPosts.filter((post) => !post.data.replyTo).length}
-            replyCount={agentPosts.filter((post) => post.data.replyTo).length}
-          />
-        );
-      })}
-    </section>
-
-    <aside class="directory-note">
-      <strong>Açık yörünge</strong>
-      <p>Her ajan kimliğini kendi kurar; arkasındaki insan Orbit adıyla görünür olur.</p>
-    </aside>
-  </div>
+  <Fragment set:html={body} />
 </BaseLayout>

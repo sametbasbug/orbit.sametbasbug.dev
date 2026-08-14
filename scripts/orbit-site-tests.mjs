@@ -628,12 +628,14 @@ for (const agent of AGENTS) {
   check(fs.existsSync(profileFile), `Ajan profil rotası build çıktısında yok: ${agent}`);
   if (!fs.existsSync(profileFile)) continue;
   const profileHtml = fs.readFileSync(profileFile, 'utf8');
-  const peerNavHtml = profileHtml.match(/<nav class="profile-peer-nav"[\s\S]*?<\/nav>/)?.[0] ?? '';
+
   check(profileHtml.includes(`data-agent-profile="${agent}"`), `Ajan profil kimliği eksik: ${agent}`);
   check(profileHtml.includes('class="profile-hero"'), `Ajan kimlik sahnesi eksik: ${agent}`);
   check(profileHtml.includes('class="profile-dossier"'), `Ajan dosyası eksik: ${agent}`);
   check(profileHtml.includes(`<h1 id="profile-title">@${agent}</h1>`), `Ajan profili @handle göstermiyor: ${agent}`);
-  check((peerNavHtml.match(/ profiline git/g) ?? []).length === AGENTS.length - 1, `Ajanlar arası geçiş eksik: ${agent}`);
+  /* "Diğer ajanlar" gezinmesi kaldırıldı: yalnız statik yolda vardı, worker
+   * yolunda hiç yoktu, yani canlıda hiçbir zaman görünmedi. Yerelde durması
+   * yerelin canlıyı temsil etmemesi demekti. */
   check(!profileHtml.includes('href="/projects'), `Ajan profili kaldırılan Projeler yüzeyine bağlanıyor: ${agent}`);
 }
 for (const agent of ['nyx', 'hemera', 'selene', 'asteria']) {
@@ -801,7 +803,10 @@ check(
  * biri koparsa moderatör ya tuşu hiç görmez ya da gördüğü tuş bir şey
  * yapmaz — ikisi de sessiz arızalar. */
 const agentModerationScript = fs.readFileSync(path.join(ROOT, 'src', 'scripts', 'agent-moderation.js'), 'utf8');
-const agentHtml = fs.readFileSync(path.join(ROOT, 'src', 'server', 'public', 'agent-html.ts'), 'utf8');
+/* Profil markup'ı artık paylaşılan kaynakta; server/public/agent-html.ts
+ * yalnız yeniden dışa aktarıyor. Yolu güncellemek yerine eski dosyayı
+ * okumaya devam etmek, bu kontrolleri sessizce boşa düşürürdü. */
+const agentHtml = fs.readFileSync(path.join(ROOT, 'src', 'shared', 'agent-markup.ts'), 'utf8');
 const apiSource = fs.readFileSync(path.join(ROOT, 'src', 'server', 'http', 'api.ts'), 'utf8');
 check(
   fs.readFileSync(path.join(ROOT, 'src', 'layouts', 'BaseLayout.astro'), 'utf8')

@@ -170,49 +170,6 @@
   color: var(--orbit-blue);
 }
 
-.profile-peer-nav,
-.profile-peer-nav > div,
-.profile-peer-nav a {
-  display: flex;
-  align-items: center;
-}
-
-.profile-peer-nav {
-  gap: var(--space-6);
-}
-
-.profile-peer-nav > span {
-  color: var(--faint);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-}
-
-.profile-peer-nav > div {
-  gap: var(--space-3);
-}
-
-.profile-peer-nav a {
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-2);
-  border: 1px solid transparent;
-  border-radius: 999px;
-  color: var(--muted);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-decoration: none;
-  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
-}
-
-.profile-peer-nav a:hover {
-  color: var(--ink);
-  border-color: color-mix(in srgb, var(--agent-accent) 25%, var(--line));
-  background: var(--surface);
-}
-
-.profile-peer-nav .avatar-tiny {
-  width: 1.55rem;
-  height: 1.55rem;
-}
 
 .profile-hero {
   display: grid;

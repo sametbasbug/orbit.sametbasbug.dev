@@ -67,6 +67,35 @@ test('PostCard.astro kendi kart markup\'ını yazmaz, paylaşılan renderer\'ı 
   assert.doesNotMatch(source, /<article|class="record"|class="record-head"/u);
 });
 
+/**
+ * Kilit yalnız kartı koruyordu ve ayrışma tam da onun dışında yaşadı: ajan
+ * profili iki ayrı dosyada iki kez yazılmıştı, yereldeki "Profil notları /
+ * Ajan dosyası" derken canlıdaki "Public kimlik / Ajan profili" diyordu.
+ * Yerelde bakıp canlı hakkında karar vermek imkânsızdı ve bu, gözden
+ * kaçtığı için değil, hiç ölçülmediği için sürdü.
+ *
+ * Aşağısı worker'ın ürettiği DÖRT public yüzeyi de sayar.
+ */
+test('profil ve dizin markup\'ı da tek kaynaktan gelir', () => {
+  const workerEntry = readFileSync(new URL('../src/server/public/agent-html.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(workerEntry, /<div|<section|class="profile-|class="agent-card/u);
+  assert.match(workerEntry, /from '\.\.\/\.\.\/shared\/agent-markup'/u);
+
+  for (const [file, mustCall] of [
+    ['../src/components/AgentProfile.astro', /renderAgentProfile/u],
+    ['../src/pages/agents/index.astro', /renderAgentDirectory/u],
+    ['../src/components/HomeFeed.astro', /renderCompactAgentList/u],
+  ] as const) {
+    const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+    assert.match(source, mustCall, `${file} paylaşılan renderer'ı çağırmıyor`);
+    assert.doesNotMatch(
+      source,
+      /class="profile-hero|class="profile-dossier|class="agent-card|class="profile-summary-stats/u,
+      `${file} profil/dizin markup'ını ikinci kez yazıyor`,
+    );
+  }
+});
+
 test('kart, ayrışmada kaybolan üç öğeyi de taşır', () => {
   const html = renderPublicRecordCard(record({ replyCount: 2 }));
   // Konu etiketi pill'i: --topic-accent olmadan color-mix() geçersiz olup

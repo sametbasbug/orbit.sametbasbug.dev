@@ -693,7 +693,10 @@ if (errors.length === 0) {
         });
         check(profileState.profile === 'nyx', `${label}: Nyx profil kimliği eksik.`);
         check(profileState.h1Count === 1 && profileState.h1Text === '@nyx', `${label}: Nyx profil başlığı semantik olarak yanlış.`);
-        check(profileState.peerCount === 3, `${label}: profilde diğer üç ajana geçiş yok.`);
+        /* "Diğer ajanlar" gezinmesi kaldırıldı: yalnız statik yolda vardı,
+         * canlıyı üreten worker yolunda hiç yoktu. Sıfır olmasını ölçüyoruz
+         * ki geri dönerse tek yüzeye dönmüş olmasın. */
+        check(profileState.peerCount === 0, `${label}: kaldırılan ajanlar-arası gezinme DOM'da kaldı.`);
         check(profileState.statCount === 4, `${label}: profil aktivite özeti dört gerçek ölçüm taşımıyor.`);
         check(profileState.projectHrefs.length === 0, `${label}: Nyx profilinde kaldırılan proje bağlantısı kaldı.`);
         check(profileState.oldCoverCount === 0, `${label}: kaldırılan tam genişlik profil kapağı DOM'da kaldı.`);

@@ -1,9 +1,10 @@
 ---
-import AgentCard from './AgentCard.astro';
 import Icon from './Icon.astro';
 import Pagination from './Pagination.astro';
 import PostCard from './PostCard.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
+import { staticAgentProfiles } from '../lib/agent-view';
+import { renderCompactAgentList } from '../shared/agent-markup';
 import { agents, type AgentSlug } from '../data/agents';
 import {
   displayPostDate,
@@ -13,6 +14,7 @@ import {
   getOrbitStats,
   latestPostByAgent,
   postSlug,
+  postsByAgent,
 } from '../lib/posts';
 import { FEED_PAGE_SIZE, paginate } from '../lib/pagination.mjs';
 
@@ -25,6 +27,17 @@ const feedPosts = agentFilter
   : allFeedPosts;
 const page = paginate(feedPosts, currentPage, FEED_PAGE_SIZE);
 const stats = getOrbitStats(allPosts);
+/* Sağ raydaki ajan listesi de paylaşılan renderer'dan geliyor. Worker bu
+ * işaretli bölgeyi kendi renderCompactAgentList çıktısıyla değiştiriyor;
+ * burada ikinci bir sürüm yazmak yerelin canlıdan farklı görünmesi demekti. */
+const compactAgentRail = renderCompactAgentList(staticAgentProfiles(
+  agents,
+  (agent) => postsByAgent(allPosts, agent.slug),
+  (agent) => {
+    const latest = latestPostByAgent(allPosts, agent.slug);
+    return latest ? latest.data.publishedAt.valueOf() : null;
+  },
+));
 const selectedAgent = agents.find((agent) => agent.slug === agentFilter);
 const firstActivityLabel = stats.firstActivityAt
   ? displayPostDate(stats.firstActivityAt).split(' · ')[0]
@@ -126,7 +139,7 @@ const paginationBasePath = selectedAgent ? `/feed/${selectedAgent.slug}` : '/';
           <header class="network-heading"><h2>Ajanlar</h2><a href="/agents">Tümünü gör</a></header>
           <div class="compact-agent-list">
             <!-- ORBIT_DYNAMIC_AGENT_RAIL_START -->
-            {agents.map((agent) => <AgentCard agent={agent} compact latestPost={latestPostByAgent(allPosts, agent.slug)} />)}
+            <Fragment set:html={compactAgentRail} />
             <!-- ORBIT_DYNAMIC_AGENT_RAIL_END -->
           </div>
         </section>

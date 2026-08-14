@@ -631,6 +631,44 @@ if (errors.length === 0) {
         check(!(await page.locator('.header-mobile-search').isVisible()), `${label}: mobil arama düğmesi masaüstünde görünür kaldı.`);
       }
 
+      /* Duyuru ikonu ve alt sayfası.
+       *
+       * İkon yalnız dar ekranda: masaüstünde sol raydaki "Duyurular" ve ana
+       * sayfanın sağ kolonundaki panel aynı işi yapıyor.
+       *
+       * İçeriğin kendisi burada YOK ve olmaması doğru: duyurular D1'de
+       * yaşıyor, bu testler statik derlemeye bakıyor ve `/duyurular/ozet`
+       * isteği burada 404 dönüyor. Ölçtüğümüz şey iskelet — ikonun doğru
+       * genişlikte durduğu, sayfanın açılıp kapandığı ve istek başarısız
+       * olduğunda bağlantının bağlantı olarak kaldığı. */
+      const announceTrigger = page.locator('[data-announcement-trigger]');
+      check(await announceTrigger.count() === 1, `${label}: duyuru ikonu DOM'da yok.`);
+      check(
+        await announceTrigger.isVisible() === (viewport.width <= 780),
+        `${label}: duyuru ikonu yanlış genişlikte görünüyor.`,
+      );
+      check(
+        await announceTrigger.getAttribute('href') === '/duyurular',
+        `${label}: duyuru ikonu JS'siz hâlde duyurular sayfasına gitmiyor.`,
+      );
+      if (viewport.width <= 780) {
+        const sheetDialog = page.locator('[data-announcement-sheet]');
+        check(!(await sheetDialog.evaluate((el) => el.open)), `${label}: duyuru sayfası kendiliğinden açık geldi.`);
+        await announceTrigger.click();
+        check(await sheetDialog.evaluate((el) => el.open), `${label}: duyuru sayfası tıklamayla açılmadı.`);
+        check(
+          new URL(page.url()).pathname !== '/duyurular',
+          `${label}: duyuru ikonu sayfayı yerinde açmak yerine gezindi.`,
+        );
+        const sheetBox = await sheetDialog.boundingBox();
+        check(
+          Boolean(sheetBox) && Math.abs(sheetBox.y + sheetBox.height - viewport.height) <= 1,
+          `${label}: duyuru sayfası ekranın altına yapışmadı.`,
+        );
+        await page.keyboard.press('Escape');
+        check(!(await sheetDialog.evaluate((el) => el.open)), `${label}: duyuru sayfası Escape ile kapanmadı.`);
+      }
+
       check(await page.locator('html').getAttribute('data-theme') === 'light', `${label}: başlangıç teması light değil.`);
       await page.locator('[data-theme-toggle]').click();
       check(await page.locator('html').getAttribute('data-theme') === 'dark', `${label}: tema dark durumuna geçmedi.`);
@@ -933,7 +971,11 @@ if (errors.length === 0) {
         check(await page.locator('h1').first().textContent() === 'Duyurular', `${label}: duyurular sayfası başlığı yok.`);
         check(await page.locator('.announcement-empty').isVisible(), `${label}: duyurular sayfasında boş hâl görünmüyor.`);
         check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: duyurular sayfası yatay taşıyor.`);
-        check(await page.locator('.announcement-strip').count() === 0, `${label}: duyuru yokken şerit basılmış.`);
+        /* Şerit kalktı: duyuruları ana sayfada sağ kolondaki panel, dar
+         * ekranda header'daki ikon taşıyor. Markup'ının geri sızmadığını
+         * ölçmeye devam ediyoruz — geri gelirse akışın tepesinde ikinci bir
+         * duyuru yüzeyi olur. */
+        check(await page.locator('.announcement-strip').count() === 0, `${label}: kaldırılan duyuru şeridi geri gelmiş.`);
       }
       await context.close();
     }));

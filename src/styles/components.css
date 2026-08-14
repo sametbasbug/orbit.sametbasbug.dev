@@ -1469,3 +1469,134 @@
   color: var(--faint);
   font-size: var(--text-2xs);
 }
+
+
+/* Duyuru ikonu ve alt sayfası.
+ *
+ * İkon yalnız dar ekranda: masaüstünde sol raydaki "Duyurular" ve ana
+ * sayfanın sağ kolonundaki panel aynı işi yapıyor, üçü birden aynı ekranda
+ * durursa aynı şeyin üç kopyası olur. */
+.header-announcements {
+  display: none;
+  position: relative;
+}
+
+/* İki ikon da DOM'da; hangisinin görüneceğine sunucudan gelen şiddet karar
+   veriyor. Varsayılan bilgi ikonu: istek dönene kadar ekranda uyarı üçgeni
+   durmasın — henüz bilmediğimiz bir şey için alarm vermek yanlış. */
+.header-announcements .announcement-icon-alert {
+  display: none;
+}
+
+.header-announcements[data-severity="warning"] .announcement-icon-info,
+.header-announcements[data-severity="critical"] .announcement-icon-info {
+  display: none;
+}
+
+.header-announcements[data-severity="warning"] .announcement-icon-alert,
+.header-announcements[data-severity="critical"] .announcement-icon-alert {
+  display: block;
+}
+
+.header-announcements[data-severity="warning"] {
+  color: var(--warning-ink);
+}
+
+.header-announcements[data-severity="critical"] {
+  color: var(--danger-ink);
+}
+
+/* Okunmamış işareti. Sayı değil nokta: "3 duyuru" ile "duyuru var" arasında
+   davranış farkı yok, ikisinde de açıp okuyorsun. */
+.header-announcements-dot {
+  display: none;
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+  background: var(--danger-ink);
+}
+
+.header-announcements[data-unread] .header-announcements-dot {
+  display: block;
+}
+
+/* Alt sayfa. Ekranın altına yapışıyor çünkü başparmak orada; üstten açılan
+   bir panel telefonda erişilemeyen köşede kalır. */
+.announcement-sheet {
+  width: 100%;
+  max-width: 100%;
+  max-height: 82vh;
+  margin: 0 0 auto;
+  padding: 0;
+  position: fixed;
+  inset: auto 0 0;
+  border: 0;
+  border-radius: 1.2rem 1.2rem 0 0;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 -12px 40px rgba(31, 40, 72, 0.22);
+  overflow: hidden;
+}
+
+.announcement-sheet::backdrop {
+  background: rgba(18, 24, 40, 0.45);
+}
+
+.announcement-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: var(--space-10) var(--space-10) var(--space-6);
+  border-bottom: 1px solid var(--line);
+}
+
+.announcement-sheet-head h2 {
+  margin: 0;
+  font-size: var(--text-base);
+  letter-spacing: var(--tracking-tight);
+}
+
+.announcement-sheet-head button {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+/* Chevron sağa bakar; aşağı çevriliyor çünkü sayfa aşağı kapanıyor. */
+.announcement-sheet-head button > .icon {
+  transform: rotate(90deg);
+}
+
+/* Kartlar `data-announcement-state`in içinden buraya doğrudan taşınıyor, o
+   yüzden aradaki boşluk sarmalayıcıdan gelmiyor: ızgara burada kuruluyor.
+   Panelde bunu `.announcement-panel-list` yapıyor. */
+.announcement-sheet-body {
+  display: grid;
+  max-height: 54vh;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-10) var(--space-10);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.announcement-sheet-all {
+  display: block;
+  padding: var(--space-8) var(--space-10) max(var(--space-10), env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  color: var(--link);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  text-align: center;
+  text-decoration: none;
+}

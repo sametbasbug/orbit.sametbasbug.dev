@@ -125,7 +125,13 @@
     display: none;
   }
 
-  .header-mobile-search {
+  /* Arama ve duyuru aynı nesne: header'ın kenarındaki hap. Ölçüyü tek
+     bildirimde tutuyoruz. Bu, geçen turda üç kez ısıran "sınıf ödünç alma"
+     değil — orada bir menü, bir gezinme RAYININ sınıfını alıp onun bağlama
+     bağlı kurallarını da miras alıyordu. Burada iki kardeş aynı yerde, aynı
+     bağlamda ve gerçekten aynı görünüyor. */
+  .header-mobile-search,
+  .header-announcements {
     width: 2.5rem;
     min-height: 2.5rem;
     display: inline-flex;

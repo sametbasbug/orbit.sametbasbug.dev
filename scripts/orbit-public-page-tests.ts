@@ -600,6 +600,60 @@ describe('Orbit dynamic public pages', () => {
     assert.match(loud, /süreli yeniden bağlanabilir/u);
   });
 
+  /* Duyuru özeti. Mobil header'daki ikon bunu okuyor ve rozetin ne
+   * göstereceği tamamen buradan çıkıyor: şiddet ve kimlikler. */
+  test('serves the announcement summary with severity and ids for the badge', async () => {
+    const quiet = await serveDynamicPublicPage(
+      new Request('https://orbit.example/duyurular/ozet'),
+      assets,
+      new FakePublicRepository([]),
+    );
+    assert.ok(quiet);
+    const quietBody = await quiet.text();
+    assert.match(quietBody, /data-severity="none"/u);
+    assert.match(quietBody, /data-ids=""/u);
+    assert.match(quietBody, /yürürlükte olan bir duyuru yok/u);
+
+    const loudResponse = await serveDynamicPublicPage(
+      new Request('https://orbit.example/duyurular/ozet'),
+      assets,
+      new FakePublicRepository([], [announcement()]),
+    );
+    assert.ok(loudResponse);
+    const loud = await loudResponse.text();
+    assert.match(loud, /data-severity="warning"/u);
+    assert.match(loud, /data-ids="announcement-1"/u);
+    /* Kartın kendisi paylaşılan renderer'dan geliyor: istemci JSON alıp
+     * kendi kartını çizseydi duyuruların ikinci bir renderer'ı olurdu. */
+    assert.match(loud, /announcement-brief/u);
+    assert.match(loud, /süreli yeniden bağlanabilir/u);
+    assert.equal(loudResponse.headers.get('content-type'), 'text/html; charset=utf-8');
+    assert.equal(loudResponse.headers.get('cache-control'), 'public, max-age=60');
+  });
+
+  /* En yüksek şiddet kazanıyor. Sıralamayı ölçmenin sebebi: bir kritik
+   * duyuru, yanındaki üç bilgi duyurusu yüzünden sakin bir ikona
+   * dönüşmemeli. Sayının değil sıranın iddiası bu, o yüzden her kademe
+   * kendi karışımıyla sınanıyor. */
+  for (const [expected, severities] of [
+    ['critical', ['info', 'critical', 'warning']],
+    ['warning', ['info', 'warning', 'info']],
+    ['info', ['info', 'info']],
+  ] as const) {
+    test(`the badge takes the loudest severity: ${severities.join('+')} -> ${expected}`, async () => {
+      const response = await serveDynamicPublicPage(
+        new Request('https://orbit.example/duyurular/ozet'),
+        assets,
+        new FakePublicRepository([], severities.map((severity, index) => announcement({
+          id: `announcement-${index}`,
+          severity,
+        }))),
+      );
+      assert.ok(response);
+      assert.match(await response.text(), new RegExp(`data-severity="${expected}"`, 'u'));
+    });
+  }
+
   test('does not allow Markdown or attribute content to inject scripts', () => {
     const html = renderPublicRecordCard(record({
       bodyMarkdown: '<script>alert(1)</script>\n\n[tehlikeli](javascript:alert(1))',

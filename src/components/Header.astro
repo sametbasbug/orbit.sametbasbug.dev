@@ -114,6 +114,26 @@ const searchQuery = Astro.url.searchParams.get('q') ?? '';
       <a class:list={['header-mobile-search', { active: normalizedPath === '/search' }]} href="/search" aria-label="Orbit'te ara" aria-current={normalizedPath === '/search' ? 'page' : undefined}>
         <Icon name="search" size={17} />
       </a>
+      {/*
+        Duyuru ikonu yalnız dar ekranda. Masaüstünde iki yol zaten var: sol
+        raydaki "Duyurular" ve ana sayfanın sağ kolonundaki panel. Mobilde
+        ikisi de yok — ray gizli, panel akışın en altına düşüyor — ve
+        "Duyurular" alt çubuğun "Diğer" menüsünde, iki dokunuş ve bir sayfa
+        yüklemesi uzakta.
+
+        Bir bağlantı, düğme değil: JavaScript inmeden de çalışıyor ve
+        `/duyurular` sayfasına götürüyor. Script indiğinde tıklamayı devralıp
+        sayfayı yerinde açıyor.
+
+        İki ikon birden basılıyor, hangisinin görüneceğine `data-severity`
+        karar veriyor. Alternatif, istemcinin ikonu kendi çizmesiydi — o da
+        ikon yollarının ikinci bir kopyası demekti.
+      */}
+      <a class="header-announcements" href="/duyurular" data-announcement-trigger aria-label="Duyurular">
+        <Icon name="info" size={17} className="announcement-icon-info" />
+        <Icon name="alert" size={17} className="announcement-icon-alert" />
+        <span class="header-announcements-dot" aria-hidden="true"></span>
+      </a>
       <ThemeToggle />
       <a class="equinox-link" href="https://equinox.sametbasbug.dev">
         <span class="equinox-link-dot" aria-hidden="true"></span>
@@ -122,6 +142,28 @@ const searchQuery = Astro.url.searchParams.get('q') ?? '';
       </a>
     </div>
   </div>
+
+  {/*
+    Duyuru sayfası. `<dialog>` bilerek: odak tuzağı, Escape ile kapanma ve
+    arka planın erişilemez olması tarayıcıdan geliyor — üçünü elle yazmak
+    üçünü de yanlış yazma fırsatı demek.
+
+    İçi boş geliyor ve `/duyurular/ozet`ten doluyor. Kabuğa gömmek, duyuru
+    markup'ını her sayfanın HTML'ine eklemek olurdu ve o sayfaların çoğu
+    worker'dan hiç geçmiyor.
+  */}
+  <dialog class="announcement-sheet" data-announcement-sheet aria-labelledby="announcement-sheet-title">
+    <header class="announcement-sheet-head">
+      <h2 id="announcement-sheet-title">Duyurular</h2>
+      <button type="button" data-announcement-close aria-label="Kapat">
+        <Icon name="chevron" size={18} />
+      </button>
+    </header>
+    <div class="announcement-sheet-body" data-announcement-sheet-body>
+      <p class="announcement-panel-empty">Duyurular yükleniyor…</p>
+    </div>
+    <a class="announcement-sheet-all" href="/duyurular">Duyurular sayfasını aç</a>
+  </dialog>
 </header>
 
 <style>
@@ -139,6 +181,77 @@ const searchQuery = Astro.url.searchParams.get('q') ?? '';
 </style>
 
 <script>
+  /* Duyuru rozeti ve sayfası.
+   *
+   * Yalnız ikonun görünür olduğu genişlikte çalışıyor: masaüstünde ikon
+   * gizli ve o istek boşuna gider.
+   *
+   * Okundu bilgisi `localStorage`'da, kimliklerle. Sunucuda tutmuyoruz —
+   * ziyaretçi anonim ve bir rozet için hesap açtırmanın anlamı yok. Kimlikle
+   * saklamanın sebebi sayıyla saklamamak: geri çekilen bir duyuru sayıyı
+   * düşürüyor ve "3 okundu" kaydı yeni duyuruyu okunmuş sayıyordu. */
+  const trigger = document.querySelector<HTMLAnchorElement>('[data-announcement-trigger]');
+  const sheetDialog = document.querySelector<HTMLDialogElement>('[data-announcement-sheet]');
+  const sheetBody = document.querySelector<HTMLElement>('[data-announcement-sheet-body]');
+
+  if (trigger && sheetDialog && sheetBody && getComputedStyle(trigger).display !== 'none') {
+    const READ_KEY = 'orbit-announcements-read';
+
+    const readIds = (): Set<string> => {
+      try {
+        return new Set((localStorage.getItem(READ_KEY) ?? '').split(',').filter(Boolean));
+      } catch {
+        return new Set();
+      }
+    };
+
+    let currentIds: string[] = [];
+
+    void (async () => {
+      try {
+        const response = await fetch('/duyurular/ozet', { headers: { accept: 'text/html' } });
+        if (!response.ok) return;
+        const template = document.createElement('template');
+        template.innerHTML = await response.text();
+        const state = template.content.querySelector<HTMLElement>('[data-announcement-state]');
+        if (!state) return;
+
+        currentIds = (state.dataset.ids ?? '').split(',').filter(Boolean);
+        trigger.dataset.severity = state.dataset.severity ?? 'none';
+        sheetBody.replaceChildren(...state.childNodes);
+
+        const seen = readIds();
+        const unread = currentIds.filter((id) => !seen.has(id));
+        if (unread.length > 0) trigger.dataset.unread = String(unread.length);
+      } catch {
+        /* Ağ yoksa bağlantı bağlantı olarak kalıyor: tıklayan `/duyurular`
+           sayfasına gider. Sessiz başarısızlık burada doğru davranış —
+           duyuru rozeti bir hata mesajı göstermeye değecek kadar kritik
+           değil ve gösterse her çevrimdışı sekmede bağırırdı. */
+      }
+    })();
+
+    trigger.addEventListener('click', (event) => {
+      /* Yeni sekmede açmak isteyen kişinin niyetini çalmıyoruz. */
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+      if (!sheetDialog.showModal) return;
+      event.preventDefault();
+      sheetDialog.showModal();
+      delete trigger.dataset.unread;
+      try {
+        localStorage.setItem(READ_KEY, currentIds.join(','));
+      } catch {}
+    });
+
+    sheetDialog.querySelector('[data-announcement-close]')?.addEventListener('click', () => sheetDialog.close());
+    /* Sayfanın dışına — yani karartmaya — basmak da kapatıyor. `<dialog>`
+       tıklamayı kendi kutusunda alıyor, o yüzden hedefin diyalogun kendisi
+       olması "boşluğa basıldı" demek. */
+    sheetDialog.addEventListener('click', (event) => {
+      if (event.target === sheetDialog) sheetDialog.close();
+    });
+  }
+
   /* `<details>` dışarı tıklanınca kendiliğinden kapanmıyor. Menü açık kalıp
      sayfanın üstünde durursa, kişi onu kapatmak için tam da az önce bastığı
      düğmeyi bulmak zorunda kalıyor. Escape de kapatıyor. */

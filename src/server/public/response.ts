@@ -208,6 +208,46 @@ async function renderFeedRoute(
   return htmlResponse(shell, html, request.method === 'HEAD');
 }
 
+/**
+ * Duyuruların HTML parçası. Mobil header'daki ikon ve açtığı sayfa bunu okur.
+ *
+ * Neden ayrı bir uç nokta: header her sayfada duruyor ama duyurular yalnız
+ * ana sayfa route'unda enjekte ediliyordu — ve `/about`, `/topics`, `/iletisim`
+ * gibi sayfalar worker'dan hiç geçmiyor, doğrudan statik dosya olarak
+ * gidiyorlar. Kabuğa enjekte etmek rozeti bazı sayfalarda var, bazılarında yok
+ * hâline getirirdi.
+ *
+ * JSON değil HTML dönüyor çünkü duyurunun görünüşü tek yerden gelmeli:
+ * istemci JSON alıp kendi kartını çizseydi duyuruların İKİNCİ bir renderer'ı
+ * doğardı ve ikisi zamanla ayrışırdı.
+ *
+ * Şiddet ve kimlikler öznitelikte: rozetin hangi ikonu göstereceği ve neyin
+ * okunmuş sayılacağı bunlardan çıkıyor. Okundu bilgisi istemcide duruyor —
+ * anonim ziyaretçi için sunucuda durum tutmuyoruz.
+ */
+async function renderAnnouncementSummaryRoute(repository: PublicRepository): Promise<Response> {
+  const announcements = await repository.listPublicAnnouncements(Date.now());
+  /* En yüksek şiddet kazanıyor: bir kritik duyuru, yanındaki üç bilgi
+   * duyurusu yüzünden sakin bir ikona dönüşmemeli. */
+  const severity = announcements.some((item) => item.severity === 'critical')
+    ? 'critical'
+    : announcements.some((item) => item.severity === 'warning')
+      ? 'warning'
+      : announcements.length > 0 ? 'info' : 'none';
+  const ids = announcements.map((item) => item.id).join(',');
+  const body = `<div data-announcement-state data-severity="${severity}" data-ids="${escapeHtml(ids)}">${renderAnnouncementPanel(announcements)}</div>`;
+  return new Response(body, {
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      /* Duyuru nadir değişir ve bu parça her sayfa açılışında isteniyor.
+       * Kenarda bir dakika tutmak yükü düşürüyor; bir dakikalık gecikme
+       * yürürlüğe girmiş bir duyuru için kabul edilebilir. */
+      'cache-control': 'public, max-age=60',
+      'x-content-type-options': 'nosniff',
+    },
+  });
+}
+
 async function renderAnnouncementsRoute(
   request: Request,
   assets: AssetsBinding,
@@ -339,6 +379,10 @@ export async function serveDynamicPublicPage(
   const feedMatch = url.pathname.match(/^\/feed\/([a-z0-9][a-z0-9-]{0,62})\/?$/u);
   if (feedMatch) {
     return await renderFeedRoute(request, assets, repository, feedMatch[1]);
+  }
+
+  if (url.pathname === '/duyurular/ozet') {
+    return await renderAnnouncementSummaryRoute(repository);
   }
 
   if (url.pathname === '/duyurular' || url.pathname === '/duyurular/') {

@@ -737,8 +737,14 @@ check(!savedHtml.includes('data-saved-card='), 'Kaydedilenler bütün kayıt kar
  * Tavanlar bu turdan ÖNCEKİ değerlerin üstüne kabuk maliyeti eklenerek
  * kuruldu — yani sayfanın kendi gövdesine tanınan pay değişmedi. Bugünkü
  * gövdeler 21_376 ve 20_608; eski tavanlar 24_000 ve 22_000 idi, o pay
- * olduğu gibi duruyor. */
-const SHELL_BUDGET = 3219 + 2631;
+ * olduğu gibi duruyor.
+ *
+ * Üçüncü kabuk parçası duyuru sayfası: tetikleyici 931, `<dialog>` 895, toplam
+ * 1826 byte. Yalnız dar ekranda kullanılıyor ama her sayfanın HTML'inde
+ * duruyor — kabuk tek ve viewport'a göre değişmiyor. Tetikleyicinin yarısı iki
+ * ikon: hangisinin görüneceğine şiddet karar veriyor ve alternatif, ikon
+ * yollarının istemcide ikinci bir kopyası olurdu. */
+const SHELL_BUDGET = 3219 + 2631 + 1826;
 check(
   searchHtml.length < 24_000 + SHELL_BUDGET,
   `Arama HTML bütçesi aşıldı: ${searchHtml.length} byte.`,
@@ -824,7 +830,12 @@ for (const post of publicPosts) {
  * Şu an en ağır sayfa /messages: 13.453 byte paylaşılan bundle + 1.094 byte
  * sayfaya özel, toplam 14.547. Akış ve gönderi sayfaları 13.453'te kalıyor.
  *
- * Tavan 15.500'den 15.600'e çıktı. Gerekçesi ölçülmüş: üç bölgeli yerleşim
+ * Tavan 15.600'den 15.850'ye çıktı: duyuru paneli ve mobil duyuru sayfası
+ * sıkıştırılmış CSS'e ekledi. Bu turda ölü `.announcement-strip` kuralları
+ * (1491 byte ham) silinerek bir kısmı geri kazanıldı — şerit renderer'ı
+ * kalktığı hâlde stilleri duruyordu.
+ *
+ * Bir önceki tur: tavan 15.500'den 15.600'e çıktı. Gerekçesi ölçülmüş: üç bölgeli yerleşim
  * (esneyen ray oluğu, 1480px bandı, header'ın çerçeveyle aynı ifadeyi
  * taşıması) sıkıştırılmış CSS'e 75 byte ekledi. Bu turda 34 byte ölü
  * `.context-rail` kuralı silinerek geri kazanıldı; kalanı yeni yapının
@@ -849,7 +860,7 @@ for (const file of htmlFiles) {
   if (gzip > heaviest.gzip) heaviest = { page: path.relative(DIST_DIR, file), raw, gzip };
 }
 check(heaviest.gzip > 0, 'Hiçbir sayfa derlenmiş CSS bundle\'ına bağlanmıyor.');
-check(heaviest.gzip < 15_600, `Gzip CSS bütçesi aşıldı: ${heaviest.page} ${heaviest.gzip} byte.`);
+check(heaviest.gzip < 15_850, `Gzip CSS bütçesi aşıldı: ${heaviest.page} ${heaviest.gzip} byte.`);
 check(heaviest.raw < 92_000, `Ham CSS emniyet sınırını aştı: ${heaviest.page} ${heaviest.raw} byte.`);
 
 /* Font bütçesi.

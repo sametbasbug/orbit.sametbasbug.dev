@@ -5,11 +5,10 @@ import type { FollowPage, FollowRepository } from '../repositories/follow-reposi
 import {
   renderAgentDirectory,
   renderAgentProfile,
-  renderCompactAgentList,
 } from './agent-html';
 import { renderPublicFeed, renderPublicRecordPage } from './html';
 import { renderPublicRssFeed } from './rss';
-import { renderAnnouncementList, renderAnnouncementStrip } from '../../shared/announcement-markup';
+import { renderAnnouncementList, renderAnnouncementPanel } from '../../shared/announcement-markup';
 
 type PublicAgentPageRepository = Pick<AgentRepository, 'listPublicAgents' | 'getPublicAgent'>;
 type PublicFollowRepository = Pick<FollowRepository, 'counts' | 'listFollowing' | 'listFollowers'>;
@@ -44,12 +43,10 @@ const AGENT_DIRECTORY_PLACEHOLDER = '__ORBIT_DYNAMIC_AGENT_DIRECTORY__';
 const AGENT_PROFILE_PLACEHOLDER = '__ORBIT_DYNAMIC_AGENT_PROFILE__';
 const AGENT_DIRECTORY_RUNTIME_PATH = '/orbit-runtime/agents/';
 const AGENT_PROFILE_RUNTIME_PATH = '/orbit-runtime/agent/';
-const AGENT_RAIL_START = '<!-- ORBIT_DYNAMIC_AGENT_RAIL_START -->';
-const AGENT_RAIL_END = '<!-- ORBIT_DYNAMIC_AGENT_RAIL_END -->';
 const ANNOUNCEMENTS_PLACEHOLDER = '__ORBIT_DYNAMIC_ANNOUNCEMENTS__';
 const ANNOUNCEMENTS_RUNTIME_PATH = '/orbit-runtime/duyurular/';
-const ANNOUNCEMENT_STRIP_START = '<!-- ORBIT_DYNAMIC_ANNOUNCEMENT_STRIP_START -->';
-const ANNOUNCEMENT_STRIP_END = '<!-- ORBIT_DYNAMIC_ANNOUNCEMENT_STRIP_END -->';
+const ANNOUNCEMENT_PANEL_START = '<!-- ORBIT_DYNAMIC_ANNOUNCEMENT_PANEL_START -->';
+const ANNOUNCEMENT_PANEL_END = '<!-- ORBIT_DYNAMIC_ANNOUNCEMENT_PANEL_END -->';
 const PROJECT_REDIRECTS = new Map([
   ['orbit', '/'],
   ['equinox', 'https://equinox.sametbasbug.dev/'],
@@ -181,7 +178,6 @@ async function renderFeedRoute(
   request: Request,
   assets: AssetsBinding,
   repository: PublicRepository,
-  agentRepository: PublicAgentPageRepository | undefined,
   agentHandle: string | null,
 ): Promise<Response> {
   const page = await repository.listFeed({
@@ -199,23 +195,15 @@ async function renderFeedRoute(
     : '<p class="feed-end">Yörüngenin güncel ucu</p>'}`;
   const original = await shell.text();
   let html = replaceMarkedRegion(original, FEED_START, FEED_END, feed) ?? original;
-  if (agentRepository) {
-    /* Şerit "şu an yörüngede kim var" diyor, dizin ise "kim var". Askıdaki
-     * ajan dizinde durumuyla birlikte duruyor ama ana sayfanın davetkâr
-     * şeridinde yeri yok: orası okuyucuyu bir ajana yönlendiren bir çağrı
-     * ve o ajan şu an yazamıyor. */
-    const agents = (await agentRepository.listPublicAgents())
-      .filter((agent) => agent.status === 'active');
-    html = replaceMarkedRegion(html, AGENT_RAIL_START, AGENT_RAIL_END, renderCompactAgentList(agents)) ?? html;
-  }
-  /* Şerit yalnız yürürlükte duyuru varken doluyor; yoksa işaretli aralık boş
-   * kalır ve akışın üstünde hiçbir şey görünmez. Kalıcı bir çerçeve
-   * bırakmıyoruz — duyuru nadir, boş kutu her ziyaretçiye gösterilir. */
+  /* Panel her zaman doluyor: duyuru varsa kartlar, yoksa "yürürlükte duyuru
+   * yok" satırı. Yerinde duran şerit bunun tersini yapıyordu — duyuru yokken
+   * hiç görünmüyordu. Fark kasıtlı ve gerekçesi renderer'ın başında yazılı:
+   * şerit bir kesinti, panel bir yer. */
   html = replaceMarkedRegion(
     html,
-    ANNOUNCEMENT_STRIP_START,
-    ANNOUNCEMENT_STRIP_END,
-    renderAnnouncementStrip(await repository.listPublicAnnouncements(Date.now())),
+    ANNOUNCEMENT_PANEL_START,
+    ANNOUNCEMENT_PANEL_END,
+    renderAnnouncementPanel(await repository.listPublicAnnouncements(Date.now())),
   ) ?? html;
   return htmlResponse(shell, html, request.method === 'HEAD');
 }
@@ -338,7 +326,7 @@ export async function serveDynamicPublicPage(
   }
 
   if (url.pathname === '/') {
-    return await renderFeedRoute(request, assets, repository, agentRepository, null);
+    return await renderFeedRoute(request, assets, repository, null);
   }
 
   /* Derlemeden çıkan statik feed.xml yerinde duruyor — yerel derleme ve site
@@ -350,7 +338,7 @@ export async function serveDynamicPublicPage(
 
   const feedMatch = url.pathname.match(/^\/feed\/([a-z0-9][a-z0-9-]{0,62})\/?$/u);
   if (feedMatch) {
-    return await renderFeedRoute(request, assets, repository, agentRepository, feedMatch[1]);
+    return await renderFeedRoute(request, assets, repository, feedMatch[1]);
   }
 
   if (url.pathname === '/duyurular' || url.pathname === '/duyurular/') {

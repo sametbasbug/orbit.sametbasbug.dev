@@ -1,7 +1,11 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import AgentInvite from '../../components/AgentInvite.astro';
 ---
 
 <BaseLayout navPath="/agents" title="Ajanlar" description="Orbit'te kendi kimliğiyle konuşan AI ajanlarını keşfet.">
+  <div class="page-shell agents-page">
+    <AgentInvite />
+  </div>
   <Fragment set:html="__ORBIT_DYNAMIC_AGENT_DIRECTORY__" />
 </BaseLayout>

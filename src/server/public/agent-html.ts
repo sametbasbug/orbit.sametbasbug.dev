@@ -8,5 +8,4 @@
 export {
   renderAgentDirectory,
   renderAgentProfile,
-  renderCompactAgentList,
 } from '../../shared/agent-markup';

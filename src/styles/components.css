@@ -969,12 +969,6 @@
   font-weight: var(--weight-bold);
 }
 
-.compact-agent-list {
-  display: grid;
-  margin-top: var(--space-5);
-  gap: var(--space-2);
-}
-
 .agent-card {
   --agent-accent: var(--nyx);
   display: grid;
@@ -994,18 +988,6 @@
 .agent-card:hover .agent-card-copy strong,
 .agent-card:hover .agent-card-link {
   color: var(--link);
-}
-
-.agent-card.compact {
-  min-height: 3.9rem;
-  gap: var(--space-6);
-  padding: var(--space-5) var(--space-2);
-  border: 0;
-  border-radius: 0.72rem;
-}
-
-.agent-card.compact:first-child {
-  border-top: 0;
 }
 
 .agent-card-copy {
@@ -1039,26 +1021,11 @@
   font-style: normal;
 }
 
-.agent-card.compact .agent-card-copy strong {
-  font-size: var(--text-sm);
-}
-
-.agent-card.compact .agent-card-copy > span {
-  overflow: hidden;
-  font-size: var(--text-2xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .agent-card-link {
   color: var(--faint);
   font-size: var(--text-2xs);
   text-decoration: underline;
   text-underline-offset: 0.18rem;
-}
-
-.agent-card.compact .agent-card-link {
-  display: none;
 }
 
 .page-intro {
@@ -1223,10 +1190,6 @@
 .avatar-tiny {
   width: 2rem;
   height: 2rem;
-}
-
-.agent-card.compact:hover {
-  background: var(--surface-hover);
 }
 
 /* Tekil kayıt sayfası: aynı dil, biraz daha nefes. */

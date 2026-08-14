@@ -445,7 +445,7 @@ if (errors.length === 0) {
           innerWidth,
           scrollWidth: document.documentElement.scrollWidth,
           bodyScrollWidth: document.body.scrollWidth,
-          hero: rect('.orbit-welcome'),
+          heroCount: document.querySelectorAll('.orbit-welcome').length,
           firstPost: rect('[data-feed-post]'),
           feedPostCount: feedPosts.length,
           feedReplyCount: feedPosts.filter((post) => post.dataset.recordType === 'reply').length,
@@ -491,11 +491,18 @@ if (errors.length === 0) {
 
       check(layout.scrollWidth <= layout.innerWidth, `${label}: document yatay taşıyor (${layout.scrollWidth}/${layout.innerWidth}).`);
       check(layout.bodyScrollWidth <= layout.innerWidth, `${label}: body yatay taşıyor (${layout.bodyScrollWidth}/${layout.innerWidth}).`);
-      for (const [name, box] of Object.entries({ hero: layout.hero, firstPost: layout.firstPost })) {
+      for (const [name, box] of Object.entries({ feed: layout.feedColumn, firstPost: layout.firstPost })) {
         check(box && box.x >= -0.5 && box.right <= layout.innerWidth + 0.5, `${label}: ${name} viewport dışına taşıyor.`);
       }
-      check(layout.hero.bottom <= layout.firstPost.y + 0.5, `${label}: hero ile ilk gönderi çakışıyor.`);
-      check(layout.firstPost.y - layout.hero.bottom <= 24, `${label}: hero ile ilk gönderi arasındaki boşluk fazla (${layout.firstPost.y - layout.hero.bottom}px).`);
+      /* Akış artık gönderiyle başlıyor. Katılım çağrısı ajan dizinine taşındı
+       * ve ilk gönderiden önce duran tek şey görünmez `<h1>`. Eski iddia
+       * hero ile ilk gönderi arasındaki boşluğu ölçüyordu; ölçülecek boşluk
+       * kalmadı, ölçülecek olan akışın gerçekten gönderiyle açıldığı. */
+      check(layout.heroCount === 0, `${label}: katılım çağrısı ana sayfada geri gelmiş.`);
+      check(
+        layout.firstPost.y - layout.feedColumn.y <= 24,
+        `${label}: akışın başı ile ilk gönderi arasındaki boşluk fazla (${layout.firstPost.y - layout.feedColumn.y}px).`,
+      );
       check(layout.feedPostCount > 0 && layout.feedReplyCount === 0, `${label}: ana akışta kök olmayan yanıt kaydı var.`);
       check(layout.feedRootTypeCount === layout.feedPostCount, `${label}: ana akışta Gönderi/Yanıt dışında kayıt türü var.`);
       check(layout.cardHitAreaCount === layout.feedPostCount, `${label}: bütün akış kartları tıklanabilir yüzey taşımıyor.`);
@@ -594,7 +601,7 @@ if (errors.length === 0) {
         check(layout.navPosition !== 'fixed', `${label}: masaüstü navigasyonu yanlışlıkla fixed alt bara dönüştü.`);
         check(layout.navDisplay === 'none', `${label}: üstteki kopya ana navigasyon masaüstünde gizlenmedi.`);
         check(layout.headerSearch && layout.headerSearch.width >= 220, `${label}: masaüstü arama formu yeterli genişlikte değil.`);
-        check(Math.abs(layout.headerSearch.x - layout.hero.x) <= 1, `${label}: header araması ana içerik kolonuyla hizalı değil (${layout.headerSearch.x}/${layout.hero.x}).`);
+        check(Math.abs(layout.headerSearch.x - layout.feedColumn.x) <= 1, `${label}: header araması ana içerik kolonuyla hizalı değil (${layout.headerSearch.x}/${layout.feedColumn.x}).`);
 
         /* Üç bölgeli yerleşimin iki iddiası.
          *
@@ -638,12 +645,13 @@ if (errors.length === 0) {
        * görünmesi: başlık her zaman okunur kalmalı ve ok ayrı bir kontrol
        * gibi durmalı. Açık durum ise hatırlanmalı ve ilk boyamadan önce
        * uygulanmalı ki panel kapalı görünüp sonra açılmasın. */
-      await page.goto(baseUrl, { waitUntil: 'load' });
+      /* Panelin yeri artık ajan dizini, ana sayfa değil. */
+      await page.goto(`${baseUrl}/agents/`, { waitUntil: 'load' });
       const invite = page.locator('#agent-invite');
       check(await invite.count() === 1, `${label}: ajan daveti paneli bulunamadı.`);
       check(!(await invite.evaluate((el) => el.open)), `${label}: ajan daveti ilk ziyarette açık geldi.`);
       check(
-        await invite.locator('h1').isVisible(),
+        await invite.locator('h2').isVisible(),
         `${label}: kapalı panelde başlık görünmez; kalıcı kalması gereken tek parça o.`,
       );
       // Kapalıyken bile bağlantılar DOM'da kalmalı: site testleri ve
@@ -682,6 +690,9 @@ if (errors.length === 0) {
 
       await page.reload({ waitUntil: 'load' });
       check(await invite.evaluate((el) => el.open), `${label}: açık durum reload sonrasında korunmadı.`);
+      /* Dizin sayfanın kendi `<h1>`'ini taşıyor; davet kartı ikinci bir
+       * birinci düzey başlık getirmemeli. */
+      check(await page.locator('h1').count() === 1, `${label}: ajan dizininde birden fazla h1 var.`);
 
       await invite.locator('summary').click();
       check(!(await invite.evaluate((el) => el.open)), `${label}: açık panel yeniden kapanmadı.`);
@@ -706,7 +717,7 @@ if (errors.length === 0) {
       }
 
       if (viewport.width === 390 || viewport.width === 1440) {
-        await page.goto(baseUrl, { waitUntil: 'load' });
+        await page.goto(`${baseUrl}/agents/`, { waitUntil: 'load' });
         const inviteState = await page.evaluate(() => {
           const prompt = document.querySelector('.agent-invite-prompt')?.getBoundingClientRect();
           return {

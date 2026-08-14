@@ -55,22 +55,30 @@ export function renderAnnouncementList(announcements: PublicAnnouncementView[]):
 }
 
 /**
- * Ana sayfa şeridi. Gövdeyi taşımaz, yalnız başlığı ve düzeyi gösterip
- * sayfaya götürür — akışın üstü duyuru metni için doğru yer değil.
+ * Ana sayfanın sağ kolonundaki duyuru paneli.
  *
- * Aktif duyuru yoksa BOŞ dizge döner. Şeridin "hiçbir şey yokken de duran bir
- * çerçeve" hâli yok; çoğu gün duyuru olmayacak ve boş bir kutu her ziyaretçiye
- * gösterilecek ölü mobilyadır.
+ * Gövdeyi TAŞIR — panelin varlık sebebi bu. Yerinde duran şerit yalnız başlığı
+ * gösterip `/duyurular`a götürüyordu; okumak için sayfa değiştirmek gerekiyordu
+ * ve çoğu kimse gitmiyordu.
+ *
+ * Duyuru yokken de görünür, şeridin aksine. İkisi aynı kural altında değil:
+ * şerit akışın tepesinde bir KESİNTİdir ve kesecek bir şey yokken durması ölü
+ * mobilyadır; panel ise sütunda sabit bir YERdir ve o yerin bugün boş olması
+ * okuyana bir bilgi verir — "duyuru yok" ile "duyuru var mı bilmiyorum" aynı
+ * şey değil. Boş hâlin görünmesi Samet'in kararı; bedeli, çoğu gün orada
+ * tek satırlık bir kartın durması.
  */
-export function renderAnnouncementStrip(announcements: PublicAnnouncementView[]): string {
-  if (announcements.length === 0) return '';
-  const [lead, ...rest] = announcements;
-  return `<aside class="announcement-strip announcement-${lead.severity}" aria-label="Orbit duyuruları">
-    <a class="announcement-strip-lead" href="/duyurular#${escapeHtml(announcementAnchor(lead.id))}">
-      <span class="announcement-strip-mark" aria-hidden="true">${severityIcon(lead.severity)}</span>
-      <span class="announcement-strip-copy"><small>${SEVERITY_LABELS[lead.severity]} duyuru</small><strong>${escapeHtml(lead.title)}</strong></span>
-      ${renderIcon('arrow-right', 16)}
-    </a>
-    ${rest.length > 0 ? `<a class="announcement-strip-more" href="/duyurular">${escapeHtml(`${rest.length} duyuru daha`)}</a>` : ''}
-  </aside>`;
+export function renderAnnouncementPanel(announcements: PublicAnnouncementView[]): string {
+  if (announcements.length === 0) {
+    return `<p class="announcement-panel-empty">Şu anda yürürlükte olan bir duyuru yok.</p>`;
+  }
+  return announcements.map((announcement) => {
+    const published = new Date(announcement.publishedAt);
+    return `<article class="announcement-brief announcement-${announcement.severity}" id="${escapeHtml(announcementAnchor(announcement.id))}">
+      <p class="announcement-severity">${severityIcon(announcement.severity)}<span>${SEVERITY_LABELS[announcement.severity]}</span></p>
+      <h3 class="announcement-brief-title">${escapeHtml(announcement.title)}</h3>
+      <p class="announcement-meta"><time datetime="${published.toISOString()}">${escapeHtml(dateFormatter.format(published))}</time></p>
+      <div class="announcement-body">${micromark(announcement.bodyMarkdown)}</div>
+    </article>`;
+  }).join('');
 }

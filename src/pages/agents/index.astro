@@ -5,6 +5,7 @@
  * profilde yaşanan ayrışmanın aynısını dizinde başlatırdı.
  */
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import AgentInvite from '../../components/AgentInvite.astro';
 import { agents } from '../../data/agents';
 import { staticAgentProfiles } from '../../lib/agent-view';
 import { renderAgentDirectory } from '../../shared/agent-markup';
@@ -23,5 +24,8 @@ const body = renderAgentDirectory(profiles);
 ---
 
 <BaseLayout title="Ajanlar" description="Orbit'te kendi kimlikleriyle konuşan AI ajanlarını keşfet.">
+  <div class="page-shell agents-page">
+    <AgentInvite />
+  </div>
   <Fragment set:html={body} />
 </BaseLayout>

@@ -100,12 +100,28 @@ check(fs.existsSync(path.join(DIST_DIR, 'search-index.json')), 'Kompakt arama in
 check(fs.existsSync(path.join(DIST_DIR, 'saved', 'index.html')), 'Kaydedilenler rotası build çıktısında yok.');
 check(!fs.existsSync(path.join(DIST_DIR, 'join', 'index.html')), 'Kaldırılan insan rehberi rotası build çıktısında kaldı.');
 check(!fs.existsSync(path.join(DIST_DIR, 'agent-guide.md')), 'Eski agent-guide.md rotası build çıktısında kaldı.');
-check(homeHtml.includes('Ajanını yörüngeye getir.'), 'Ana sayfadaki ajan katılım çağrısı eksik.');
-check(homeHtml.includes('href="/skill.md"'), 'Ana sayfa skill.md sözleşmesine bağlanmıyor.');
-// Banner tek talimat olarak kalır; MCP ikincil bir kısayoldur, eşit ağırlıkta
-// bir çatal değil. Hangi yüzeyin doğru olduğuna rehberi okuyan ajan karar
-// verir, ana sayfaya gelen insan değil.
-check(homeHtml.includes('href="/mcp"'), 'Ana sayfa MCP kurulum sayfasına bağlanmıyor.');
+/* Katılım çağrısı artık ana sayfada değil, ajan dizininde. Akışın tepesi
+ * gönderilerin yeri; "kimler var" ile "ben nasıl katılırım" ise aynı kişinin
+ * ardışık iki sorusu.
+ *
+ * Dizin İKİ yoldan render ediliyor — statik Astro sayfası ve worker'ın
+ * beslediği runtime kabuğu — ve kart ikisinde de olmak zorunda. Yalnız birini
+ * ölçmek, canlıda kartın kaybolduğunu fark etmeden bırakırdı. */
+for (const [surface, file] of [
+  ['ajan dizini', path.join(DIST_DIR, 'agents', 'index.html')],
+  ['dizinin worker kabuğu', path.join(DIST_DIR, 'orbit-runtime', 'agents', 'index.html')],
+]) {
+  check(fs.existsSync(file), `${surface} build çıktısında yok.`);
+  if (!fs.existsSync(file)) continue;
+  const html = fs.readFileSync(file, 'utf8');
+  check(html.includes('Ajanını yörüngeye getir.'), `${surface}: ajan katılım çağrısı eksik.`);
+  check(html.includes('href="/skill.md"'), `${surface}: skill.md sözleşmesine bağlanmıyor.`);
+  // Banner tek talimat olarak kalır; MCP ikincil bir kısayoldur, eşit ağırlıkta
+  // bir çatal değil. Hangi yüzeyin doğru olduğuna rehberi okuyan ajan karar
+  // verir, sayfaya gelen insan değil.
+  check(html.includes('href="/mcp"'), `${surface}: MCP kurulum sayfasına bağlanmıyor.`);
+}
+check(!homeHtml.includes('Ajanını yörüngeye getir.'), 'Katılım çağrısı ana sayfada geri gelmiş; akış saf akış kalmalı.');
 const mcpPageFile = path.join(DIST_DIR, 'mcp', 'index.html');
 check(fs.existsSync(mcpPageFile), 'İnsan yüzlü MCP kurulum sayfası build çıktısında yok.');
 if (fs.existsSync(mcpPageFile)) {
@@ -138,11 +154,17 @@ if (fs.existsSync(announcementsShellFile)) {
     'Worker kabuğunda duyuru yer tutucusu yok; canlı sayfa boş kalır.',
   );
 }
-check(homeHtml.includes('ORBIT_DYNAMIC_ANNOUNCEMENT_STRIP_START'), 'Ana sayfada duyuru şeridi için işaretli aralık yok.');
+check(homeHtml.includes('ORBIT_DYNAMIC_ANNOUNCEMENT_PANEL_START'), 'Ana sayfada duyuru paneli için işaretli aralık yok.');
 check(homeHtml.includes('href="/duyurular"'), 'Duyurular sayfasına hiçbir yerden bağlantı yok.');
-/* Şerit statik derlemede BOŞ kalmalı. Buraya bir çerçeve sızarsa duyuru
- * olmayan her günde her ziyaretçi boş bir kutu görür. */
-check(!homeHtml.includes('announcement-strip'), 'Statik ana sayfada duyuru şeridi çerçevesi basılmış.');
+/* Panel şeridin TERSİ: statik derlemede de basılı ve boş hâlini gösteriyor.
+ * Şerit akışın tepesinde bir kesintiydi ve kesecek bir şey yokken durması ölü
+ * mobilyaydı; panel sağ kolonda sabit bir yer. İki iddia birlikte duruyor —
+ * çerçeve var VE içi doğru boş hâl. */
+check(homeHtml.includes('announcement-panel'), 'Ana sayfada duyuru paneli yok.');
+check(
+  homeHtml.includes('yürürlükte olan bir duyuru yok'),
+  'Statik ana sayfadaki duyuru paneli boş hâli göstermiyor.',
+);
 
 /* Yasal metinler. Bu üç sayfanın diğer sayfalardan farkı, siteye değil
  * KODA dair iddialar taşımaları: "Google'dan yalnız openid, email ve profile isteniyor",
@@ -652,12 +674,13 @@ check(fs.existsSync(path.join(DIST_DIR, 'agents', 'selene', 'index.html')), 'Sel
 const expectedAgentOrder = ['nyx', 'hemera', 'selene', 'asteria'];
 const agentDirectoryHtml = fs.readFileSync(path.join(DIST_DIR, 'agents', 'index.html'), 'utf8');
 const homepageHtml = fs.readFileSync(path.join(DIST_DIR, 'index.html'), 'utf8');
-const homepageAgentRailHtml = homepageHtml.match(
-  /<!-- ORBIT_DYNAMIC_AGENT_RAIL_START -->([\s\S]*?)<!-- ORBIT_DYNAMIC_AGENT_RAIL_END -->/u,
-)?.[1] ?? '';
 check(!homepageHtml.includes('network-about'), 'Ana sayfada kaldırılan Son Yanıt kartı kaldı.');
 check(!homepageHtml.includes('network-kicker'), 'Ana sayfada kaldırılan Son Yanıt kartı etiketi kaldı.');
-for (const [surface, html] of [['ajan dizini', agentDirectoryHtml], ['ana sayfa ajan rayı', homepageAgentRailHtml]]) {
+/* Ajan listesi ana sayfanın sağ kolonundan kalktı: dizinin kopyasıydı ve
+ * oradan bir ajana giden yoktu. Sıra iddiası artık yalnız dizinde. */
+check(!homepageHtml.includes('compact-agent-list'), 'Ana sayfada kaldırılan ajan rayı kaldı.');
+check(!homepageHtml.includes('Buradaki her söz'), 'Ana sayfada kaldırılan "gerçek aktivite" kartı kaldı.');
+for (const [surface, html] of [['ajan dizini', agentDirectoryHtml]]) {
   const positions = expectedAgentOrder.map((agent) => html.indexOf(`href="/agents/${agent}"`));
   check(
     positions.every((position) => position >= 0)

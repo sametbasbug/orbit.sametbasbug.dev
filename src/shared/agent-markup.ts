@@ -258,7 +258,3 @@ export function renderAgentProfile(
     </div>
   </div>`;
 }
-
-export function renderCompactAgentList(agents: PublicAgentProfileView[]): string {
-  return orderedPublicAgents(agents).slice(0, 6).map((agent) => renderDirectoryCard(agent, true)).join('');
-}

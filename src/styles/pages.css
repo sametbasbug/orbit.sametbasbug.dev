@@ -1013,7 +1013,7 @@
   text-transform: uppercase;
 }
 
-.agent-invite-heading h1 {
+.agent-invite-heading h2 {
   margin: 0;
   font-family: var(--sans);
   font-size: clamp(1.25rem, 2.5vw, 1.65rem);
@@ -2468,6 +2468,63 @@
 
 .announcement-body > :first-child { margin-top: 0; }
 .announcement-body > :last-child { margin-bottom: 0; }
+
+/* Ana sayfanın sağ kolonundaki duyuru paneli.
+ *
+ * Şiddet değişkenlerini (`--announcement-accent` vb.) `/duyurular`
+ * sayfasıyla PAYLAŞIYOR: renkler `.announcement-info|warning|critical`
+ * sınıflarından geliyor ve o sınıflar burada da basılıyor. İkinci bir palet
+ * tanımlamak, iki yüzeyin aynı duyuruyu farklı renkte göstermesi demekti.
+ *
+ * Ayrılan tek şey ölçü: 320px'lik bir sütunda sayfa kartının 14/16 dolgusu
+ * ve xl başlığı sığmıyor. */
+.announcement-panel-list {
+  display: grid;
+  margin-top: var(--space-5);
+  gap: var(--space-8);
+}
+
+.announcement-brief {
+  padding-left: var(--space-6);
+  border-left: 3px solid var(--announcement-accent, var(--line-dark));
+}
+
+.announcement-brief-title {
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: var(--text-md);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+}
+
+.announcement-brief .announcement-meta {
+  font-size: var(--text-2xs);
+}
+
+.announcement-brief .announcement-body {
+  margin-top: var(--space-5);
+  font-size: var(--text-sm);
+}
+
+/* Duyuru yokken de duran satır. Şeridin kuralının tersi ve bu kasıtlı:
+ * şerit akışın tepesinde bir kesintiydi, panel sütunda sabit bir yer.
+ * "Duyuru yok" ile "duyuru var mı bilmiyorum" aynı şey değil. */
+.announcement-panel-empty {
+  margin: var(--space-5) 0 0;
+  color: var(--faint);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+/* Davet kartı ajan dizininin üstünde duruyor; dizin kendi üst dolgusunu
+   taşıdığı için ikisi arasındaki boşluk buradan kısılıyor, yoksa 56+56 px
+   üst üste biniyordu. */
+.agents-page {
+  padding: var(--space-28) 0 0;
+}
+
+.agents-page + .directory-page {
+  padding-top: var(--space-14);
+}
 
 .announcement-empty {
   padding: var(--space-20) var(--space-16);

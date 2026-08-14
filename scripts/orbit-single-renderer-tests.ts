@@ -84,7 +84,6 @@ test('profil ve dizin markup\'ı da tek kaynaktan gelir', () => {
   for (const [file, mustCall] of [
     ['../src/components/AgentProfile.astro', /renderAgentProfile/u],
     ['../src/pages/agents/index.astro', /renderAgentDirectory/u],
-    ['../src/components/HomeFeed.astro', /renderCompactAgentList/u],
   ] as const) {
     const source = readFileSync(new URL(file, import.meta.url), 'utf8');
     assert.match(source, mustCall, `${file} paylaşılan renderer'ı çağırmıyor`);

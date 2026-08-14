@@ -207,8 +207,7 @@ const assets = {
       <!-- ORBIT_DYNAMIC_FEED_START -->
       <div class="post-list feed-surface" data-feed-list>ESKİ STATİK İÇERİK</div>
       <!-- ORBIT_DYNAMIC_FEED_END -->
-      <!-- ORBIT_DYNAMIC_AGENT_RAIL_START -->ESKİ AJAN RAYI<!-- ORBIT_DYNAMIC_AGENT_RAIL_END -->
-      <!-- ORBIT_DYNAMIC_ANNOUNCEMENT_STRIP_START --><!-- ORBIT_DYNAMIC_ANNOUNCEMENT_STRIP_END -->
+      <!-- ORBIT_DYNAMIC_ANNOUNCEMENT_PANEL_START -->ESKİ PANEL<!-- ORBIT_DYNAMIC_ANNOUNCEMENT_PANEL_END -->
     </body>`, { headers: { 'content-type': 'text/html; charset=utf-8' } });
   },
 };
@@ -485,20 +484,12 @@ describe('Orbit dynamic public pages', () => {
     assert.ok(directory);
     const directoryHtml = await directory.text();
 
-    const homepage = await serveDynamicPublicPage(
-      new Request('https://orbit.example/'),
-      assets,
-      publicRepository,
-      agentRepository,
-    );
-    assert.ok(homepage);
-    const homepageHtml = await homepage.text();
-
-    for (const html of [directoryHtml, homepageHtml]) {
-      const positions = expectedHandles.map((handle) => html.indexOf(`@${handle}`));
-      assert.ok(positions.every((position) => position >= 0));
-      assert.deepEqual([...positions].sort((left, right) => left - right), positions);
-    }
+    /* Sıralama yalnız dizinde sınanıyor. Ana sayfa bir dönem aynı listeyi
+     * kısaltılmış hâliyle taşıyordu ve iddia ikisini birden ölçüyordu; o
+     * liste sağ kolondan kalktı, yerini duyuru paneli aldı. */
+    const positions = expectedHandles.map((handle) => directoryHtml.indexOf(`@${handle}`));
+    assert.ok(positions.every((position) => position >= 0));
+    assert.deepEqual([...positions].sort((left, right) => left - right), positions);
   });
 
   test('escapes public agent identity and redirects retired project routes', async () => {
@@ -579,7 +570,10 @@ describe('Orbit dynamic public pages', () => {
     assert.match(await response.text(), /yürürlükte olan bir duyuru yok/u);
   });
 
-  test('shows the homepage strip only while an announcement is in force', async () => {
+  /* Panel ŞERİDİN TERSİ: duyuru yokken de basılıyor ve gövdeyi taşıyor.
+   * Şerit akışın tepesinde bir kesintiydi, panel sağ kolonda sabit bir yer —
+   * o yerin bugün boş olması okuyana bir bilgi veriyor. */
+  test('keeps the homepage panel in place whether or not anything is in force', async () => {
     const withNone = await serveDynamicPublicPage(
       new Request('https://orbit.example/'),
       assets,
@@ -587,7 +581,8 @@ describe('Orbit dynamic public pages', () => {
     );
     assert.ok(withNone);
     const quiet = await withNone.text();
-    assert.doesNotMatch(quiet, /announcement-strip/u, 'duyuru yokken de şerit çerçevesi basılmış');
+    assert.doesNotMatch(quiet, /ESKİ PANEL/u, 'statik panel içeriği canlı hâliyle değiştirilmemiş');
+    assert.match(quiet, /yürürlükte olan bir duyuru yok/u);
 
     const withOne = await serveDynamicPublicPage(
       new Request('https://orbit.example/'),
@@ -596,10 +591,13 @@ describe('Orbit dynamic public pages', () => {
     );
     assert.ok(withOne);
     const loud = await withOne.text();
-    assert.match(loud, /announcement-strip/u);
-    assert.match(loud, /href="\/duyurular#duyuru-announcement-1"/u);
-    // Şerit gövdeyi taşımaz: akışın üstü duyuru metni için yer değil.
-    assert.doesNotMatch(loud, /kısa süreli yeniden bağlanabilir/u);
+    assert.match(loud, /announcement-brief/u);
+    assert.doesNotMatch(loud, /yürürlükte olan bir duyuru yok/u);
+    /* Panelin varlık sebebi: gövde burada, okumak için sayfa değiştirmek yok.
+     * Kalıp `<strong>` etiketini atlıyor — gövde markdown'dan geçiyor ve
+     * "kısa" sözcüğü işaretli. Cümlenin tamamını aramak, biçimlendirmeyi
+     * iddiaya karıştırmak olurdu. */
+    assert.match(loud, /süreli yeniden bağlanabilir/u);
   });
 
   test('does not allow Markdown or attribute content to inject scripts', () => {

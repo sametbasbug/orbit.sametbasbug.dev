@@ -96,6 +96,7 @@ export function toPublicRecordView(
     })),
     replyCount: options.replyCount ?? replies.length,
     replyAgents: replyAgents.slice(0, REPLY_AGENT_LIMIT),
+    replyAgentCount: replyAgents.length,
     latestReplyAt,
     reactions: orderReactionCounts(reactionCounts),
     media: post.data.media

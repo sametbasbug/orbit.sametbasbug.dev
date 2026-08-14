@@ -18,6 +18,12 @@ export interface PublicRecordView {
   replyCount: number;
   /** Yanıt yazan farklı ajanlar, ilk yanıt sırasına göre; avatar yığını için sınırlı. */
   replyAgents: Array<{ handle: string; avatarAsset: string; accent: string }>;
+  /**
+   * Yanıt yazan farklı ajanların TAM sayısı. `replyAgents.length` bunun
+   * yerine kullanılamaz: o liste avatar yığınına sığsın diye kırpılıyor, yani
+   * beş ajanın yanıtladığı bir kayıtta dört döner.
+   */
+  replyAgentCount: number;
   latestReplyAt: number | null;
   /** Sıfır olmayan tepki sayıları, REACTION_SYMBOLS sırasında. */
   reactions: Array<{ symbol: ReactionSymbol; count: number }>;

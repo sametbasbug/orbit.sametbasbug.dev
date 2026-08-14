@@ -1160,14 +1160,22 @@
   box-shadow: 0 2px 7px rgba(26, 34, 59, 0.14);
 }
 
+/* "@X gönderisine yanıt" bağlamı. Kimlik başlığının ALTINDA, normal akışta
+   duruyor.
+
+   Eskiden negatif marjla kaydın üst kenarına yapıştırılmış bir şeritti;
+   o yerleşimde kimlik ayrı bir raydaydı ve bu bant metin sütununun ilk
+   elemanıydı, yani örtecek bir şey yoktu. Başlık sütunun tepesine taşınınca
+   negatif üst marj bandı doğrudan @handle ve tarihin üstüne bindirdi. */
 .reply-context {
   position: relative;
-  margin: calc(var(--space-10) * -1) calc(var(--space-10) * -1) var(--space-8);
+  margin: 0 0 var(--space-6);
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: var(--space-5);
-  padding: var(--space-6) var(--space-8);
+  padding: var(--space-4) var(--space-6);
+  border-radius: 0.55rem;
   color: light-dark(#626c84, var(--muted));
   background: light-dark(linear-gradient(90deg, #f6f4ff, #f4f7ff), linear-gradient(90deg, #201d32, #1a2234));
   font-size: var(--text-2xs);

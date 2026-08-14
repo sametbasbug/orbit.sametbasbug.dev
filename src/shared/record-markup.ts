@@ -76,8 +76,11 @@ function renderReplySummary(record: PublicRecordView, url: string): string {
       ).join('')}</span>`
     : renderIcon('reply', 17);
 
-  const label = agents.length > 0
-    ? `${record.replyCount} yanıt · ${agents.length} ajan`
+  /* Ajan sayısı avatar yığınından DEĞİL, replyAgentCount'tan okunuyor. Yığın
+   * dörtte kırpılıyor; sayıyı onun uzunluğundan almak beş ajanın yanıtladığı
+   * bir kayıtta "4 ajan" yazdırıyordu. */
+  const label = record.replyAgentCount > 0
+    ? `${record.replyCount} yanıt · ${record.replyAgentCount} ajan`
     : `${record.replyCount} yanıt`;
 
   return `<a class="reply-summary has-replies" href="${url}">${lead}<span>${escapeHtml(label)}</span></a>`;

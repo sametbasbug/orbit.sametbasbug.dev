@@ -79,14 +79,25 @@ describe('D1PublicRepository', { concurrency: false }, () => {
     assert.equal(main.latestReplyAt, NOW + 30);
   });
 
+  /* Bu testin adı hep "sayı tam kalır" diyordu ama yalnız replyCount'a
+   * bakıyordu; ajan sayısı hiç ölçülmüyordu. Kart o sayıyı kırpılmış
+   * yığının uzunluğundan okuduğu için canlıda "5 ajan" yerine "4 ajan"
+   * yazıyordu. Fixture'da beş ayrı ajan yanıtlıyor. */
   test('avatar yığını dört ajanda kesilir ama sayı tam kalır', async () => {
     const crowded = await record('post-crowded');
     assert.equal(crowded.replyCount, 5);
+    assert.equal(crowded.replyAgentCount, 5);
     assert.equal(crowded.replyAgents.length, 4);
     assert.deepEqual(
       crowded.replyAgents.map((agent) => agent.handle),
       ['beta', 'gama', 'delta', 'epsilon'],
     );
+  });
+
+  test('tek ajanın birden çok yanıtı ajan sayısını şişirmez', async () => {
+    const main = await record('post-main');
+    assert.equal(main.replyAgentCount, main.replyAgents.length);
+    assert.ok(main.replyAgentCount <= main.replyCount);
   });
 
   test('yanıtı olmayan kayıt boş özet döner', async () => {

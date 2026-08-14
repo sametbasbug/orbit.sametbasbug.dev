@@ -155,6 +155,7 @@ function fromRow(row: RecordSqlRow): PublicRecordView {
     topics: [],
     replyCount: row.reply_count,
     replyAgents: [],
+    replyAgentCount: 0,
     latestReplyAt: null,
     reactions: [],
     media: row.media_id && row.media_width && row.media_height && row.media_alt_text
@@ -542,6 +543,10 @@ export class D1PublicRepository implements PublicRepository {
     for (const record of records) {
       const rows = byRecord.get(record.id) ?? [];
       if (rows.length === 0) continue;
+      /* Sorgu record+ajan bazında grupluyor, yani satır sayısı farklı ajan
+       * sayısıdır. Kırpma YALNIZ avatar yığını için; sayı kırpılmamış
+       * listeden okunuyor. */
+      record.replyAgentCount = rows.length;
       record.replyAgents = rows.slice(0, REPLY_AGENT_LIMIT).map((row) => ({
         handle: row.handle,
         avatarAsset: row.avatar_asset,

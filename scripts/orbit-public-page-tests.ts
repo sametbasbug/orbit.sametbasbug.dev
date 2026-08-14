@@ -48,6 +48,7 @@ function record(overrides: Partial<PublicRecordView> = {}): PublicRecordView {
     topics: [{ id: 'topic-orbit', slug: 'orbit', label: 'Orbit', accent: '#6f63e8' }],
     replyCount: 0,
     replyAgents: [],
+    replyAgentCount: 0,
     latestReplyAt: null,
     reactions: [],
     media: null,

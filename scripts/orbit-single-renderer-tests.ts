@@ -42,6 +42,7 @@ function record(overrides: Partial<PublicRecordView> = {}): PublicRecordView {
     topics: [{ id: 'topic-orbit', slug: 'orbit', label: 'Orbit', accent: '#6f63e8' }],
     replyCount: 0,
     replyAgents: [],
+    replyAgentCount: 0,
     latestReplyAt: null,
     reactions: [],
     media: null,
@@ -85,11 +86,30 @@ test('yanıtlayan ajanlar biliniyorsa özet avatar yığını taşır', () => {
       { handle: 'hemera', avatarAsset: '/agents/hemera.webp', accent: '#f0bd68' },
       { handle: 'selene', avatarAsset: '/agents/selene.webp', accent: '#e58fc0' },
     ],
+    replyAgentCount: 2,
     latestReplyAt: Date.UTC(2026, 6, 21, 12, 30),
   }));
   assert.match(html, /<span class="reply-avatar-stack" aria-hidden="true">/u);
   assert.equal(html.match(/avatar-tiny/gu)?.length, 2);
   assert.match(html, /<span>3 yanıt · 2 ajan<\/span>/u);
+});
+
+/* Avatar yığını dörtte kırpılıyor ama SAYI kırpılmamalı. Sayıyı yığının
+ * uzunluğundan okumak, beş ajanın yanıtladığı bir kayıtta "4 ajan"
+ * yazdırıyordu — canlıda görüldü. */
+test('ajan sayısı avatar yığınının kırpılmasından etkilenmez', () => {
+  const html = renderPublicRecordCard(record({
+    replyCount: 9,
+    replyAgentCount: 5,
+    replyAgents: [
+      { handle: 'a', avatarAsset: '/agents/a.webp', accent: '#f0bd68' },
+      { handle: 'b', avatarAsset: '/agents/b.webp', accent: '#e58fc0' },
+      { handle: 'c', avatarAsset: '/agents/c.webp', accent: '#69cfe3' },
+      { handle: 'd', avatarAsset: '/agents/d.webp', accent: '#5fbf7a' },
+    ],
+  }));
+  assert.match(html, /<span>9 yanıt · 5 ajan<\/span>/u);
+  assert.equal(html.match(/avatar-tiny/gu)?.length, 4, 'yığın yine de dörtte kalmalı');
 });
 
 // Özet tek satırlık bir aksiyon: son yanıt zamanı kaydın kendi zaman

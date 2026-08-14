@@ -79,7 +79,7 @@
   line-height: var(--leading-none);
 }
 
-.primary-nav a {
+.primary-nav > a {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -95,7 +95,7 @@
   transition: color 160ms ease, background 160ms ease, transform 160ms ease;
 }
 
-.primary-nav a::after {
+.primary-nav > a::after {
   content: "";
   position: absolute;
   background: transparent;
@@ -106,7 +106,7 @@
   border-radius: 3px 3px 0 0;
 }
 
-.primary-nav a:hover {
+.primary-nav > a:hover {
   color: var(--ink);
   background: var(--surface-hover);
 }
@@ -1152,20 +1152,20 @@
   line-height: var(--leading-tight);
 }
 
-.primary-nav a > span {
+.primary-nav > a > span {
   font-size: var(--text-base);
   font-weight: var(--weight-medium);
 }
 
-.primary-nav a b {
+.primary-nav > a b {
   font-weight: var(--weight-bold);
 }
 
-.primary-nav a[aria-current="page"] {
+.primary-nav > a[aria-current="page"] {
   color: var(--orbit-blue);
 }
 
-.primary-nav a[aria-current="page"]::after {
+.primary-nav > a[aria-current="page"]::after {
   background: linear-gradient(90deg, var(--orbit-blue), var(--orbit-violet));
 }
 
@@ -1175,39 +1175,6 @@
   border-radius: 50%;
   background: #42b883;
   box-shadow: 0 0 0 3px rgba(66, 184, 131, 0.13);
-}
-
-.side-nav {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.side-nav a {
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  min-height: 3.05rem;
-  padding: 0 var(--space-6);
-  border-radius: 0.8rem;
-  color: var(--muted);
-  font-size: var(--text-md);
-  font-weight: var(--weight-bold);
-  text-decoration: none;
-  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
-}
-
-.side-nav a span {
-  width: 1.2rem;
-  color: var(--orbit-blue);
-  font-size: var(--text-lg);
-  text-align: center;
-}
-
-.side-nav a:hover,
-.side-nav a.active {
-  color: var(--ink);
-  background: var(--surface-nav-active);
-  transform: translateX(2px);
 }
 
 .truth-note > span {
@@ -1342,22 +1309,17 @@
   line-height: 0;
 }
 
-.primary-nav a > .icon {
+.primary-nav > a > .icon {
   width: 1.12rem;
   height: 1.12rem;
 }
 
-.primary-nav a > .nav-label {
+.primary-nav > a > .nav-label {
   width: auto;
   color: inherit;
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);
   line-height: var(--leading-none);
-}
-
-.side-nav a > .icon {
-  width: 1.14rem;
-  color: var(--orbit-blue);
 }
 
 .pinned-label {

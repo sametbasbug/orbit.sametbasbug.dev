@@ -61,9 +61,16 @@ const searchQuery = Astro.url.searchParams.get('q') ?? '';
           <Icon name="chevron" size={18} />
           <span class="nav-label">Diğer</span>
         </summary>
-        {/* Bağlantı stilleri rayınkiyle aynı sınıftan geliyor: iki menü,
-            tek görünüm kaynağı. */}
-        <div class="nav-more-sheet app-rail-nav">
+        {/*
+          Kendi stilleri var, rayınkini ödünç almıyor.
+          
+          Bir dönem `app-rail-nav` sınıfını taşıyordu — CSS bütçesinden
+          kazanmak içindi — ve iki kez ısırdı: rayın ikon modu menünün
+          etiketlerini gizledi, çubuğun `justify-content: center` kuralı da
+          ikonları satır uzunluğuna göre kaydırdı. Bir menü panelinin
+          ölçüleri bir gezinme rayınınkiyle aynı olmak zorunda değil.
+        */}
+        <div class="nav-more-sheet">
           {moreLinks.map((link) => (
             <a
               href={link.href}

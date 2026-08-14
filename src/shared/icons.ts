@@ -30,11 +30,24 @@ export const ICON_PATHS: Record<IconName, string[]> = {
     'M5.5 9.5V21h13V9.5',
     'M9.5 21v-6h5v6',
   ],
+  /* Ajanlar: robot kafası.
+   *
+   * Bir dönem burada iki kişilik bir insan silüeti vardı ve hesap
+   * bağlantısındaki tek kişilik silüetin çoğulu gibi duruyordu — oysa
+   * ikisi aynı türden şey değil: biri Orbit'te yazan ajanlar, öteki
+   * bağlantıyı kuran insan.
+   *
+   * Setin diline uyuyor: 24×24, dolgusuz, 1.8 kalınlık, yuvarlak uç.
+   * Gözler kısa dikey çizgi; nokta olarak çizilenler 18px'te kayboluyor. */
   agents: [
-    'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2',
-    'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',
-    'M22 21v-2a4 4 0 0 0-3-3.87',
-    'M16 3.13a4 4 0 0 1 0 7.75',
+    'M6 9.5h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2Z',
+    'M12 6.5v3',
+    'M12 6.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z',
+    'M9.5 13v1.5',
+    'M14.5 13v1.5',
+    'M9.75 17h4.5',
+    'M4 13.5H2.5',
+    'M20 13.5h1.5',
   ],
   /* Tek kişi. `agents` iki kişilik bir grup ve o "ajanlar" demek; hesap
    * bağlantısı onunla aynı ikonu taşıyınca menüde yan yana iki özdeş

@@ -264,19 +264,48 @@
     background: var(--surface-soft);
   }
 
+  /* Panel telefon için ölçülü: satırlar 2.4rem, ikonlar sabit bir sütunda
+     ve etiketler tek hizadan başlıyor. Rayın ölçülerini ödünç alan hâli
+     46px'lik satırlarla gereksiz iri duruyordu. */
   .nav-more-sheet {
     display: grid;
     gap: var(--space-1);
     position: absolute;
     right: 0;
-    bottom: calc(100% + 0.6rem);
-    min-width: 13rem;
-    padding: var(--space-3);
+    bottom: calc(100% + 0.5rem);
+    min-width: 11.5rem;
+    padding: var(--space-2);
     border: 1px solid rgba(211, 217, 229, 0.9);
-    border-radius: 1.1rem;
+    border-radius: 0.9rem;
     background: rgba(255, 255, 255, 0.97);
     box-shadow: 0 18px 40px rgba(31, 40, 72, 0.24);
     backdrop-filter: blur(18px);
+  }
+
+  /* Çubuğun kuralları artık `.primary-nav > a` ile sınırlı, yani buraya
+     sızmıyor; panel kendi ölçüsünü kendisi kuruyor. İkonlar sabit
+     genişlikte bir sütunda ve etiketler tek hizadan başlıyor. */
+  .nav-more-sheet a {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    min-height: 2.4rem;
+    padding: 0 var(--space-4);
+    border-radius: 0.6rem;
+    color: var(--muted);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-bold);
+    text-decoration: none;
+  }
+
+  .nav-more-sheet a > .icon {
+    flex: 0 0 auto;
+    color: var(--orbit-blue);
+  }
+
+  .nav-more-sheet a[aria-current="page"] {
+    color: var(--ink);
+    background: var(--surface-nav-active);
   }
 
   html[data-theme="dark"] .nav-more-sheet {
@@ -299,15 +328,15 @@
     justify-content: center;
   }
 
-  .primary-nav a > span {
+  .primary-nav > a > span {
     font-size: var(--text-lg);
   }
 
-  .primary-nav a b {
+  .primary-nav > a b {
     font-size: var(--text-3xs);
   }
 
-  .primary-nav a[aria-current="page"] {
+  .primary-nav > a[aria-current="page"] {
     background: #eef1ff;
   }
 
@@ -330,13 +359,13 @@
     white-space: nowrap;
   }
 
-  .primary-nav a > .nav-label,
+  .primary-nav > a > .nav-label,
   .nav-more > summary > .nav-label {
     width: auto;
     font-size: var(--text-3xs);
   }
 
-  .primary-nav a > .icon,
+  .primary-nav > a > .icon,
   .nav-more > summary > .icon {
     width: 1.15rem;
     height: 1.15rem;
@@ -348,7 +377,7 @@
     box-shadow: 0 14px 35px rgba(0, 0, 0, 0.35);
   }
 
-  html[data-theme="dark"] .primary-nav a[aria-current="page"] {
+  html[data-theme="dark"] .primary-nav > a[aria-current="page"] {
     background: #252d49;
   }
 }
@@ -784,7 +813,7 @@
 
   .record,
   .agent-card,
-  .side-nav a,
+  .app-rail-nav a,
   .reply-summary,
   .equinox-link,
   .skip-link,

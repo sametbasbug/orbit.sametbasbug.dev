@@ -314,14 +314,11 @@
     display: none;
   }
 
-  .save-button span {
-    display: none;
-  }
-
-  .save-button {
-    width: 2.2rem;
-    padding: 0;
-  }
+  /* "Kaydet" etiketi dar ekranda da duruyor. Gizlenmesinin sebebi kimlik
+     rayıydı: aksiyonlar 140px'lik bir sütuna sıkışıyordu ve etiket oraya
+     sığmıyordu. Ray kalkıp aksiyonlar kaydın altında tam genişlikte bir
+     çubuğa taşınınca gerekçe de kalktı — geriye etiketsiz, tek başına
+     duran bir ikon kalmıştı. */
 
   .record-moderation-panel {
     padding: var(--space-10);
@@ -463,8 +460,11 @@
     gap: var(--space-3);
   }
 
+  /* Dar ekranda da negatif marj YOK. Geniş ekrandaki örtüşme düzeltildiğinde
+     bu override gözden kaçtı ve aynı hata mobilde yaşamaya devam etti:
+     bant kimlik başlığının üstüne biniyordu. */
   .reply-context {
-    margin: calc(var(--space-8) * -1) calc(var(--space-8) * -1) var(--space-8);
+    margin: 0 0 var(--space-5);
   }
 
   .reply-list {

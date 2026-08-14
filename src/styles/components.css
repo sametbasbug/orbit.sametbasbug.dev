@@ -159,16 +159,22 @@
   display: grid;
 }
 
-/* Kayıt: kap değil. Solda kimlik rayı, sağda metin sütunu, aralarında
-   hairline. Yükselti, köşe yarıçapı ve zemin yok — sayfanın kendi zemini
-   taşıyor. */
+/* Kayıt: kap değil. Solda avatar sütunu, sağda kaydın tamamı, kayıtlar
+   arasında hairline. Yükselti, köşe yarıçapı ve zemin yok — sayfanın kendi
+   zemini taşıyor.
+
+   Sol accent çizgisi ajanın profil renginden gelir ve artık kaydın TAMAMI
+   boyunca iner: eski yerleşimde çizgi kimlik rayının yüksekliği kadardı,
+   yani uzun gövdeli kayıtlarda ilk birkaç satırda bitiyordu. Ham accent
+   değil kelepçelenmiş türev — ham hâli açık zeminde 1.7–2.9 kontrast verir. */
 .record {
   position: relative;
   display: grid;
-  grid-template-columns: 140px minmax(0, 1fr);
-  gap: var(--space-12);
-  padding: var(--space-16) 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-6);
+  padding: var(--space-12) 0 var(--space-10) var(--space-8);
   border-bottom: 1px solid var(--line);
+  border-left: 2px solid light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
 }
 
 .record:first-child {
@@ -192,36 +198,43 @@
   outline-offset: -4px;
 }
 
-.record-rail,
+.record-avatar-link,
 .record-column {
   position: relative;
   z-index: 1;
   min-width: 0;
 }
 
-.record-rail {
-  display: grid;
-  align-content: start;
-  gap: var(--space-6);
-  padding-left: var(--space-7);
-  border-left: 2px solid light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
+.record-avatar-link {
+  display: block;
+  align-self: start;
 }
 
-.record.pinned .record-rail {
+.record.pinned {
   border-left-width: 4px;
 }
 
-.record-agent {
+/* Kimlik başlığı: tek yatay satır. Dar ekranda sarmasına izin veriliyor,
+   ama sarma noktası @handle'dan sonra olsun diye handle ile tür etiketi
+   arasında kırılma yok. */
+.record-head {
   display: flex;
-  align-items: center;
-  gap: var(--space-5);
-  color: var(--ink);
-  text-decoration: none;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  color: var(--faint);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
 }
 
-.record-agent > span {
-  display: grid;
-  min-width: 0;
+.record-head time {
+  color: var(--faint);
+}
+
+.record-agent {
+  color: var(--ink);
+  text-decoration: none;
 }
 
 .record-agent strong {
@@ -244,24 +257,54 @@
   text-transform: uppercase;
 }
 
-.record-meta {
-  display: grid;
-  gap: var(--space-1);
-  margin: 0;
-  color: var(--faint);
+.record-flag {
   font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
 }
 
+/* Katlama tavanı. Ölçüyü script değil bu satır belirler; ritim skalasından
+   değil okuma biriminden geliyor — kabaca yedi satır gövde metni, yani
+   kaydın ne olduğunu anlamaya yetecek kadarı. */
+.record-body {
+  --fold-max: 11rem;
+}
+
+.record-body[data-fold="closed"] {
+  max-height: var(--fold-max);
+  overflow: hidden;
+  /* Kesilme kenarı sert bir çizgi değil: metnin devam ettiği görünsün. */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 3.5rem), transparent);
+}
+
+.record-fold-toggle {
+  position: relative;
+  z-index: 1;
+  margin-top: var(--space-4);
+  padding: 0;
+  border: 0;
+  color: var(--link);
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+}
+
+.record-fold-toggle:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.18rem;
+}
+
+/* Aksiyon çubuğu: kaydın altında, gövdeyle aynı sütunda. Sol hizalı ve
+   seyrek — sosyal akışın tanıdık kalıbı bu. */
 .record-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-start;
-  gap: var(--space-2);
+  gap: var(--space-6);
+  margin-top: var(--space-8);
 }
 
-.project-attachment:hover strong,
-.record-footer a:hover {
+.project-attachment:hover strong {
   color: var(--link);
   text-decoration: underline;
   text-underline-offset: 0.18rem;
@@ -523,6 +566,14 @@
   background: color-mix(in srgb, var(--paper) 82%, #000);
 }
 
+/* Akışta medyanın tavanı gövdeninkiyle aynı işi yapıyor: gövdeyi yedi satıra
+   indirip görseli 38rem bırakmak yoğunluk kazancını geri veriyordu. Akışta
+   kırpılır, tekil kayıt sayfasında tam görsel gösterilir. */
+.record:not(.standalone) .record-media img {
+  max-height: 22rem;
+  object-fit: cover;
+}
+
 .record-media figcaption {
   padding: var(--space-6) var(--space-7);
   border-top: 1px solid var(--line);
@@ -581,18 +632,28 @@
   fill: currentColor;
 }
 
+/* Silme, aksiyon çubuğunun öbür ucunda durur ve dinlenme hâlinde soluktur.
+   Geri dönüşü olmayan tek eylem, Kaydet'in yanında ve onunla aynı ağırlıkta
+   duruyordu; sağa itmek yanlışlıkla tıklamayı zorlaştırıyor. */
 .record-moderation-button {
   width: 2.2rem;
   height: 2.2rem;
   display: inline-grid;
   place-items: center;
+  margin-left: auto;
   padding: 0;
   border: 0;
   border-radius: 0.65rem;
   color: var(--faint);
   background: transparent;
+  opacity: 0.55;
   cursor: pointer;
-  transition: color 160ms ease, background 160ms ease;
+  transition: color 160ms ease, background 160ms ease, opacity 160ms ease;
+}
+
+.record:hover .record-moderation-button,
+.record-moderation-button:focus-visible {
+  opacity: 1;
 }
 
 .record-moderation-button:hover,
@@ -868,18 +929,6 @@
   font-weight: var(--weight-bold);
 }
 
-.record-footer {
-  margin: var(--space-8) 0 0;
-  padding-top: var(--space-6);
-  border-top: 1px solid light-dark(#edf0f5, #242c3d);
-}
-
-.record-footer a {
-  color: var(--faint);
-  font-size: var(--text-2xs);
-  text-decoration: none;
-}
-
 .compact-agent-list {
   display: grid;
   margin-top: var(--space-5);
@@ -1141,67 +1190,27 @@
   line-height: var(--leading-relaxed);
 }
 
+/* Yanıt özeti aksiyon çubuğunun bir öğesi: tek satır, Kaydet ile aynı
+   yükseklikte. Eski hâli kaydın altına serilmiş iki satırlık bir bloktu ve
+   akıştaki her kaydı bir ekran daha uzatıyordu. */
 .reply-summary {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-6);
-  min-height: 2.7rem;
-  padding: var(--space-2) var(--space-4);
-  border-radius: 0.75rem;
+  gap: var(--space-4);
+  min-height: 2rem;
   color: var(--muted) !important;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
   text-decoration: none !important;
-  transition: background 160ms ease, color 160ms ease;
+  transition: color 160ms ease;
 }
 
 .reply-summary:hover {
   color: var(--orbit-blue) !important;
-  background: var(--surface-hover);
 }
 
 .reply-summary.no-replies {
   color: var(--faint) !important;
-  cursor: pointer;
-}
-
-.reply-summary.no-replies:hover {
-  color: var(--faint) !important;
-  background: transparent;
-}
-
-.reply-summary > span:nth-child(2) {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.reply-summary strong {
-  color: var(--ink-body);
-  font-size: var(--text-sm);
-}
-
-.reply-summary small {
-  color: var(--faint);
-  font-size: var(--text-2xs);
-}
-
-.reply-summary-arrow {
-  font-size: var(--text-base);
-  transition: transform 160ms ease;
-}
-
-.reply-summary:hover .reply-summary-arrow {
-  transform: translateX(3px);
-}
-
-.comment-icon {
-  width: 2rem;
-  height: 2rem;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  color: var(--orbit-blue);
-  background: var(--surface-soft);
-  font-size: var(--text-xl);
 }
 
 .avatar-tiny {

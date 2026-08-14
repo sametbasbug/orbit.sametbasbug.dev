@@ -55,13 +55,13 @@ test('worker girişi paylaşılan renderer ile aynı fonksiyonları verir', () =
 
 test('kart markup ürettiği yer tek: server/public/html.ts kendi markup yazmaz', () => {
   const workerSource = readFileSync(new URL('../src/server/public/html.ts', import.meta.url), 'utf8');
-  assert.doesNotMatch(workerSource, /<article|class="record|record-rail/u);
+  assert.doesNotMatch(workerSource, /<article|class="record|record-head/u);
 });
 
 test('PostCard.astro kendi kart markup\'ını yazmaz, paylaşılan renderer\'ı çağırır', () => {
   const source = readFileSync(new URL('../src/components/PostCard.astro', import.meta.url), 'utf8');
   assert.match(source, /renderPublicRecordCard/u);
-  assert.doesNotMatch(source, /<article|class="record"|class="record-rail"/u);
+  assert.doesNotMatch(source, /<article|class="record"|class="record-head"/u);
 });
 
 test('kart, ayrışmada kaybolan üç öğeyi de taşır', () => {
@@ -70,13 +70,13 @@ test('kart, ayrışmada kaybolan üç öğeyi de taşır', () => {
   // border + background + radius birden düşüyordu.
   assert.match(html, /style="--topic-accent:#6f63e8;--topic-accent-strong:/u);
   // Kaydet butonu: worker sürümünde eylem kutusu boştu.
-  assert.match(html, /<div class="record-actions"><button class="save-button"/u);
+  assert.match(html, /<footer class="record-actions">.*<button class="save-button"/u);
   // İkonlar: ham ↩ / → karakterleri yerine SVG.
   assert.match(html, /<svg class="icon"/u);
   assert.doesNotMatch(html, /↩|→/u);
 });
 
-test('yanıtlayan ajanlar biliniyorsa özet avatar yığını ve son yanıt taşır', () => {
+test('yanıtlayan ajanlar biliniyorsa özet avatar yığını taşır', () => {
   const html = renderPublicRecordCard(record({
     replyCount: 3,
     replyAgents: [
@@ -87,22 +87,29 @@ test('yanıtlayan ajanlar biliniyorsa özet avatar yığını ve son yanıt taş
   }));
   assert.match(html, /<span class="reply-avatar-stack" aria-hidden="true">/u);
   assert.equal(html.match(/avatar-tiny/gu)?.length, 2);
-  assert.match(html, /<strong>3 yanıt · 2 ajan<\/strong>/u);
-  assert.match(html, /<small>Son yanıt 21 Tem 15:30<\/small>/u);
+  assert.match(html, /<span>3 yanıt · 2 ajan<\/span>/u);
+});
+
+// Özet tek satırlık bir aksiyon: son yanıt zamanı kaydın kendi zaman
+// damgasının yanında ikinci bir tarih olarak okunuyordu, o yüzden düştü.
+test('özet, kaydın zamanının yanına ikinci bir tarih koymaz', () => {
+  const html = renderPublicRecordCard(record({
+    replyCount: 3,
+    latestReplyAt: Date.UTC(2026, 6, 21, 12, 30),
+  }));
+  assert.doesNotMatch(html, /Son yanıt/u);
 });
 
 test('yanıtlayan ajanlar bilinmiyorsa özet sade sayıya düşer', () => {
   const html = renderPublicRecordCard(record({ replyCount: 3 }));
   assert.doesNotMatch(html, /reply-avatar-stack/u);
-  assert.match(html, /<span class="comment-icon"/u);
-  assert.match(html, /<strong>3 yanıt<\/strong>/u);
-  assert.match(html, /<small>Yanıtları aç<\/small>/u);
+  assert.match(html, /<span>3 yanıt<\/span>/u);
 });
 
 test('yanıtı olmayan kayıt boş durum gösterir', () => {
   const html = renderPublicRecordCard(record({ replyCount: 0 }));
   assert.match(html, /reply-summary no-replies/u);
-  assert.match(html, /Henüz yanıt yok/u);
+  assert.match(html, /Yanıt yok/u);
 });
 
 test('geçersiz yanıtlayan accent değeri de kelepçelenir', () => {

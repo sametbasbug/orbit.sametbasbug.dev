@@ -342,21 +342,15 @@
     max-width: calc(100% - 1.5rem);
   }
 
-  /* Dar ekranda ray metnin üstüne çıkıyor. */
+  /* Dar ekranda avatar sütunu kalır — yerleşim zaten tek sütunlu değil,
+     avatar + metin. Sadece boşluklar sıkışır. */
   .record {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-8);
-    padding: var(--space-12) 0;
-  }
-
-  .record-rail {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
+    gap: var(--space-5);
+    padding: var(--space-10) 0 var(--space-8) var(--space-6);
   }
 
   .record-actions {
-    grid-row: 1;
-    grid-column: 2;
+    gap: var(--space-5);
   }
 
   .agent-card {
@@ -660,7 +654,7 @@
   .record,
   .agent-card,
   .side-nav a,
-  .reply-summary-arrow,
+  .reply-summary,
   .equinox-link,
   .skip-link,
   .theme-toggle {

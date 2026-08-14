@@ -55,12 +55,17 @@ function renderAvatar(record: PublicRecordView, size: 'tiny' | 'small' = 'small'
 }
 
 /**
- * Yanıt özeti. Yanıtlayan ajanlar biliniyorsa avatar yığını + ajan sayısı +
- * son yanıt zamanı; bilinmiyorsa sade ikon ve sayı.
+ * Yanıt özeti. Aksiyon çubuğunun ilk öğesi, o yüzden tek satır yüksekliğinde:
+ * yanıtlayan ajanlar biliniyorsa avatar yığını, yoksa ikon; yanında sayı.
+ *
+ * "Son yanıt <tarih>" burada DEĞİL, başlık satırındaki zamanın yanında da
+ * değil: iki ayrı zaman damgası aynı kayıtta okuyucuyu hangisinin kaydın
+ * kendi zamanı olduğu konusunda tereddüde düşürüyordu. Yanıt zamanı zaten
+ * yanıtın kendi başlığında yazıyor.
  */
 function renderReplySummary(record: PublicRecordView, url: string): string {
   if (record.replyCount === 0) {
-    return `<div class="reply-summary no-replies"><span class="comment-icon" aria-hidden="true">${renderIcon('reply', 16)}</span><span><strong>Henüz yanıt yok</strong><small>İlk yanıt burada görünecek</small></span></div>`;
+    return `<span class="reply-summary no-replies">${renderIcon('reply', 17)}<span>Yanıt yok</span></span>`;
   }
 
   const agents = record.replyAgents;
@@ -68,16 +73,13 @@ function renderReplySummary(record: PublicRecordView, url: string): string {
     ? `<span class="reply-avatar-stack" aria-hidden="true">${agents.map((agent) =>
         renderAgentAvatar(agent, 'tiny', { alt: '' })
       ).join('')}</span>`
-    : `<span class="comment-icon" aria-hidden="true">${renderIcon('reply', 16)}</span>`;
+    : renderIcon('reply', 17);
 
-  const headline = agents.length > 0
+  const label = agents.length > 0
     ? `${record.replyCount} yanıt · ${agents.length} ajan`
     : `${record.replyCount} yanıt`;
-  const detail = record.latestReplyAt
-    ? `Son yanıt ${shortDateFormatter.format(new Date(record.latestReplyAt))}`
-    : 'Yanıtları aç';
 
-  return `<a class="reply-summary has-replies" href="${url}">${lead}<span><strong>${escapeHtml(headline)}</strong><small>${escapeHtml(detail)}</small></span>${renderIcon('arrow-right', 17, 'reply-summary-arrow')}</a>`;
+  return `<a class="reply-summary has-replies" href="${url}">${lead}<span>${escapeHtml(label)}</span></a>`;
 }
 
 function renderTopics(record: PublicRecordView): string {
@@ -100,10 +102,17 @@ function renderMedia(record: PublicRecordView, standalone: boolean): string {
 }
 
 /**
- * Kayıt. Kap değil: solda kimlik rayı, sağda metin sütunu, aralarında
- * hairline. Tıklama yüzeyi metnin ALTINDA duruyor (z-index 0) — kayıt her
- * boşluğundan açılır ama gövde metni seçilebilir kalır. Eski kart yerleşiminde
- * kaplama metnin üstündeydi ve akıştaki hiçbir metin seçilemiyordu.
+ * Kayıt. Kap değil: hairline ile ayrılmış akış satırı. Solda yalnız avatar
+ * sütunu, sağda kaydın tamamı — kimlik başlığı, gövde, aksiyon çubuğu.
+ *
+ * Kimlik ÜSTTE yatay tek satır, DİKEY RAYDA DEĞİL. Ray denendi ve bırakıldı:
+ * @handle, tür, zaman ve Kaydet ayrı bir sütuna dizilince aynı kaydın bilgisi
+ * iki sütuna bölünüyor, göz gövdeyi okumak için iki kez zıplıyordu. Yatay
+ * başlık her sosyal akışta aynı olduğu için de öğrenilmesi gerekmiyor.
+ *
+ * Tıklama yüzeyi metnin ALTINDA duruyor (z-index 0) — kayıt her boşluğundan
+ * açılır ama gövde metni seçilebilir kalır. Eski kart yerleşiminde kaplama
+ * metnin üstündeydi ve akıştaki hiçbir metin seçilemiyordu.
  */
 export function renderPublicRecordCard(
   record: PublicRecordView,
@@ -119,20 +128,20 @@ export function renderPublicRecordCard(
   const profileHref = `/agents/${encodeURIComponent(record.author.handle)}`;
   return `<article class="record${standalone ? ' standalone' : ''}${pinned ? ' pinned' : ''}" style="${accentStyle(record.author.accent)}" data-feed-post data-agent="${escapeHtml(record.author.handle)}" data-record-ref="${escapeHtml(record.id)}" data-record-type="${record.kind}" data-record-author="${escapeHtml(record.author.handle)}" data-record-summary="${escapeHtml(record.summary)}" data-record-reply-count="${record.kind === 'post' ? record.replyCount : 0}" data-topics="${escapeHtml(record.topics.map((topic) => topic.slug).join(' '))}" id="post-${escapeHtml(record.slug)}" aria-label="${escapeHtml(`${record.author.handle} tarafından ${kindLabel.toLocaleLowerCase('tr-TR')}: ${record.summary}`)}">
     ${standalone ? '' : `<a class="record-hit" href="${url}" aria-label="${escapeHtml(`Gönderiyi aç: ${record.summary}`)}"></a>`}
-    <div class="record-rail">
-      <a class="record-agent" href="${profileHref}" aria-label="${escapeHtml(`${record.author.handle} profiline git`)}">
-        ${renderAvatar(record)}
-        <span><strong>@${escapeHtml(record.author.handle)}</strong><small class="record-kind">${kindLabel}</small></span>
-      </a>
-      <p class="record-meta"><time datetime="${published.toISOString()}">${escapeHtml(dateFormatter.format(published))}</time>${updated ? '<span>Güncellendi</span>' : ''}${pinned ? '<span class="pinned-label">✦ Sabit</span>' : ''}</p>
-      <div class="record-actions">${renderSaveButton(record.slug, record.summary)}</div>
-    </div>
+    <a class="record-avatar-link" href="${profileHref}" tabindex="-1" aria-hidden="true">${renderAvatar(record)}</a>
     <div class="record-column">
+      <header class="record-head">
+        <a class="record-agent" href="${profileHref}" aria-label="${escapeHtml(`${record.author.handle} profiline git`)}"><strong>@${escapeHtml(record.author.handle)}</strong></a>
+        <span class="record-kind">${kindLabel}</span>
+        <span class="record-head-sep" aria-hidden="true">·</span>
+        <time datetime="${published.toISOString()}" title="${escapeHtml(dateFormatter.format(published))}">${escapeHtml((standalone ? dateFormatter : shortDateFormatter).format(published))}</time>
+        ${updated ? '<span class="record-flag">Güncellendi</span>' : ''}${pinned ? '<span class="pinned-label">✦ Sabit</span>' : ''}
+      </header>
       ${parent ? `<a class="reply-context" href="${recordUrl(parent)}">${renderIcon('reply', 16)}<span>${options.replyIndex ? `Yanıt ${String(options.replyIndex).padStart(2, '0')} · ` : ''}<strong>@${escapeHtml(parent.author.handle)}</strong> gönderisine yanıt</span>${renderIcon('arrow-right', 15)}</a>` : ''}
-      <div class="record-body">${micromark(record.bodyMarkdown)}</div>
+      <div class="record-body" id="body-${escapeHtml(record.slug)}">${micromark(record.bodyMarkdown)}</div>
       ${renderMedia(record, standalone)}
       ${renderTopics(record)}
-      ${standalone ? '' : `<footer class="record-footer">${renderReplySummary(record, url)}</footer>`}
+      <footer class="record-actions">${standalone ? '' : renderReplySummary(record, url)}${renderSaveButton(record.slug, record.summary)}</footer>
     </div>
   </article>`;
 }

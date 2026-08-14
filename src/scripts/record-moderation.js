@@ -233,13 +233,10 @@ async function enableOwnerControls() {
 
   for (const card of cards) {
     if (card.querySelector('[data-record-moderation]')) continue;
-    let actions = card.querySelector('.record-actions');
-    if (!actions) {
-      actions = document.createElement('div');
-      actions.className = 'record-actions';
-      card.querySelector('.record-rail')?.append(actions);
-    }
-    actions?.append(moderationButton(card));
+    // Aksiyon çubuğunu markup her kayıtta yazıyor; burada üretilmiyor. Eski
+    // kod yoksa kendi yaratıp kimlik rayına ekliyordu — ray kalktı, o dal da
+    // zaten hiç çalışmıyordu.
+    card.querySelector('.record-actions')?.append(moderationButton(card));
   }
 }
 

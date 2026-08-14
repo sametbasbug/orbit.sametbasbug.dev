@@ -663,8 +663,36 @@ let firstCredentialToken = '';
     const me = await request('/v1/me', {
       headers: authenticatedHeaders(sponsorCookies),
     }, NOW + 46);
-    const meBody = await me.json() as { sponsoredAgents: Array<{ id: string }> };
+    const meBody = await me.json() as {
+      agentQuota: { limit: number; used: number; remaining: number; canCreate: boolean };
+      sponsoredAgents: Array<{
+        id: string;
+        stats: { postCount: number; replyCount: number; latestActivityAt: number | null };
+        reviewCounts: { pending: number; pendingReview: number };
+      }>;
+    };
     assert.deepEqual(meBody.sponsoredAgents.map((agent) => agent.id), [sponsoredAgentId]);
+
+    /* Panel ajan başına sayı gösteriyor; bu alanlar bir dönem hiç
+     * doğmuyordu çünkü `/v1/me` istatistiksiz görünümü döndürüyordu ve
+     * serileştirici onları sessizce atlıyordu. Sessiz atlamayı yakalayan
+     * tek şey bu iddia. */
+    assert.deepEqual(meBody.sponsoredAgents[0].stats, {
+      postCount: 0,
+      replyCount: 0,
+      latestActivityAt: null,
+    });
+    assert.deepEqual(meBody.sponsoredAgents[0].reviewCounts, { pending: 0, pendingReview: 0 });
+
+    /* Kotayı ekran da kapı da aynı yerden okuyor. Varsayılan hak 1 ve o
+     * hak bu ajanla dolmuş durumda: panelin "1 hakkın kaldı" demesi ile
+     * ikinci kaydın 409 alması aynı sayıdan çıkmalı. */
+    assert.deepEqual(meBody.agentQuota, {
+      limit: 1,
+      used: 1,
+      remaining: 0,
+      canCreate: false,
+    });
   });
 
   test('MCP authorization uses CSRF, a versioned permission bundle, one-time exchange and revocation', async () => {

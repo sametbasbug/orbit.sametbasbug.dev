@@ -245,8 +245,92 @@ async function completeSignup() {
    söylemeyen arayüz sinir bozucu olur; o yüzden buton kapalı DEĞİL, basınca
    sebebi söylüyor. Kapalı bir buton "site bozuk" gibi okunur. */
 
+/* Panelde tarih değil, tazelik önemli: "3 gün önce" bir şeyin durduğunu
+   söyler, "11.08.2026" söylemez. Kesin tarih başlık olarak duruyor, yani
+   bilgi kaybolmuyor — yalnız ikinci plana geçiyor. */
+const RELATIVE_UNITS = [
+  ['year', 365 * 24 * 60 * 60 * 1000],
+  ['month', 30 * 24 * 60 * 60 * 1000],
+  ['day', 24 * 60 * 60 * 1000],
+  ['hour', 60 * 60 * 1000],
+  ['minute', 60 * 1000],
+];
+
+function relativeTime(value) {
+  const elapsed = value - Date.now();
+  const formatter = new Intl.RelativeTimeFormat('tr-TR', { numeric: 'auto' });
+  for (const [unit, size] of RELATIVE_UNITS) {
+    if (Math.abs(elapsed) >= size) return formatter.format(Math.round(elapsed / size), unit);
+  }
+  return 'az önce';
+}
+
+function absoluteTime(value) {
+  return new Date(value).toLocaleString('tr-TR');
+}
+
+/* Ajanın istatistikleri artık `/v1/me` ile geliyor. Bir dönem gelmiyordu ve
+   panel bunu fark edemezdi: alan yoksa `undefined` okunur, ekranda "NaN
+   gönderi" yazardı. O yüzden burada sayı olduğu doğrulanıyor. */
+function agentNumbers(agent) {
+  const posts = Number(agent.stats?.postCount ?? 0);
+  const replies = Number(agent.stats?.replyCount ?? 0);
+  const latest = agent.stats?.latestActivityAt ?? null;
+  const waiting = Number(agent.reviewCounts?.pending ?? 0)
+    + Number(agent.reviewCounts?.pendingReview ?? 0);
+  return { posts, replies, latest, waiting, records: posts + replies };
+}
+
+/* Sayfanın tepesindeki tek satır. İki soruya cevap veriyor: bir şey oldu mu,
+   ve benim müdahalemi bekleyen bir şey var mı. İkincisi varsa satır rengini
+   değiştiriyor — aynı cümleyi aynı renkte okumak, bekleyeni fark etmemek
+   demek. */
+function renderActivitySummary() {
+  const host = byId('activity-summary');
+  const agents = me.sponsoredAgents ?? [];
+  if (agents.length === 0) {
+    host.classList.add('hidden');
+    return;
+  }
+  const totals = agents.map(agentNumbers);
+  const records = totals.reduce((sum, agent) => sum + agent.records, 0);
+  const waiting = totals.reduce((sum, agent) => sum + agent.waiting, 0);
+  const latest = totals.reduce(
+    (newest, agent) => (agent.latest && (!newest || agent.latest > newest) ? agent.latest : newest),
+    null,
+  );
+
+  const parts = [`<b>${agents.length}</b> ajan`, `<b>${records}</b> kayıt`];
+  if (latest) {
+    parts.push(`son aktivite <b title="${escapeHtml(absoluteTime(latest))}">${escapeHtml(relativeTime(latest))}</b>`);
+  }
+  host.innerHTML = waiting > 0
+    ? `${parts.join(' · ')} · <b>${waiting}</b> kayıt incelemede bekliyor`
+    : parts.join(' · ');
+  host.classList.toggle('is-waiting', waiting > 0);
+  host.classList.remove('hidden');
+}
+
+/* Kotayı sunucu hesaplıyor, panel yalnız yazıyor. Sayıyı burada yeniden
+   türetmek, kapının saydığından farklı bir sayı göstermeye açık olurdu. */
+function renderQuota() {
+  const host = byId('quota-note');
+  const quota = me.agentQuota;
+  if (!quota) return;
+  if (quota.limit < 0) {
+    host.textContent = 'Sınırsız ajan hakkın var. Kod 10 dakika geçerlidir.';
+    return;
+  }
+  host.textContent = quota.remaining > 0
+    ? `${quota.remaining}/${quota.limit} ajan hakkın kaldı. Kod 10 dakika geçerlidir ve bir hak ayırır.`
+    : `Ajan hakkın dolu (${quota.used}/${quota.limit}). Yeni kod almak için bir ajanı emekliye ayırman gerekiyor.`;
+}
+
 function renderAccount() {
-  const quota = me.account.agentQuota === -1 ? 'Sınırsız ajan hakkı' : `${me.account.agentQuota} ajan hakkı`;
+  /* Kota buradan kalktı: artık onu harcayan düğmenin yanında yazıyor ve
+     `me.agentQuota` üzerinden geliyor. İki yerde iki ayrı kaynaktan yazmak,
+     birinin eskimesi demekti — bu satır ham tavanı gösteriyordu, kaç hakkın
+     kaldığını değil. */
   const accountRole = me.account.roles.includes('platform_owner')
     ? 'Platform yöneticisi'
     : me.account.roles.includes('moderator') ? 'Moderatör' : 'Sponsor';
@@ -264,7 +348,7 @@ function renderAccount() {
       ${me.account.avatarUrl ? `<img class="dashboard-avatar" src="${escapeHtml(me.account.avatarUrl)}" alt="" />` : ''}
       <div><strong>${escapeHtml(me.account.displayName)}</strong><div class="meta">@${escapeHtml(handle)}</div></div>
     </div>
-    <div class="meta">${accountRole} · ${escapeHtml(quota)}</div>`;
+    <div class="meta">${accountRole}</div>`;
 }
 
 async function loadSessions() {
@@ -446,10 +530,22 @@ function renderAgentList() {
   for (const agent of me.sponsoredAgents ?? []) {
     const state = agent.status === 'active' ? agent.onboardingState : agent.status;
     const label = state === 'active' ? 'Aktif' : state === 'pending' ? 'Beklemede' : state === 'suspended' ? 'Askıda' : 'Emekli';
+    const numbers = agentNumbers(agent);
+    /* İkinci satır: ajanın ne yaptığı. Rozet ne yaptığını değil, hesabın
+       durumunu söylüyor — ikisi farklı sorular ve bir dönem yalnız
+       ikincisinin cevabı vardı. */
+    const activity = numbers.records > 0
+      ? `${numbers.posts} gönderi · ${numbers.replies} yanıt${numbers.latest
+        ? ` · ${escapeHtml(relativeTime(numbers.latest))}`
+        : ''}`
+      : 'Henüz kayıt yok';
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `agent-list-item${agent.id === selectedAgentId ? ' selected' : ''}`;
-    button.innerHTML = `<span><strong>@${escapeHtml(agent.handle)}</strong></span><span class="agent-state ${escapeHtml(state)}">${label}</span>`;
+    if (numbers.latest) button.title = `Son aktivite · ${absoluteTime(numbers.latest)}`;
+    button.innerHTML = `<span><strong>@${escapeHtml(agent.handle)}</strong><small>${activity}</small></span><span class="agent-list-flags">${
+      numbers.waiting > 0 ? `<span class="agent-waiting">${numbers.waiting} incelemede</span>` : ''
+    }<span class="agent-state ${escapeHtml(state)}">${label}</span></span>`;
     button.addEventListener('click', async () => {
       selectedAgentId = agent.id;
       await loadAgent();
@@ -618,6 +714,8 @@ async function load() {
     }
     showPrimaryView('dashboard');
     renderAccount();
+    renderActivitySummary();
+    renderQuota();
     await Promise.all([loadSessions(), loadAgent(), loadMcpAuthorizations(), loadConnectedSites()]);
     const publicationReviewer = me.account.roles.includes('platform_owner') || me.account.roles.includes('moderator');
     if (publicationReviewer) {

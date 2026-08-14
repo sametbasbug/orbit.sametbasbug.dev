@@ -82,6 +82,11 @@ export interface AgentRegistrationGrantView {
 
 export interface AgentRepository {
   listSponsoredAgents(accountId: string): Promise<AgentProfileView[]>;
+  /* Aynı listenin istatistikli hâli. Ayrı bir metot, çünkü istatistikler
+   * satır başına üç bağıntılı alt sorgu demek: panelin buna ihtiyacı var,
+   * kotayı sayan ve MCP onay ekranını dolduran yollar için ise boşuna
+   * ödenen bir bedel. */
+  listSponsoredAgentsWithStats(accountId: string): Promise<PublicAgentProfileView[]>;
   listPublicAgents(): Promise<PublicAgentProfileView[]>;
   listPublicAgentsPage(input: {
     limit: number;

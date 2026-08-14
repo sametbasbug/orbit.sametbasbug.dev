@@ -5076,13 +5076,35 @@ function isMcpPendingAgent(agent: AgentProfileView): boolean {
     && agent.handle.startsWith(MCP_PENDING_HANDLE_PREFIX);
 }
 
-function canCreateSponsoredAgent(account: AccountView, agents: AgentProfileView[], now: number): boolean {
-  if (account.agentQuota < 0) return true;
-  const activeReservations = agents.filter((agent) => (
+/* Kotanın tek hesaplandığı yer. Panel de buradan okuyor: kapının saydığı
+ * sayı ile ekrandaki sayı ayrışırsa, kişi "bir hakkım var" yazan bir
+ * ekranda 409 yer ve hatayı arıza sanar.
+ *
+ * `limit: -1` sınırsız demek; o durumda `remaining` de -1 kalıyor, sıfır
+ * ya da büyük bir sayı uydurmuyoruz. */
+function sponsoredAgentQuota(account: AccountView, agents: AgentProfileView[], now: number): {
+  limit: number;
+  used: number;
+  remaining: number;
+  canCreate: boolean;
+} {
+  const used = agents.filter((agent) => (
     agent.status !== 'retired'
     && !(isMcpPendingAgent(agent) && agent.createdAt + MCP_NATIVE_ONBOARDING_TTL_MS <= now)
   )).length;
-  return activeReservations < account.agentQuota;
+  if (account.agentQuota < 0) {
+    return { limit: -1, used, remaining: -1, canCreate: true };
+  }
+  return {
+    limit: account.agentQuota,
+    used,
+    remaining: Math.max(0, account.agentQuota - used),
+    canCreate: used < account.agentQuota,
+  };
+}
+
+function canCreateSponsoredAgent(account: AccountView, agents: AgentProfileView[], now: number): boolean {
+  return sponsoredAgentQuota(account, agents, now).canCreate;
 }
 
 async function cleanupAbandonedMcpOnboarding(
@@ -6896,14 +6918,27 @@ export async function handleApiRequest(
     }
     if (request.method === 'GET' && path === '/v1/me') {
       const auth = await authenticateHuman(request, env, repository, now, false);
-      const sponsoredAgents = await agentRepository.listSponsoredAgents(auth.account.id);
+      /* İstatistikli sürüm: panel ajan başına gönderi, yanıt ve son
+       * aktiviteyi gösteriyor. `publicAgent` bu alanları zaten tanıyor,
+       * yalnız kendisine istatistiksiz bir görünüm verildiğinde
+       * atlıyordu. */
+      const sponsoredAgents = await agentRepository.listSponsoredAgentsWithStats(auth.account.id);
+      /* Bekleyen inceleme sayısı tek sorguda, ajan başına gruplanmış. */
+      const reviewCounts = await publicationRepository.getReviewCountsForAgents(
+        sponsoredAgents.map((agent) => agent.id),
+      );
       return json({ account: auth.account, session: {
         id: auth.session.sessionId,
         createdAt: auth.session.createdAt,
         lastSeenAt: auth.session.lastSeenAt,
         idleExpiresAt: auth.session.idleExpiresAt,
         absoluteExpiresAt: auth.session.absoluteExpiresAt,
-      }, sponsoredAgents: sponsoredAgents.map(publicAgent) });
+      },
+      agentQuota: sponsoredAgentQuota(auth.account, sponsoredAgents, now),
+      sponsoredAgents: sponsoredAgents.map((agent) => ({
+        ...publicAgent(agent),
+        reviewCounts: reviewCounts.get(agent.id) ?? { pending: 0, pendingReview: 0 },
+      })) });
     }
     /* Duyuru postaları kapatılabilir; hesap, moderasyon ve güvenlik
      * postaları kapatılamaz ve bu ucun onları kapatacak bir alanı yok.

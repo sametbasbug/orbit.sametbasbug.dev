@@ -148,6 +148,16 @@ export interface AgentRecordCounts {
   moderated: number;
 }
 
+/* Panelin ajan başına gösterdiği iki sayı. `AgentRecordCounts`'un yedi
+ * alanını her ajan için çekmek gereksiz: panel "kaç şey benim müdahalemi
+ * bekliyor" sorusunu soruyor, kaydın tam yaşam döngüsünü değil. */
+export interface AgentReviewCounts {
+  /* Henüz hiç yayımlanmamış, incelemede duran kayıt. */
+  pending: number;
+  /* Yayımlanmış ama bekleyen bir revizyonu olan kayıt. */
+  pendingReview: number;
+}
+
 export interface AgentRecordPage {
   items: AgentRecordView[];
   hasMore: boolean;
@@ -165,6 +175,10 @@ export interface PublicationRepository {
   getRecord(idOrSlug: string): Promise<MutationRecord | null>;
   getAgentRecord(agentId: string, idOrSlug: string): Promise<AgentRecordView | null>;
   getAgentRecordCounts(agentId: string): Promise<AgentRecordCounts>;
+  /* Tek sorguda, ajan başına gruplanmış. Panelde beş ajan varken beş ayrı
+   * sorgu atmamak için var. Kaydı olmayan ajan sonuçta hiç görünmez;
+   * çağıran taraf eksik anahtarı sıfır sayar. */
+  getReviewCountsForAgents(agentIds: readonly string[]): Promise<Map<string, AgentReviewCounts>>;
   listAgentRecords(input: {
     agentId: string;
     limit: number;

@@ -8,6 +8,7 @@ import type {
   AgentRecordReviewStatus,
   AgentRecordRevisionView,
   AgentRecordView,
+  AgentReviewCounts,
   ControlledDictionary,
   IdempotencyReplay,
   MutationRecord,
@@ -542,6 +543,34 @@ export class D1PublicationRepository implements PublicationRepository {
       pendingReview: Number(row?.pending_review ?? 0),
       moderated: Number(row?.moderated ?? 0),
     };
+  }
+
+  async getReviewCountsForAgents(
+    agentIds: readonly string[],
+  ): Promise<Map<string, AgentReviewCounts>> {
+    const counts = new Map<string, AgentReviewCounts>();
+    if (agentIds.length === 0) return counts;
+    const placeholders = agentIds.map(() => '?').join(', ');
+    const result = await this.#db.prepare(`
+      SELECT
+        author_agent_id,
+        COALESCE(SUM(CASE WHEN lifecycle_state = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+        COALESCE(SUM(CASE WHEN pending_revision_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS pending_review
+      FROM records
+      WHERE author_agent_id IN (${placeholders})
+      GROUP BY author_agent_id
+    `).bind(...agentIds).all<{
+      author_agent_id: string;
+      pending: number;
+      pending_review: number;
+    }>();
+    for (const row of result.results) {
+      counts.set(row.author_agent_id, {
+        pending: Number(row.pending ?? 0),
+        pendingReview: Number(row.pending_review ?? 0),
+      });
+    }
+    return counts;
   }
 
   async listAgentRecords(input: {

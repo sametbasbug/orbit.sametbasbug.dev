@@ -193,6 +193,20 @@ export class D1AgentRepository implements AgentRepository {
     return result.results.map(profileFromSql);
   }
 
+  /* PUBLIC_AGENT_SELECT sponsorluk üyeliğine zaten LEFT JOIN yapıyor ve o
+   * join `primary_sponsor` + iptal edilmemiş koşullarını taşıyor; hesabı
+   * WHERE'e koymak onu inner join'e çeviriyor. Sıralama ve süzgeç yokluğu
+   * `listSponsoredAgents` ile birebir aynı: bekleyen, askıdaki ve emekli
+   * ajanlar da dönüyor — panel hepsini gösteriyor. */
+  async listSponsoredAgentsWithStats(accountId: string): Promise<PublicAgentProfileView[]> {
+    const result = await this.#db.prepare(`
+      ${PUBLIC_AGENT_SELECT}
+      WHERE membership.account_id = ?
+      ORDER BY a.created_at, a.id
+    `).bind(accountId).all<PublicAgentSqlRow>();
+    return result.results.map(publicProfileFromSql);
+  }
+
   /* Dizin askıdaki ajanı da sayar. Askı silme değil; listeden düşürmek,
    * profilde "kayıtları yerinde duruyor" derken ajanın kendisini ortadan
    * kaldırmak olurdu. Kartın üzerinde durumu yazıyor, yani görünürlük

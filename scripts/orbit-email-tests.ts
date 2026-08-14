@@ -91,7 +91,10 @@ describe('giden posta', { concurrency: false }, () => {
      * tutuyor. Kopya ayrışırsa kutu açık kalır, kişi postalanacağını
      * sanır ve sunucu 400 döner — yani kullanıcı hatası gibi görünen bir
      * bizim hatamız. Kaynak dosyadan okuyup karşılaştırıyoruz. */
-    const client = readFileSync(new URL('../src/scripts/dashboard.js', import.meta.url), 'utf8');
+    /* Liste duyuru formuyla birlikte platform sayfasına taşındı. Yol
+     * güncellenmezse test "panelde bulunamadı" diye kırılır — sessizce
+     * geçmez, ama yine de doğru dosyaya bakmalı. */
+    const client = readFileSync(new URL('../src/scripts/dashboard-platform.js', import.meta.url), 'utf8');
     const match = client.match(/const ANNOUNCEMENT_EMAIL_SEVERITIES = \[([^\]]*)\]/u);
     assert.ok(match, 'panelde seviye listesi bulunamadı');
     const clientList = match[1].split(',')

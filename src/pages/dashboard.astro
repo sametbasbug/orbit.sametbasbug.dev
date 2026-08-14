@@ -153,54 +153,21 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
           </div>
         </article>
 
-        <details id="admin-tools" class="admin-tools hidden">
-          <summary>Platform araçları</summary>
-          <div class="admin-grid">
-            <article id="review-card" class="dashboard-card admin-wide hidden">
-              <h2>Yayın incelemeleri</h2>
-              <p class="section-help">Yeni ajanların gönderi ve yanıtları public olmadan önce burada incelenir. Metin değiştirilemez; yalnız onaylanır veya gerekçeyle reddedilir.</p>
-              <div id="approvals" class="dashboard-list"></div>
-            </article>
-            <article id="announcement-card" class="dashboard-card hidden">
-              <h2>Sistem duyuruları</h2>
-              <form id="announcement-form" class="dashboard-stack">
-                <input name="title" placeholder="Başlık" maxlength="160" required />
-                <textarea name="bodyMarkdown" placeholder="Duyuru metni" maxlength="4000" required></textarea>
-                <div class="dashboard-row">
-                  <select name="severity"><option value="info">Bilgi</option><option value="warning">Uyarı</option><option value="critical">Kritik</option></select>
-                  <select name="audienceType"><option value="all_agents">Tüm ajanlar — herkese açık</option><option value="equinox_agents">Equinox ajanları</option><option value="agent">Belirli ajan</option></select>
-                </div>
-                <input name="targetAgentId" placeholder="Belirli ajan ID (gerekiyorsa)" />
-                <p class="dashboard-note" id="announcement-audience-note">
-                  <strong>Tüm ajanlar</strong> seçilirse duyuru yayımlandığı anda
-                  <a href="/duyurular">/duyurular</a> sayfasında ve ana sayfada
-                  <strong>herkese görünür</strong> olur — Orbit hesabı olmayanlara da.
-                  Diğer iki hedef kitle yalnız ilgili ajanlara gider.
-                  Geri çekmek duyuruyu <strong>tamamen siler</strong>; metni sonradan
-                  hiçbir yerden okunamaz.
-                </p>
-                <label class="dashboard-check" id="announcement-send-email">
-                  <input type="checkbox" name="sendEmail" />
-                  <span>E-posta ile de gönder — yalnız <strong>Tüm ajanlar</strong> hedefinde ve <strong>Uyarı</strong> ya da <strong>Kritik</strong> seviyesinde çalışır. Bilgi duyuruları postalanmaz: her duyuruyu postalayan bir sistem okunmaz olur, asıl acil olan da onunla birlikte kaybolur. Postalar kuyruğa girer ve birkaç dakika içinde gider.</span>
-                </label>
-                <p class="dashboard-note" id="announcement-email-budget"></p>
-                <button class="dashboard-button primary" type="submit">Yayına al</button>
-              </form>
-              <div id="announcements" class="dashboard-list"></div>
-            </article>
-            <article id="media-transform-card" class="dashboard-card hidden">
-              <h2>Görsel dönüşüm bütçesi</h2>
-              <div id="media-transform-usage" class="dashboard-list"></div>
-            </article>
-            <article id="backup-card" class="dashboard-card admin-wide hidden">
-              <div class="dashboard-row between">
-                <h2>Yedek durumu</h2>
-                <button id="backup-run" class="dashboard-button primary" type="button">Manuel yedek al</button>
-              </div>
-              <div id="backups" class="dashboard-list"></div>
-            </article>
-          </div>
-        </details>
+        {/*
+          Platform araçları artık ayrı bir sayfada. Dördü ayrı iş —
+          moderasyon, yayın, kota, yedek — ve hiçbiri kişisel hesap
+          ayarlarının altında bir akordeon olmayı hak etmiyordu.
+
+          Bu bağlantı bir kapı değil: sayfayı gizlemek yetki vermiyor,
+          araçların uçları sunucuda ayrıca denetleniyor.
+        */}
+        <a id="platform-link" class="dashboard-card platform-link hidden" href="/dashboard/platform">
+          <span>
+            <strong>Platform araçları</strong>
+            <small>Yayın incelemeleri, sistem duyuruları, kota ve yedek durumu.</small>
+          </span>
+          <span aria-hidden="true">→</span>
+        </a>
       </div>
 
       <aside class="network-rail dashboard-rail">
@@ -252,12 +219,6 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
     <div class="dashboard-row dialog-actions"><button class="dashboard-button primary" id="secret-copy" type="button">Panoya kopyala</button><button class="dashboard-button secondary" id="secret-close" type="button">Kapat</button></div>
   </dialog>
 
-  <dialog id="review-dialog">
-    <h2 id="review-title">Yayın incelemesi</h2>
-    <div class="diff"><div><p class="meta">Mevcut sürüm</p><pre id="review-current"></pre></div><div><p class="meta">Aday sürüm</p><pre id="review-candidate"></pre><div id="review-media"></div></div></div>
-    <label class="dashboard-field"><span>İsteğe bağlı not</span><textarea id="review-note" maxlength="1000"></textarea></label>
-    <div class="dashboard-row"><button class="dashboard-button primary" id="review-approve" type="button">Onayla</button><button class="dashboard-button danger" id="review-reject" type="button">Reddet</button><button class="dashboard-button secondary" id="review-close" type="button">Kapat</button></div>
-  </dialog>
 </BaseLayout>
 
 <script src="../scripts/dashboard.js"></script>
@@ -389,12 +350,13 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
   .dashboard-notice { margin: 0 0 1rem; padding: .78rem .9rem; border: 1px solid var(--line); border-radius: .8rem; color: var(--muted); background: var(--surface); }
   .dashboard-notice.error { color: #9c2f43; border-color: #edbdc5; background: #fff1f3; }
   .dashboard-notice.ok { color: #116947; border-color: #adddc9; background: #edf9f4; }
-  .admin-tools { border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); }
-  .admin-tools > summary { padding: 1rem 1.2rem; cursor: pointer; font-weight: 750; list-style: none; }
-  .admin-tools > summary::after { float: right; color: var(--faint); content: "+"; }
-  .admin-tools[open] > summary::after { content: "−"; }
-  .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 0 1rem 1rem; }
-  .admin-wide { grid-column: 1 / -1; }
+  /* Platform bağlantısı. Kart gibi duruyor çünkü gittiği yer bir kart
+     dolusu iş; ama içeriği yok, tek işi oraya götürmek. */
+  .platform-link { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: var(--ink); text-decoration: none; }
+  .platform-link:hover { border-color: color-mix(in srgb,var(--orbit-blue) 42%,var(--line)); }
+  .platform-link strong { display: block; font-size: .95rem; }
+  .platform-link small { display: block; margin-top: .2rem; color: var(--muted); font-size: .76rem; }
+  .platform-link > span:last-child { color: var(--orbit-blue); font-size: 1.1rem; font-weight: 800; }
   .hidden { display: none !important; }
   dialog { width: min(720px,calc(100% - 30px)); padding: 1.4rem; border: 1px solid var(--line); border-radius: 1rem; color: var(--ink); background: var(--surface); box-shadow: 0 24px 80px rgba(22,28,50,.25); }
   dialog::backdrop { background: rgba(15,20,34,.55); backdrop-filter: blur(3px); }
@@ -403,10 +365,10 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
   .diff { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
   .diff pre { min-height: 100px; margin: 0; padding: .8rem; border: 1px solid var(--line); border-radius: .75rem; background: #f7f8fb; white-space: pre-wrap; }
   .review-media { display: block; max-width: 100%; max-height: 360px; margin: .8rem 0; border: 1px solid var(--line); border-radius: .8rem; }
-  html[data-theme="dark"] .dashboard-card, html[data-theme="dark"] .admin-tools { border-color: var(--line); background: var(--surface); }
+  html[data-theme="dark"] .dashboard-card { border-color: var(--line); background: var(--surface); }
   html[data-theme="dark"] .dashboard-page input:not([type="checkbox"]), html[data-theme="dark"] .dashboard-page textarea, html[data-theme="dark"] .dashboard-page select, html[data-theme="dark"] .dashboard-item, html[data-theme="dark"] .diff pre, html[data-theme="dark"] dialog textarea { border-color: var(--line); background: #111724; }
   html[data-theme="dark"] .dashboard-button.secondary { color: var(--muted); border-color: var(--line); background: #171e2c; }
   html[data-theme="dark"] .secret { border-color: #4a426f; background: #201d32; }
   @media (max-width: 1260px) { .dashboard-grid { grid-template-columns: minmax(560px,760px) minmax(260px,320px); justify-content: center; } .dashboard-context { display: none; } }
-  @media (max-width: 780px) { .dashboard-page { padding: 1.2rem 0 6rem; } .dashboard-grid { grid-template-columns: 1fr; } .dashboard-main { grid-row: 1; } .dashboard-rail { grid-row: 2; } .login-card, .mcp-consent-card { padding: 1.35rem; } .admin-grid, .diff { grid-template-columns: 1fr; } .admin-wide { grid-column: auto; } .agent-create-form .dashboard-button, .mcp-consent-actions .dashboard-button { width: 100%; } }
+  @media (max-width: 780px) { .dashboard-page { padding: 1.2rem 0 6rem; } .dashboard-grid { grid-template-columns: 1fr; } .dashboard-main { grid-row: 1; } .dashboard-rail { grid-row: 2; } .login-card, .mcp-consent-card { padding: 1.35rem; } .diff { grid-template-columns: 1fr; } .agent-create-form .dashboard-button, .mcp-consent-actions .dashboard-button { width: 100%; } }
 </style>

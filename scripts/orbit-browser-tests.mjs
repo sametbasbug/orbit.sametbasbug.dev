@@ -208,6 +208,58 @@ if (errors.length === 0) {
      * rolü platform araçlarını da yüklüyor ve onların uçları burada
      * mocklanmadığı için panel hata durumuna düşerdi. Ölçtüğümüz şey
      * ajan listesi, o yüzden sade hesap yeterli. */
+    /* Platform yöneticisi. Yedek listesi bilerek karışık: otuz dört özdeş
+     * satırın içinde tek bir başarısızlık, kartın çözmesi gereken asıl
+     * problemdi. */
+    if (request.headers.cookie?.includes('orbit-platform-test=1')) {
+      const platformJson = (body) => {
+        response.writeHead(200, { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify(body));
+      };
+      if (pathname === '/v1/me') {
+        platformJson({
+          account: {
+            roles: ['platform_owner'], agentQuota: -1, displayName: 'Orbit Owner',
+            handle: 'orbit-owner', avatarUrl: null, announcementEmails: true,
+          },
+          session: { id: 'session-owner' },
+          agentQuota: { limit: -1, used: 0, remaining: -1, canCreate: true },
+          sponsoredAgents: [],
+        });
+        return;
+      }
+      if (pathname === '/v1/approvals') { platformJson({ reviews: [] }); return; }
+      if (pathname === '/v1/admin/announcements') {
+        platformJson({ announcements: [{
+          id: 'ann-1', title: 'Bakım penceresi', severity: 'critical',
+          audienceType: 'all_agents', status: 'active',
+        }] });
+        return;
+      }
+      if (pathname === '/v1/admin/announcements/email-budget') {
+        platformJson({ emailBudget: { recipients: 3, recipientCap: 60, remainingToday: 90, dailyBudget: 90 } });
+        return;
+      }
+      if (pathname === '/v1/admin/media-transform-usage') {
+        platformJson({ usage: {
+          monthUtc: '2026-08', attemptedCount: 1, safetyLimit: 4500,
+          succeededCount: 1, failedCount: 0, alert: false,
+        } });
+        return;
+      }
+      if (pathname === '/v1/admin/backups') {
+        const runs = Array.from({ length: 33 }, (_, index) => ({
+          backupKind: 'daily', status: 'succeeded',
+          startedAt: Date.UTC(2026, 7, 14 - index, 6, 17), errorCode: null,
+        }));
+        runs.splice(4, 0, {
+          backupKind: 'weekly', status: 'failed',
+          startedAt: Date.UTC(2026, 7, 9, 6, 17), errorCode: 'r2_upload_timeout',
+        });
+        platformJson({ backups: runs });
+        return;
+      }
+    }
     if (request.headers.cookie?.includes('orbit-sponsor-test=1')) {
       const sponsorJson = (body) => {
         response.writeHead(200, { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' });
@@ -226,6 +278,13 @@ if (errors.length === 0) {
         return;
       }
       if (pathname === '/v1/sessions') { sponsorJson({ sessions: [] }); return; }
+      /* Sponsorun platform yetkisi yok: sayfa "kapalı" hâlini göstermeli
+       * ve hiçbir yönetici ucuna dokunmamalı. */
+      if (pathname.startsWith('/v1/admin/') || pathname === '/v1/approvals') {
+        response.writeHead(403, { 'content-type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: { code: 'forbidden', message: 'no' } }));
+        return;
+      }
       if (pathname === '/v1/mcp/authorizations') { sponsorJson({ authorizations: [] }); return; }
       if (pathname === '/v1/me/connected-sites') { sponsorJson({ connectedSites: [] }); return; }
       const manage = /^\/v1\/agents\/([^/]+)\/manage$/u.exec(pathname);
@@ -844,6 +903,7 @@ if (errors.length === 0) {
           underlinedButtons: [...document.querySelectorAll('a.dashboard-button')]
             .filter((a) => getComputedStyle(a).textDecorationLine.includes('underline')).length,
           deadCards: document.querySelectorAll('#messages-card, #following-card, #agent-detail').length,
+          platformLinkHidden: document.querySelector('#platform-link')?.classList.contains('hidden'),
         };
       });
 
@@ -875,6 +935,10 @@ if (errors.length === 0) {
       );
       check(panel.deadCards === 0, `${label}: kaldırılan mesaj/takip kartları ya da eski detay kabı hâlâ basılıyor.`);
       check(panel.underlinedButtons === 0, `${label}: bağlantı olarak çizilen düğmenin metni altı çizili (${panel.underlinedButtons}).`);
+      /* Sponsorun platform yetkisi yok; bağlantı gizli olmalı. Gizlemek
+       * yetki kaldırmıyor — uçlar sunucuda denetleniyor — ama çalışmayan
+       * bir kapıyı göstermenin de anlamı yok. */
+      check(panel.platformLinkHidden === true, `${label}: yetkisi olmayan hesaba platform bağlantısı gösteriliyor.`);
 
       /* İkinci ajana geçiş: detay taşınmalı, çoğalmamalı. */
       await page.locator('.agent-row').nth(1).locator('.agent-list-item').click();
@@ -896,6 +960,107 @@ if (errors.length === 0) {
         `${label}: panel yatay taşıyor.`,
       );
       check(pageErrors.length === 0, `${label}: panelde sayfa hatası: ${pageErrors.join(' | ')}`);
+      await context.close();
+    }
+
+    /* Platform araçları sayfası. Dört ayrı iş bir dönem kişisel hesap
+     * ayarlarının altında bir akordeonun içindeydi. */
+    {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'light' });
+      await context.addCookies([{ name: 'orbit-platform-test', value: '1', url: baseUrl }]);
+      const page = await context.newPage();
+      const pageErrors = [];
+      page.on('pageerror', (error) => pageErrors.push(error.message));
+      await page.goto(`${baseUrl}/dashboard/platform`, { waitUntil: 'load' });
+      await page.waitForSelector('#platform:not(.hidden)');
+      await page.waitForSelector('.backup-summary');
+
+      const platform = await page.evaluate(() => {
+        const box = (selector) => {
+          const element = document.querySelector(selector);
+          if (!element) return null;
+          const rect = element.getBoundingClientRect();
+          return { width: Math.round(rect.width), height: Math.round(rect.height) };
+        };
+        return {
+          deniedHidden: document.querySelector('#platform-denied')?.classList.contains('hidden'),
+          announcementMeta: document.querySelector('#announcements .meta')?.textContent,
+          backupSummary: document.querySelector('.backup-summary')?.textContent?.replace(/\s+/gu, ' ').trim(),
+          backupFailing: document.querySelector('.backup-summary')?.classList.contains('is-failing'),
+          backupRows: document.querySelectorAll('#backups .dashboard-item').length,
+          backupRowText: document.querySelector('#backups .dashboard-item')?.textContent?.replace(/\s+/gu, ' ').trim(),
+          mediaCard: box('#media-transform-card'),
+          mediaContent: box('#media-transform-usage'),
+          announcementForm: box('#announcement-form'),
+        };
+      });
+
+      check(platform.deniedHidden === true, 'Platform: yetkili hesaba "kapalı" ekranı gösteriliyor.');
+      /* Ham enum sızıntısı. `info · all_agents · active` yerine Türkçe. */
+      check(
+        platform.announcementMeta === 'Kritik · Tüm ajanlar · Yayında',
+        `Platform: duyuru satırı ham enum yazıyor (${platform.announcementMeta}).`,
+      );
+      /* Yedek kartı: 34 satır yerine bir durum ve yalnız başarısız olan. */
+      check(platform.backupRows === 1, `Platform: yedek kartı başarılı çalışmaları da listeliyor (${platform.backupRows}).`);
+      check(platform.backupFailing === true, 'Platform: başarısız yedek varken durum satırı uyarı rengine geçmiyor.');
+      check(
+        platform.backupSummary?.includes('1 yedek çalışması başarısız'),
+        `Platform: yedek durumu başarısızlığı söylemiyor (${platform.backupSummary}).`,
+      );
+      check(
+        platform.backupSummary?.includes('34 çalışmanın 33'),
+        `Platform: yedek durumu toplamı yanlış (${platform.backupSummary}).`,
+      );
+      check(
+        platform.backupRowText?.includes('Haftalık · Başarısız') && platform.backupRowText?.includes('r2_upload_timeout'),
+        `Platform: başarısız yedek satırı türü ya da hata kodunu yazmıyor (${platform.backupRowText}).`,
+      );
+      /* Boş kutu: kart bir dönem 990px yüksekliğindeydi ve içinde 80px
+       * içerik vardı, çünkü yanındaki uzun kartla eşit boya çekiliyordu. */
+      /* Boş kutu. Kart bir dönem 990px yüksekliğindeydi ve içinde 80px
+       * içerik vardı: `1fr 1fr` bir ızgarada komşusu uzun olduğu için
+       * onunla eşit boya çekiliyordu.
+       *
+       * Eşik ölçülerek seçildi: `align-items: start` varken kart ile
+       * içeriği arasındaki fark 82px (dolgu ve başlık), kaldırıldığında
+       * 189px'e çıkıyor. 120 ikisini ayırıyor. */
+      check(
+        platform.mediaCard.height - platform.mediaContent.height < 120,
+        `Platform: görsel bütçe kartı içeriğinden çok daha uzun (kart ${platform.mediaCard.height}px, içerik ${platform.mediaContent.height}px).`,
+      );
+      /* Duyuru formu bir dönem 310px'lik bir şeritti. */
+      check(
+        platform.announcementForm.width > 500,
+        `Platform: duyuru formu dar bir şeride sıkışmış (${platform.announcementForm.width}px).`,
+      );
+      check(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+        'Platform: sayfa yatay taşıyor.',
+      );
+      check(pageErrors.length === 0, `Platform: sayfa hatası: ${pageErrors.join(' | ')}`);
+      await context.close();
+    }
+
+    /* Yetkisi olmayan hesap. Sayfa bir kapı değil — uçlar sunucuda
+     * denetleniyor — ama çalışmayan düğmelerle dolu bir ekran da açmamalı. */
+    {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'light' });
+      await context.addCookies([{ name: 'orbit-sponsor-test', value: '1', url: baseUrl }]);
+      const page = await context.newPage();
+      const pageErrors = [];
+      page.on('pageerror', (error) => pageErrors.push(error.message));
+      await page.goto(`${baseUrl}/dashboard/platform`, { waitUntil: 'load' });
+      await page.waitForSelector('#platform-denied:not(.hidden)');
+      const denied = await page.evaluate(() => ({
+        toolsHidden: document.querySelector('#platform')?.classList.contains('hidden'),
+        approvals: document.querySelectorAll('#approvals .dashboard-item').length,
+        backups: document.querySelectorAll('#backups .dashboard-item, .backup-summary').length,
+      }));
+      check(denied.toolsHidden === true, 'Platform: yetkisiz hesaba araçlar gösteriliyor.');
+      check(denied.approvals === 0, 'Platform: yetkisiz hesap için inceleme kuyruğu yüklenmiş.');
+      check(denied.backups === 0, 'Platform: yetkisiz hesap için yedek listesi yüklenmiş.');
+      check(pageErrors.length === 0, `Platform yetkisiz: sayfa hatası: ${pageErrors.join(' | ')}`);
       await context.close();
     }
 

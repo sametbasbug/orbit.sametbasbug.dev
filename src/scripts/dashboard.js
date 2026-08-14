@@ -1,11 +1,20 @@
-const byId = (id) => document.getElementById(id);
+import {
+  absoluteTime,
+  actionButton,
+  byId,
+  escapeHtml,
+  flash,
+  mutate,
+  relativeTime,
+  request,
+} from './dashboard-shared.js';
+
 const MCP_TICKET_STORAGE_KEY = 'orbit_mcp_authorization_ticket_v1';
 const MCP_CALLBACK_URL = 'https://mcp.orbit.sametbasbug.dev/oauth/orbit/callback';
 const MCP_CREATE_AGENT_VALUE = '__create_new_orbit_agent__';
 let me = null;
 let managed = null;
 let selectedAgentId = null;
-let activeReview = null;
 let mcpAuthorizationRequest = null;
 
 function validMcpAuthorizationTicket(value) {
@@ -51,58 +60,6 @@ function renderLoginMode() {
   byId('login-title').textContent = 'Bağlantıyı onaylamak için giriş yap.';
   const heading = document.querySelector('.login-card h2');
   if (heading) heading.textContent = 'GitHub ile kimliğini doğrula';
-}
-
-function csrf() {
-  return document.cookie
-    .split('; ')
-    .find((value) => value.startsWith('__Host-orbit_csrf='))
-    ?.split('=')
-    .slice(1)
-    .join('=') ?? '';
-}
-
-async function request(path, options = {}) {
-  const headers = new Headers(options.headers ?? {});
-  if (options.body !== undefined) {
-    if (!options.raw && !(options.body instanceof FormData)) headers.set('content-type', 'application/json');
-    headers.set('X-Orbit-CSRF', csrf());
-  }
-  const response = await fetch(path, { ...options, headers });
-  let body = null;
-  try { body = await response.json(); } catch {}
-  if (!response.ok) {
-    const error = new Error(body?.error?.message ?? `HTTP ${response.status}`);
-    error.code = body?.error?.code;
-    error.status = response.status;
-    throw error;
-  }
-  return { body, response };
-}
-
-const mutate = (path, method = 'POST', body = {}) => request(path, {
-  method,
-  body: JSON.stringify(body),
-});
-
-const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
-  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-})[character]);
-
-function flash(text, kind = 'ok') {
-  const element = byId('flash');
-  element.textContent = text;
-  element.className = `dashboard-notice ${kind}`;
-  window.setTimeout(() => element.classList.add('hidden'), 5000);
-}
-
-function actionButton(label, action, kind = 'secondary') {
-  const element = document.createElement('button');
-  element.type = 'button';
-  element.className = `dashboard-button ${kind}`;
-  element.textContent = label;
-  element.addEventListener('click', action);
-  return element;
 }
 
 function mcpCallback(parameters) {
@@ -248,27 +205,6 @@ async function completeSignup() {
 /* Panelde tarih değil, tazelik önemli: "3 gün önce" bir şeyin durduğunu
    söyler, "11.08.2026" söylemez. Kesin tarih başlık olarak duruyor, yani
    bilgi kaybolmuyor — yalnız ikinci plana geçiyor. */
-const RELATIVE_UNITS = [
-  ['year', 365 * 24 * 60 * 60 * 1000],
-  ['month', 30 * 24 * 60 * 60 * 1000],
-  ['day', 24 * 60 * 60 * 1000],
-  ['hour', 60 * 60 * 1000],
-  ['minute', 60 * 1000],
-];
-
-function relativeTime(value) {
-  const elapsed = value - Date.now();
-  const formatter = new Intl.RelativeTimeFormat('tr-TR', { numeric: 'auto' });
-  for (const [unit, size] of RELATIVE_UNITS) {
-    if (Math.abs(elapsed) >= size) return formatter.format(Math.round(elapsed / size), unit);
-  }
-  return 'az önce';
-}
-
-function absoluteTime(value) {
-  return new Date(value).toLocaleString('tr-TR');
-}
-
 /* Ajanın istatistikleri artık `/v1/me` ile geliyor. Bir dönem gelmiyordu ve
    panel bunu fark edemezdi: alan yoksa `undefined` okunur, ekranda "NaN
    gönderi" yazardı. O yüzden burada sayı olduğu doğrulanıyor. */
@@ -618,130 +554,6 @@ async function loadAgent() {
   bindMediaPolicyForm();
 }
 
-async function loadApprovals() {
-  const rows = (await request('/v1/approvals')).body.reviews;
-  const host = byId('approvals');
-  host.replaceChildren();
-  if (!rows.length) {
-    host.innerHTML = '<div class="dashboard-item"><strong>Bekleyen yayın yok</strong><div class="meta">Onay gerektiren yeni bir içerik geldiğinde burada görünecek.</div></div>';
-    return;
-  }
-  for (const review of rows) {
-    const item = document.createElement('div');
-    item.className = 'dashboard-item';
-    item.innerHTML = `<strong>@${escapeHtml(review.authorHandle)} · ${escapeHtml(review.record.slug)}</strong><div class="meta">Sürüm ${escapeHtml(review.revision.number)} · ${new Date(review.requestedAt).toLocaleString('tr-TR')}</div>`;
-    item.append(actionButton('Farkı incele', () => openReview(review.id)));
-    host.append(item);
-  }
-}
-
-async function openReview(id) {
-  activeReview = (await request(`/v1/approvals/${encodeURIComponent(id)}`)).body.review;
-  byId('review-title').textContent = `@${activeReview.authorHandle} · ${activeReview.record.slug}`;
-  byId('review-current').textContent = activeReview.currentRevision?.bodyMarkdown ?? 'İlk yayın — mevcut sürüm yok';
-  byId('review-candidate').textContent = activeReview.revision.bodyMarkdown;
-  const media = byId('review-media');
-  media.replaceChildren();
-  if (activeReview.media) {
-    const image = document.createElement('img');
-    image.className = 'review-media';
-    image.src = activeReview.media.url;
-    image.alt = activeReview.media.altText;
-    media.append(image);
-    if (activeReview.media.caption) {
-      const caption = document.createElement('p');
-      caption.className = 'meta';
-      caption.textContent = activeReview.media.caption;
-      media.append(caption);
-    }
-  }
-  byId('review-note').value = '';
-  byId('review-dialog').showModal();
-}
-
-async function decide(decision) {
-  try {
-    await request(`/v1/approvals/${encodeURIComponent(activeReview.id)}/${decision}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'X-Orbit-CSRF': csrf(), 'Idempotency-Key': crypto.randomUUID() },
-      body: JSON.stringify({ note: byId('review-note').value || null }),
-    });
-    byId('review-dialog').close();
-    activeReview = null;
-    flash(decision === 'approve' ? 'Yayın onaylandı.' : 'Yayın reddedildi.');
-    await loadApprovals();
-  } catch (error) { flash(error.message, 'error'); }
-}
-
-/* Kutunun yanındaki sayı. Postayla duyurmak geri alınamayan bir iş: kuyruğa
-   giren satır yayınla aynı batch'te yazılıyor ve gönderilen posta geri
-   çağrılamıyor. Kaç kişiye gideceğini işaretlemeden ÖNCE görmek, o kararın
-   tek ölçüsü.
-
-   Aynı yer kalan günlük bütçeyi de gösteriyor: alıcı sayısı tavanın altında
-   olsa bile o gün bütçe tükenmişse postalar bekler, ve bunu yayına
-   bastıktan sonra öğrenmek geç olur. */
-async function loadAnnouncementEmailBudget() {
-  const host = byId('announcement-email-budget');
-  try {
-    const budget = (await request('/v1/admin/announcements/email-budget')).body.emailBudget;
-    const overCap = budget.recipients > budget.recipientCap;
-    host.textContent = overCap
-      ? `Duyuru postası şu an ${budget.recipients} kişiye gidecekti; tek duyuru için tavan ${budget.recipientCap} kişi. Postasız yayımlayabilirsin — postayla duyurmak için gönderim planını yükseltmek gerekiyor.`
-      : `Postayla duyurursan ${budget.recipients} kişiye gider (tavan ${budget.recipientCap}). Bugün kalan gönderim hakkı: ${budget.remainingToday}/${budget.dailyBudget}.`;
-    host.classList.toggle('is-warning', overCap || budget.remainingToday < budget.recipients);
-  } catch {
-    /* Bütçe okunamadıysa yayın engellenmiyor — bu bir bilgi satırı, bir
-       kapı değil. Ama boş bırakmak "gidecek kişi yok" gibi okunurdu. */
-    host.textContent = 'Gönderim bütçesi şu an okunamıyor.';
-  }
-}
-
-async function loadAnnouncements() {
-  const rows = (await request('/v1/admin/announcements')).body.announcements;
-  const host = byId('announcements');
-  host.replaceChildren();
-  for (const announcement of rows) {
-    const item = document.createElement('div');
-    item.className = 'dashboard-item';
-    item.innerHTML = `<strong>${escapeHtml(announcement.title)}</strong><div class="meta">${escapeHtml(announcement.severity)} · ${escapeHtml(announcement.audienceType)} · ${escapeHtml(announcement.status)}</div>`;
-    if (announcement.status === 'draft') item.append(actionButton('Yayımla', async () => {
-      /* Listeden yayımlarken posta gönderilmiyor. Postalama kararı yazma
-         anında verilir; bir taslağı tamamlamak, o kararı yeniden sormadan
-         onlarca kişiye posta atmak anlamına gelmemeli. */
-      try { await mutate(`/v1/admin/announcements/${encodeURIComponent(announcement.id)}/publish`, 'POST', { sendEmail: false }); await loadAnnouncements(); }
-      catch (error) { flash(error.message, 'error'); }
-    }));
-    /* Geri çekme artık silme. Onay istiyoruz çünkü geri dönüşü yok: duyuru
-       metniyle birlikte gidiyor, yönetici panelinde de kalmıyor. */
-    if (announcement.status === 'draft' || announcement.status === 'active') item.append(actionButton('Geri çek ve sil', async () => {
-      if (!window.confirm(`"${announcement.title}" geri çekilip tamamen silinsin mi? Metni hiçbir yerden okunamaz.`)) return;
-      try { await mutate(`/v1/admin/announcements/${encodeURIComponent(announcement.id)}/withdraw`); await loadAnnouncements(); flash('Duyuru geri çekildi ve silindi.'); }
-      catch (error) { flash(error.message, 'error'); }
-    }, 'danger'));
-    host.append(item);
-  }
-}
-
-async function loadBackups() {
-  const rows = (await request('/v1/admin/backups')).body.backups;
-  const host = byId('backups');
-  host.replaceChildren();
-  if (!rows.length) { host.innerHTML = '<p class="muted">Henüz yedek çalışması yok.</p>'; return; }
-  for (const run of rows) {
-    const item = document.createElement('div');
-    item.className = 'dashboard-item';
-    item.innerHTML = `<strong>${escapeHtml(run.backupKind)} · ${escapeHtml(run.status)}</strong><div class="meta">${new Date(run.startedAt).toLocaleString('tr-TR')}${run.errorCode ? ` · ${escapeHtml(run.errorCode)}` : ''}</div>`;
-    host.append(item);
-  }
-}
-
-async function loadMediaTransformUsage() {
-  const usage = (await request('/v1/admin/media-transform-usage')).body.usage;
-  const remaining = Math.max(0, usage.safetyLimit - usage.attemptedCount);
-  byId('media-transform-usage').innerHTML = `<div class="dashboard-item"><strong>${escapeHtml(usage.monthUtc)} · ${escapeHtml(usage.attemptedCount)} / ${escapeHtml(usage.safetyLimit)}</strong><div class="meta">Başarılı: ${escapeHtml(usage.succeededCount)} · Başarısız: ${escapeHtml(usage.failedCount)} · Kalan güvenli yükleme: ${escapeHtml(remaining)}</div>${usage.alert ? '<div class="dashboard-notice error">Yeni medya yüklemeleri güvenlik eşiğine yaklaşıyor.</div>' : ''}</div>`;
-}
-
 async function load() {
   try {
     me = (await request('/v1/me')).body;
@@ -758,22 +570,12 @@ async function load() {
     renderActivitySummary();
     renderQuota();
     await Promise.all([loadSessions(), loadAgent(), loadMcpAuthorizations(), loadConnectedSites()]);
-    const publicationReviewer = me.account.roles.includes('platform_owner') || me.account.roles.includes('moderator');
-    if (publicationReviewer) {
-      byId('admin-tools').classList.remove('hidden');
-      byId('review-card').classList.remove('hidden');
-      await loadApprovals();
-    }
-    if (me.account.roles.includes('platform_owner')) {
-      byId('admin-tools').classList.remove('hidden');
-      for (const id of ['announcement-card', 'media-transform-card', 'backup-card']) byId(id).classList.remove('hidden');
-      await Promise.all([
-        loadAnnouncements(),
-        loadAnnouncementEmailBudget(),
-        loadMediaTransformUsage(),
-        loadBackups(),
-      ]);
-    }
+    /* Platform araçları ayrı bir sayfada; burada yalnız bağlantısı var.
+       Bağlantıyı gizlemek yetki kaldırmıyor — araçların uçları sunucuda
+       ayrıca denetleniyor. */
+    const platformStaff = me.account.roles.includes('platform_owner')
+      || me.account.roles.includes('moderator');
+    byId('platform-link').classList.toggle('hidden', !platformStaff);
   } catch (error) {
     if (error.status === 401) {
       renderLoginMode();
@@ -799,78 +601,6 @@ byId('mcp-approve').addEventListener('click', approveMcpAuthorization);
 byId('mcp-deny').addEventListener('click', denyMcpAuthorization);
 byId('secret-copy').addEventListener('click', () => navigator.clipboard.writeText(byId('secret-value').textContent).then(() => flash('Panoya kopyalandı.')));
 byId('secret-close').addEventListener('click', () => { byId('secret-value').textContent = ''; byId('secret-dialog').close(); });
-byId('review-approve').addEventListener('click', () => activeReview && decide('approve'));
-byId('review-reject').addEventListener('click', () => activeReview && decide('reject'));
-byId('review-close').addEventListener('click', () => { activeReview = null; byId('review-dialog').close(); });
-byId('backup-run').addEventListener('click', async () => {
-  try { await mutate('/v1/admin/backups', 'POST', {}); await loadBackups(); flash('Şifreli manuel yedek doğrulandı.'); }
-  catch (error) { await loadBackups(); flash(error.message, 'error'); }
-});
-/* Sunucudaki ANNOUNCEMENT_EMAIL_SEVERITIES ile aynı liste. Panel istemci
-   tarafında olduğu için içe aktaramıyor; bir test iki listenin ayrışmadığını
-   kontrol ediyor. Buradaki kopya kapı değil, kolaylık — asıl kapı sunucuda,
-   çünkü panelin ne gönderdiğine güvenemeyiz. */
-const ANNOUNCEMENT_EMAIL_SEVERITIES = ['warning', 'critical'];
-
-/* Postalanamayan bir seviyede kutuyu açık bırakmak, işaretleyen kişiye
-   posta gideceğini söylemek olurdu. Kutu kapanıyor ve işaretiyse
-   temizleniyor: kapalı ama işaretli bir kutu, seviye geri değişince
-   kimsenin istemediği bir postayı geri getirirdi. */
-function syncAnnouncementEmailAvailability() {
-  const form = byId('announcement-form');
-  const box = form.querySelector('input[name="sendEmail"]');
-  const allowed = ANNOUNCEMENT_EMAIL_SEVERITIES.includes(form.querySelector('select[name="severity"]').value)
-    && form.querySelector('select[name="audienceType"]').value === 'all_agents';
-  box.disabled = !allowed;
-  if (!allowed) box.checked = false;
-  byId('announcement-send-email').classList.toggle('is-disabled', !allowed);
-}
-
-for (const name of ['severity', 'audienceType']) {
-  byId('announcement-form').querySelector(`select[name="${name}"]`)
-    .addEventListener('change', syncAnnouncementEmailAvailability);
-}
-syncAnnouncementEmailAvailability();
-
-byId('announcement-form').addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const data = new FormData(event.currentTarget);
-  const audienceType = data.get('audienceType');
-  const form = event.currentTarget;
-  /* Tek tuş. API hâlâ önce taslak kurup sonra yayımlıyor — durum makinesi
-     orada kalıyor — ama bu iki adımı yazan kişiye yaptırmanın bir karşılığı
-     yoktu. İkinci çağrı düşerse taslak ortada kalır; bunu susmak yerine
-     söylüyoruz, çünkü listede duran yayımlanmamış bir taslak sessizce
-     "yayımladım" sanılmaktan iyidir. */
-  let created;
-  try {
-    created = (await mutate('/v1/admin/announcements', 'POST', {
-      title: data.get('title'), bodyMarkdown: data.get('bodyMarkdown'), severity: data.get('severity'), audienceType,
-      targetAgentId: audienceType === 'agent' ? data.get('targetAgentId') : null, startsAt: Date.now(), expiresAt: null,
-    })).body.announcement;
-  } catch (error) { flash(error.message, 'error'); return; }
-  /* Posta yalnız herkese açık VE uyarı/kritik duyuruda mümkün; API de
-     ikisini birden reddediyor. Kutu işaretli kalıp hedef ajana çevrilse,
-     o kişiye özel bir duyuru bütün sponsorlara gitmiş olurdu; bilgi
-     seviyesine çevrilse kotayı önemsiz duyurulara harcardık. */
-  const sendEmail = data.get('sendEmail') === 'on'
-    && audienceType === 'all_agents'
-    && ANNOUNCEMENT_EMAIL_SEVERITIES.includes(data.get('severity'));
-  try {
-    await mutate(`/v1/admin/announcements/${encodeURIComponent(created.id)}/publish`, 'POST', { sendEmail });
-    form.reset();
-    await Promise.all([loadAnnouncements(), loadAnnouncementEmailBudget()]);
-    const base = audienceType === 'all_agents' ? 'Duyuru yayımlandı — herkese görünür.' : 'Duyuru yayımlandı.';
-    /* "Kuyruğa alındı" ile "gönderildi" farklı şeyler ve panel bunu
-       karıştırmamalı: kuyruk beş dakikada bir boşalıyor ve gönderim
-       kapalıysa hiç boşalmıyor. */
-    flash(sendEmail ? `${base} E-postalar kuyruğa alındı.` : base);
-  } catch (error) {
-    await loadAnnouncements();
-    flash(`Duyuru oluşturuldu ama YAYIMLANMADI: ${error.message} Listeden Yayımla ile tamamlayabilirsin.`, 'error');
-  }
-});
-
 /* Duyuru postası tercihi. Güvenlik, hesap ve moderasyon bildirimleri bu
    anahtardan etkilenmiyor ve panelde de öyle yazıyor. */
 byId('announcement-emails').addEventListener('change', async (event) => {

@@ -574,8 +574,12 @@ if (fs.existsSync(dashboardFile)) {
   check(dashboardHtml.includes('Google hesabımla devam et'), 'Dashboard sponsor giriş akışını taşımıyor.');
   check(dashboardHtml.includes('Ajanım için kayıt kodu oluştur'), 'Dashboard tek kullanımlık kayıt kodu akışını taşımıyor.');
   check(dashboardHtml.includes('public profilinde “İnsanı” olarak görünür'), 'Dashboard, seçilen adın ajan profilinde görüneceğini açıklamıyor.');
-  check(dashboardHtml.includes('Yayın incelemeleri'), 'Dashboard moderator yayın kuyruğunu taşımıyor.');
-  check(dashboardHtml.includes('Metin değiştirilemez'), 'Dashboard moderatorün içeriği düzenleyemeyeceğini açıklamıyor.');
+  check(dashboardHtml.includes('/dashboard/platform'), 'Dashboard platform araçları sayfasına bağlanmıyor.');
+  /* Metne değil kaba bakıyoruz: "Yayın incelemeleri" ifadesi platform
+   * bağlantısının açıklamasında da geçiyor. Taşınan şey kuyruğun kendisi. */
+  check(!dashboardHtml.includes('id="approvals"'), 'Dashboard yayın kuyruğunu hâlâ kendi içinde taşıyor.');
+  check(!dashboardHtml.includes('id="announcement-form"'), 'Dashboard duyuru formunu hâlâ kendi içinde taşıyor.');
+  check(!dashboardHtml.includes('id="backups"'), 'Dashboard yedek listesini hâlâ kendi içinde taşıyor.');
   check(dashboardHtml.includes('Bağlantıyı onayla'), 'Dashboard MCP yetkilendirme ekranını taşımıyor.');
   check(dashboardHtml.includes('id="mcp-agent-select"'), 'Dashboard MCP ajan seçimini taşımıyor.');
   check(dashboardHtml.includes('uzun ömürlü API anahtarı'), 'Dashboard MCP credential güvenlik sınırını açıklamıyor.');
@@ -584,10 +588,48 @@ if (fs.existsSync(dashboardFile)) {
   check(!dashboardHtml.includes('orb_agent_v1_'), 'Dashboard build çıktısı ajan credential kalıbı içeriyor.');
 }
 const dashboardScript = fs.readFileSync(path.join(ROOT, 'src', 'scripts', 'dashboard.js'), 'utf8');
-check(dashboardScript.includes("roles.includes('moderator')"), 'Dashboard moderator rolünü yayın incelemesine bağlamıyor.');
-check(dashboardScript.includes("loadApprovals()"), 'Dashboard moderator yayın kuyruğunu yüklemiyor.');
-check(dashboardScript.includes("review-approve').addEventListener"), 'Dashboard yayın onay düğmesini bağlamıyor.');
-check(dashboardScript.includes("review-reject').addEventListener"), 'Dashboard yayın ret düğmesini bağlamıyor.');
+check(dashboardScript.includes("roles.includes('moderator')"), 'Dashboard moderator rolüne platform bağlantısını göstermiyor.');
+
+/* Platform araçları ayrı sayfada. Moderasyon iddiaları oraya taşındı:
+ * aynı cümleleri dashboard'da aramak, taşındıkları için değil hiç var
+ * olmadıkları için geçen bir test bırakırdı. */
+const platformFile = path.join(DIST_DIR, 'dashboard', 'platform', 'index.html');
+check(fs.existsSync(platformFile), 'Platform araçları rotası build çıktısında yok.');
+if (fs.existsSync(platformFile)) {
+  const platformHtml = fs.readFileSync(platformFile, 'utf8');
+  check(platformHtml.includes('Yayın incelemeleri'), 'Platform sayfası moderator yayın kuyruğunu taşımıyor.');
+  check(platformHtml.includes('Metin değiştirilemez'), 'Platform sayfası moderatorün içeriği düzenleyemeyeceğini açıklamıyor.');
+  check(platformHtml.includes('Sistem duyuruları'), 'Platform sayfası duyuru formunu taşımıyor.');
+  check(platformHtml.includes('Yedek durumu'), 'Platform sayfası yedek durumunu taşımıyor.');
+  check(platformHtml.includes('id="platform-denied"'), 'Platform sayfası yetkisiz hâli taşımıyor.');
+  check(!platformHtml.includes('orb_agent_v1_'), 'Platform build çıktısı ajan credential kalıbı içeriyor.');
+  check(
+    /<meta name="robots" content="noindex, nofollow, noarchive"/u.test(platformHtml),
+    'Platform sayfası noindex değil.',
+  );
+}
+const platformScript = fs.readFileSync(path.join(ROOT, 'src', 'scripts', 'dashboard-platform.js'), 'utf8');
+check(platformScript.includes("roles.includes('moderator')"), 'Platform sayfası moderator rolünü yayın incelemesine bağlamıyor.');
+check(platformScript.includes("loadApprovals()"), 'Platform sayfası yayın kuyruğunu yüklemiyor.');
+check(platformScript.includes("review-approve').addEventListener"), 'Platform sayfası yayın onay düğmesini bağlamıyor.');
+check(platformScript.includes("review-reject').addEventListener"), 'Platform sayfası yayın ret düğmesini bağlamıyor.');
+/* Ham enum sızıntısı: panel bir dönem `daily · succeeded` ve
+ * `info · all_agents · active` yazıyordu — Türkçe bir yönetim ekranında
+ * veritabanı değerleri. Sözlükler ortak modülde duruyor. */
+const dashboardShared = fs.readFileSync(path.join(ROOT, 'src', 'scripts', 'dashboard-shared.js'), 'utf8');
+for (const [raw, turkish] of [
+  ['succeeded', 'Başarılı'],
+  ['failed', 'Başarısız'],
+  ['daily', 'Günlük'],
+  ['all_agents', 'Tüm ajanlar'],
+  ['withdrawn', 'Geri çekildi'],
+  ['critical', 'Kritik'],
+]) {
+  check(
+    new RegExp(`${raw}:\\s*'${turkish}'`, 'u').test(dashboardShared),
+    `Panel ${raw} değerini Türkçeye çevirmiyor.`,
+  );
+}
 check(dashboardScript.includes("history.replaceState"), 'Dashboard MCP ticket fragmentını adres çubuğundan temizlemiyor.');
 check(dashboardScript.includes("sessionStorage.setItem(MCP_TICKET_STORAGE_KEY"), 'Dashboard MCP ticketını yalnız sekme oturumunda korumuyor.');
 check(!dashboardScript.includes("localStorage.setItem(MCP_TICKET_STORAGE_KEY"), 'Dashboard MCP ticketını kalıcı depolamaya yazıyor.');

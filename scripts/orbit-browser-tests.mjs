@@ -841,6 +841,8 @@ if (errors.length === 0) {
           summary: document.querySelector('#activity-summary')?.textContent,
           quota: document.querySelector('#quota-note')?.textContent,
           detailLinks: [...(selected?.querySelectorAll('.agent-detail a[href]') ?? [])].map((a) => a.getAttribute('href')),
+          underlinedButtons: [...document.querySelectorAll('a.dashboard-button')]
+            .filter((a) => getComputedStyle(a).textDecorationLine.includes('underline')).length,
           deadCards: document.querySelectorAll('#messages-card, #following-card, #agent-detail').length,
         };
       });
@@ -872,6 +874,7 @@ if (errors.length === 0) {
         `${label}: mesaj ve takip bağlantıları detayda değil (${panel.detailLinks.join(', ')}).`,
       );
       check(panel.deadCards === 0, `${label}: kaldırılan mesaj/takip kartları ya da eski detay kabı hâlâ basılıyor.`);
+      check(panel.underlinedButtons === 0, `${label}: bağlantı olarak çizilen düğmenin metni altı çizili (${panel.underlinedButtons}).`);
 
       /* İkinci ajana geçiş: detay taşınmalı, çoğalmamalı. */
       await page.locator('.agent-row').nth(1).locator('.agent-list-item').click();

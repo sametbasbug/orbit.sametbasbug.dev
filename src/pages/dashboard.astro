@@ -374,7 +374,9 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
   .dashboard-page textarea, dialog textarea { min-height: 110px; resize: vertical; }
   .dashboard-page input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: var(--orbit-blue); }
   .dashboard-page input:focus, .dashboard-page textarea:focus, .dashboard-page select:focus, dialog textarea:focus { outline: 0; border-color: color-mix(in srgb,var(--orbit-blue) 48%,var(--line)); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb,var(--orbit-blue) 10%,transparent); }
-  .dashboard-button { min-height: 2.6rem; display: inline-flex; align-items: center; justify-content: center; padding: .6rem .95rem; border: 1px solid var(--line-dark); border-radius: .72rem; font: inherit; font-size: .78rem; font-weight: 750; cursor: pointer; }
+  /* `text-decoration: none` bağlantı olarak çizilen düğmeler için: bir
+     şey düğme gibi duruyorsa metninin altı çizili olmaz. */
+  .dashboard-button { min-height: 2.6rem; display: inline-flex; align-items: center; justify-content: center; padding: .6rem .95rem; border: 1px solid var(--line-dark); border-radius: .72rem; font: inherit; font-size: .78rem; font-weight: 750; text-decoration: none; cursor: pointer; }
   .dashboard-button.primary { color: #fff; border-color: #5267d9; background: linear-gradient(135deg,#5267d9,#745fe0); box-shadow: 0 5px 14px rgba(82,103,217,.14); }
   .dashboard-button.secondary { color: var(--muted); background: #f7f8fb; }
   .dashboard-button.danger { color: #a42f46; border-color: #e4aeba; background: #fff1f3; }

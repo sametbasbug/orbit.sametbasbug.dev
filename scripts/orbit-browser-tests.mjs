@@ -654,16 +654,42 @@ if (errors.length === 0) {
       if (viewport.width <= 780) {
         const sheetDialog = page.locator('[data-announcement-sheet]');
         check(!(await sheetDialog.evaluate((el) => el.open)), `${label}: duyuru sayfası kendiliğinden açık geldi.`);
-        await announceTrigger.click();
+
+        /* Tıklama ve ilk ölçüm AYNI evaluate içinde: sayfa aşağıdan kayarak
+         * geliyor ve dışarıdan `boundingBox()` çağırmak onu animasyonun
+         * ortasında yakalıyordu. Buradaki ilk okuma, geçişin başlangıç
+         * hâlini — yani ekranın tamamen altını — görmek için.
+         *
+         * `ilkAlt > yükseklik` iddiası iki şeyi birden koruyor: geçiş
+         * tanımının kendisini ve `@starting-style` bloğunu. İkincisi
+         * silinirse tarayıcının geçireceği bir "önce" hâli kalmıyor ve
+         * panel son hâlinde ışınlanıyor — animasyon sessizce yok oluyor
+         * ama başka hiçbir iddia bunu fark etmiyor. */
+        const motion = await page.evaluate(async () => {
+          const dialog = document.querySelector('[data-announcement-sheet]');
+          document.querySelector('[data-announcement-trigger]').click();
+          const first = dialog.getBoundingClientRect().bottom;
+          await new Promise((resolve) => { setTimeout(resolve, 500); });
+          return {
+            first,
+            settled: dialog.getBoundingClientRect().bottom,
+            duration: getComputedStyle(dialog).transitionDuration,
+            height: window.innerHeight,
+          };
+        });
+
         check(await sheetDialog.evaluate((el) => el.open), `${label}: duyuru sayfası tıklamayla açılmadı.`);
         check(
           new URL(page.url()).pathname !== '/duyurular',
           `${label}: duyuru ikonu sayfayı yerinde açmak yerine gezindi.`,
         );
-        const sheetBox = await sheetDialog.boundingBox();
         check(
-          Boolean(sheetBox) && Math.abs(sheetBox.y + sheetBox.height - viewport.height) <= 1,
-          `${label}: duyuru sayfası ekranın altına yapışmadı.`,
+          motion.first > motion.height,
+          `${label}: duyuru sayfası ekranın altından kayarak gelmiyor (ilk alt ${Math.round(motion.first)}, ekran ${motion.height}).`,
+        );
+        check(
+          Math.abs(motion.settled - motion.height) <= 1,
+          `${label}: duyuru sayfası ekranın altına yapışmadı (${Math.round(motion.settled)}/${motion.height}).`,
         );
         await page.keyboard.press('Escape');
         check(!(await sheetDialog.evaluate((el) => el.open)), `${label}: duyuru sayfası Escape ile kapanmadı.`);
@@ -687,10 +713,13 @@ if (errors.length === 0) {
       await page.goto(`${baseUrl}/agents/`, { waitUntil: 'load' });
       const invite = page.locator('#agent-invite');
       check(await invite.count() === 1, `${label}: ajan daveti paneli bulunamadı.`);
-      check(!(await invite.evaluate((el) => el.open)), `${label}: ajan daveti ilk ziyarette açık geldi.`);
+      /* Varsayılan AÇIK. Dizine gelen kişi zaten "nasıl katılırım" diye
+       * geliyor; cevabı görmek için bir tıklama daha istemek gereksiz.
+       * Ana sayfanın tepesindeyken kuralı tersiydi ve o zaman doğruydu. */
+      check(await invite.evaluate((el) => el.open), `${label}: ajan daveti kapalı geldi; dizinde varsayılan açık.`);
       check(
         await invite.locator('h2').isVisible(),
-        `${label}: kapalı panelde başlık görünmez; kalıcı kalması gereken tek parça o.`,
+        `${label}: panel başlığı görünmüyor; kalıcı kalması gereken tek parça o.`,
       );
       // Kapalıyken bile bağlantılar DOM'da kalmalı: site testleri ve
       // tarayıcılar bu sayfadan skill.md ve /mcp adreslerini görüyor.
@@ -711,32 +740,39 @@ if (errors.length === 0) {
         `${label}: açma oku çerçevesiz; süs mü kontrol mü belli değil.`,
       );
 
-      const closedHeight = await invite.evaluate((el) => el.getBoundingClientRect().height);
-      await invite.locator('summary').click();
-      check(await invite.evaluate((el) => el.open), `${label}: ajan daveti başlığa tıklanınca açılmadı.`);
-      check(
-        await invite.evaluate((el) => el.getBoundingClientRect().height) > closedHeight,
-        `${label}: panel açıldı ama yüksekliği büyümedi.`,
-      );
-      /* `toggle` olayı senkron değil: tıklama çözüldüğünde panel çoktan
-       * açılmış olur ama yazma sırası henüz gelmemiş olabilir. Değeri
-       * beklemeden okumak testi zamanlamaya bağlı hâle getirir. */
-      check(
-        await waitForStoredInviteState(page, 'expanded'),
-        `${label}: açık durum localStorage'a yazılmadı.`,
-      );
-
-      await page.reload({ waitUntil: 'load' });
-      check(await invite.evaluate((el) => el.open), `${label}: açık durum reload sonrasında korunmadı.`);
       /* Dizin sayfanın kendi `<h1>`'ini taşıyor; davet kartı ikinci bir
        * birinci düzey başlık getirmemeli. */
       check(await page.locator('h1').count() === 1, `${label}: ajan dizininde birden fazla h1 var.`);
 
+      /* Sıra varsayılanla birlikte tersine döndü: artık önce KAPATIYORUZ.
+       * Hatırlanan şey de bu — "daha önce açmış mıydı" değil, "daha önce
+       * kapatmış mıydı". */
+      const openHeight = await invite.evaluate((el) => el.getBoundingClientRect().height);
       await invite.locator('summary').click();
-      check(!(await invite.evaluate((el) => el.open)), `${label}: açık panel yeniden kapanmadı.`);
+      check(!(await invite.evaluate((el) => el.open)), `${label}: ajan daveti başlığa tıklanınca kapanmadı.`);
+      check(
+        await invite.evaluate((el) => el.getBoundingClientRect().height) < openHeight,
+        `${label}: panel kapandı ama yüksekliği küçülmedi.`,
+      );
+      /* `toggle` olayı senkron değil: tıklama çözüldüğünde panel çoktan
+       * kapanmış olur ama yazma sırası henüz gelmemiş olabilir. Değeri
+       * beklemeden okumak testi zamanlamaya bağlı hâle getirir. */
       check(
         await waitForStoredInviteState(page, 'collapsed'),
         `${label}: kapalı durum localStorage'a yazılmadı.`,
+      );
+
+      await page.reload({ waitUntil: 'load' });
+      check(
+        !(await invite.evaluate((el) => el.open)),
+        `${label}: kapatma kararı reload sonrasında korunmadı.`,
+      );
+
+      await invite.locator('summary').click();
+      check(await invite.evaluate((el) => el.open), `${label}: kapalı panel yeniden açılmadı.`);
+      check(
+        await waitForStoredInviteState(page, 'expanded'),
+        `${label}: açık durum localStorage'a yazılmadı.`,
       );
       await page.evaluate(() => localStorage.removeItem('orbit-agent-invite'));
 

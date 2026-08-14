@@ -337,12 +337,6 @@
   margin-top: var(--space-8);
 }
 
-.project-attachment:hover strong {
-  color: var(--link);
-  text-decoration: underline;
-  text-underline-offset: 0.18rem;
-}
-
 .agent-avatar {
   --agent-accent: var(--nyx);
   display: inline-grid;
@@ -517,71 +511,9 @@
   margin-bottom: 0;
 }
 
-.project-attachment {
-  margin: var(--space-8) 0 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-8);
-  text-decoration: none;
-  padding: var(--space-8) var(--space-8);
-  border: 1px solid #e2e5ee;
-  border-radius: 0.8rem;
-  background: var(--surface-control);
-  transition: border-color 160ms ease, background 160ms ease;
-}
 
-.project-attachment:hover {
-  border-color: color-mix(in srgb, var(--project-accent) 34%, var(--line));
-  background: color-mix(in srgb, var(--project-accent) 5%, var(--surface));
-}
 
-.project-attachment small {
-  display: block;
-  margin-bottom: var(--space-1);
-  color: var(--faint);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-}
 
-.project-attachment strong {
-  font-size: var(--text-md);
-}
-
-.project-attachment p {
-  margin: var(--space-1) 0 0;
-  color: var(--muted);
-  font-size: var(--text-sm);
-  line-height: var(--leading-snug);
-}
-
-.project-attachment > .icon {
-  color: var(--faint);
-}
-
-.project-attachment-mark {
-  width: 2.65rem;
-  height: 2.65rem;
-  display: grid;
-  place-items: center;
-  border-radius: 0.75rem;
-  color: var(--project-accent, var(--orbit-blue));
-  background: color-mix(in srgb, var(--project-accent, var(--orbit-blue)) 10%, var(--surface));
-}
-
-.project-attachment-copy {
-  min-width: 0;
-  display: grid;
-}
-
-.project-attachment-copy em {
-  margin-top: var(--space-4);
-  color: var(--faint);
-  font-size: var(--text-2xs);
-  font-style: normal;
-}
 
 .record-media {
   overflow: hidden;
@@ -1213,34 +1145,6 @@
   display: none;
 }
 
-.header-saved {
-  min-height: 2.5rem;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-6);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--muted);
-  background: var(--surface-control);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  text-decoration: none;
-  transition: color 160ms ease, border-color 160ms ease, background 160ms ease, transform 160ms ease;
-}
-
-.header-saved:hover {
-  color: var(--orbit-blue);
-  border-color: var(--line-hover);
-  background: var(--surface-control-hover);
-  transform: translateY(-1px);
-}
-
-.header-saved.active {
-  color: var(--orbit-blue);
-  border-color: color-mix(in srgb, var(--orbit-blue) 28%, var(--line));
-  background: color-mix(in srgb, var(--orbit-blue) 7%, var(--surface));
-}
 
 .theme-toggle {
   width: 2.5rem;
@@ -1540,10 +1444,55 @@
   background: var(--surface);
   box-shadow: 0 -12px 40px rgba(31, 40, 72, 0.22);
   overflow: hidden;
+  /* Aşağıdan kayarak geliyor, ışınlanarak değil.
+   *
+   * `<dialog>` açılırken iki AYRIK özellik değişiyor: `display` ve top
+   * layer'a girmesi. İkisi normalde geçişe girmez; `allow-discrete` onları
+   * geçişin sonuna erteliyor. Başlangıç değerini `@starting-style` veriyor —
+   * onsuz tarayıcının geçireceği bir "önce" hâli olmuyor ve öğe doğrudan son
+   * hâlinde beliriyor, yani animasyon hiç görünmüyor.
+   *
+   * `overlay` de listede: yoksa sayfa kapanırken top layer'dan bir anda
+   * düşüyor ve kayma animasyonu ortada kesiliyor. */
+  opacity: 0;
+  translate: 0 100%;
+  transition:
+    translate 240ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 200ms ease,
+    display 240ms allow-discrete,
+    overlay 240ms allow-discrete;
 }
 
+.announcement-sheet[open] {
+  opacity: 1;
+  translate: 0 0;
+}
+
+@starting-style {
+  .announcement-sheet[open] {
+    opacity: 0;
+    translate: 0 100%;
+  }
+}
+
+/* Karartma da birlikte geliyor; sayfa kayarken arka planın bir anda
+   kararması iki ayrı olay gibi duruyordu. */
 .announcement-sheet::backdrop {
+  background: rgba(18, 24, 40, 0);
+  transition:
+    background-color 240ms ease,
+    display 240ms allow-discrete,
+    overlay 240ms allow-discrete;
+}
+
+.announcement-sheet[open]::backdrop {
   background: rgba(18, 24, 40, 0.45);
+}
+
+@starting-style {
+  .announcement-sheet[open]::backdrop {
+    background: rgba(18, 24, 40, 0);
+  }
 }
 
 .announcement-sheet-head {

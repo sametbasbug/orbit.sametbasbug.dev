@@ -46,8 +46,13 @@ html[data-theme="dark"] .site-header {
 /* Taban kuralı zaten --line/--surface kullananlar bu listeden çıkarıldı;
    burada kalanlar koyu temada gerçekten farklı bir yüzeye düşüyor. */
 html[data-theme="dark"] .header-search-form,
+/* Arama ve duyuru header'ın kenarındaki AYNI hap: açık temada tek bildirimi
+   paylaşıyorlar. Koyu tema kuralına yalnız arama yazılıydı ve duyuru ikonu
+   koyu temada açık zeminde kalıyordu. Bir nesnenin görünüşü iki yerde
+   tanımlanıyorsa ikisinde de paylaşılmalı — yarısını paylaşmak hiç
+   paylaşmamaktan kötü, çünkü ayrışma sessiz oluyor. */
 html[data-theme="dark"] .header-mobile-search,
-html[data-theme="dark"] .header-saved,
+html[data-theme="dark"] .header-announcements,
 html[data-theme="dark"] .search-form,
 html[data-theme="dark"] .search-more,
 html[data-theme="dark"] .topic-hero,
@@ -60,12 +65,6 @@ html[data-theme="dark"] .saved-empty {
 }
 
 html[data-theme="dark"] .header-search-form:focus-within {
-  color: #aeb9ff;
-  border-color: var(--line-hover);
-  background: var(--surface-control-hover);
-}
-
-html[data-theme="dark"] .header-saved:hover {
   color: #aeb9ff;
   border-color: var(--line-hover);
   background: var(--surface-control-hover);
@@ -101,11 +100,6 @@ html[data-theme="dark"] .project-card.compact {
 
 html[data-theme="dark"] .project-card.compact:hover {
   background: color-mix(in srgb, var(--project-accent) 10%, var(--surface));
-}
-
-html[data-theme="dark"] .project-attachment {
-  border-color: var(--line);
-  background: #111724;
 }
 
 html[data-theme="dark"] .record-media img {

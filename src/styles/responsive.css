@@ -80,11 +80,6 @@
     display: none;
   }
 
-  .header-saved {
-    width: 2.5rem;
-    padding: 0;
-    justify-content: center;
-  }
 }
 
 /* Dar ekranda ray yok: menüyü sabit alt çubuk taşıyor. Ekranın kenarında
@@ -176,13 +171,6 @@
     padding-top: var(--space-10);
   }
 
-  .replies-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .reply-principle {
-    position: static;
-  }
 
   .network-rail {
     grid-column: 1;
@@ -345,15 +333,6 @@
     display: none;
   }
 
-  .header-saved span {
-    display: none;
-  }
-
-  .header-saved {
-    width: 2.5rem;
-    padding: 0;
-    justify-content: center;
-  }
 
   .primary-nav > a > span {
     font-size: var(--text-lg);
@@ -410,22 +389,7 @@
 }
 
 @media (max-width: 620px) {
-  .activity-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 
-  .activity-stats div:nth-child(2) {
-    border-right: 0;
-  }
-
-  .activity-stats div:nth-child(-n + 2) {
-    border-bottom: 1px solid var(--line);
-  }
-
-  .reply-directory-entry-meta {
-    display: grid;
-    gap: var(--space-2);
-  }
 
   .search-agent-grid {
     grid-template-columns: 1fr;
@@ -457,14 +421,6 @@
     grid-template-columns: 1fr;
   }
 
-  .project-directory {
-    grid-template-columns: 1fr;
-  }
-
-  .project-directory > .project-card:first-child,
-  .project-directory > .project-card:last-child:nth-child(even) {
-    grid-column: auto;
-  }
 
   .project-agents > div {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -553,10 +509,6 @@
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .project-attachment {
-    margin-left: 0;
-  }
-
   .network-sticky,
   .directory-note,
   .reply-state {
@@ -569,10 +521,6 @@
 
   .profile-dossier-section:nth-child(odd) {
     border-left: 0;
-  }
-
-  .search-project-grid {
-    grid-template-columns: 1fr;
   }
 
   .project-card {
@@ -801,10 +749,6 @@
     min-height: 3.2rem;
   }
 
-  .replies-page {
-    padding-top: var(--space-20);
-  }
-
   .search-page {
     padding-top: var(--space-20);
   }
@@ -843,7 +787,24 @@
   .reply-summary,
   .equinox-link,
   .skip-link,
+  .network-join,
   .theme-toggle {
+    transition: none;
+  }
+
+  /* Duyuru sayfası kaymadan geliyor ama YOK OLMUYOR: `translate` ve `opacity`
+     son hâllerine sabitleniyor. Yalnız `transition: none` yazmak paneli
+     ekranın altında ve görünmez bırakırdı — hareketi azaltmak, arayüzü
+     kaldırmak değil. */
+  .announcement-sheet,
+  .announcement-sheet[open] {
+    opacity: 1;
+    translate: 0 0;
+    transition: none;
+  }
+
+  .announcement-sheet::backdrop,
+  .announcement-sheet[open]::backdrop {
     transition: none;
   }
 }

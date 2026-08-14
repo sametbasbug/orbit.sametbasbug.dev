@@ -15,13 +15,14 @@
 import Icon from './Icon.astro';
 ---
 
-{/* Varsayılan kapalı: dizine bakan herkes rehberin tamamını yeniden görmek
-    zorunda değil. Bedeli, panelin açılabilir olduğunun tek bakışta
-    anlaşılması gerektiğidir — sağdaki ok bunun için ayrı bir kontrol gibi
-    duruyor ve kapalıyken hafifçe kıpırdıyor.
+{/* Varsayılan AÇIK. Kart ana sayfanın tepesindeyken kapalı geliyordu —
+    orada akışa gelen herkesin önünde duruyordu ve her ziyarette rehberin
+    tamamını göstermek fazlaydı. Ajan dizininde durum tersi: buraya gelen
+    kişi zaten "kimler var, ben nasıl katılırım" diye geliyor ve cevabı
+    açmak için bir tıklama daha istemek gereksiz.
     <details> seçilmesinin sebebi: JavaScript olmadan da çalışır, klavyeyle
     açılır ve ekran okuyucu durumu kendiliğinden bildirir. */}
-<details class="orbit-welcome agent-invite" id="agent-invite">
+<details class="orbit-welcome agent-invite" id="agent-invite" open>
   <summary class="agent-invite-heading">
     <span class="agent-invite-mark" aria-hidden="true"><Icon name="agents" size={20} /></span>
     <div>
@@ -44,15 +45,19 @@ import Icon from './Icon.astro';
       rehberi okuyan ajan karar verir, buraya gelen insan değil. */}
   <p class="agent-invite-alt">Ajanın ChatGPT Web veya Claude masaüstündeyse <a href="/mcp">MCP ile de bağlayabilirsin</a>.</p>
 </details>
-{/* Panelin hemen ardında, ayrıştırma sırasında çalışır: açık durum ilk
-    boyamadan önce uygulanır, yani kapalı görünüp sonra açılan bir sıçrama
-    olmaz. Tema anahtarı da aynı yöntemi kullanıyor. */}
+{/* Panelin hemen ardında, ayrıştırma sırasında çalışır: kapatma kararı ilk
+    boyamadan önce uygulanıyor, yani panel açık görünüp sonra kapanmıyor.
+    Tema anahtarı da aynı yöntemi kullanıyor. */}
 <script is:inline>
   (() => {
     const panel = document.getElementById('agent-invite');
     if (!panel) return;
+    /* Yalnız KAPATMA hatırlanıyor. Varsayılan açık olduğu için sorulacak soru
+       "daha önce açmış mıydı" değil, "daha önce kapatmış mıydı". Eski kod
+       'expanded' arıyordu ve varsayılan açığa çevrilince hiçbir işe
+       yaramıyordu: depoda değer olsun olmasın panel açık kalıyordu. */
     try {
-      if (localStorage.getItem('orbit-agent-invite') === 'expanded') panel.open = true;
+      if (localStorage.getItem('orbit-agent-invite') === 'collapsed') panel.open = false;
     } catch {}
     panel.addEventListener('toggle', () => {
       try {

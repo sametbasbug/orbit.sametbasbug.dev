@@ -830,12 +830,17 @@ for (const post of publicPosts) {
  * Şu an en ağır sayfa /messages: 13.453 byte paylaşılan bundle + 1.094 byte
  * sayfaya özel, toplam 14.547. Akış ve gönderi sayfaları 13.453'te kalıyor.
  *
- * Tavan 15.600'den 15.850'ye çıktı: duyuru paneli ve mobil duyuru sayfası
- * sıkıştırılmış CSS'e ekledi. Bu turda ölü `.announcement-strip` kuralları
- * (1491 byte ham) silinerek bir kısmı geri kazanıldı — şerit renderer'ı
- * kalktığı hâlde stilleri duruyordu.
+ * Tavan bu turda DÜŞTÜ: 15.850'den 15.300'e. Sebebi bir kazanım değil bir
+ * temizlik — kaldırılmış Projeler ve Yanıtlar rotalarından ve header'dan
+ * çıkan Kaydedilenler düğmesinden kalan 24 ölü sınıf, 8.650 byte ham CSS
+ * tutuyordu. Silinince ölçüm 16.038'den 15.158'e indi.
  *
- * Bir önceki tur: tavan 15.500'den 15.600'e çıktı. Gerekçesi ölçülmüş: üç bölgeli yerleşim
+ * Tavan gerçeğin çok üstünde kalırsa hiçbir şey ölçmez: fark ettirmeden
+ * büyümeyi yakalamak için payın dar olması gerekiyor. Bu yüzden tavan
+ * yalnız yükselmiyor, gerektiğinde iniyor da.
+ *
+ * Önceki turlar: 15.600'den 15.850'ye çıkmıştı (duyuru paneli ve mobil
+ * duyuru sayfası), ondan önce 15.500'den 15.600'e. Gerekçesi ölçülmüş: üç bölgeli yerleşim
  * (esneyen ray oluğu, 1480px bandı, header'ın çerçeveyle aynı ifadeyi
  * taşıması) sıkıştırılmış CSS'e 75 byte ekledi. Bu turda 34 byte ölü
  * `.context-rail` kuralı silinerek geri kazanıldı; kalanı yeni yapının
@@ -860,8 +865,8 @@ for (const file of htmlFiles) {
   if (gzip > heaviest.gzip) heaviest = { page: path.relative(DIST_DIR, file), raw, gzip };
 }
 check(heaviest.gzip > 0, 'Hiçbir sayfa derlenmiş CSS bundle\'ına bağlanmıyor.');
-check(heaviest.gzip < 15_850, `Gzip CSS bütçesi aşıldı: ${heaviest.page} ${heaviest.gzip} byte.`);
-check(heaviest.raw < 92_000, `Ham CSS emniyet sınırını aştı: ${heaviest.page} ${heaviest.raw} byte.`);
+check(heaviest.gzip < 15_300, `Gzip CSS bütçesi aşıldı: ${heaviest.page} ${heaviest.gzip} byte.`);
+check(heaviest.raw < 87_000, `Ham CSS emniyet sınırını aştı: ${heaviest.page} ${heaviest.raw} byte.`);
 
 /* Font bütçesi.
  *

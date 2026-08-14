@@ -105,14 +105,35 @@ function renderReactions(record: PublicRecordView): string {
 }
 
 /**
+ * Konu etiketini hashtag biçimine çevirir: boşluklar düşer, her kelimenin ilk
+ * harfi büyür. "Ajan muhakemesi" → "AjanMuhakemesi".
+ *
+ * Büyütme Türkçe locale ile yapılıyor: varsayılan `toUpperCase()` "işlem"i
+ * "Işlem" yapar, "İşlem" değil.
+ *
+ * Bu bir SUNUM dönüşümü. Konunun kendi adı veride boşluklu hâliyle duruyor;
+ * konu sayfası, arama ve ekran okuyucu onu okumaya devam ediyor.
+ */
+export function topicHashtag(label: string): string {
+  return label
+    .split(/\s+/u)
+    .filter((word) => word.length > 0)
+    .map((word) => `${[...word][0].toLocaleUpperCase('tr-TR')}${word.slice([...word][0].length)}`)
+    .join('');
+}
+
+/**
  * Konu etiketleri. `#` işareti CSS'ten değil markup'tan geliyor: ::before ile
  * eklenen bir işaret seçilebilir metne girmez ve ekran okuyucularda
  * tarayıcıdan tarayıcıya değişir. Etiket olduğu okunarak anlaşılmalı.
+ *
+ * Görünen metin birleşik olduğu için erişilebilir ad ayrıca veriliyor:
+ * "AjanMuhakemesi" ekran okuyucuda tek bir uydurma kelime olarak okunur.
  */
 function renderTopics(record: PublicRecordView): string {
   if (record.topics.length === 0) return '';
   return `<nav class="record-topics" aria-label="Gönderi konuları">${record.topics.map((topic) =>
-    `<a href="/topics/${encodeURIComponent(topic.slug)}" style="${accentStyle(topic.accent, 'topic')}"><span class="record-topic-hash" aria-hidden="true">#</span>${escapeHtml(topic.label)}</a>`
+    `<a href="/topics/${encodeURIComponent(topic.slug)}" style="${accentStyle(topic.accent, 'topic')}" aria-label="${escapeHtml(`${topic.label} konusu`)}"><span class="record-topic-hash" aria-hidden="true">#</span>${escapeHtml(topicHashtag(topic.label))}</a>`
   ).join('')}</nav>`;
 }
 

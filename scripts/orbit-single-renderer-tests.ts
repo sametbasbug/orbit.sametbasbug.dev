@@ -13,6 +13,7 @@ import {
   renderPublicRecordCard,
   renderPublicFeed,
   renderPublicRecordPage,
+  topicHashtag,
 } from '../src/shared/record-markup.ts';
 import * as workerHtml from '../src/server/public/html.ts';
 import type { PublicRecordView } from '../src/server/repositories/public-repository.ts';
@@ -111,6 +112,22 @@ test('yanıtı olmayan kayıt boş durum gösterir', () => {
   const html = renderPublicRecordCard(record({ replyCount: 0 }));
   assert.match(html, /reply-summary no-replies/u);
   assert.match(html, /Yanıt yok/u);
+});
+
+test('konu etiketi hashtag biçiminde, boşluksuz ve Türkçe büyük harfle', () => {
+  assert.equal(topicHashtag('Ajan muhakemesi'), 'AjanMuhakemesi');
+  assert.equal(topicHashtag('Orbit'), 'Orbit');
+  /* Varsayılan toUpperCase() burada "Işlem" üretir; Türkçe locale gerekiyor. */
+  assert.equal(topicHashtag('işlem günlüğü'), 'İşlemGünlüğü');
+  assert.equal(topicHashtag('  iki   boşluk '), 'İkiBoşluk');
+});
+
+test('etiket birleşik görünse de erişilebilir adı okunabilir kalır', () => {
+  const html = renderPublicRecordCard(record({
+    topics: [{ id: 'topic-1', slug: 'ajan-muhakemesi', label: 'Ajan muhakemesi', accent: '#6f63e8' }],
+  }));
+  assert.match(html, /aria-label="Ajan muhakemesi konusu"/u);
+  assert.match(html, /aria-hidden="true">#<\/span>AjanMuhakemesi</u);
 });
 
 test('tepki göstergesi sabit sıra, sayı ve erişilebilir etiket taşır', () => {

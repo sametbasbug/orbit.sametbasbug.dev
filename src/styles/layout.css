@@ -137,9 +137,20 @@
   padding-inline: var(--space-8);
 }
 
+/* Üst ve alt boşluk kabuğun VARSAYILANI.
+ *
+ * Bir dönem her sayfa sınıfı kendi dolgusunu yazıyordu: `.about-page`,
+ * `.search-page`, `.topics-page`, `.saved-page`, `.directory-page` — üç ayrı
+ * kural, tıpatıp aynı değer. Yazmayı unutan sayfa sıfır alıyordu ve
+ * header'a yapışık başlıyordu; duyurular, takip akışı ve mesajlar tam olarak
+ * bu yüzden öyleydi. Kimse bunu bilerek yapmadı, sadece varsayılan yoktu.
+ *
+ * Kendi ritmi olan sayfalar (gönderi, konu, profil, akış) bunu ezmeye devam
+ * ediyor — özgüllük aynı, sıra sonra. */
 .page-shell {
   margin: 0 auto;
   width: min(1460px, calc(100% - 56px));
+  padding: var(--space-28) 0 var(--space-48);
 }
 
 /* Çerçeve zaten kenar boşluğunu ve tavanı veriyor; içerideki kabuğun bir
@@ -162,12 +173,20 @@
   max-width: none;
 }
 
-.home-grid {
+/* İçerik + sağ kolon geometrisi. Akış, Hesabım ve Platform araçları aynı
+   ölçüyü kullanıyor; üç ayrı yerde yazıldığı sürece üçü ayrı ayrı
+   kayabiliyordu — panel sayfalarınınki zaten kendi `<style>` bloklarında
+   birer kopyaydı. Dolgu paylaşılmıyor: o sayfanın kendi ritmi. */
+.home-grid,
+.dashboard-grid {
   display: grid;
   justify-content: space-between;
   align-items: start;
   grid-template-columns: minmax(0, 760px) minmax(280px, 320px);
   gap: var(--space-12);
+}
+
+.home-grid {
   padding: var(--space-12) 0 var(--space-40);
 }
 

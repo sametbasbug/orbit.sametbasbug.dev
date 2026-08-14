@@ -19,7 +19,8 @@
 }
 
 @media (max-width: 1260px) {
-  .home-grid {
+  .home-grid,
+  .dashboard-grid {
     grid-template-columns: minmax(560px, 760px) minmax(260px, 320px);
     justify-content: center;
   }
@@ -166,8 +167,12 @@
     backdrop-filter: none;
   }
 
-  .home-grid {
+  .home-grid,
+  .dashboard-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .home-grid {
     padding-top: var(--space-10);
   }
 

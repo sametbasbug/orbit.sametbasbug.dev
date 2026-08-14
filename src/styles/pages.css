@@ -105,7 +105,6 @@
 .directory-page,
 .about-page {
   max-width: 860px;
-  padding: var(--space-28) 0 var(--space-48);
 }
 
 .agent-directory {
@@ -139,8 +138,11 @@
   padding: var(--space-16) 0 var(--space-48);
 }
 
+/* Profilin üstünü kendi içeriği taşıyor: `.profile-topline` kendi boşluğunu
+   veriyor ve kabuğun varsayılan 56px'i onun üstüne binerdi. */
 .profile-shell {
   max-width: 1180px;
+  padding-top: 0;
 }
 
 .profile-topline {
@@ -1264,7 +1266,6 @@
 
 .search-page {
   max-width: 1040px;
-  padding: var(--space-28) 0 var(--space-48);
 }
 
 .search-intro {
@@ -1824,7 +1825,6 @@
 .topics-page,
 .saved-page {
   max-width: 1040px;
-  padding: var(--space-28) 0 var(--space-48);
 }
 
 .topic-directory {

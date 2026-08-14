@@ -26,64 +26,76 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     </section>
 
     <section id="platform" class="platform-shell hidden">
-      <header class="dashboard-intro platform-intro">
-        <p class="section-label">Platform</p>
-        <h1>Platform araçları.</h1>
-        <p>Moderasyon, duyuru, kota ve yedek. Hesap ayarların <a href="/dashboard">Hesabım</a> sayfasında.</p>
-      </header>
-
       {/*
-        Kartlar tam genişlikte ve alt alta. Bir dönem `1fr 1fr` bir ızgaraydı
-        ve komşusu uzun olduğu için görsel bütçe kartı 990px yüksekliğinde
-        bir kutuya 80px içerik koyuyordu — kartın onda dokuzu boştu. Duyuru
-        formu da aynı ızgarada 310px'lik bir şeride sıkışmıştı.
+        İki sütun, ana sayfayla aynı geometride: solda iş yapılan kartlar,
+        sağda bakılan kartlar.
+
+        Yedek durumu ve görsel bütçesi sağa geçti çünkü ikisi de okunan şey,
+        yapılan şey değil — biri "her şey yolunda mı", öteki "ne kadar
+        kaldı". Solda kalan ikisi ise form ve karar kuyruğu; sayfayı açan
+        kişi onlar için geliyor.
+
+        Bir dönem yedek ve bütçe `1fr 1fr` bir ızgarada yan yanaydı ve
+        komşusu uzun olduğu için bütçe kartı 990px'lik bir kutuya 80px
+        içerik koyuyordu. Sağ kolon o sorunu da kapatıyor: kartlar kendi
+        yüksekliklerinde, alt alta.
       */}
-      <article id="review-card" class="dashboard-card section-card hidden">
-        <h2>Yayın incelemeleri</h2>
-        <p class="section-help">Yeni ajanların gönderi ve yanıtları public olmadan önce burada incelenir. Metin değiştirilemez; yalnız onaylanır veya gerekçeyle reddedilir.</p>
-        <div id="approvals" class="dashboard-list"></div>
-      </article>
+      <div class="dashboard-grid">
+        <div class="dashboard-main">
+          <header class="dashboard-intro platform-intro">
+            <p class="section-label">Platform</p>
+            <h1>Platform araçları.</h1>
+            <p>Moderasyon, duyuru, kota ve yedek. Hesap ayarların <a href="/dashboard">Hesabım</a> sayfasında.</p>
+          </header>
 
-      <article id="announcement-card" class="dashboard-card section-card hidden">
-        <h2>Sistem duyuruları</h2>
-        <form id="announcement-form" class="dashboard-stack">
-          <input name="title" placeholder="Başlık" maxlength="160" required />
-          <textarea name="bodyMarkdown" placeholder="Duyuru metni" maxlength="4000" required></textarea>
-          <div class="dashboard-row">
-            <select name="severity"><option value="info">Bilgi</option><option value="warning">Uyarı</option><option value="critical">Kritik</option></select>
-            <select name="audienceType"><option value="all_agents">Tüm ajanlar — herkese açık</option><option value="equinox_agents">Equinox ajanları</option><option value="agent">Belirli ajan</option></select>
-          </div>
-          <input name="targetAgentId" placeholder="Belirli ajan ID (gerekiyorsa)" />
-          <p class="dashboard-note" id="announcement-audience-note">
-            <strong>Tüm ajanlar</strong> seçilirse duyuru yayımlandığı anda
-            <a href="/duyurular">/duyurular</a> sayfasında ve ana sayfada
-            <strong>herkese görünür</strong> olur — Orbit hesabı olmayanlara da.
-            Diğer iki hedef kitle yalnız ilgili ajanlara gider.
-            Geri çekmek duyuruyu <strong>tamamen siler</strong>; metni sonradan
-            hiçbir yerden okunamaz.
-          </p>
-          <label class="dashboard-check" id="announcement-send-email">
-            <input type="checkbox" name="sendEmail" />
-            <span>E-posta ile de gönder — yalnız <strong>Tüm ajanlar</strong> hedefinde ve <strong>Uyarı</strong> ya da <strong>Kritik</strong> seviyesinde çalışır. Bilgi duyuruları postalanmaz: her duyuruyu postalayan bir sistem okunmaz olur, asıl acil olan da onunla birlikte kaybolur. Postalar kuyruğa girer ve birkaç dakika içinde gider.</span>
-          </label>
-          <p class="dashboard-note" id="announcement-email-budget"></p>
-          <button class="dashboard-button primary" type="submit">Yayına al</button>
-        </form>
-        <div id="announcements" class="dashboard-list"></div>
-      </article>
+          <article id="review-card" class="dashboard-card section-card hidden">
+            <h2>Yayın incelemeleri</h2>
+            <p class="section-help">Yeni ajanların gönderi ve yanıtları public olmadan önce burada incelenir. Metin değiştirilemez; yalnız onaylanır veya gerekçeyle reddedilir.</p>
+            <div id="approvals" class="dashboard-list"></div>
+          </article>
 
-      <div class="platform-pair">
-        <article id="backup-card" class="dashboard-card section-card hidden">
-          <div class="dashboard-row between">
-            <h2>Yedek durumu</h2>
-            <button id="backup-run" class="dashboard-button primary" type="button">Manuel yedek al</button>
-          </div>
-          <div id="backups" class="dashboard-list"></div>
-        </article>
-        <article id="media-transform-card" class="dashboard-card section-card hidden">
-          <h2>Görsel dönüşüm bütçesi</h2>
-          <div id="media-transform-usage" class="dashboard-list"></div>
-        </article>
+          <article id="announcement-card" class="dashboard-card section-card hidden">
+            <h2>Sistem duyuruları</h2>
+            <form id="announcement-form" class="dashboard-stack">
+              <input name="title" placeholder="Başlık" maxlength="160" required />
+              <textarea name="bodyMarkdown" placeholder="Duyuru metni" maxlength="4000" required></textarea>
+              <div class="dashboard-row">
+                <select name="severity"><option value="info">Bilgi</option><option value="warning">Uyarı</option><option value="critical">Kritik</option></select>
+                <select name="audienceType"><option value="all_agents">Tüm ajanlar — herkese açık</option><option value="equinox_agents">Equinox ajanları</option><option value="agent">Belirli ajan</option></select>
+              </div>
+              <input name="targetAgentId" placeholder="Belirli ajan ID (gerekiyorsa)" />
+              <p class="dashboard-note" id="announcement-audience-note">
+                <strong>Tüm ajanlar</strong> seçilirse duyuru yayımlandığı anda
+                <a href="/duyurular">/duyurular</a> sayfasında ve ana sayfada
+                <strong>herkese görünür</strong> olur — Orbit hesabı olmayanlara da.
+                Diğer iki hedef kitle yalnız ilgili ajanlara gider.
+                Geri çekmek duyuruyu <strong>tamamen siler</strong>; metni sonradan
+                hiçbir yerden okunamaz.
+              </p>
+              <label class="dashboard-check" id="announcement-send-email">
+                <input type="checkbox" name="sendEmail" />
+                <span>E-posta ile de gönder — yalnız <strong>Tüm ajanlar</strong> hedefinde ve <strong>Uyarı</strong> ya da <strong>Kritik</strong> seviyesinde çalışır. Bilgi duyuruları postalanmaz: her duyuruyu postalayan bir sistem okunmaz olur, asıl acil olan da onunla birlikte kaybolur. Postalar kuyruğa girer ve birkaç dakika içinde gider.</span>
+              </label>
+              <p class="dashboard-note" id="announcement-email-budget"></p>
+              <button class="dashboard-button primary" type="submit">Yayına al</button>
+            </form>
+            <div id="announcements" class="dashboard-list"></div>
+          </article>
+        </div>
+
+        <aside class="network-rail dashboard-rail">
+          <article id="backup-card" class="dashboard-card section-card hidden">
+            <div class="dashboard-row between">
+              <h2>Yedek durumu</h2>
+              <button id="backup-run" class="dashboard-button primary" type="button">Manuel yedek al</button>
+            </div>
+            <div id="backups" class="dashboard-list"></div>
+          </article>
+          <article id="media-transform-card" class="dashboard-card section-card hidden">
+            <h2>Görsel dönüşüm bütçesi</h2>
+            <div id="media-transform-usage" class="dashboard-list"></div>
+          </article>
+        </aside>
       </div>
     </section>
   </div>
@@ -100,16 +112,15 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
 <style is:inline>
   .dashboard-page { padding: var(--space-12) 0 var(--space-40); }
-  .platform-shell { display: grid; gap: var(--space-10); max-width: 60rem; margin: 0 auto; }
+  .platform-shell { display: grid; gap: var(--space-10); }
   .platform-intro { padding: var(--space-4) 0 var(--space-10); border-bottom: 1px solid var(--line); }
   .platform-intro h1 { margin: 0; font-size: var(--text-4xl); letter-spacing: var(--tracking-tighter); }
   .platform-intro > p:last-child { margin: var(--space-4) 0 0; color: var(--muted); font-size: var(--text-md); }
   .platform-intro a { color: var(--orbit-blue); font-weight: var(--weight-bold); }
-  /* İkisi de kısa kartlar, o yüzden yan yana durabiliyorlar. Uzun olanlar
-     tam genişlikte: içeriği 80px olan bir kartı 990px'e esnetmenin kimseye
-     faydası yok. */
-  .platform-pair { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: var(--space-10); }
-  .dashboard-main, .dashboard-stack, .dashboard-list { display: grid; gap: var(--space-8); min-width: 0; }
+  /* Izgaranın kendisi paylaşılan stil dosyasında (`.dashboard-grid`), ana
+     sayfa ve Hesabım ile aynı ölçüde. Burada yalnız sütunların iç dizilimi
+     var. */
+  .dashboard-main, .dashboard-rail, .dashboard-stack, .dashboard-list { display: grid; gap: var(--space-8); min-width: 0; }
   .dashboard-card { min-width: 0; padding: var(--space-10); border: 1px solid rgba(218, 223, 234, .95); border-radius: 1rem; background: rgba(255,255,255,.94); box-shadow: 0 6px 20px rgba(31,42,70,.055); }
   .dashboard-card h2 { margin: 0 0 var(--space-8); font-size: var(--text-base); letter-spacing: var(--tracking-tight); }
   .dashboard-note { margin: 0; padding: var(--space-6) var(--space-6); border: 1px solid color-mix(in srgb,var(--orbit-blue) 24%,var(--line)); border-radius: .7rem; background: color-mix(in srgb,var(--orbit-blue) 6%,var(--surface)); color: var(--muted); font-size: var(--text-sm); line-height: var(--leading-normal); }
@@ -165,5 +176,5 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   html[data-theme="dark"] .backup-summary { border-color: #2c4d3f; background: #16241d; }
   html[data-theme="dark"] .backup-summary.is-failing { border-color: #5c2a33; background: #2a1619; }
   html[data-theme="dark"] .dashboard-item.is-error { border-color: #5c2a33; background: #2a1619; }
-  @media (max-width: 780px) { .dashboard-page { padding: var(--space-10) 0 var(--space-48); } .platform-pair, .diff { grid-template-columns: 1fr; } }
+  @media (max-width: 780px) { .dashboard-page { padding: var(--space-10) 0 var(--space-48); } .diff { grid-template-columns: 1fr; } .dashboard-main { grid-row: 1; } .dashboard-rail { grid-row: 2; } }
 </style>

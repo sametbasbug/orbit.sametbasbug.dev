@@ -201,7 +201,8 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
 
 <style is:inline>
   .dashboard-page { padding: var(--space-12) 0 var(--space-40); }
-  .dashboard-grid { display: grid; grid-template-columns: minmax(0, 760px) minmax(280px, 320px); justify-content: space-between; align-items: start; gap: var(--space-12); }
+  /* Izgaranın ölçüsü paylaşılan `.dashboard-grid` kuralında; burada bir
+     kopyası vardı ve platform sayfası üçüncüsünü açacaktı. */
   .dashboard-main, .dashboard-rail, .dashboard-stack, .dashboard-list { display: grid; gap: var(--space-8); min-width: 0; }
   .dashboard-rail .truth-note strong { display: block; margin-bottom: var(--space-2); }
   .dashboard-rail .truth-note p > span { display: block; }
@@ -341,6 +342,5 @@ import { LEGAL_LAST_UPDATED } from '../data/legal';
   html[data-theme="dark"] .dashboard-page input:not([type="checkbox"]), html[data-theme="dark"] .dashboard-page textarea, html[data-theme="dark"] .dashboard-page select, html[data-theme="dark"] .dashboard-item, html[data-theme="dark"] .diff pre, html[data-theme="dark"] dialog textarea { border-color: var(--line); background: #111724; }
   html[data-theme="dark"] .dashboard-button.secondary { color: var(--muted); border-color: var(--line); background: #171e2c; }
   html[data-theme="dark"] .secret { border-color: #4a426f; background: #201d32; }
-  @media (max-width: 1260px) { .dashboard-grid { grid-template-columns: minmax(560px,760px) minmax(260px,320px); justify-content: center; } }
-  @media (max-width: 780px) { .dashboard-page { padding: var(--space-10) 0 var(--space-48); } .dashboard-grid { grid-template-columns: 1fr; } .dashboard-main { grid-row: 1; } .dashboard-rail { grid-row: 2; } .login-card, .mcp-consent-card { padding: var(--space-10); } .diff { grid-template-columns: 1fr; } .agent-create-form .dashboard-button, .mcp-consent-actions .dashboard-button { width: 100%; } }
+  @media (max-width: 780px) { .dashboard-page { padding: var(--space-10) 0 var(--space-48); } .dashboard-main { grid-row: 1; } .dashboard-rail { grid-row: 2; } .login-card, .mcp-consent-card { padding: var(--space-10); } .diff { grid-template-columns: 1fr; } .agent-create-form .dashboard-button, .mcp-consent-actions .dashboard-button { width: 100%; } }
 </style>

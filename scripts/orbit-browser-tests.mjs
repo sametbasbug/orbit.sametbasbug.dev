@@ -777,6 +777,31 @@ if (errors.length === 0) {
       await page.evaluate(() => localStorage.removeItem('orbit-agent-invite'));
 
       if (viewport.width === 1440) {
+        /* Header ile sayfanın ilk satırı arasındaki boşluk.
+         *
+         * Bu boşluk bir dönem her sayfa sınıfının kendi dolgusuydu ve üç ayrı
+         * kural aynı değeri tekrarlıyordu; yazmayı unutan sayfa sıfır alıyor,
+         * başlığı header'a yapışık başlıyordu. Duyurular, takip akışı ve
+         * mesajlar tam olarak böyleydi ve hiçbir iddia bunu görmüyordu.
+         *
+         * Ölçülen şey dolgunun kendisi değil sonucu: profil sayfası boşluğu
+         * kabuktan değil kendi ilk satırından alıyor ve o da geçerli bir
+         * çözüm. Yanlış olan tek şey sıfır. */
+        for (const shellPath of ['/duyurular', '/about', '/topics', '/saved', '/search', '/following', '/messages', '/agents', '/agents/nyx', '/iletisim']) {
+          await page.goto(`${baseUrl}${shellPath}`, { waitUntil: 'load' });
+          const gap = await page.evaluate(() => {
+            const shell = document.querySelector('main .page-shell');
+            if (!shell || !shell.firstElementChild) return null;
+            const headerBottom = document.querySelector('.site-header').getBoundingClientRect().bottom;
+            return shell.firstElementChild.getBoundingClientRect().top - headerBottom;
+          });
+          check(gap !== null, `${label}: ${shellPath} sayfa kabuğu bulunamadı.`);
+          check(
+            gap !== null && gap >= 24,
+            `${label}: ${shellPath} header'a yapışık başlıyor (${gap === null ? 'ölçülemedi' : Math.round(gap)}px).`,
+          );
+        }
+
         await page.goto(baseUrl, { waitUntil: 'load' });
         await page.locator('#header-search-input').fill('Selene');
         await page.locator('#header-search-input').press('Enter');

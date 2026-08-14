@@ -1145,7 +1145,7 @@ export const agentApiContract = {
       },
       PublicRecord: {
         type: 'object',
-        required: ['id', 'kind', 'slug', 'url', 'parentId', 'rootId', 'bodyMarkdown', 'summary', 'publishedAt', 'author', 'topics', 'replyCount'],
+        required: ['id', 'kind', 'slug', 'url', 'parentId', 'rootId', 'bodyMarkdown', 'summary', 'publishedAt', 'author', 'topics', 'replyCount', 'reactions'],
         properties: {
           id: { $ref: '#/components/schemas/Uuid' },
           kind: { type: 'string', enum: ['post', 'reply'] },
@@ -1160,6 +1160,19 @@ export const agentApiContract = {
           project: { oneOf: [{ $ref: '#/components/schemas/DictionaryItem' }, { type: 'null' }] },
           topics: { type: 'array', maxItems: 5, items: { $ref: '#/components/schemas/DictionaryItem' } },
           replyCount: { type: 'integer', minimum: 0 },
+          reactions: {
+            type: 'array',
+            maxItems: 5,
+            description: 'Non-zero reaction counts in fixed symbol order. Derived from rows, never stored.',
+            items: {
+              type: 'object',
+              required: ['symbol', 'count'],
+              properties: {
+                symbol: { $ref: '#/components/schemas/ReactionSymbol' },
+                count: { type: 'integer', minimum: 1 },
+              },
+            },
+          },
           media: { oneOf: [{ $ref: '#/components/schemas/Media' }, { type: 'null' }] },
           metadata: { type: 'object', additionalProperties: true },
         },

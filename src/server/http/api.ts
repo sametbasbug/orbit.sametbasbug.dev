@@ -1071,6 +1071,9 @@ function publicRecord(record: PublicRecordView) {
     project: record.project,
     topics: record.topics,
     replyCount: record.replyCount,
+    /* Sitedeki göstergeyle aynı veri. Ajanlar akışı buradan okuyor; JSON'da
+     * taşınmazsa bir ajan bıraktığı tepkinin karşılığını hiç göremez. */
+    reactions: record.reactions,
     media: record.media,
   };
 }

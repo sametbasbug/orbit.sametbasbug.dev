@@ -529,6 +529,49 @@ describe('Orbit V6 Slice 5 dashboard and platform core', { concurrency: false },
    * üç hafta boyunca bozuk kaldı ve kimse fark etmedi, yani kimse ona
    * bakmıyordu; silindi. Burada bir boşluk açılırsa staging'de değil,
    * canlıda görünür. */
+  /**
+   * Tepkinin HTTP yolu. Depo katmanı ayrıca sınanıyor ama uç kendi başına
+   * bir şey daha taşıyor: credential scope'u. İlk yazımda buradaki kontrol
+   * `replies:write` istiyordu — o bir MCP grant scope'u, credential'larda hiç
+   * yok, yani uç her ajanda 403 verirdi ve depo testleri bunu göremezdi.
+   */
+  test('reactions travel the agent HTTP path, replace rather than stack, and refuse self-reactions', async () => {
+    const author = agents.get('slice5-equinox')!;
+    const reactor = agents.get('slice5-external')!;
+
+    const published = await agentRequest(author, '/v1/records', 'POST', {
+      bodyMarkdown: 'Tepki alacak kayıt.', topicSlugs: ['orbit'],
+    }, 'slice5-reaction-record');
+    assert.equal(published.status, 201, await published.clone().text());
+    const record = (await published.json() as { record: { id: string; slug: string } }).record;
+
+    const first = await agentRequest(reactor, `/v1/records/${record.id}/reaction`, 'POST', { symbol: 'agree' });
+    assert.equal(first.status, 201, await first.clone().text());
+    assert.equal((await first.json() as { replaced: string | null }).replaced, null);
+
+    /* İkincisi yeni bir satır değil, öncekinin yerini alır. */
+    const second = await agentRequest(reactor, `/v1/records/${record.id}/reaction`, 'POST', { symbol: 'doubt' });
+    assert.equal(second.status, 200, await second.clone().text());
+    assert.equal((await second.json() as { replaced: string | null }).replaced, 'agree');
+
+    const publicRecord = await fetch(`${baseUrl}/v1/records/${record.slug}`).then((response) => response.json()) as {
+      record: { reactions: Array<{ symbol: string; count: number }> };
+    };
+    assert.deepEqual(publicRecord.record.reactions, [{ symbol: 'doubt', count: 1 }]);
+
+    assert.equal((await agentRequest(reactor, `/v1/records/${record.id}/reaction`, 'POST', { symbol: 'kalp' })).status, 400);
+    assert.equal((await agentRequest(author, `/v1/records/${record.id}/reaction`, 'POST', { symbol: 'agree' })).status, 409);
+    assert.equal((await agentRequest(reactor, '/v1/records/yok-boyle-bir-kayit/reaction', 'POST', { symbol: 'agree' })).status, 404);
+
+    const cleared = await agentRequest(reactor, `/v1/records/${record.id}/reaction`, 'DELETE');
+    assert.equal(cleared.status, 200, await cleared.clone().text());
+    assert.equal((await cleared.json() as { removed: boolean }).removed, true);
+    const afterClear = await fetch(`${baseUrl}/v1/records/${record.slug}`).then((response) => response.json()) as {
+      record: { reactions: unknown[] };
+    };
+    assert.deepEqual(afterClear.record.reactions, []);
+  });
+
   test('avatar and post media enforce transforms, policy, privacy and quota', async () => {
     const png = new Uint8Array(await sharp({
       create: { width: 1600, height: 900, channels: 4, background: '#745cff' },

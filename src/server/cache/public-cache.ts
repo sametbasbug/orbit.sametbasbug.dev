@@ -71,7 +71,13 @@ export function mutationInvalidatesPublicCache(request: Request, response: Respo
     // Takip akışı public okuma yüzeyinden geçiyor: bırakılan bir takip
     // önbellekte kalırsa akış, artık takip edilmeyen ajanı göstermeye devam
     // eder. Takip yazan uç PUT, o yüzden yöntem listesi de genişledi.
-    || /^\/v1\/agent\/follows\/[^/]+$/u.test(path);
+    || /^\/v1\/agent\/follows\/[^/]+$/u.test(path)
+    // Tepki kaydın public görünümünü değiştiriyor: gösterge hem akışta hem
+    // kayıt sayfasında duruyor, ikisi de otuz saniye önbellekli. Buraya
+    // yazılmazsa bırakılan tepki görünmüyor, geri alınan tepki de kalmaya
+    // devam ediyor. MCP yolu ayrı bir adres olduğu için ayrıca sayılıyor.
+    || /^\/v1\/records\/[^/]+\/reaction$/u.test(path)
+    || /^\/v1\/mcp\/grants\/[^/]+\/records\/[^/]+\/reaction$/u.test(path);
 }
 
 async function readEpoch(env: OrbitBindings): Promise<number> {

@@ -252,10 +252,19 @@ if (errors.length === 0) {
           backupKind: 'daily', status: 'succeeded',
           startedAt: Date.UTC(2026, 7, 14 - index, 6, 17), errorCode: null,
         }));
+        /* Eski, KAPANMIŞ bir başarısızlık: ardından yedek defalarca
+         * çalışmış. Panelde satır olarak durmamalı. */
         runs.splice(4, 0, {
           backupKind: 'weekly', status: 'failed',
           startedAt: Date.UTC(2026, 7, 9, 6, 17), errorCode: 'r2_upload_timeout',
         });
+        /* İkinci senaryo: en son çalışma başarısız, yani iş açık. */
+        if (request.headers.cookie?.includes('orbit-backup-broken=1')) {
+          runs.unshift({
+            backupKind: 'daily', status: 'failed',
+            startedAt: Date.UTC(2026, 7, 15, 6, 17), errorCode: 'r2_upload_timeout',
+          });
+        }
         platformJson({ backups: runs });
         return;
       }
@@ -1001,20 +1010,19 @@ if (errors.length === 0) {
         platform.announcementMeta === 'Kritik · Tüm ajanlar · Yayında',
         `Platform: duyuru satırı ham enum yazıyor (${platform.announcementMeta}).`,
       );
-      /* Yedek kartı: 34 satır yerine bir durum ve yalnız başarısız olan. */
-      check(platform.backupRows === 1, `Platform: yedek kartı başarılı çalışmaları da listeliyor (${platform.backupRows}).`);
-      check(platform.backupFailing === true, 'Platform: başarısız yedek varken durum satırı uyarı rengine geçmiyor.');
+      /* Yedek kartı, KAPANMIŞ başarısızlık hâli. Fikstürdeki başarısızlık
+       * eski ve ardından yedek defalarca çalışmış: kart yeşil kalmalı ve
+       * o satırı göstermemeli. Sürekli duran bir uyarı okunmayan bir
+       * uyarıdır — soru "hiç hata oldu mu" değil, "şu an bozuk mu". */
+      check(platform.backupRows === 0, `Platform: kapanmış başarısızlık hâlâ satır olarak duruyor (${platform.backupRows}).`);
+      check(platform.backupFailing === false, 'Platform: kapanmış başarısızlık için kart kırmızı kalıyor.');
       check(
-        platform.backupSummary?.includes('1 yedek çalışması başarısız'),
-        `Platform: yedek durumu başarısızlığı söylemiyor (${platform.backupSummary}).`,
+        platform.backupSummary?.includes('Yedekler çalışıyor'),
+        `Platform: yedek durumu sağlam hâli söylemiyor (${platform.backupSummary}).`,
       );
       check(
-        platform.backupSummary?.includes('34 çalışmanın 33'),
-        `Platform: yedek durumu toplamı yanlış (${platform.backupSummary}).`,
-      );
-      check(
-        platform.backupRowText?.includes('Haftalık · Başarısız') && platform.backupRowText?.includes('r2_upload_timeout'),
-        `Platform: başarısız yedek satırı türü ya da hata kodunu yazmıyor (${platform.backupRowText}).`,
+        platform.backupSummary?.includes("1'i geçmişte başarısız") && platform.backupSummary?.includes('kapandı'),
+        `Platform: kapanmış başarısızlık sayı olarak da anılmıyor (${platform.backupSummary}).`,
       );
       /* Boş kutu: kart bir dönem 990px yüksekliğindeydi ve içinde 80px
        * içerik vardı, çünkü yanındaki uzun kartla eşit boya çekiliyordu. */
@@ -1039,6 +1047,42 @@ if (errors.length === 0) {
         'Platform: sayfa yatay taşıyor.',
       );
       check(pageErrors.length === 0, `Platform: sayfa hatası: ${pageErrors.join(' | ')}`);
+      await context.close();
+    }
+
+    /* Yedek kartı, AÇIK başarısızlık hâli: son çalışma düşmüş. Burada
+     * kart kırmızıya dönmeli ve hata kodunu yazmalı — bu, birinin
+     * gerçekten bakması gereken tek hâl. */
+    {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'light' });
+      await context.addCookies([
+        { name: 'orbit-platform-test', value: '1', url: baseUrl },
+        { name: 'orbit-backup-broken', value: '1', url: baseUrl },
+      ]);
+      const page = await context.newPage();
+      const pageErrors = [];
+      page.on('pageerror', (error) => pageErrors.push(error.message));
+      await page.goto(`${baseUrl}/dashboard/platform`, { waitUntil: 'load' });
+      await page.waitForSelector('.backup-summary');
+      const broken = await page.evaluate(() => ({
+        failing: document.querySelector('.backup-summary')?.classList.contains('is-failing'),
+        summary: document.querySelector('.backup-summary')?.textContent?.replace(/\s+/gu, ' ').trim(),
+        rows: document.querySelectorAll('#backups .dashboard-item').length,
+        rowText: document.querySelector('#backups .dashboard-item')?.textContent?.replace(/\s+/gu, ' ').trim(),
+      }));
+      check(broken.failing === true, 'Platform: açık başarısızlıkta durum satırı uyarı rengine geçmiyor.');
+      check(
+        broken.summary?.includes('Son başarılı yedekten beri 1 çalışma başarısız'),
+        `Platform: açık başarısızlık söylenmiyor (${broken.summary}).`,
+      );
+      /* Yalnız çözülmemiş olan listeleniyor: aynı fikstürde eski ve
+       * kapanmış bir başarısızlık daha var, o satır olarak çıkmamalı. */
+      check(broken.rows === 1, `Platform: kapanmış başarısızlık da listeleniyor (${broken.rows}).`);
+      check(
+        broken.rowText?.includes('Günlük · Başarısız') && broken.rowText?.includes('r2_upload_timeout'),
+        `Platform: açık başarısızlık satırı türü ya da hata kodunu yazmıyor (${broken.rowText}).`,
+      );
+      check(pageErrors.length === 0, `Platform açık yedek hatası: sayfa hatası: ${pageErrors.join(' | ')}`);
       await context.close();
     }
 

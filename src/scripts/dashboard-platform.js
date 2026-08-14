@@ -162,27 +162,43 @@ async function loadBackups() {
     host.innerHTML = '<div class="dashboard-item"><strong>Henüz yedek çalışması yok</strong></div>';
     return;
   }
-  const failed = rows.filter((run) => run.status === 'failed');
   const running = rows.filter((run) => run.status === 'running');
   const latest = rows[0];
   const lastSucceeded = rows.find((run) => run.status === 'succeeded');
 
+  /* ÇÖZÜLMEMİŞ başarısızlık: son başarılı çalışmadan SONRA olan.
+   *
+   * Bir başarısızlığın ardından yedek yeniden çalıştıysa o iş kapanmıştır.
+   * Üç hafta önce takılmış bir koşuyu panelde tutmak, kimsenin bir daha
+   * yapamayacağı bir şeyi kalıcı olarak kırmızı göstermek olur — ve
+   * sürekli duran bir uyarı, bir süre sonra hiç okunmayan bir uyarıdır.
+   * Asıl soru "hiç hata oldu mu" değil, "şu an bozuk mu". */
+  const unresolved = lastSucceeded
+    ? rows.filter((run) => run.status === 'failed' && run.startedAt > lastSucceeded.startedAt)
+    : rows.filter((run) => run.status === 'failed');
+  const failedTotal = rows.filter((run) => run.status === 'failed').length;
+
   const summary = document.createElement('div');
-  summary.className = `backup-summary${failed.length > 0 ? ' is-failing' : ''}`;
+  summary.className = `backup-summary${unresolved.length > 0 ? ' is-failing' : ''}`;
   summary.innerHTML = `
-    <strong>${failed.length > 0
-      ? `${failed.length} yedek çalışması başarısız`
+    <strong>${unresolved.length > 0
+      ? `Son başarılı yedekten beri ${unresolved.length} çalışma başarısız`
       : 'Yedekler çalışıyor'}</strong>
     <div class="meta">Son çalışma: ${escapeHtml(backupKindLabel(latest.backupKind))} · ${escapeHtml(backupStatusLabel(latest.status))} · <span title="${escapeHtml(absoluteTime(latest.startedAt))}">${escapeHtml(relativeTime(latest.startedAt))}</span></div>
     ${lastSucceeded && lastSucceeded !== latest
       ? `<div class="meta">Son başarılı: <span title="${escapeHtml(absoluteTime(lastSucceeded.startedAt))}">${escapeHtml(relativeTime(lastSucceeded.startedAt))}</span></div>`
       : ''}
-    <div class="meta">Kayıtlı ${rows.length} çalışmanın ${rows.length - failed.length}'i başarılı${running.length > 0 ? `, ${running.length}'i sürüyor` : ''}.</div>`;
+    ${running.length > 0 ? `<div class="meta">${running.length} çalışma sürüyor.</div>` : ''}
+    ${/* Kapanmış başarısızlıklar sayı olarak kalıyor: kayıt tutulmuş
+          olmasının bir değeri var, ama satır satır göstermenin yok. */
+      unresolved.length === 0 && failedTotal > 0
+        ? `<div class="meta">Kayıtlı ${rows.length} çalışmanın ${failedTotal}'i geçmişte başarısız olmuş, hepsi sonraki koşularla kapandı.</div>`
+        : ''}`;
   host.append(summary);
 
-  /* Başarısızlar tek tek yazılıyor: hata kodu olmadan "başarısız" demek,
-     bakan kişiye ne yapacağını söylemiyor. */
-  for (const run of failed) {
+  /* Yalnız çözülmemişler tek tek yazılıyor: hata kodu olmadan "başarısız"
+     demek, bakan kişiye ne yapacağını söylemiyor. */
+  for (const run of unresolved) {
     const item = document.createElement('div');
     item.className = 'dashboard-item is-error';
     item.innerHTML = `<strong>${escapeHtml(backupKindLabel(run.backupKind))} · ${escapeHtml(backupStatusLabel(run.status))}</strong><div class="meta">${escapeHtml(absoluteTime(run.startedAt))}${run.errorCode ? ` · ${escapeHtml(run.errorCode)}` : ''}</div>`;

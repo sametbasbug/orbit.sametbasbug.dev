@@ -705,15 +705,25 @@ check(searchScript.includes('/v1/search?'), 'Arama sayfası cursor tabanlı publ
 check(searchHtml.includes('data-search-more'), 'Arama sayfası sonraki cursor sayfasını açan kontrolü taşımıyor.');
 check(!searchScript.includes('/search-index.json'), 'Arama sayfası statik indeksle sınırlı kalıyor.');
 check(!savedHtml.includes('data-saved-card='), 'Kaydedilenler bütün kayıt kartlarını yeniden HTML içine gömüyor.');
-/* Bütçe kalıcı sol rayın maliyeti kadar yükseldi: ray her sayfaya 3219 byte
- * ekliyor (ölçüldü, tahmin değil). Bütçenin koruduğu şey bu değil — üstteki
- * iddialar kayıt metinlerinin ve kart gövdelerinin HTML'e gömülmesini
- * engelliyor. Ray sınırlı ve sabit bir kabuk maliyeti; içerik değil.
+/* Bütçe iki kabuk parçasının ölçülmüş maliyeti kadar yükseldi: kalıcı sol
+ * ray 3219 byte, mobil çubuktaki "Diğer" menüsü 2631 byte. İkisi de sabit
+ * ve sınırlı; sayfa sayısıyla değil, menü maddesi sayısıyla büyüyorlar.
  *
- * Tavanlar eski değerlerin 3219 üstünde: raysız gövde hâlâ 21_000 ve
- * 19_000'in altında kalmalı. */
-check(searchHtml.length < 27_219, `Arama HTML bütçesi aşıldı: ${searchHtml.length} byte.`);
-check(savedHtml.length < 25_219, `Kaydedilenler HTML bütçesi aşıldı: ${savedHtml.length} byte.`);
+ * Bütçenin koruduğu şey bu değil — üstteki iddialar kayıt metinlerinin ve
+ * kart gövdelerinin HTML'e gömülmesini engelliyor, ve asıl tehlike o.
+ * Tavanlar bu turdan ÖNCEKİ değerlerin üstüne kabuk maliyeti eklenerek
+ * kuruldu — yani sayfanın kendi gövdesine tanınan pay değişmedi. Bugünkü
+ * gövdeler 21_376 ve 20_608; eski tavanlar 24_000 ve 22_000 idi, o pay
+ * olduğu gibi duruyor. */
+const SHELL_BUDGET = 3219 + 2631;
+check(
+  searchHtml.length < 24_000 + SHELL_BUDGET,
+  `Arama HTML bütçesi aşıldı: ${searchHtml.length} byte.`,
+);
+check(
+  savedHtml.length < 22_000 + SHELL_BUDGET,
+  `Kaydedilenler HTML bütçesi aşıldı: ${savedHtml.length} byte.`,
+);
 
 for (const htmlFile of htmlFiles) {
   const html = fs.readFileSync(htmlFile, 'utf8');

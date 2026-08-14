@@ -84,6 +84,18 @@
   .app-rail {
     display: none;
   }
+
+  /* Kenar boşluğu masaüstündeki 28px'ten iniyor. Dar ekranda o kadar
+     boşluk okunacak satırdan çalıyor: 375px'lik bir telefonda iki yandan
+     56px, ekranın yedide biri.
+
+     Çerçeveye yazılıyor çünkü kenar boşluğunu artık o taşıyor; içerideki
+     `.page-shell` çerçevenin genişliğini alıyor ve kendi kuralı burada
+     hükümsüz kalıyordu — bu yüzden içerik bir dönem header'dan 18px daha
+     içeride duruyordu. */
+  .app-frame {
+    width: min(1460px, calc(100% - 28px));
+  }
 }
 
 @media (max-width: 780px) {
@@ -198,16 +210,86 @@
     border-left: 0;
   }
 
-  .primary-nav a {
+  /* Yatay dolgu bilerek yok.
+   *
+   * `flex-basis: 0` dolguyu tabanın ÜSTÜNE ekliyor: dolgulu bir öğe,
+   * dolgusuz kardeşinden tam dolgusu kadar geniş çıkıyor. Beş yuvanın
+   * eşit bölünmesi gerekiyor ve "Daha fazla" kabı bir `<details>`, yani
+   * dolgusu summary'de. İçerik zaten ortalanıyor; yatay dolgunun tek
+   * yaptığı şey eşitliği bozmaktı. */
+  .primary-nav > a,
+  .nav-more > summary {
     flex: 1 1 0;
     min-width: 0;
     height: 3.25rem;
     flex-direction: column;
     gap: var(--space-1);
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-2) 0;
   }
 
-  .primary-nav a::after,
+  /* "Daha fazla". Çubuktaki öteki maddelerle aynı ölçüde duruyor ki beşi
+     eşit bölünsün; açılan sayfa çubuğun ÜSTÜNDE beliriyor, altında değil —
+     altta zaten cihazın kendi çubuğu var. */
+  .nav-more {
+    flex: 1 1 0;
+    min-width: 0;
+    position: relative;
+  }
+
+  .nav-more > summary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.9rem;
+    color: var(--muted);
+    list-style: none;
+    cursor: pointer;
+  }
+
+  .nav-more > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /* Chevron sağa bakıyor (`M9 5l7 7-7 7`). Kapalıyken yukarı çevriliyor:
+     sayfa yukarı açılıyor. Açıkken aşağı, yani "kapat". 180 derece
+     döndürmek onu sola bakan bir oka çeviriyordu ve o ne açmayı ne
+     kapatmayı anlatıyor. */
+  .nav-more > summary > .icon {
+    transform: rotate(-90deg);
+    transition: transform 160ms ease;
+  }
+
+  .nav-more[open] > summary > .icon {
+    transform: rotate(90deg);
+  }
+
+  .nav-more > summary[aria-current="page"],
+  .nav-more[open] > summary {
+    color: var(--ink);
+    background: var(--surface-soft);
+  }
+
+  .nav-more-sheet {
+    display: grid;
+    gap: var(--space-1);
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.6rem);
+    min-width: 13rem;
+    padding: var(--space-3);
+    border: 1px solid rgba(211, 217, 229, 0.9);
+    border-radius: 1.1rem;
+    background: rgba(255, 255, 255, 0.97);
+    box-shadow: 0 18px 40px rgba(31, 40, 72, 0.24);
+    backdrop-filter: blur(18px);
+  }
+
+  html[data-theme="dark"] .nav-more-sheet {
+    border-color: var(--line);
+    background: rgba(17, 23, 36, 0.97);
+  }
+
+  .primary-nav > a::after,
   .header-actions .equinox-link span:not(.equinox-link-dot) {
     display: none;
   }
@@ -247,12 +329,20 @@
     min-height: calc(100svh + 4rem);
   }
 
-  .primary-nav a > .nav-label {
+  /* Etiketler tek satır: taşan bir etiket çubuğu yükseltip cihazın kendi
+     alt çubuğunun altına itiyordu. */
+  .primary-nav .nav-label {
+    white-space: nowrap;
+  }
+
+  .primary-nav a > .nav-label,
+  .nav-more > summary > .nav-label {
     width: auto;
     font-size: var(--text-3xs);
   }
 
-  .primary-nav a > .icon {
+  .primary-nav a > .icon,
+  .nav-more > summary > .icon {
     width: 1.15rem;
     height: 1.15rem;
   }
@@ -346,7 +436,8 @@
 
 @media (max-width: 520px) {
   .header-inner,
-  .page-shell {
+  .page-shell,
+  .app-frame {
     width: min(100% - 20px, 1460px);
   }
 

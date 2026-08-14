@@ -434,7 +434,11 @@ if (errors.length === 0) {
           return { x: box.x, y: box.y, width: box.width, height: box.height, right: box.right, bottom: box.bottom };
         };
         const navigation = document.querySelector('.primary-nav');
-        const navLinks = [...navigation.querySelectorAll('a')];
+        /* Çubuğun kendi yuvaları: doğrudan bağlantılar ve "Daha fazla"
+           kabı. `querySelectorAll('a')` açılan sayfanın içindekileri de
+           topluyordu ve onlar bir ızgarada, üst üste duruyor — geometri
+           kontrolleri bunu çakışma sanıyordu. */
+        const navLinks = [...navigation.querySelectorAll(':scope > a, :scope > .nav-more')];
         const feedPosts = [...document.querySelectorAll('[data-feed-post]')];
         const featuredPosts = feedPosts.filter((post) => post.dataset.featured === 'true');
         return {
@@ -526,11 +530,16 @@ if (errors.length === 0) {
         /* Beş oldu: İletişim menüye eklendi. Sayının kendisi bir kural değil,
            bir kelepçe — altındaki geometri kontrolleri (eşit flex, çakışma
            yok, kırpılma yok) beşin 360 piksele sığıp sığmadığını söylüyor. */
-        check(layout.navLinks.length === 5, `${label}: mobil navigasyonda beş temel öğe yok.`);
+        check(layout.navLinks.length === 5, `${label}: mobil navigasyonda beş yuva yok.`);
         const mobileNavText = (await page.locator('.primary-nav').textContent()) || '';
         check(!mobileNavText.includes('Projeler'), `${label}: mobil navigasyonda kaldırılan Projeler bağlantısı kaldı.`);
         check(mobileNavText.includes('Konular'), `${label}: mobil navigasyonda Konular bağlantısı yok.`);
-        check(mobileNavText.includes('Hakkında'), `${label}: mobil navigasyonda Hakkında bağlantısı yok.`);
+        /* Hakkında artık "Daha fazla"nın içinde; çubuğun beşinci yuvası ona
+           gitti. Metin kontrolü hâlâ geçerli çünkü açılan sayfa da
+           `.primary-nav` içinde duruyor — yani bağlantı kaybolmadı, bir
+           dokunuş arkasına geçti. */
+        check(mobileNavText.includes('Hakkında'), `${label}: Hakkında bağlantısı mobilde hiçbir yerde yok.`);
+        check(mobileNavText.includes('Diğer'), `${label}: mobil çubukta "Diğer" yuvası yok.`);
         check(!mobileNavText.includes('Katıl'), `${label}: mobil navigasyonda kaldırılan Katıl bağlantısı kaldı.`);
         check(!mobileNavText.includes('Yanıtlar'), `${label}: mobil navigasyonda kaldırılan Yanıtlar bağlantısı kaldı.`);
         check(layout.navLinks.every((link) => link.flex.startsWith('1 1 0') && link.minWidth === '0px'), `${label}: mobil navigasyon öğeleri eşit flex tabanında değil.`);

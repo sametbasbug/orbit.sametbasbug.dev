@@ -1,7 +1,7 @@
 ---
 import Icon from './Icon.astro';
 import ThemeToggle from './ThemeToggle.astro';
-import { MOBILE_NAVIGATION, isActive, normalizePath } from '../shared/navigation';
+import { MOBILE_MORE_NAVIGATION, MOBILE_NAVIGATION, isActive, normalizePath } from '../shared/navigation';
 
 type Props = { currentPath: string };
 const { currentPath } = Astro.props;
@@ -15,6 +15,8 @@ const normalizedPath = normalizePath(currentPath);
    isteyen insan sayısı artacak — şikâyet, itiraz, kaldırma talebi — ve
    ulaşamayan insan, ulaşmaktan vazgeçen insandır. */
 const links = MOBILE_NAVIGATION;
+const moreLinks = MOBILE_MORE_NAVIGATION;
+const moreActive = moreLinks.some((link) => isActive(link, currentPath));
 const searchQuery = Astro.url.searchParams.get('q') ?? '';
 ---
 
@@ -41,6 +43,35 @@ const searchQuery = Astro.url.searchParams.get('q') ?? '';
           <span class="nav-label">{link.label}</span>
         </a>
       ))}
+      {/*
+        Çubuğa sığmayanlar. `<details>` bilerek: sayfa JS'siz açıldığında da
+        çalışıyor, yani menü bir script'in inmesini beklemiyor.
+
+        Açık olduğu sayfada `aria-current` özetin üzerinde: içindeki bir
+        maddedeyken çubukta hiçbir şeyin işaretli olmaması, kişiye nerede
+        olduğunu söylemeyen bir menü demekti.
+      */}
+      <details class="nav-more">
+        {/*
+          Etiket kısa: "Daha fazla" 375px'lik bir telefonda yuvaya sığmayıp
+          iki satıra taşıyor ve çubuğun dışına çıkıyordu. Erişilebilir ad
+          uzun hâlini koruyor.
+        */}
+        <summary aria-label="Diğer sayfalar" aria-current={moreActive ? 'page' : undefined}>
+          <Icon name="chevron" size={18} />
+          <span class="nav-label">Diğer</span>
+        </summary>
+        {/* Bağlantı stilleri rayınkiyle aynı sınıftan geliyor: iki menü,
+            tek görünüm kaynağı. */}
+        <div class="nav-more-sheet app-rail-nav">
+          {moreLinks.map((link) => (
+            <a href={link.href} aria-current={isActive(link, currentPath) ? 'page' : undefined}>
+              <Icon name={link.icon} size={18} />
+              <span>{link.label}</span>
+            </a>
+          ))}
+        </div>
+      </details>
     </nav>
 
     <form class="header-search-form" action="/search" method="get" role="search">
@@ -97,3 +128,21 @@ const searchQuery = Astro.url.searchParams.get('q') ?? '';
     text-transform: none;
   }
 </style>
+
+<script>
+  /* `<details>` dışarı tıklanınca kendiliğinden kapanmıyor. Menü açık kalıp
+     sayfanın üstünde durursa, kişi onu kapatmak için tam da az önce bastığı
+     düğmeyi bulmak zorunda kalıyor. Escape de kapatıyor. */
+  const sheet = document.querySelector('.nav-more');
+  if (sheet instanceof HTMLDetailsElement) {
+    document.addEventListener('click', (event) => {
+      if (sheet.open && !sheet.contains(event.target as Node)) sheet.open = false;
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && sheet.open) {
+        sheet.open = false;
+        sheet.querySelector('summary')?.focus();
+      }
+    });
+  }
+</script>

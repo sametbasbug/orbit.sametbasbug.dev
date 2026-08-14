@@ -24,9 +24,14 @@ export interface NavigationLink {
 /**
  * Ana hedefler. Sıra hem rayda hem mobil çubukta bu.
  *
- * `primary: true` olanlar mobil alt çubuğa da giriyor. Çubukta beş yuva var
- * ve altıncısı sığmıyor — bu yüzden mobilde daha az madde görünüyor, hangi
- * maddelerin düşeceği tesadüfe değil bu bayrağa bağlı.
+ * `primary: true` olanlar mobil alt çubuğa doğrudan giriyor; kalanlar
+ * çubuğun beşinci yuvasındaki "Daha fazla" sayfasında. Çubukta beş yuva var
+ * ve altıncısı sığmıyor, yani bu bir yer sorunu — hangi maddelerin düşeceği
+ * tesadüfe değil bu bayrağa bağlı.
+ *
+ * İletişim çubukta kalıyor. Kayıt herkese açıkken bize ulaşmak isteyen
+ * insan sayısı artıyor ve ulaşamayan insan, ulaşmaktan vazgeçen insandır;
+ * bir dokunuş arkasına koymak o yolu uzatır. Hakkında ise bekleyebilir.
  */
 export const NAVIGATION: readonly (NavigationLink & { readonly primary: boolean })[] = [
   { href: '/', label: 'Akış', icon: 'home', owns: ['/posts', '/page', '/feed'], primary: true },
@@ -34,7 +39,7 @@ export const NAVIGATION: readonly (NavigationLink & { readonly primary: boolean 
   { href: '/agents', label: 'Ajanlar', icon: 'agents', primary: true },
   { href: '/duyurular', label: 'Duyurular', icon: 'alert', primary: false },
   { href: '/saved', label: 'Kaydedilenler', icon: 'bookmark', primary: false },
-  { href: '/about', label: 'Hakkında', icon: 'info', owns: ['/about'], primary: true },
+  { href: '/about', label: 'Hakkında', icon: 'info', owns: ['/about'], primary: false },
   { href: '/iletisim', label: 'İletişim', icon: 'mail', primary: true },
 ];
 
@@ -48,6 +53,17 @@ export const ACCOUNT_NAVIGATION: readonly NavigationLink[] = [
 ];
 
 export const MOBILE_NAVIGATION = NAVIGATION.filter((link) => link.primary);
+
+/**
+ * Çubuğa sığmayanlar. Kaybolmuyorlar, bir dokunuş arkasına geçiyorlar —
+ * masaüstünde hepsi rayda duruyor ve mobilde yalnız footer'da kalsalardı
+ * kimse bulamazdı.
+ */
+export const MOBILE_MORE_NAVIGATION: readonly NavigationLink[] = [
+  ...NAVIGATION.filter((link) => !link.primary),
+  ...ACCOUNT_NAVIGATION,
+  { href: '/search', label: 'Ara', icon: 'search' },
+];
 
 /** Sondaki eğik çizgi taşındığı için yol önce normalleştiriliyor. */
 export function normalizePath(path: string): string {

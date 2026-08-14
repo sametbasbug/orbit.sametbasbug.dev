@@ -18,13 +18,18 @@
    * menüyü aramanın tek yolu footer'dı.
    *
    * Etiketler `display: none` ile değil `.sr-only` kalıbıyla gizleniyor:
-   * ekran okuyucu bağlantının adını okumaya devam ediyor. */
+   * ekran okuyucu bağlantının adını okumaya devam ediyor.
+   *
+   * Kurallar `.app-rail` ile sınırlı: mobil çubuktaki "Diğer" menüsü de
+   * `.app-rail-nav` sınıfını ödünç alıyor — görünüm tek kaynaktan gelsin
+   * diye — ve sınırlamayınca onun etiketlerini de gizliyordu. Ödünç alınan
+   * sınıfın bedeli bu; kural bağlamına bağlanmalı. */
   .app-frame.has-rail {
     grid-template-columns: 3.5rem minmax(0, 1fr);
     gap: var(--space-8);
   }
 
-  .app-rail-nav a {
+  .app-rail .app-rail-nav a {
     justify-content: center;
     padding: 0;
   }
@@ -32,7 +37,7 @@
   /* `margin: -1px` bilerek yok: bu kalıp `.sr-only`'den geliyor ama orada
      akıştan çıkarmak için duruyordu, burada zaten `position: absolute` var.
      Skala kilidi kopyayı yakaladı — ham değer, gerekmediği yerde. */
-  .app-rail-nav a > span {
+  .app-rail .app-rail-nav a > span {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -41,17 +46,6 @@
     border: 0;
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
-  }
-}
-
-/* Hesabım ve Kaydedilenler ray ekrandayken yalnız rayda duruyor.
-   Eşik rayın var olduğu yer: 781px. Ray 1260 altında ikona iniyor ama
-   kaybolmuyor, yani o bantta da header'da ikinci bir kopya gerekmiyor —
-   aynı hedefi iki yerde göstermek hangisinin "asıl" olduğunu
-   belirsizleştirirdi. Ray yalnız 780px altında yok; ikizler orada. */
-@media (min-width: 781px) {
-  .header-narrow-only {
-    display: none;
   }
 }
 

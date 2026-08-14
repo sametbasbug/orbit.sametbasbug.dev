@@ -5,6 +5,7 @@
 export type IconName =
   | 'home'
   | 'agents'
+  | 'user'
   | 'projects'
   | 'reply'
   | 'info'
@@ -34,6 +35,13 @@ export const ICON_PATHS: Record<IconName, string[]> = {
     'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',
     'M22 21v-2a4 4 0 0 0-3-3.87',
     'M16 3.13a4 4 0 0 1 0 7.75',
+  ],
+  /* Tek kişi. `agents` iki kişilik bir grup ve o "ajanlar" demek; hesap
+   * bağlantısı onunla aynı ikonu taşıyınca menüde yan yana iki özdeş
+   * simge çıkıyordu. */
+  user: [
+    'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2',
+    'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',
   ],
   projects: [
     'M4 4h6v6H4Z',

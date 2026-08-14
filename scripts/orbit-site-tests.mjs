@@ -955,12 +955,32 @@ check(
 /* İletişim menüde. Footer'da kalması, bize ulaşmak isteyen insanın
  * ulaşamaması demekti — ve kayıt herkese açıkken o insan sayısı artıyor.
  *
- * Liste artık `src/shared/navigation.ts`'te; iddia oraya taşındı. Header'da
- * aramak, menü oradan çıktığı için hep geçen bir test bırakırdı. */
+ * Korunan şey menüde OLMASI, çubukta olması değil: mobilde "Diğer"in
+ * içinde duruyor ve orası footer değil — her sayfadan tek dokunuş uzakta,
+ * adı yazılı bir liste. Masaüstünde zaten rayda. */
 const navigationSource = fs.readFileSync(path.join(ROOT, 'src', 'shared', 'navigation.ts'), 'utf8');
 check(
-  /href: '\/iletisim'[^\n]*primary: true/u.test(navigationSource),
+  /href: '\/iletisim'/u.test(navigationSource),
   'İletişim menüden düşmüş; yalnız footer’da kalan bir bağlantıyı kimse bulmaz.',
+);
+/* Hesabım çubukta. Kişinin kendi alanı ve ajanlarını oradan yönetiyor;
+ * bir menünün arkasına konacak bir sekme değil. */
+check(
+  /href: '\/dashboard'[^\n]*primary: true/u.test(navigationSource),
+  'Hesabım mobil çubuktan düşmüş.',
+);
+/* Mobilde header ikonlarıyla "Diğer" menüsü bir dönem birebir aynıydı:
+ * Ara, Hesabım ve Kaydedilenler her iki yerde birden duruyordu. */
+const headerSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'Header.astro'), 'utf8');
+for (const href of ['/dashboard', '/saved']) {
+  check(
+    !headerSource.includes(`href="${href}"`),
+    `Header ${href} bağlantısını menüyle birlikte ikinci kez gösteriyor.`,
+  );
+}
+check(
+  !/label: 'Ara'/u.test(navigationSource),
+  'Ara hem header büyütecinde hem "Diğer" menüsünde duruyor.',
 );
 /* Ray her sayfada. Menünün yalnız ana sayfada durduğu bir dönem vardı ve
  * /agents üzerinde ekranda marka dışında hiçbir gezinme öğesi kalmıyordu. */

@@ -65,7 +65,12 @@ const searchQuery = Astro.url.searchParams.get('q') ?? '';
             tek görünüm kaynağı. */}
         <div class="nav-more-sheet app-rail-nav">
           {moreLinks.map((link) => (
-            <a href={link.href} aria-current={isActive(link, currentPath) ? 'page' : undefined}>
+            <a
+              href={link.href}
+              target={link.external ? '_blank' : undefined}
+              rel={link.external ? 'noopener' : undefined}
+              aria-current={!link.external && isActive(link, currentPath) ? 'page' : undefined}
+            >
               <Icon name={link.icon} size={18} />
               <span>{link.label}</span>
             </a>
@@ -89,21 +94,18 @@ const searchQuery = Astro.url.searchParams.get('q') ?? '';
     </form>
 
     <div class="header-actions">
+      {/*
+        Hesabım ve Kaydedilenler header'da YOK: masaüstünde sol rayda,
+        mobilde alt çubuğun "Diğer" menüsünde duruyorlar. Bir dönem her üç
+        yerde birden vardılar ve mobilde header ikonlarıyla menü içeriği
+        birebir aynıydı.
+
+        Arama burada kalıyor ve menüde yok: sık kullanılan bir eylem ve
+        büyüteç her yerde tanınan bir işaret; onu bir dokunuş arkasına
+        koymanın karşılığı yok.
+      */}
       <a class:list={['header-mobile-search', { active: normalizedPath === '/search' }]} href="/search" aria-label="Orbit'te ara" aria-current={normalizedPath === '/search' ? 'page' : undefined}>
         <Icon name="search" size={17} />
-      </a>
-      {/*
-        Hesabım ve Kaydedilenler masaüstünde artık sol rayda. Header'da da
-        durmaları aynı hedefi iki yerde göstermek olurdu; dar ekranda ise
-        ray yok, o yüzden ikisi orada ikon olarak kalıyor.
-      */}
-      <a class:list={['header-saved header-narrow-only', { active: normalizedPath === '/dashboard' }]} href="/dashboard" aria-label="Hesabım" aria-current={normalizedPath === '/dashboard' ? 'page' : undefined}>
-        <Icon name="agents" size={17} />
-        <span>Hesabım</span>
-      </a>
-      <a class:list={['header-saved header-narrow-only', { active: normalizedPath === '/saved' }]} href="/saved" aria-label="Kaydedilenler" aria-current={normalizedPath === '/saved' ? 'page' : undefined}>
-        <Icon name="bookmark" size={17} />
-        <span>Kaydedilenler</span>
       </a>
       <ThemeToggle />
       <a class="equinox-link" href="https://equinox.sametbasbug.dev">

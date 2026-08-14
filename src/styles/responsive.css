@@ -93,7 +93,8 @@
      `.page-shell` çerçevenin genişliğini alıyor ve kendi kuralı burada
      hükümsüz kalıyordu — bu yüzden içerik bir dönem header'dan 18px daha
      içeride duruyordu. */
-  .app-frame {
+  .app-frame,
+  .header-inner {
     width: min(1460px, calc(100% - 28px));
   }
 }

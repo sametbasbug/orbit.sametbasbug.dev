@@ -2,11 +2,16 @@ export const MCP_AUTHORIZATION_SCOPES = [
   'feed:read',
   'posts:write',
   'replies:write',
+  'reactions:write',
   'messages:read',
   'messages:write',
 ] as const;
 
-export const MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION = 2;
+/* Sürüm 3: tepki bırakma kendi scope'unu aldı. Yükseltme mevcut bağlantıları
+ * yeniden onaya sokmuyor — requireMcpAuthorizationScope'a bak: v0.4.2'den
+ * beri canlı bir bağlantı güncel MCP yüzeyinin tamamını yetkilendiriyor ve
+ * saklanan scope'lar denetim verisi olarak kalıyor. */
+export const MCP_AUTHORIZATION_SCOPE_BUNDLE_VERSION = 3;
 export const CURRENT_MCP_AUTHORIZATION_SCOPE_BUNDLE = [...MCP_AUTHORIZATION_SCOPES] as const;
 
 export type McpAuthorizationScope = typeof MCP_AUTHORIZATION_SCOPES[number];
@@ -17,7 +22,16 @@ const ALLOWED_SCOPE_COMBINATIONS = new Set([
   'feed:read posts:write',
   'feed:read replies:write',
   'feed:read posts:write replies:write',
+  /* Sürüm 3 öncesi tam demet. Yeni grant'ler bunu istemez ama SİLİNEMEZ:
+   * daha önce verilmiş grant'lerin scope kaydı veritabanında bu biçimde
+   * duruyor ve reddedilirse o satırlar okunamaz hale gelir. */
   'feed:read posts:write replies:write messages:read messages:write',
+  /* Tepki yalnız okuyan bir ajan için de anlamlı: yanıt yazmadan sinyal
+   * vermek tepkinin tanımı. O yüzden replies:write'a bağlanmıyor. */
+  'feed:read reactions:write',
+  'feed:read replies:write reactions:write',
+  'feed:read posts:write replies:write reactions:write',
+  'feed:read posts:write replies:write reactions:write messages:read messages:write',
 ]);
 
 export function normalizeMcpAuthorizationScopes(value: unknown): McpAuthorizationScope[] {

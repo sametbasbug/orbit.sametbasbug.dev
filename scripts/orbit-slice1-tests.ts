@@ -359,8 +359,8 @@ let firstCredentialToken = '';
         authorizationRequestId: options.requestId,
         oauthClientId: `chatgpt-${options.requestId}`,
         oauthClientLabel: 'ChatGPT',
-        scopes: ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
-        scopeBundleVersion: 2,
+        scopes: ['feed:read', 'posts:write', 'replies:write', 'reactions:write', 'messages:read', 'messages:write'],
+        scopeBundleVersion: 3,
       },
       { authorization: `Bearer ${MCP_SERVICE_SECRET}` },
       options.now,
@@ -384,7 +384,7 @@ let firstCredentialToken = '';
     };
     assert.deepEqual(
       body.authorization.scopes,
-      ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
+      ['feed:read', 'posts:write', 'replies:write', 'reactions:write', 'messages:read', 'messages:write'],
     );
     return {
       grantId: body.authorization.id,
@@ -672,8 +672,8 @@ let firstCredentialToken = '';
       authorizationRequestId: mcpAuthorizationRequestId,
       oauthClientId: 'chatgpt-dynamic-client-001',
       oauthClientLabel: 'ChatGPT',
-      scopes: ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
-      scopeBundleVersion: 2,
+      scopes: ['feed:read', 'posts:write', 'replies:write', 'reactions:write', 'messages:read', 'messages:write'],
+      scopeBundleVersion: 3,
     };
 
     const unauthenticatedList = await request('/v1/mcp/authorizations', {}, NOW + 47);
@@ -720,9 +720,9 @@ let firstCredentialToken = '';
     assert.equal(ticketBody.authorizationRequest.oauthClient.label, 'ChatGPT');
     assert.deepEqual(
       ticketBody.authorizationRequest.scopes,
-      ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
+      ['feed:read', 'posts:write', 'replies:write', 'reactions:write', 'messages:read', 'messages:write'],
     );
-    assert.equal(ticketBody.authorizationRequest.scopeBundleVersion, 2);
+    assert.equal(ticketBody.authorizationRequest.scopeBundleVersion, 3);
     assert.equal(ticketBody.authorizationRequest.issuedAt, NOW + 49);
     assert.equal(ticketBody.authorizationRequest.expiresAt, NOW + 49 + 10 * 60 * 1000);
 
@@ -759,9 +759,9 @@ let firstCredentialToken = '';
     assert.equal(inspectedBody.authorizationRequest.oauthClient.label, 'ChatGPT');
     assert.deepEqual(
       inspectedBody.authorizationRequest.scopes,
-      ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
+      ['feed:read', 'posts:write', 'replies:write', 'reactions:write', 'messages:read', 'messages:write'],
     );
-    assert.equal(inspectedBody.authorizationRequest.scopeBundleVersion, 2);
+    assert.equal(inspectedBody.authorizationRequest.scopeBundleVersion, 3);
     assert.deepEqual(
       inspectedBody.manageableAgents.map((agent) => agent.id),
       [sponsoredAgentId],
@@ -841,7 +841,7 @@ let firstCredentialToken = '';
     mcpDelegationCode = createdBody.delegation.code;
     assert.ok(mcpGrantId);
     assert.ok(mcpDelegationCode.startsWith('orb_mcp_v1_'));
-    assert.deepEqual(createdBody.authorization.scopes, ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write']);
+    assert.deepEqual(createdBody.authorization.scopes, ['feed:read', 'posts:write', 'replies:write', 'reactions:write', 'messages:read', 'messages:write']);
     assert.equal(createdBody.authorization.agent.id, sponsoredAgentId);
     assert.equal(createdBody.authorization.oauthClient.label, 'ChatGPT');
     assert.equal(createdBody.authorization.status, 'active');
@@ -885,7 +885,7 @@ let firstCredentialToken = '';
       authorization: { id: string; scopes: string[]; status: string };
     };
     assert.equal(redeemedBody.authorization.id, mcpGrantId);
-    assert.deepEqual(redeemedBody.authorization.scopes, ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write']);
+    assert.deepEqual(redeemedBody.authorization.scopes, ['feed:read', 'posts:write', 'replies:write', 'reactions:write', 'messages:read', 'messages:write']);
     assert.equal(redeemedBody.authorization.status, 'active');
 
     const replay = await postJson('/v1/mcp/delegations/redeem', {
@@ -943,7 +943,7 @@ let firstCredentialToken = '';
     assert.equal(privateStateBody.authorization.id, mcpGrantId);
     assert.deepEqual(
       privateStateBody.authorization.scopes,
-      ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
+      ['feed:read', 'posts:write', 'replies:write', 'reactions:write', 'messages:read', 'messages:write'],
     );
     assert.equal(privateStateBody.authorization.lastUsedAt, NOW + 56);
     assert.equal(privateStateBody.agent.id, sponsoredAgentId);
@@ -978,7 +978,7 @@ let firstCredentialToken = '';
     assert.equal(evergreenStateBody.authorization.authorizationMode, 'full_access');
     assert.deepEqual(
       evergreenStateBody.authorization.scopes,
-      ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
+      ['feed:read', 'posts:write', 'replies:write', 'reactions:write', 'messages:read', 'messages:write'],
     );
     assert.equal(evergreenStateBody.authorization.upgradeRequired, false);
 
@@ -1822,8 +1822,8 @@ let firstCredentialToken = '';
       authorizationRequestId: 'foreign-authorization-request',
       oauthClientId: 'foreign-client',
       oauthClientLabel: 'Foreign client',
-      scopes: ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
-      scopeBundleVersion: 2,
+      scopes: ['feed:read', 'posts:write', 'replies:write', 'reactions:write', 'messages:read', 'messages:write'],
+      scopeBundleVersion: 3,
     }, { authorization: `Bearer ${MCP_SERVICE_SECRET}` }, NOW + 54);
     assert.equal(foreignTicketResponse.status, 201);
     const foreignTicket = (await foreignTicketResponse.json() as { ticket: string }).ticket;
@@ -1841,8 +1841,8 @@ let firstCredentialToken = '';
       authorizationRequestId: requestId,
       oauthClientId: 'chatgpt-native-onboarding-client',
       oauthClientLabel: 'ChatGPT',
-      scopes: ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
-      scopeBundleVersion: 2,
+      scopes: ['feed:read', 'posts:write', 'replies:write', 'reactions:write', 'messages:read', 'messages:write'],
+      scopeBundleVersion: 3,
     }, { authorization: `Bearer ${MCP_SERVICE_SECRET}` }, NOW + 55);
     assert.equal(ticketResponse.status, 201, await ticketResponse.clone().text());
     const ticket = (await ticketResponse.json() as { ticket: string }).ticket;

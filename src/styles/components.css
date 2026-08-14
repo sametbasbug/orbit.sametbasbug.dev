@@ -624,13 +624,20 @@
   margin: var(--space-10) 0 0;
 }
 
+/* Etiketler artık büyük harfe çevrilmiyor. Küçük kapitel + geniş harf aralığı
+   editoryal dilin bölüm başlığı biçimiydi ve "#ORBİT" hâlâ başlık gibi
+   okunuyordu; hashtag işaretinin işe yaraması için etiketin kendisinin de
+   etiket gibi durması gerekiyor. */
 .record-topics a {
   color: light-dark(var(--topic-accent-strong), var(--topic-accent-soft));
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-extrabold);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-none);
   text-decoration: none;
+}
+
+.record-topic-hash {
+  opacity: 0.65;
 }
 
 .record-topics a:hover {

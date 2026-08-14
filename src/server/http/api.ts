@@ -2520,15 +2520,14 @@ async function loadReactionTarget(
   return record;
 }
 
-async function handleAgentSetReaction(
+async function setReactionForAgent(
   request: Request,
-  env: OrbitBindings,
   repository: PublicationRepository,
+  agentId: string,
   idOrSlug: string,
   now: number,
 ): Promise<Response> {
-  const auth = await authenticateAgent(request, env, repository, now, true, 'replies:write');
-  const record = await loadReactionTarget(repository, idOrSlug, auth.principal.agentId);
+  const record = await loadReactionTarget(repository, idOrSlug, agentId);
   const body = await readJson(request);
   requireExactFields(body, ['symbol'], 'invalid_reaction_fields');
   if (!isReactionSymbol(body.symbol)) {
@@ -2538,29 +2537,18 @@ async function handleAgentSetReaction(
       `symbol must be one of: ${REACTION_SYMBOLS.join(', ')}.`,
     );
   }
-  const previous = await repository.getAgentReaction(record.id, auth.principal.agentId);
-  await repository.setReaction({
-    recordId: record.id,
-    agentId: auth.principal.agentId,
-    symbol: body.symbol,
-    now,
-  });
+  const previous = await repository.getAgentReaction(record.id, agentId);
+  await repository.setReaction({ recordId: record.id, agentId, symbol: body.symbol, now });
   return json({ recordId: record.id, symbol: body.symbol, replaced: previous }, previous ? 200 : 201);
 }
 
-async function handleAgentClearReaction(
-  request: Request,
-  env: OrbitBindings,
+async function clearReactionForAgent(
   repository: PublicationRepository,
+  agentId: string,
   idOrSlug: string,
-  now: number,
 ): Promise<Response> {
-  const auth = await authenticateAgent(request, env, repository, now, true, 'replies:write');
-  const record = await loadReactionTarget(repository, idOrSlug, auth.principal.agentId);
-  const removed = await repository.clearReaction({
-    recordId: record.id,
-    agentId: auth.principal.agentId,
-  });
+  const record = await loadReactionTarget(repository, idOrSlug, agentId);
+  const removed = await repository.clearReaction({ recordId: record.id, agentId });
   return json({ recordId: record.id, removed });
 }
 
@@ -5818,6 +5806,24 @@ export async function handleApiRequest(
       );
     }
 
+    const mcpReactionMatch = /^\/v1\/mcp\/grants\/([^/]+)\/records\/([^/]+)\/reaction$/u.exec(path);
+    if (mcpReactionMatch && (request.method === 'POST' || request.method === 'DELETE')) {
+      authenticateMcpService(request, env);
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpReactionMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      requireMcpAuthorizationScope(resolved.grant, 'reactions:write');
+      const idOrSlug = decodeURIComponent(mcpReactionMatch[2]);
+      return request.method === 'POST'
+        ? await setReactionForAgent(request, publicationRepository, resolved.agent.id, idOrSlug, now)
+        : await clearReactionForAgent(publicationRepository, resolved.agent.id, idOrSlug);
+    }
+
     const mcpListOwnRecordsMatch = /^\/v1\/mcp\/grants\/([^/]+)\/agent\/records$/u.exec(path);
     if (request.method === 'POST' && mcpListOwnRecordsMatch) {
       authenticateMcpService(request, env);
@@ -6489,9 +6495,15 @@ export async function handleApiRequest(
     const reactionMatch = /^\/v1\/records\/([^/]+)\/reaction$/u.exec(path);
     if (reactionMatch && (request.method === 'POST' || request.method === 'DELETE')) {
       const idOrSlug = decodeURIComponent(reactionMatch[1]);
+      /* Credential scope'u ile MCP grant scope'u ayrı düzlemler. Buradaki
+       * kontrol credential tarafında olduğu için `records:write` istiyor;
+       * `reactions:write` MCP demetinin scope'u ve aşağıdaki grant yolunda
+       * denetleniyor. Bir credential scope'u eklemek, mevcut credential'lar
+       * eski listeyi taşıdığı için hepsini 403'e düşürürdü. */
+      const auth = await authenticateAgent(request, env, publicationRepository, now, true, 'records:write');
       return request.method === 'POST'
-        ? await handleAgentSetReaction(request, env, publicationRepository, idOrSlug, now)
-        : await handleAgentClearReaction(request, env, publicationRepository, idOrSlug, now);
+        ? await setReactionForAgent(request, publicationRepository, auth.principal.agentId, idOrSlug, now)
+        : await clearReactionForAgent(publicationRepository, auth.principal.agentId, idOrSlug);
     }
 
     if (request.method === 'POST' && path === '/v1/records') {

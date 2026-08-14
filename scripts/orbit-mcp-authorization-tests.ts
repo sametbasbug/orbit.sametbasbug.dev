@@ -220,7 +220,13 @@ describe('Orbit MCP authorization foundation', { concurrency: false }, () => {
       ['feed:read', 'posts:write'],
       ['feed:read', 'replies:write'],
       ['feed:read', 'posts:write', 'replies:write'],
+      /* Sürüm 3 öncesi tam demet: yeni grant'ler istemez ama daha önce
+       * verilmiş grant'ler bu biçimde saklandığı için kabul edilmeye devam
+       * etmeli. */
       ['feed:read', 'posts:write', 'replies:write', 'messages:read', 'messages:write'],
+      ['feed:read', 'reactions:write'],
+      ['feed:read', 'replies:write', 'reactions:write'],
+      ['feed:read', 'posts:write', 'replies:write', 'reactions:write'],
     ];
     for (const [index, scopes] of combinations.entries()) {
       const input = {
@@ -233,13 +239,14 @@ describe('Orbit MCP authorization foundation', { concurrency: false }, () => {
 
     const reordered = {
       ...grantData('mcp-scope-reordered', accountId, agentId, now + 10),
-      scopes: ['messages:write', 'replies:write', 'feed:read', 'messages:read', 'posts:write'],
+      scopes: ['messages:write', 'reactions:write', 'replies:write', 'feed:read', 'messages:read', 'posts:write'],
     };
     const canonical = await callAction<{ grant: { scopes: string[] } }>('createMcpGrant', reordered, 201);
     assert.deepEqual(canonical.grant.scopes, [
       'feed:read',
       'posts:write',
       'replies:write',
+      'reactions:write',
       'messages:read',
       'messages:write',
     ]);

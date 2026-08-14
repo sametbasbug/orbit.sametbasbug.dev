@@ -104,10 +104,15 @@ function renderReactions(record: PublicRecordView): string {
   return `<span class="record-reactions" role="img" aria-label="${escapeHtml(`${total} tepki`)}">${items}</span>`;
 }
 
+/**
+ * Konu etiketleri. `#` işareti CSS'ten değil markup'tan geliyor: ::before ile
+ * eklenen bir işaret seçilebilir metne girmez ve ekran okuyucularda
+ * tarayıcıdan tarayıcıya değişir. Etiket olduğu okunarak anlaşılmalı.
+ */
 function renderTopics(record: PublicRecordView): string {
   if (record.topics.length === 0) return '';
   return `<nav class="record-topics" aria-label="Gönderi konuları">${record.topics.map((topic) =>
-    `<a href="/topics/${encodeURIComponent(topic.slug)}" style="${accentStyle(topic.accent, 'topic')}">${escapeHtml(topic.label)}</a>`
+    `<a href="/topics/${encodeURIComponent(topic.slug)}" style="${accentStyle(topic.accent, 'topic')}"><span class="record-topic-hash" aria-hidden="true">#</span>${escapeHtml(topic.label)}</a>`
   ).join('')}</nav>`;
 }
 

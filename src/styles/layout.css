@@ -1,37 +1,77 @@
 /* Layout */
 
-/*
- * Uygulama çerçevesi: solda kalıcı ray, sağında sayfanın kendisi.
- *
- * Ray `BaseLayout` içinde durduğu için sayfalar kendi ızgaralarını
- * değiştirmeden bu çerçevenin içine giriyor. `.page-shell` artık ekranın
- * değil, rayın sağında kalan alanın ortasına yerleşiyor.
- *
- * Sabit genişlik kasıtlı: içerik raydan sonra hep aynı yerde başlıyor ve
- * sayfa değiştirirken yatay olarak oynamıyor. Kalan alanda ortalamak tek
- * bir sayfaya bakarken daha dengeli görünür ama akıştan Hakkında'ya
- * geçerken metni kaydırır.
- */
-.app-frame {
-  margin: 0 auto;
-  width: min(1460px, calc(100% - 56px));
+/* Header yüksekliği tek yerde: hem header'ın kendi asgari boyu hem de rayın
+   nereden başlayıp nerede biteceği buradan geliyor. İkisi ayrı ayrı yazıldığı
+   sürece biri değişince öteki sessizce kayıyordu. Skalanın değil hizalamanın
+   sabiti, o yüzden tokens.css'te değil burada. */
+:root {
+  --header-height: 76px;
 }
 
+/*
+ * Uygulama çerçevesi: solda kalıcı ray, ortada içerik, sağda ağ rayı.
+ *
+ * Ray `BaseLayout` içinde durduğu için sayfalar kendi ızgaralarını
+ * değiştirmeden bu çerçevenin içine giriyor.
+ *
+ * Çerçeve bir dönem `min(1460px, 100% - 56px)` ile ortalanıyordu ve iki
+ * yanda 1920px'te 230'ar piksel ölü kenar bırakıyordu. Artık ekranın
+ * tamamını alıyor: ray sol kenara, ağ rayı sağ kenara yapışıyor, artan
+ * genişlik ikisinin arasındaki oluklara gidiyor.
+ *
+ * İçerik sütununun ekranın TAM ortasına düşmesi iki rayın eşit genişlikte
+ * olmasına bağlı — kayma matematiksel olarak (ray - ağ rayı) / 2. Ray
+ * 220px, ağ rayı 320px iken akış yarım fark kadar, 50px sola kayıyordu;
+ * üstüne `.home-grid` `space-between` ile artan yeri tek bir oluğa
+ * döktüğü için 1920px'te kayma 106px'e çıkıyordu. İkisi de 320px olunca
+ * kayma sıfırlanıyor ve oluklar kendiliğinden simetrik oluyor.
+ */
+.app-frame {
+  width: 100%;
+  padding-inline: var(--space-8);
+}
+
+/*
+ * Ray sütunu = ray genişliği + oluk. İçerideki `.app-rail` kendi
+ * genişliğinde kalıyor, sütunun geri kalanı oluğa dönüşüyor; bu oluk
+ * `.home-grid`'in sağda bıraktığının aynısı olduğu için iki yan eşitleniyor.
+ *
+ * Oluk bir sütun boşluğu (`column-gap`) değil çünkü boşluk sabit olsaydı
+ * artan genişlik yine tek yere düşerdi — burada artan genişliğin ikiye
+ * bölünmesi gerekiyor.
+ */
 .app-frame.has-rail {
+  --rail-width: 320px;
+  --rail-gutter: max(var(--space-12), (100% - (var(--rail-width) + 760px + 320px)) / 2);
   display: grid;
   align-items: start;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: var(--space-12);
+  grid-template-columns: calc(var(--rail-width) + var(--rail-gutter)) minmax(0, 1fr);
+  column-gap: 0;
 }
 
 .app-frame > main {
   min-width: 0;
 }
 
+/*
+ * Ray ekranın boyu kadar ve kendi içinde kayıyor.
+ *
+ * Eskiden sayfayla birlikte akan, 528px yüksekliğinde bir bloktu: uzun bir
+ * akışta üst köşede asılı kalıyor ve altında ekranın sonuna kadar boşluk
+ * bırakıyordu. Kendi kaydırma alanı olunca menü ekranın bir parçası gibi
+ * duruyor — sayfanın içine düşmüş bir kutu gibi değil.
+ *
+ * Yükseklik header'ın altından başlıyor; `--header-height` ile ikisi tek
+ * yerden hizalanıyor.
+ */
 .app-rail {
-  padding: var(--space-12) 0 var(--space-40);
+  padding: var(--space-8) 0 var(--space-10);
   position: sticky;
-  top: 5rem;
+  top: var(--header-height);
+  width: var(--rail-width);
+  height: calc(100vh - var(--header-height));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .app-rail-nav {
@@ -76,20 +116,25 @@
   border-top: 1px solid var(--line);
 }
 
-/* Header ızgarası çerçeveyle aynı: 220px ilk sütun ve aynı boşluk.
+/* Header ızgarasının ilk sütunu çerçevenin ray sütunuyla birebir aynı
+ * ifadeden geliyor; bu yüzden arama kutusu içerik sütununun tam üstünde
+ * başlıyor ve marka rayla aynı hizada duruyor.
  *
- * Arama kutusu ana içerik sütununun tam üstünde başlasın diye. Boşluk bir
- * dönem `clamp(2.5rem, …, 5rem)` idi ve sayfanın sol sütunu 220px'ken bu
- * yürüyordu; ray gelince içerik 244px'ten başladı, arama 300px'te kaldı ve
- * ikisi 56px kaydı. Bir tarayıcı testi bunu ölçüyor. */
+ * Bir dönem boşluk `clamp(2.5rem, …, 5rem)` idi ve sayfanın sol sütunu
+ * 220px'ken bu yürüyordu; ray gelince içerik 244px'ten başladı, arama
+ * 300px'te kaldı ve ikisi 56px kaydı. Bir tarayıcı testi bunu ölçüyor —
+ * o testin ölçtüğü şey artık iki ayrı sayının eşitliği değil, aynı
+ * ifadenin iki yerde kullanılması. */
 .header-inner {
-  margin: 0 auto;
+  --rail-width: 320px;
+  --rail-gutter: max(var(--space-12), (100% - (var(--rail-width) + 760px + 320px)) / 2);
   display: grid;
-  grid-template-columns: 220px minmax(260px, 520px) 1fr;
+  grid-template-columns: calc(var(--rail-width) + var(--rail-gutter)) minmax(260px, 520px) 1fr;
   align-items: center;
-  column-gap: var(--space-12);
-  min-height: 76px;
-  width: min(1460px, calc(100% - 56px));
+  column-gap: 0;
+  min-height: var(--header-height);
+  width: 100%;
+  padding-inline: var(--space-8);
 }
 
 .page-shell {
@@ -126,11 +171,6 @@
   padding: var(--space-12) 0 var(--space-40);
 }
 
-.context-sticky {
-  position: sticky;
-  top: 6rem;
-}
-
 .network-sticky {
   position: sticky;
   display: grid;
@@ -138,21 +178,16 @@
   gap: var(--space-8);
 }
 
-.context-rail h1 {
-  margin: 0;
-  font-family: var(--serif);
-  font-size: var(--text-4xl);
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-tight);
-  line-height: var(--leading-tight);
-}
-
+/* Footer'ın sol kenarı marka ve rayla aynı hizada başlıyor: çerçeve ekranın
+   tamamını alınca ortalanmış bir footer tek başına içeride kalıyor ve
+   sayfanın altında hizasız bir blok gibi duruyordu. Genişlik yine kapalı —
+   footer metni 1900px'e yayılmamalı. */
 .footer-inner {
-  margin: 0 auto;
   display: grid;
   gap: 0;
-  padding: var(--space-24) 0 var(--space-12);
-  width: min(1460px, calc(100% - 56px));
+  padding: var(--space-24) var(--space-8) var(--space-12);
+  width: 100%;
+  max-width: 1476px;
 }
 
 .footer-main {

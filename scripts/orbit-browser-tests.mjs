@@ -465,6 +465,9 @@ if (errors.length === 0) {
           nav: rect('.primary-nav'),
           navDisplay: getComputedStyle(navigation).display,
           headerSearch: rect('.header-search-form'),
+          appRail: rect('.app-rail'),
+          feedColumn: rect('.feed'),
+          networkRail: rect('.network-rail'),
           headerTopicCount: document.querySelectorAll('.header-topic').length,
           /* Ray artık `HomeFeed` içinde değil, `BaseLayout`'ta ve her
              sayfada. Seçici de oraya taşındı; niyet aynı: masaüstünde menü
@@ -592,6 +595,32 @@ if (errors.length === 0) {
         check(layout.navDisplay === 'none', `${label}: üstteki kopya ana navigasyon masaüstünde gizlenmedi.`);
         check(layout.headerSearch && layout.headerSearch.width >= 220, `${label}: masaüstü arama formu yeterli genişlikte değil.`);
         check(Math.abs(layout.headerSearch.x - layout.hero.x) <= 1, `${label}: header araması ana içerik kolonuyla hizalı değil (${layout.headerSearch.x}/${layout.hero.x}).`);
+
+        /* Üç bölgeli yerleşimin iki iddiası.
+         *
+         * Birincisi: oluklar simetrik. Çerçeve bir dönem ortalanmış sabit
+         * genişlikteydi ve `.home-grid`'in `space-between`i artan yeri TEK
+         * bir oluğa döküyordu — 1920px'te sol oluk 24px, sağ oluk 136px'ti.
+         * Ölçülen şey bu: artan genişlik ikiye bölünüyor mu.
+         *
+         * İkincisi: akış sütunu ekranın ortasında. Kayma matematiksel
+         * olarak (ray - ağ rayı) / 2 olduğu için bu iddia ancak iki ray
+         * eşitken sıfırlanabiliyor; 1480px'in altında ray bilerek 240'a
+         * indiği için orada 40px kayma BEKLENEN sonuç, hata değil. Eşik o
+         * yüzden banda bağlı — tek bir gevşek sayı ikisini de kaçırırdı. */
+        const solOluk = layout.feedColumn.x - layout.appRail.right;
+        const sagOluk = layout.networkRail.x - layout.feedColumn.right;
+        check(
+          Math.abs(solOluk - sagOluk) <= 1,
+          `${label}: içerik sütununun iki yanındaki oluk eşit değil (sol ${solOluk.toFixed(1)}, sağ ${sagOluk.toFixed(1)}).`,
+        );
+
+        const kayma = (layout.feedColumn.x + layout.feedColumn.right) / 2 - layout.innerWidth / 2;
+        const kaymaSiniri = viewport.width > 1480 ? 1 : 41;
+        check(
+          Math.abs(kayma) <= kaymaSiniri,
+          `${label}: akış sütunu ekranın ortasında değil (kayma ${kayma.toFixed(1)}px, sınır ${kaymaSiniri}).`,
+        );
         check(!(await page.locator('.header-mobile-search').isVisible()), `${label}: mobil arama düğmesi masaüstünde görünür kaldı.`);
       }
 

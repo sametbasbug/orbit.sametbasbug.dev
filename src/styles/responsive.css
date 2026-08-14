@@ -1,17 +1,32 @@
 /* Responsive */
+
+/* Ray 320px'i yalnız yer varken taşıyor.
+ *
+ * 320 keyfi değil: ağ rayıyla eşit olduğu için akış sütununu ekranın tam
+ * ortasına oturtan sayı o. Ama üç bölge + oluklar 1480px'in altında 760px'lik
+ * akışa yer bırakmıyor ve raya verilen her piksel doğrudan okunan sütundan
+ * çıkıyor. Bu bantta ray 240'a iniyor: akış tam genişliğinde kalıyor, karşılığı
+ * akışın 40px — yani yarım fark kadar — sola kayması.
+ *
+ * Sınır 1480: altında ray 240 ile akış 760'ta kalıyor, üstünde ray 320 ile
+ * yine 760'ta kalıyor. Başka bir yere koyulsaydı ekran genişledikçe akışın
+ * daraldığı bir aralık açılırdı. */
+@media (max-width: 1480px) {
+  .app-frame.has-rail,
+  .header-inner {
+    --rail-width: 240px;
+  }
+}
+
 @media (max-width: 1260px) {
   .home-grid {
     grid-template-columns: minmax(560px, 760px) minmax(260px, 320px);
     justify-content: center;
   }
 
-  .context-rail {
-    display: none;
-  }
-
   /* Ray bu genişlikte kaybolmuyor, ikona iniyor.
    *
-   * Etiketli hâli 220px yer kaplıyor ve ana sayfada akış + ağ rayıyla
+   * Etiketli hâli 240px yer kaplıyor ve ana sayfada akış + ağ rayıyla
    * birlikte üç sütun olunca akışı okunamayacak kadar sıkıştırıyor. Ama
    * rayı tamamen kaldırmak 781–1260 bandında ekranda hiç ana menü
    * bırakmıyordu — dizüstü genişlikleri tam buraya düşüyor ve o bantta
@@ -23,10 +38,15 @@
    * Kurallar `.app-rail` ile sınırlı: mobil çubuktaki "Diğer" menüsü de
    * `.app-rail-nav` sınıfını ödünç alıyor — görünüm tek kaynaktan gelsin
    * diye — ve sınırlamayınca onun etiketlerini de gizliyordu. Ödünç alınan
-   * sınıfın bedeli bu; kural bağlamına bağlanmalı. */
-  .app-frame.has-rail {
-    grid-template-columns: 3.5rem minmax(0, 1fr);
-    gap: var(--space-8);
+   * sınıfın bedeli bu; kural bağlamına bağlanmalı.
+   *
+   * Header de aynı iki değeri alıyor, yoksa arama kutusu içerik sütununun
+   * üstünden kayıyor: çerçeve ikona inerken header kendi sütununu koruduğu
+   * için bu bantta ikisi bir dönem yüzlerce piksel ayrı duruyordu. */
+  .app-frame.has-rail,
+  .header-inner {
+    --rail-width: 3.5rem;
+    --rail-gutter: var(--space-8);
   }
 
   .app-rail .app-rail-nav a {
@@ -88,8 +108,9 @@
      hükümsüz kalıyordu — bu yüzden içerik bir dönem header'dan 18px daha
      içeride duruyordu. */
   .app-frame,
-  .header-inner {
-    width: min(1460px, calc(100% - 28px));
+  .header-inner,
+  .footer-inner {
+    padding-inline: var(--space-7);
   }
 }
 
@@ -460,13 +481,12 @@
 
 @media (max-width: 520px) {
   .header-inner,
-  .page-shell,
   .app-frame {
-    width: min(100% - 20px, 1460px);
+    padding-inline: var(--space-5);
   }
 
   .footer-inner {
-    width: min(100% - 20px, 1460px);
+    padding-inline: var(--space-5);
     padding-top: var(--space-20);
   }
 

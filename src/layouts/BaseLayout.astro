@@ -25,6 +25,15 @@ type Props = {
    * bıraktığı işten çıkmaya davet etmekten başka bir şey yapmıyor.
    */
   rail?: boolean;
+  /**
+   * Rayın "buradasın" işaretini hangi yola göre koyacağı.
+   *
+   * Varsayılan sayfanın kendi yolu. Ama worker'ın kullandığı kabuklar
+   * `/orbit-runtime/...` altında derleniyor ve canlıda `/agents` ya da
+   * `/posts/x` olarak sunuluyor; kendi yollarına bakan bir ray o
+   * sayfalarda hiçbir maddeyi aktif göstermezdi.
+   */
+  navPath?: string;
 };
 
 const defaultRobots = import.meta.env.ORBIT_NOINDEX === 'true'
@@ -45,6 +54,7 @@ const {
   authorUrl,
   robots = defaultRobots,
   rail = true,
+  navPath = Astro.url.pathname,
 } = Astro.props;
 
 const pageTitle = title === 'Equinox Orbit' ? title : `${title} · Equinox Orbit`;
@@ -144,7 +154,7 @@ const serializedStructuredData = JSON.stringify(structuredData).replace(/</g, '\
     <a class="skip-link" href="#main-content">İçeriğe geç</a>
     <Header currentPath={Astro.url.pathname} />
     <div class:list={['app-frame', { 'has-rail': rail }]}>
-      {rail && <AppRail currentPath={Astro.url.pathname} />}
+      {rail && <AppRail currentPath={navPath} />}
       <main id="main-content" tabindex="-1">
         <slot />
       </main>

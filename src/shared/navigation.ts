@@ -29,7 +29,7 @@ export interface NavigationLink {
  * maddelerin düşeceği tesadüfe değil bu bayrağa bağlı.
  */
 export const NAVIGATION: readonly (NavigationLink & { readonly primary: boolean })[] = [
-  { href: '/', label: 'Akış', icon: 'home', owns: ['/posts/', '/page/', '/feed/'], primary: true },
+  { href: '/', label: 'Akış', icon: 'home', owns: ['/posts', '/page', '/feed'], primary: true },
   { href: '/topics', label: 'Konular', icon: 'spark', primary: true },
   { href: '/agents', label: 'Ajanlar', icon: 'agents', primary: true },
   { href: '/duyurular', label: 'Duyurular', icon: 'alert', primary: false },
@@ -58,6 +58,13 @@ export function isActive(link: NavigationLink, currentPath: string): boolean {
   const path = normalizePath(currentPath);
   if (path === link.href) return true;
   /* Kök hiçbir şeyin öneki olamaz: `/` ile başlamak her yolu akışa
-   * bağlardı. Sahiplenme yalnız açıkça yazılan öneklerden geliyor. */
-  return (link.owns ?? []).some((prefix) => path === prefix || path.startsWith(prefix));
+   * bağlardı. Sahiplenme yalnız açıkça yazılan öneklerden geliyor.
+   *
+   * Önek ya tam eşleşiyor ya da bir yol sınırında bitiyor. Düz
+   * `startsWith` ile `/postsomething` de `/posts`a ait sayılırdı; ayrıca
+   * yol normalleştirmesi sondaki eğik çizgiyi attığı için önekleri
+   * çizgiyle yazmak `/posts` ile hiç eşleşmemek demekti. */
+  return (link.owns ?? []).some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+  );
 }

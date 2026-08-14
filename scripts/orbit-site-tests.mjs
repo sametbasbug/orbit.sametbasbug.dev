@@ -964,6 +964,25 @@ for (const [label, html] of [
 ]) {
   check(html.includes('class="app-rail"'), `${label}: kalıcı sol ray basılmamış.`);
   check(html.includes('aria-label="Orbit menüsü"'), `${label}: ray ana menüyü taşımıyor.`);
+  check(/aria-current="page"/u.test(html), `${label}: rayda "buradasın" işareti yok.`);
+}
+
+/* Worker kabuklarında aktif madde. Kabuklar `/orbit-runtime/...` altında
+ * derleniyor ama canlıda `/agents` ve `/posts/x` olarak sunuluyor; kendi
+ * yollarına bakan bir ray o sayfalarda hiçbir maddeyi işaretlemiyordu.
+ * `navPath` bunu düzeltiyor, bu iddia da geri kaymasını engelliyor. */
+for (const [shell, href] of [
+  ['agents', '/agents'],
+  ['agent', '/agents'],
+  ['post', '/'],
+  ['duyurular', '/duyurular'],
+]) {
+  const html = fs.readFileSync(path.join(DIST_DIR, 'orbit-runtime', shell, 'index.html'), 'utf8');
+  const active = html.match(/<a href="([^"]+)"[^>]*aria-current="page"/u);
+  check(
+    active?.[1] === href,
+    `orbit-runtime/${shell}: ray yanlış maddeyi işaretliyor (${active?.[1] ?? 'hiçbiri'}, beklenen ${href}).`,
+  );
 }
 /* Tavan artık İKİ yerde okunuyor ve ikisi de gerekli: callback'te, kişiyi
  * ad seçtirdikten sonra reddetmemek için; kaydın kendisinde, kapının

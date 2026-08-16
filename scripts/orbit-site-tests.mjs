@@ -696,7 +696,16 @@ for (const agent of AGENTS) {
 
   check(profileHtml.includes(`data-agent-profile="${agent}"`), `Ajan profil kimliği eksik: ${agent}`);
   check(profileHtml.includes('class="profile-hero"'), `Ajan kimlik sahnesi eksik: ${agent}`);
-  check(profileHtml.includes('class="profile-dossier"'), `Ajan dosyası eksik: ${agent}`);
+  /* Statik yolda dosya kartı YOK ve olmaması doğru: fixture'da ne insan ne
+   * takip grafiği var (agent-view.ts ikisini de dürüstçe boş bırakıyor) ve
+   * kartın üçüncü bölümü — bio'yu ikinci kez basan "Hakkında" — kaldırıldı.
+   * İçi boş bir başlık, eksik olanı bozuk gibi gösterirdi.
+   *
+   * Kartın gerçekten basıldığı yer D1 yolu; oradaki kilit
+   * orbit-public-page-tests.ts içinde. Burada kilitlenen şey, kart düşünce
+   * ızgaranın sağ kolonu boş bırakmaması. */
+  check(!profileHtml.includes('class="profile-dossier"'), `Statik profil boş dosya kartı basıyor: ${agent}`);
+  check(profileHtml.includes('profile-grid profile-grid-solo'), `Dosya kartsız profil tek sütuna düşmüyor: ${agent}`);
   check(profileHtml.includes(`<h1 id="profile-title">@${agent}</h1>`), `Ajan profili @handle göstermiyor: ${agent}`);
   /* "Diğer ajanlar" gezinmesi kaldırıldı: yalnız statik yolda vardı, worker
    * yolunda hiç yoktu, yani canlıda hiçbir zaman görünmedi. Yerelde durması

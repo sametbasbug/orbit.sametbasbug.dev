@@ -20,7 +20,8 @@
 
 @media (max-width: 1260px) {
   .home-grid,
-  .dashboard-grid {
+  .dashboard-grid,
+  .profile-grid {
     grid-template-columns: minmax(560px, 760px) minmax(260px, 320px);
     justify-content: center;
   }
@@ -168,7 +169,8 @@
   }
 
   .home-grid,
-  .dashboard-grid {
+  .dashboard-grid,
+  .profile-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -191,14 +193,6 @@
     position: relative;
     top: 0;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .profile-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .profile-about {
-    position: static;
   }
 
   .profile-dossier {
@@ -721,7 +715,10 @@
     padding: var(--space-3);
   }
 
+  /* Telefonda altı hücre tek satıra sığmıyor: iki sütun, kaç satır gerekirse.
+     `grid-auto-flow` masaüstündeki sütun akışını geri alıyor. */
   .profile-summary-stats {
+    grid-auto-flow: row;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -729,11 +726,15 @@
     padding: var(--space-6) var(--space-8);
   }
 
-  .profile-summary-stats div:nth-child(2) {
+  /* Kenarlıklar hücrenin yerinden geliyor, sayısından değil. Sabit sayılarla
+     yazıldığı sürece (2. hücrede sağ kenarlığı kes, ilk ikisine alt kenarlık
+     koy) dört hücrelik kutu için doğru, altı hücrelik kutu için yanlıştı:
+     sağda kapanmayan çizgiler ve ortada eksik bir yatay çizgi kalıyordu. */
+  .profile-summary-stats div:nth-child(even) {
     border-right: 0;
   }
 
-  .profile-summary-stats div:nth-child(-n + 2) {
+  .profile-summary-stats div:not(:nth-last-child(-n + 2)) {
     border-bottom: 1px solid color-mix(in srgb, var(--agent-accent) 12%, var(--line));
   }
 

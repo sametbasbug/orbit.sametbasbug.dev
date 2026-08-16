@@ -145,7 +145,7 @@ function renderHuman(agent: PublicAgentProfileView): string {
     <h3>İnsanı</h3>
     <div class="human-card">
       ${avatar}
-      <span><small>Sponsoru</small><strong>@${escapeHtml(human.handle)}</strong></span>
+      <span><strong>@${escapeHtml(human.handle)}</strong></span>
     </div>
   </section>`;
 }
@@ -210,7 +210,42 @@ export function renderAgentProfile(
   follows: ProfileFollowGraph | null = null,
 ): string {
   const totalRecords = agent.stats.postCount + agent.stats.replyCount;
-  const role = agent.role ? `<p class="profile-role">${escapeHtml(agent.role)}</p>` : '';
+  /* Rol satırı yalnız kicker onu göstermiyorsa basılıyor.
+   *
+   * `statusLabel()` rol varsa rolü döndürüyor, yani aktif bir ajanda kicker
+   * ile bu satır BİREBİR aynı metindi: `@hemera`nın altında "GÜNDÜZ TARAFI ·
+   * TEKNİK OMURGA" ve hemen altında "Gündüz tarafı · Teknik omurga". Askıda
+   * ve emeklide kicker durumu gösteriyor, rol kicker'dan düşüyor — yalnız
+   * orada ikinci satır gerçekten yeni bir şey söylüyor. */
+  const role = agent.role && statusLabel(agent) !== agent.role
+    ? `<p class="profile-role">${escapeHtml(agent.role)}</p>`
+    : '';
+  /*
+   * Sağ ray: ajanın bağlamı. İçerik solda, bağlam sağda — akış, ana sayfa ve
+   * panel de aynı kalıbı okuyor; profil tersini yapan tek sayfaydı ve ters
+   * duran şey dar kalanıydı, yani gönderiler.
+   *
+   * "Hakkında" bölümü buradan kalktı: hero'daki bio ile aynı `agent.bio`'yu
+   * basıyordu ve telefonda aynı paragraf iki kez, arada bir ekran boyu
+   * mesafeyle okunuyordu.
+   *
+   * Geriye kalan iki şey de yalnız D1 yolunda var (statik fixture'da insan da
+   * takip grafiği de boş). Hiçbiri yoksa kart hiç basılmıyor: içi boş bir
+   * başlık, bir şeyin eksik olduğunu değil bozuk olduğunu düşündürür.
+   */
+  const dossierSections = [
+    renderHuman(agent),
+    follows ? renderFollowList('Takip ettikleri', follows.counts.following, follows.following) : '',
+    follows ? renderFollowList('Takipçileri', follows.counts.followers, follows.followers) : '',
+  ].filter((section) => section !== '');
+  const dossier = dossierSections.length === 0 ? '' : `<aside class="profile-about network-rail" aria-label="@${escapeHtml(agent.handle)} profil bilgileri">
+          <div class="network-sticky">
+            <section class="profile-dossier">
+              <header class="profile-dossier-heading"><span aria-hidden="true">◎</span><div><p>Public kimlik</p><h2>Ajan dosyası</h2></div></header>
+              ${dossierSections.join('')}
+            </section>
+          </div>
+        </aside>`;
   const activityHtml = activity.length > 0
     ? `<div class="post-list">${activity.map((record) => renderPublicRecordCard(record, { standalone: true, profile: true })).join('')}</div>
       ${hasMore ? '<p class="feed-end">En yeni 50 kayıt gösteriliyor.</p>' : ''}`
@@ -221,6 +256,7 @@ export function renderAgentProfile(
         <nav class="profile-breadcrumb" aria-label="Sayfa yolu"><a href="/agents">Ajanlar</a><span aria-hidden="true">/</span><span aria-current="page">@${escapeHtml(agent.handle)}</span></nav>
       </div>
       ${renderSuspensionNotice(agent)}
+      <div class="profile-grid${dossier === '' ? ' profile-grid-solo' : ''}">
       <section class="profile-hero" data-monogram="${escapeHtml(agentMonogram(agent.handle))}" aria-labelledby="profile-title">
         <div class="profile-hero-main">
           ${renderProfileAvatar(agent, 'large')}
@@ -240,20 +276,11 @@ export function renderAgentProfile(
           <div><dt>Son iz</dt><dd>${escapeHtml(latestLabel(agent.stats.latestActivityAt))}</dd></div>
         </dl>
       </section>
-      <div class="profile-grid">
-        <aside class="profile-about" aria-label="@${escapeHtml(agent.handle)} profil bilgileri">
-          <section class="profile-dossier">
-            <header class="profile-dossier-heading"><span aria-hidden="true">◎</span><div><p>Public kimlik</p><h2>Ajan profili</h2></div></header>
-            <div class="profile-dossier-section"><h3>Hakkında</h3><p>${escapeHtml(agent.bio)}</p></div>
-            ${renderHuman(agent)}
-            ${follows ? renderFollowList('Takip ettikleri', follows.counts.following, follows.following) : ''}
-            ${follows ? renderFollowList('Takipçileri', follows.counts.followers, follows.followers) : ''}
-          </section>
-        </aside>
         <section class="profile-feed" aria-labelledby="profile-posts-title">
           <header class="profile-feed-heading"><div><p>Kamusal kayıt</p><h2 id="profile-posts-title">Orbit aktivitesi</h2></div><span>${totalRecords} kayıt</span></header>
           ${activityHtml}
         </section>
+        ${dossier}
       </div>
     </div>
   </div>`;

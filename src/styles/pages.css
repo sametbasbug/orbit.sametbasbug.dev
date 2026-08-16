@@ -140,8 +140,10 @@
 
 /* Profilin üstünü kendi içeriği taşıyor: `.profile-topline` kendi boşluğunu
    veriyor ve kabuğun varsayılan 56px'i onun üstüne binerdi. */
+/* Genişliği çerçeve veriyor (layout.css): profil de akışla aynı 760 + 320
+   ölçüsünde. Burada kendi tavanını yazmak, o kuralla yarışıp kaybeden ölü bir
+   bildirim bırakmaktı. */
 .profile-shell {
-  max-width: 1180px;
   padding-top: 0;
 }
 
@@ -175,6 +177,7 @@
 
 .profile-hero {
   display: grid;
+  grid-column: 1 / -1;
   grid-template-columns: minmax(0, 1.28fr) minmax(17rem, 0.72fr);
   position: relative;
   isolation: isolate;
@@ -254,10 +257,20 @@
   box-shadow: 0 0 0 0.25rem color-mix(in srgb, var(--agent-accent) 12%, transparent);
 }
 
+/* Handle'ın ölçüsü viewport'a değil, oturduğu kolona bağlı.
+ *
+ * Tavan bir dönem 4.6rem idi ve 1600px'te 73.6px'e çıkıyordu; kimlik kolonu
+ * ise 261px. "@hemera" o puntoda 327px kaplıyor, yani 66px taşıp yanındaki
+ * tanıtım kutusunun üstüne biniyordu — geniş ekranda, tam da yerin bol
+ * göründüğü yerde. Kolon `5vw`'yi hiç bilmiyor.
+ *
+ * Sarma da bilerek açık: tavan yalnız bir handle uzunluğunu garanti eder,
+ * `@bir-cok-heceli-ajan` yine sığmaz. Taşmak yerine alt satıra iner. */
 .profile-identity h1 {
   margin: 0;
+  overflow-wrap: anywhere;
   font-family: var(--sans);
-  font-size: clamp(3.2rem, 5vw, 4.6rem);
+  font-size: clamp(2.6rem, 4vw, 3.4rem);
   font-weight: var(--weight-black);
   letter-spacing: var(--tracking-tighter);
   line-height: var(--leading-squeeze);
@@ -288,10 +301,17 @@
   line-height: var(--leading-normal);
 }
 
+/* Sütun sayısı hücre sayısından geliyor, sabit değil.
+ *
+ * Sabit dört sütunken kutu altı hücre taşıyordu (takip ve takipçi eklendi) ve
+ * ikinci satırda iki dolu iki BOŞ hücre duruyordu. Statik yolda ise takip
+ * grafiği hiç yok, yani aynı kutu bazen dört bazen altı hücre alıyor —
+ * hücreyi sütuna sayarak dağıtmak ikisini de tek satıra oturtuyor. */
 .profile-summary-stats {
   display: grid;
   grid-column: 1 / -1;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   margin: 0;
   border-top: 1px solid color-mix(in srgb, var(--agent-accent) 15%, var(--line));
   background: color-mix(in srgb, var(--agent-accent) 3.5%, var(--paper));
@@ -323,17 +343,19 @@
   letter-spacing: var(--tracking-tight);
 }
 
-.profile-grid {
-  display: grid;
-  align-items: start;
-  grid-template-columns: 310px minmax(0, 1fr);
-  gap: var(--space-14);
-  padding-top: var(--space-14);
-}
+/* Sütun ölçüsü layout.css'te, akış ve panelle ortak.
+ *
+ * Kimlik sahnesi ızgaranın DIŞINDA değil içinde ve iki sütunu birden
+ * kaplıyor. Dışarıdayken kendi genişliğini kabuktan alıyordu ve dosya kartı
+ * olmayan profilde (statik yol) sahne 1164px, altındaki akış 760px kalıyor;
+ * sağda hizasız bir boşluk açılıyordu. İçeride, sahne her iki durumda da
+ * altındaki kolonların toplamı kadar — bildirimi `.profile-hero` kuralında. */
 
-.profile-about {
-  position: sticky;
-  top: 6.5rem;
+/* Dosya kartı yoksa (statik yolda insan da takip grafiği de boş) tek sütun.
+   Sağ kolonu boş bırakmak, akışı 760'ta tutup yanında sebepsiz bir boşluk
+   göstermek olurdu. */
+.profile-grid-solo {
+  grid-template-columns: minmax(0, 760px);
 }
 
 .profile-dossier {

@@ -952,7 +952,6 @@ if (errors.length === 0) {
             const box = element.getBoundingClientRect();
             return { x: box.x, y: box.y, right: box.right, bottom: box.bottom, width: box.width, height: box.height };
           };
-          const stats = document.querySelector('.profile-summary-stats');
           return {
             innerWidth,
             scrollWidth: document.documentElement.scrollWidth,
@@ -961,13 +960,26 @@ if (errors.length === 0) {
             h1Text: document.querySelector('h1')?.textContent?.trim(),
             peerCount: document.querySelectorAll('.profile-peer-nav a').length,
             statCount: document.querySelectorAll('.profile-summary-stats > div').length,
-            statColumns: stats ? getComputedStyle(stats).gridTemplateColumns.split(' ').length : 0,
+            /* Sütun sayısı yerleşimden okunuyor, bildirimden değil: kutu
+             * artık sütunlarını `grid-auto-flow: column` ile üretiyor ve
+             * computed `grid-template-columns` implicit track'leri hiç
+             * göstermiyor — "none" döndürüp ölçümü sessizce sıfırlardı. */
+            statRows: [...new Set([...document.querySelectorAll('.profile-summary-stats > div')]
+              .map((cell) => Math.round(cell.getBoundingClientRect().y)))].length,
             projectHrefs: [...document.querySelectorAll('a[href^="/projects"]')].map((link) => link.getAttribute('href')),
             oldCoverCount: document.querySelectorAll('.profile-cover').length,
+            /* Başlık kutusuna sığıyor mu: `scrollWidth` düzen genişliğini
+             * aşarsa metin taşmıştır. Taşma görünür kalıyor (kesilmiyor), o
+             * yüzden hiçbir kutu ölçüsü bunu ele vermez. */
+            handleOverflow: (() => {
+              const title = document.querySelector('.profile-identity h1');
+              return title ? title.scrollWidth - Math.round(title.getBoundingClientRect().width) : null;
+            })(),
             hero: rect('.profile-hero'),
             heroMain: rect('.profile-hero-main'),
             heroCopy: rect('.profile-hero-copy'),
             dossier: rect('.profile-dossier'),
+            feed: rect('.profile-feed'),
             feedHeading: rect('.profile-feed-heading'),
           };
         });
@@ -982,15 +994,36 @@ if (errors.length === 0) {
         check(profileState.oldCoverCount === 0, `${label}: kaldırılan tam genişlik profil kapağı DOM'da kaldı.`);
         check(profileState.scrollWidth <= profileState.innerWidth, `${label}: ajan profili yatay taşıyor.`);
         check(profileState.hero && profileState.hero.x >= 0 && profileState.hero.right <= profileState.innerWidth, `${label}: profil kimlik sahnesi viewport dışına taşıyor.`);
-        check(profileState.dossier && profileState.feedHeading, `${label}: ajan dosyası veya aktivite başlığı ölçülemedi.`);
+        /* Statik yolda dosya kartı yok — fixture'da ne insan ne takip
+         * grafiği var. Buradaki tur `dist`i geziyor, yani profilin dosyalı
+         * hâlini hiç görmüyor; onu D1 fixture'ıyla koşan worker turu
+         * ölçüyor (aşağıda). */
+        check(profileState.dossier === null, `${label}: statik profil boş dosya kartı basıyor.`);
+        check(profileState.feedHeading, `${label}: aktivite başlığı ölçülemedi.`);
+        /* @handle kolonundan taşmıyor. Punto bir dönem `5vw` ile viewport'a
+         * bağlıydı ve kimlik kolonu 261px'ken 1600px'te 73.6px'e çıkıyordu:
+         * "@hemera" 66px taşıp yanındaki tanıtım kutusunun üstüne biniyordu.
+         * Geniş ekranda kırılan bir şeydi, yani dar ekran testleri göremezdi. */
+        check(profileState.handleOverflow === 0, `${label}: profil başlığı kolonundan ${profileState.handleOverflow}px taşıyor.`);
         if (viewport.width <= 520) {
-          check(profileState.statColumns === 2, `${label}: mobil profil özeti iki sütuna düşmedi.`);
+          /* Satır sayısı hücre sayısının tam yarısı: iki sütun, boş hücre
+           * yok. Sabit dört sütunken kutu altı hücre taşıyordu ve ikinci
+           * satırda iki hücre BOŞ duruyordu. */
+          check(profileState.statRows === profileState.statCount / 2, `${label}: mobil profil özeti iki sütuna dolu düşmedi.`);
           check(profileState.heroMain.bottom <= profileState.heroCopy.y + 0.5, `${label}: mobil kimlik ve tanıtım metni çakışıyor.`);
-          check(profileState.dossier.bottom <= profileState.feedHeading.y + 0.5, `${label}: mobil ajan dosyası aktivite başlığıyla çakışıyor.`);
         } else {
-          check(profileState.statColumns === 4, `${label}: masaüstü profil özeti dört sütun değil.`);
+          check(profileState.statRows === 1, `${label}: masaüstü profil özeti tek satıra oturmadı.`);
           check(profileState.heroMain.right <= profileState.heroCopy.x + 0.5, `${label}: masaüstü kimlik ve tanıtım alanı çakışıyor.`);
-          check(profileState.dossier.right <= profileState.feedHeading.x + 0.5, `${label}: masaüstü ajan dosyası aktivite kolonuyla çakışıyor.`);
+          /* Gönderiler akıştaki genişliğin ta kendisi: 760px.
+           *
+           * Profil bir dönem 1180px'lik bir düzeni 760px'e sıkıştırıyordu ve
+           * aynı kart burada 422px kalıyordu — aynı içerik, yarı okuma
+           * genişliği. Üst sınır da bilerek var: ölçü artık `.home-grid` ile
+           * ORTAK bir kuraldan geliyor ve `.profile-grid` o seçici
+           * listesinden düşerse ızgara hiç kurulmaz, kolon kabuğun tamamına
+           * (1164px) yayılır. Yalnız alt sınırı ölçmek o düşüşü geçirirdi. */
+          check(profileState.feed.width >= 700 && profileState.feed.width <= 800,
+            `${label}: profil aktivite kolonu akışın 760px'inde değil (${Math.round(profileState.feed.width)}px).`);
         }
         check(pageErrors.length === 0, `${label}: profil turunda sayfa hatası: ${pageErrors.join(' | ')}`);
 

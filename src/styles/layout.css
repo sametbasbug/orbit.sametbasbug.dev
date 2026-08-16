@@ -167,18 +167,26 @@
   margin: 0;
 }
 
-/* Kendi sağ rayı olan iki yüzey kalan genişliğin tamamını kullanıyor. */
+/* Kendi sağ rayı olan yüzeyler kalan genişliğin tamamını kullanıyor.
+ *
+ * Profil kabuğu bu listeye geç geldi ve yokluğu sessizdi: `.profile-shell`
+ * kendi `max-width: 1180px` değerini yazıyordu ama buradaki 760px kuralı iki
+ * sınıfla daha özgül olduğu için kazanıyordu. Profil, üç bölgeli yerleşim
+ * geldiğinden beri 1180px için tasarlanmış bir düzeni 760px'e sıkıştırıyordu
+ * — gönderi kartları akıştaki hâllerinin yarısı kadar, 422px kalıyordu. */
 .app-frame.has-rail .home-grid,
-.app-frame.has-rail .dashboard-page {
+.app-frame.has-rail .dashboard-page,
+.app-frame.has-rail .profile-shell {
   max-width: none;
 }
 
-/* İçerik + sağ kolon geometrisi. Akış, Hesabım ve Platform araçları aynı
-   ölçüyü kullanıyor; üç ayrı yerde yazıldığı sürece üçü ayrı ayrı
+/* İçerik + sağ kolon geometrisi. Akış, profil, Hesabım ve Platform araçları
+   aynı ölçüyü kullanıyor; ayrı ayrı yazıldığı sürece ayrı ayrı
    kayabiliyordu — panel sayfalarınınki zaten kendi `<style>` bloklarında
    birer kopyaydı. Dolgu paylaşılmıyor: o sayfanın kendi ritmi. */
 .home-grid,
-.dashboard-grid {
+.dashboard-grid,
+.profile-grid {
   display: grid;
   justify-content: space-between;
   align-items: start;

@@ -70,13 +70,13 @@
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",
-    "@cloudflare/workers-types": "5.20260804.1",
+    "@cloudflare/workers-types": "5.20260814.1",
     "@hyperjump/json-schema": "1.17.8",
     "playwright-core": "^1.62.1",
     "sharp": "^0.35.3",
-    "tsx": "4.23.11",
+    "tsx": "4.23.12",
     "typescript": "6.0.3",
-    "wrangler": "4.120.0"
+    "wrangler": "4.123.0"
   },
   "overrides": {
     "undici": "^7.29.0"

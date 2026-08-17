@@ -423,8 +423,10 @@ describe('Orbit dynamic public pages', () => {
     const html = await profile.text();
 
     // Grafik public: sayılar ve kimlikler profilde.
-    assert.match(html, /<dt>Takip<\/dt><dd>2<\/dd>/u);
-    assert.match(html, /<dt>Takipçi<\/dt><dd>1<\/dd>/u);
+    /* Sayısal ölçülerin etiketi küçük harf: satırda "2 takip" diye okunuyor,
+       kendi başına bir başlık değil. */
+    assert.match(html, /<dt>takip<\/dt><dd>2<\/dd>/u);
+    assert.match(html, /<dt>takipçi<\/dt><dd>1<\/dd>/u);
     assert.match(html, /Takip ettikleri/u);
     assert.match(html, /Takipçileri/u);
     assert.match(html, /href="\/agents\/nyx"/u);

@@ -200,23 +200,21 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .profile-dossier-heading {
-    grid-column: 1 / -1;
+  /* Tek kolona inince sağ kolon ataması kalkıyor ve DOM sırası geçerli
+     oluyor: sahne, akış, sonra dosya. */
+  .profile-about {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .profile-dossier-section:nth-child(odd) {
     border-left: 1px solid var(--line);
   }
 
-  .profile-hero {
-    grid-template-columns: 1fr;
-  }
-
-  .profile-hero-copy {
-    margin: 0;
-    padding: var(--space-10) var(--space-18) var(--space-14);
-    border-top: 1px solid color-mix(in srgb, var(--agent-accent) 14%, var(--line));
-    border-left: 0;
+  /* İki sütuna açılan kartta ilk iki bölümün ikisi de üst sıradadır; üst
+     çizgiyi yalnız birinciden kaldırmak ikincisini çizgili bırakırdı. */
+  .profile-dossier-section:nth-child(2) {
+    border-top: 0;
   }
 
   /* Yatay dolgu bilerek yok.
@@ -626,19 +624,16 @@
     margin-bottom: var(--space-5);
   }
 
+  /* Telefonda avatar kimliğin ÜSTÜNE geçiyor.
+   *
+   * Yan yana dururken 5.7rem'lik avatar ile handle 375px'i paylaşıyordu ve
+   * ikisi de sıkışıyordu — handle iri kaldığı için çarpışmaya en yakın duran
+   * oydu. Alt alta, ikisi de tam genişliği kullanıyor. */
   .profile-hero {
-    border-radius: 1.15rem;
-  }
-
-  .profile-hero::after {
-    top: 0;
-    right: 0.5rem;
-    font-size: 10rem;
-  }
-
-  .profile-hero-main {
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-8);
     padding: var(--space-10);
+    border-radius: 1.15rem;
   }
 
   .profile-hero .avatar-large {
@@ -657,12 +652,8 @@
     font-size: var(--text-xs);
   }
 
-  .profile-hero-copy {
-    padding: var(--space-8) var(--space-10) var(--space-10);
-  }
-
   .profile-intro {
-    font-size: var(--text-md);
+    font-size: var(--text-sm);
   }
 
   .header-actions {
@@ -715,44 +706,22 @@
     padding: var(--space-3);
   }
 
-  /* Telefonda altı hücre tek satıra sığmıyor: iki sütun, kaç satır gerekirse.
-     `grid-auto-flow` masaüstündeki sütun akışını geri alıyor. */
+  /* Ölçüler telefonda da satır; yalnız aralık daralıyor ve sarma serbest.
+     Bir dönem burada altı hücrelik iki sütunlu bir ızgara vardı ve ekranın
+     üçte birini yiyip ilk gönderiyi katlamanın çok altına itiyordu. */
   .profile-summary-stats {
-    grid-auto-flow: row;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-1) var(--space-4);
+    margin-top: var(--space-6);
+    font-size: var(--text-xs);
   }
 
-  .profile-summary-stats div {
-    padding: var(--space-6) var(--space-8);
-  }
-
-  /* Kenarlıklar hücrenin yerinden geliyor, sayısından değil. Sabit sayılarla
-     yazıldığı sürece (2. hücrede sağ kenarlığı kes, ilk ikisine alt kenarlık
-     koy) dört hücrelik kutu için doğru, altı hücrelik kutu için yanlıştı:
-     sağda kapanmayan çizgiler ve ortada eksik bir yatay çizgi kalıyordu. */
-  .profile-summary-stats div:nth-child(even) {
-    border-right: 0;
-  }
-
-  .profile-summary-stats div:not(:nth-last-child(-n + 2)) {
-    border-bottom: 1px solid color-mix(in srgb, var(--agent-accent) 12%, var(--line));
-  }
-
-  .profile-summary-stats dt {
-    font-size: var(--text-3xs);
-  }
-
-  .profile-summary-stats dd {
-    font-size: var(--text-md);
+  .profile-summary-stats > div:not(:last-child)::after {
+    margin-left: var(--space-2);
   }
 
   .profile-grid {
     gap: var(--space-10);
     padding-top: var(--space-10);
-  }
-
-  .profile-feed-heading {
-    min-height: 3.2rem;
   }
 
   .search-page {

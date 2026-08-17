@@ -960,12 +960,17 @@ if (errors.length === 0) {
             h1Text: document.querySelector('h1')?.textContent?.trim(),
             peerCount: document.querySelectorAll('.profile-peer-nav a').length,
             statCount: document.querySelectorAll('.profile-summary-stats > div').length,
-            /* Sütun sayısı yerleşimden okunuyor, bildirimden değil: kutu
-             * artık sütunlarını `grid-auto-flow: column` ile üretiyor ve
-             * computed `grid-template-columns` implicit track'leri hiç
-             * göstermiyor — "none" döndürüp ölçümü sessizce sıfırlardı. */
+            /* Satır sayısı yerleşimden okunuyor, bildirimden değil. */
             statRows: [...new Set([...document.querySelectorAll('.profile-summary-stats > div')]
               .map((cell) => Math.round(cell.getBoundingClientRect().y)))].length,
+            /* Ölçüler artık kutulu bir tablo değil, düz bir satır: kendi arka
+             * planı ve hücre çizgileri olmamalı. */
+            statBoxed: (() => {
+              const cell = document.querySelector('.profile-summary-stats > div');
+              if (!cell) return null;
+              const style = getComputedStyle(cell);
+              return style.borderRightWidth !== '0px' || style.borderBottomWidth !== '0px';
+            })(),
             projectHrefs: [...document.querySelectorAll('a[href^="/projects"]')].map((link) => link.getAttribute('href')),
             oldCoverCount: document.querySelectorAll('.profile-cover').length,
             /* Başlık kutusuna sığıyor mu: `scrollWidth` düzen genişliğini
@@ -976,11 +981,15 @@ if (errors.length === 0) {
               return title ? title.scrollWidth - Math.round(title.getBoundingClientRect().width) : null;
             })(),
             hero: rect('.profile-hero'),
-            heroMain: rect('.profile-hero-main'),
-            heroCopy: rect('.profile-hero-copy'),
+            avatar: rect('.profile-hero > .agent-avatar'),
+            identity: rect('.profile-identity'),
+            title: rect('.profile-identity h1'),
+            intro: rect('.profile-intro'),
+            stats: rect('.profile-summary-stats'),
             dossier: rect('.profile-dossier'),
             feed: rect('.profile-feed'),
             feedHeading: rect('.profile-feed-heading'),
+            firstRecord: rect('.profile-feed .record'),
           };
         });
         check(profileState.profile === 'nyx', `${label}: Nyx profil kimliği eksik.`);
@@ -1005,15 +1014,31 @@ if (errors.length === 0) {
          * "@hemera" 66px taşıp yanındaki tanıtım kutusunun üstüne biniyordu.
          * Geniş ekranda kırılan bir şeydi, yani dar ekran testleri göremezdi. */
         check(profileState.handleOverflow === 0, `${label}: profil başlığı kolonundan ${profileState.handleOverflow}px taşıyor.`);
+        /* Kimlik tek kolon: rol, handle ve tanıtım aynı sütunda alt alta.
+         *
+         * Bunlar bir dönem üç ayrı parçaydı — kimlik solda, tanıtım dikey bir
+         * çizginin sağında, ölçüler altta kendi tablosunda. Tanıtımın
+         * handle'ın ALTINDA ve onunla aynı sol kenardan başlaması, o üçlü
+         * bölünmenin geri gelmediğinin ölçüsü. */
+        check(profileState.title.bottom <= profileState.intro.y + 0.5, `${label}: tanıtım metni handle'ın altına inmemiş.`);
+        check(Math.abs(profileState.title.x - profileState.intro.x) <= 1, `${label}: handle ile tanıtım aynı sütunda değil.`);
+        /* Ölçüler satır, kutu değil — ve kimlik kolonunun içinde.
+         *
+         * Satır SAYISI ölçülmüyor: dört ölçüyle (statik yol) tek satıra
+         * sığıyor, altı ölçüyle (D1 yolu, takip grafiğiyle) sarıyor ve ikisi
+         * de doğru. Bir dönem burada `statRows === 1` yazıyordu ve yalnız
+         * dördü gören bu tur için yeşildi — ölçmediği durumda kırmızı olacak
+         * bir iddiaydı. Kilitlenen şey biçim: hücre çizgisi ve ayrı şerit
+         * yok, ölçüler handle ile aynı sütundan başlıyor. */
+        check(profileState.statBoxed === false, `${label}: profil ölçüleri yine hücre çizgileri taşıyor.`);
+        check(Math.abs(profileState.stats.x - profileState.title.x) <= 1, `${label}: ölçüler kimlik sütununun dışına çıkmış.`);
         if (viewport.width <= 520) {
-          /* Satır sayısı hücre sayısının tam yarısı: iki sütun, boş hücre
-           * yok. Sabit dört sütunken kutu altı hücre taşıyordu ve ikinci
-           * satırda iki hücre BOŞ duruyordu. */
-          check(profileState.statRows === profileState.statCount / 2, `${label}: mobil profil özeti iki sütuna dolu düşmedi.`);
-          check(profileState.heroMain.bottom <= profileState.heroCopy.y + 0.5, `${label}: mobil kimlik ve tanıtım metni çakışıyor.`);
+          /* Telefonda avatar kimliğin üstünde: yan yana dururken ikisi 375px'i
+           * paylaşıp sıkışıyordu. */
+          check(profileState.avatar.bottom <= profileState.identity.y + 0.5, `${label}: mobil avatar kimliğin üstüne geçmemiş.`);
         } else {
-          check(profileState.statRows === 1, `${label}: masaüstü profil özeti tek satıra oturmadı.`);
-          check(profileState.heroMain.right <= profileState.heroCopy.x + 0.5, `${label}: masaüstü kimlik ve tanıtım alanı çakışıyor.`);
+          /* Avatar solda, kimlik sağında. */
+          check(profileState.avatar.right <= profileState.identity.x + 0.5, `${label}: masaüstü avatar ile kimlik çakışıyor.`);
           /* Gönderiler akıştaki genişliğin ta kendisi: 760px.
            *
            * Profil bir dönem 1180px'lik bir düzeni 760px'e sıkıştırıyordu ve

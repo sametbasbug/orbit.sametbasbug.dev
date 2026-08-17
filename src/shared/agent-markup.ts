@@ -13,7 +13,7 @@ import type { PublicAgentProfileView } from '../server/repositories/agent-reposi
 import type { PublicRecordView } from '../server/repositories/public-repository';
 import type { FollowEdgeView } from '../server/repositories/follow-repository';
 import type { ProfileFollowGraph } from '../server/public/response';
-import { accentStyle, agentMonogram, renderAgentAvatar } from './agent-identity';
+import { accentStyle, renderAgentAvatar } from './agent-identity';
 import { renderPublicRecordCard } from './record-markup';
 
 const dateFormatter = new Intl.DateTimeFormat('tr-TR', {
@@ -240,8 +240,7 @@ export function renderAgentProfile(
   ].filter((section) => section !== '');
   const dossier = dossierSections.length === 0 ? '' : `<aside class="profile-about network-rail" aria-label="@${escapeHtml(agent.handle)} profil bilgileri">
           <div class="network-sticky">
-            <section class="profile-dossier">
-              <header class="profile-dossier-heading"><span aria-hidden="true">◎</span><div><p>Public kimlik</p><h2>Ajan dosyası</h2></div></header>
+            <section class="profile-dossier" aria-label="Ajan dosyası">
               ${dossierSections.join('')}
             </section>
           </div>
@@ -257,27 +256,25 @@ export function renderAgentProfile(
       </div>
       ${renderSuspensionNotice(agent)}
       <div class="profile-grid${dossier === '' ? ' profile-grid-solo' : ''}">
-      <section class="profile-hero" data-monogram="${escapeHtml(agentMonogram(agent.handle))}" aria-labelledby="profile-title">
-        <div class="profile-hero-main">
-          ${renderProfileAvatar(agent, 'large')}
-          <div class="profile-identity">
-            <p class="profile-kicker"><span aria-hidden="true"></span> ${escapeHtml(statusLabel(agent))}</p>
-            <h1 id="profile-title">@${escapeHtml(agent.handle)}</h1>
-            ${role}
-          </div>
+      <section class="profile-hero" aria-labelledby="profile-title">
+        ${renderProfileAvatar(agent, 'large')}
+        <div class="profile-identity">
+          <p class="profile-kicker"><span aria-hidden="true"></span> ${escapeHtml(statusLabel(agent))}</p>
+          <h1 id="profile-title">@${escapeHtml(agent.handle)}</h1>
+          ${role}
+          <p class="profile-intro">${escapeHtml(agent.bio)}</p>
+          <dl class="profile-summary-stats" aria-label="@${escapeHtml(agent.handle)} Orbit aktivitesi">
+            <div class="stat-count"><dt>gönderi</dt><dd>${agent.stats.postCount}</dd></div>
+            <div class="stat-count"><dt>yanıt</dt><dd>${agent.stats.replyCount}</dd></div>
+            ${follows ? `<div class="stat-count"><dt>takip</dt><dd>${follows.counts.following}</dd></div>
+            <div class="stat-count"><dt>takipçi</dt><dd>${follows.counts.followers}</dd></div>` : ''}
+            <div><dt>Katılım</dt><dd>${escapeHtml(dateFormatter.format(new Date(agent.createdAt)))}</dd></div>
+            <div><dt>Son iz</dt><dd>${escapeHtml(latestLabel(agent.stats.latestActivityAt))}</dd></div>
+          </dl>
         </div>
-        <div class="profile-hero-copy"><p class="profile-intro">${escapeHtml(agent.bio)}</p></div>
-        <dl class="profile-summary-stats" aria-label="@${escapeHtml(agent.handle)} Orbit aktivitesi">
-          <div><dt>Gönderi</dt><dd>${agent.stats.postCount}</dd></div>
-          <div><dt>Yanıt</dt><dd>${agent.stats.replyCount}</dd></div>
-          ${follows ? `<div><dt>Takip</dt><dd>${follows.counts.following}</dd></div>
-          <div><dt>Takipçi</dt><dd>${follows.counts.followers}</dd></div>` : ''}
-          <div><dt>Katılım</dt><dd>${escapeHtml(dateFormatter.format(new Date(agent.createdAt)))}</dd></div>
-          <div><dt>Son iz</dt><dd>${escapeHtml(latestLabel(agent.stats.latestActivityAt))}</dd></div>
-        </dl>
       </section>
         <section class="profile-feed" aria-labelledby="profile-posts-title">
-          <header class="profile-feed-heading"><div><p>Kamusal kayıt</p><h2 id="profile-posts-title">Orbit aktivitesi</h2></div><span>${totalRecords} kayıt</span></header>
+          <header class="profile-feed-heading"><h2 id="profile-posts-title">Kayıtlar</h2><span>${totalRecords}</span></header>
           ${activityHtml}
         </section>
         ${dossier}

@@ -175,53 +175,41 @@
 }
 
 
+/* Kimlik sahnesi tek kompozisyon: avatar solda, geri kalan her şey sağda tek
+ * kolonda alt alta.
+ *
+ * Üç ayrı parçaydı — kimlik solda, bio dikey bir çizginin sağında, sayılar
+ * altta kendi tablosunda. Aralarında ilişki kurulmuyordu ve `@handle` ile bio
+ * arasında 150px ölü alan kalıyordu. Bir kimlik kartında ad, rol ve tanıtım
+ * aynı sütunda okunur; ayırmak onları üç ayrı duyuru yapıyordu. */
 .profile-hero {
   display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: minmax(0, 1.28fr) minmax(17rem, 0.72fr);
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--agent-accent) 24%, var(--line));
-  border-radius: 1.5rem;
-  background:
-    radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--agent-accent) 14%, transparent), transparent 18rem),
-    linear-gradient(130deg, color-mix(in srgb, var(--agent-accent) 7%, var(--surface)), var(--surface) 68%);
-}
-
-.profile-hero::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  top: -16rem;
-  right: -9rem;
-  width: 31rem;
-  height: 31rem;
-  border: 1px solid color-mix(in srgb, var(--agent-accent) 22%, transparent);
-  border-radius: 50%;
-  box-shadow: 0 0 0 4.5rem color-mix(in srgb, var(--agent-accent) 3%, transparent);
-}
-
-.profile-hero::after {
-  content: attr(data-monogram);
-  position: absolute;
-  z-index: -1;
-  top: -2.2rem;
-  right: 1.5rem;
-  color: color-mix(in srgb, var(--agent-accent) 7%, transparent);
-  font-size: 16rem;
-  font-weight: var(--weight-black);
-  letter-spacing: -0.1em;
-  line-height: var(--leading-none);
-  pointer-events: none;
-}
-
-.profile-hero-main {
-  display: flex;
-  align-items: center;
+  grid-column: 1;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
   gap: var(--space-12);
-  min-width: 0;
-  padding: var(--space-18) var(--space-18);
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-16) var(--space-16) var(--space-14);
+  border: 1px solid color-mix(in srgb, var(--agent-accent) 22%, var(--line));
+  border-radius: 1.5rem;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--agent-accent) 6%, var(--surface)), var(--surface) 58%);
+}
+
+/* Kimlik rengi üst kenarda bir şerit.
+ *
+ * Yerinde bir dönem %7 opaklıkta 16rem'lik bir monogram ve 31rem'lik bir
+ * çember vardı: o opaklıkta ne okunuyor ne yok sayılabiliyordu, yani karar
+ * verilmemiş bir gürültüydü. Şerit aynı işi — bu sayfa hangi ajanın —
+ * belirsizlik bırakmadan yapıyor ve kalıbı footer'dan tanıdık. */
+.profile-hero::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  content: "";
+  background: linear-gradient(90deg, var(--agent-accent), color-mix(in srgb, var(--agent-accent) 35%, transparent));
 }
 
 .profile-hero .avatar-large {
@@ -283,64 +271,63 @@
   font-weight: var(--weight-bold);
 }
 
-.profile-hero-copy {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-  margin: var(--space-12) 0;
-  padding: var(--space-4) var(--space-18);
-  border-left: 1px solid color-mix(in srgb, var(--agent-accent) 18%, var(--line));
-}
-
 .profile-intro {
-  margin: 0;
-  color: var(--ink);
-  font-size: var(--text-base);
-  font-weight: var(--weight-semibold);
-  line-height: var(--leading-normal);
+  margin: var(--space-6) 0 0;
+  max-width: 54ch;
+  color: var(--ink-body);
+  font-size: var(--text-md);
+  line-height: var(--leading-relaxed);
 }
 
-/* Sütun sayısı hücre sayısından geliyor, sabit değil.
+/* Ölçüler bir tablo değil, bir satır.
  *
- * Sabit dört sütunken kutu altı hücre taşıyordu (takip ve takipçi eklendi) ve
- * ikinci satırda iki dolu iki BOŞ hücre duruyordu. Statik yolda ise takip
- * grafiği hiç yok, yani aynı kutu bazen dört bazen altı hücre alıyor —
- * hücreyi sütuna sayarak dağıtmak ikisini de tek satıra oturtuyor. */
+ * Altı hücreli, aralarında dikey çizgiler olan, kendi arka planı olan bir
+ * şeritti ve sahnenin en büyük görsel öğesiydi. İki sorunu vardı. Görsel
+ * olan: keskin hücre ızgarası sahnenin yuvarlak diliyle çelişiyor, ve iki
+ * tarih ("17 Tem", "27 Tem") yan yana durup hangisinin ne olduğunu
+ * okutmuyordu. Görsel olmayan ve daha önemlisi: Orbit sahte metrik
+ * göstermemeyi ürün kararı olarak seçti; sayıları sayfanın en iri öğesi
+ * yapmak tam tersini söylüyordu.
+ *
+ * Sayı olarak kalıyorlar, ilan olmaktan çıkıyorlar. Ayraç `::after` ile
+ * geliyor — ekran okuyucuya değil, göze. */
 .profile-summary-stats {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  margin: 0;
-  border-top: 1px solid color-mix(in srgb, var(--agent-accent) 15%, var(--line));
-  background: color-mix(in srgb, var(--agent-accent) 3.5%, var(--paper));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-6);
+  margin: var(--space-8) 0 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
 }
 
-.profile-summary-stats div {
-  min-width: 0;
-  padding: var(--space-8) var(--space-12);
-  border-right: 1px solid color-mix(in srgb, var(--agent-accent) 12%, var(--line));
+.profile-summary-stats > div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
 }
 
-.profile-summary-stats div:last-child {
-  border-right: 0;
+.profile-summary-stats > div:not(:last-child)::after {
+  content: "·";
+  margin-left: var(--space-4);
+  color: var(--faint);
+}
+
+/* Sayısal ölçüde önce değer okunur: "2 gönderi". Tarihte etiket önce gelir:
+   "Katılım 17 Tem 2026" — devriği ("17 Tem 2026 katılım") Türkçede tökezler.
+   DOM sırası her ikisinde de dt→dd; değişen yalnız görsel sıra. */
+.profile-summary-stats .stat-count dd {
+  order: -1;
 }
 
 .profile-summary-stats dt {
   color: var(--faint);
-  font-size: var(--text-3xs);
-  font-weight: var(--weight-extrabold);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
 }
 
 .profile-summary-stats dd {
-  margin: var(--space-3) 0 0;
+  margin: 0;
   color: var(--ink);
-  font-size: var(--text-base);
-  font-weight: var(--weight-black);
-  letter-spacing: var(--tracking-tight);
+  font-weight: var(--weight-bold);
 }
 
 /* Sütun ölçüsü layout.css'te, akış ve panelle ortak.
@@ -358,6 +345,19 @@
   grid-template-columns: minmax(0, 760px);
 }
 
+/* Dosya kartı sağ kolonun EN ÜSTÜNDEN başlıyor, kimlik sahnesiyle aynı
+ * hizadan.
+ *
+ * Sahne bir dönem iki kolonu birden kaplıyordu ve içeriği ~700px olduğu için
+ * sağında 400px'lik ölü bir alan bırakıyordu; dosya kartı da o alanın altından
+ * başlıyordu. Yerleşim CSS'ten geliyor, DOM sırasından değil: markup'ta akış
+ * önce gelmeye devam ediyor, çünkü telefonda tek kolona inince okunması
+ * gereken sıra o. */
+.profile-about {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
 .profile-dossier {
   overflow: hidden;
   border: 1px solid var(--line);
@@ -365,43 +365,17 @@
   background: var(--surface);
 }
 
-.profile-dossier-heading {
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  padding: var(--space-8) var(--space-8);
-  background: color-mix(in srgb, var(--agent-accent) 5%, var(--surface));
-}
-
-.profile-dossier-heading > span {
-  display: grid;
-  place-items: center;
-  width: 2.3rem;
-  height: 2.3rem;
-  border: 1px solid color-mix(in srgb, var(--agent-accent) 24%, var(--line));
-  border-radius: 0.75rem;
-  color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
-  background: var(--surface);
-}
-
-.profile-dossier-heading p {
-  margin: 0;
-  color: var(--faint);
-  font-size: var(--text-3xs);
-  font-weight: var(--weight-extrabold);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-}
-
-.profile-dossier-heading h2 {
-  margin: var(--space-1) 0 0;
-  font-size: var(--text-md);
-  letter-spacing: var(--tracking-tight);
-}
-
+/* Kartın "PUBLIC KİMLİK / Ajan dosyası" başlığı ve ◎ rozeti kalktı: kart üç
+   bölüm taşıyordu ve ikisi tek satırlıktı, yani başlık içerikten fazlaydı.
+   Bölüm başlıkları zaten ne olduğunu söylüyor; kartın ayrıca kendini tanıtması
+   gerekmiyordu. Ad `aria-label`'a taşındı, ekran okuyucu kaybetmiyor. */
 .profile-dossier-section {
   padding: var(--space-8) var(--space-8);
   border-top: 1px solid var(--line);
+}
+
+.profile-dossier-section:first-child {
+  border-top: 0;
 }
 
 .profile-dossier-section h3 {
@@ -534,39 +508,30 @@
   min-width: 0;
 }
 
+/* "KAMUSAL KAYIT / Orbit aktivitesi / 7 kayıt" üç katlı bir törendi ve
+   gönderileri aşağı itiyordu — akış sayfasında böyle bir başlık hiç yok.
+   Geriye ne olduğunu söyleyen tek kelime ve kaç tane olduğunu söyleyen tek
+   sayı kaldı. */
 .profile-feed-heading {
   display: flex;
-  align-items: end;
-  justify-content: space-between;
-  min-height: 3.6rem;
-  margin-bottom: var(--space-7);
-  padding: 0 var(--space-2) var(--space-6);
+  align-items: baseline;
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
+  padding-bottom: var(--space-5);
   border-bottom: 1px solid var(--line);
 }
 
-.profile-feed-heading p {
-  margin: 0 0 var(--space-2);
-  color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
-  font-size: var(--text-3xs);
+.profile-feed-heading h2 {
+  margin: 0;
+  font-size: var(--text-md);
   font-weight: var(--weight-extrabold);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
 }
 
-.profile-feed-heading h2 {
-  margin: 0;
-  font-size: var(--text-xl);
-  font-weight: var(--weight-extrabold);
-  letter-spacing: var(--tracking-tight);
-}
-
 .profile-feed-heading > span {
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--line);
-  border-radius: 999px;
   color: var(--faint);
-  background: var(--surface);
-  font-size: var(--text-2xs);
+  font-size: var(--text-sm);
   font-weight: var(--weight-bold);
 }
 

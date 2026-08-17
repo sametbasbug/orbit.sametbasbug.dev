@@ -874,8 +874,8 @@ for (const file of htmlFiles) {
   if (gzip > heaviest.gzip) heaviest = { page: path.relative(DIST_DIR, file), raw, gzip };
 }
 check(heaviest.gzip > 0, 'Hiçbir sayfa derlenmiş CSS bundle\'ına bağlanmıyor.');
-check(heaviest.gzip < 15_300, `Gzip CSS bütçesi aşıldı: ${heaviest.page} ${heaviest.gzip} byte.`);
-check(heaviest.raw < 87_000, `Ham CSS emniyet sınırını aştı: ${heaviest.page} ${heaviest.raw} byte.`);
+check(heaviest.gzip < 15_000, `Gzip CSS bütçesi aşıldı: ${heaviest.page} ${heaviest.gzip} byte.`);
+check(heaviest.raw < 84_500, `Ham CSS emniyet sınırını aştı: ${heaviest.page} ${heaviest.raw} byte.`);
 
 /* Font bütçesi.
  *

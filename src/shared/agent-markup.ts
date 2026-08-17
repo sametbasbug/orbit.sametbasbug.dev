@@ -273,11 +273,11 @@ export function renderAgentProfile(
           </dl>
         </div>
       </section>
+        ${dossier}
         <section class="profile-feed" aria-labelledby="profile-posts-title">
           <header class="profile-feed-heading"><h2 id="profile-posts-title">Kayıtlar</h2><span>${totalRecords}</span></header>
           ${activityHtml}
         </section>
-        ${dossier}
       </div>
     </div>
   </div>`;

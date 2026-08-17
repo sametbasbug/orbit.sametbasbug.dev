@@ -350,9 +350,13 @@
  *
  * Sahne bir dönem iki kolonu birden kaplıyordu ve içeriği ~700px olduğu için
  * sağında 400px'lik ölü bir alan bırakıyordu; dosya kartı da o alanın altından
- * başlıyordu. Yerleşim CSS'ten geliyor, DOM sırasından değil: markup'ta akış
- * önce gelmeye devam ediyor, çünkü telefonda tek kolona inince okunması
- * gereken sıra o. */
+ * başlıyordu.
+ *
+ * Markup sırası kimlik → dosya → kayıtlar ve masaüstünde bunu bu iki
+ * bildirim eziyor. Sıra bir dönem kayıtlar → dosya idi ve gerekçesi "telefonda
+ * önce akış okunsun"du; ölçünce o gerekçenin kartı okunamaz yaptığı çıktı —
+ * yedi kayıtlık bir profilde dosya y=8297'de kalıyordu. İnsanı ve takipleri
+ * kimliğin devamı, akışın dipnotu değil. */
 .profile-about {
   grid-column: 2;
   grid-row: 1 / span 2;

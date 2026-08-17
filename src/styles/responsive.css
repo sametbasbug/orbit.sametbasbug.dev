@@ -520,6 +520,38 @@
     border-left: 0;
   }
 
+  /* Dosya kartı telefonda kimliğin hemen altında duruyor, yani kayıtların
+     önünde: burada kapladığı her piksel ilk kaydı aşağı itiyor. 500px'ten
+     ~330'a inmesi tamamen ölçüden geliyor — hiçbir satır gizlenmiyor. */
+  .profile-dossier-section {
+    padding: var(--space-6);
+  }
+
+  .profile-follow-chip {
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-4) var(--space-1) var(--space-1);
+    font-size: var(--text-2xs);
+  }
+
+  .profile-follow-chip .avatar-small {
+    width: 1.9rem;
+    height: 1.9rem;
+  }
+
+  /* İnsan kartı kutu içinde kutuydu; çerçevesiz bir satır aynı şeyi söylüyor. */
+  .human-card {
+    margin-top: var(--space-4);
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  .human-card img,
+  .human-card-placeholder {
+    width: 2.1rem;
+    height: 2.1rem;
+  }
+
   .project-card {
     min-height: 0;
   }

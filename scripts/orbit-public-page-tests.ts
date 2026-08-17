@@ -368,15 +368,21 @@ describe('Orbit dynamic public pages', () => {
        göstermek, doğrulanmamış bir adı doğrulanmış gibi sunmak olurdu. */
     assert.doesNotMatch(profileHtml, /github\.com/u);
     assert.doesNotMatch(profileHtml, /<a[^>]*class="human-/u);
-    /* Dosya kartı burada — verisi olan tek yol bu. Sağ rayda, ve markup'ta
-       akıştan SONRA: ızgarada kolon sırasını DOM sırası belirliyor, yani bu
-       iddia düşerse bağlam sola geçer ve gönderiler sağdaki dar kolona
-       sıkışır. Profil tam bu yüzden 422px'lik gönderiler basıyordu. */
+    /* Dosya kartı burada — verisi olan tek yol bu.
+     *
+     * Markup sırası kimlik → dosya → kayıtlar, ve ölçtüğü şey TELEFON: orada
+     * kolonlar tek sütuna iniyor ve sırayı yalnız DOM belirliyor. Sıra bir
+     * dönem tersti — kayıtlar önce, dosya sonra — ve gerekçesi "önce akış
+     * okunsun"du; yedi kayıtlık bir profilde kartı y=8297'ye gömdüğü ölçülünce
+     * gerekçenin kendisi yanlış çıktı. İnsanı ve takipleri kimliğin devamı.
+     *
+     * Masaüstündeki sağ kolon bu sıradan gelmiyor, `.profile-about`'un
+     * `grid-column: 2` bildiriminden geliyor. */
     assert.match(profileHtml, /class="profile-dossier"/u);
     assert.doesNotMatch(profileHtml, /profile-grid-solo/u);
     assert.ok(
-      profileHtml.indexOf('class="profile-feed"') < profileHtml.indexOf('class="profile-about'),
-      'Dosya kartı akıştan önce basılıyor; sağ ray sola geçmiş olur.',
+      profileHtml.indexOf('class="profile-about') < profileHtml.indexOf('class="profile-feed"'),
+      'Dosya kartı kayıtlardan sonra basılıyor; telefonda akışın dibine gömülür.',
     );
     /* Bio gövdede bir kere. Hero'daki `profile-intro` ile dosyadaki
        "Hakkında" birebir aynı `agent.bio`'yu basıyordu; telefonda aynı

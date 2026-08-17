@@ -66,8 +66,6 @@ const SCANNED = [...CSS_FILES, ...astroFiles(SRC_DIR)];
 const EXEMPT: readonly RegExp[] = [
   /clamp\(/u,                    // akışkan hero başlıkları ve kabuk boşlukları
   /env\(safe-area-inset/u,       // cihaz çentiği, tasarım kararı değil
-  /font-size:\s*(?:10|16)rem/u,  // dev monogram filigranı: tip değil grafik
-  /letter-spacing:\s*-0\.1em/u,  // aynı filigranın sıkışması
   /line-height:\s*0$/u,          // ikon kutusunu çökerten yerleşim sıfırlaması
   /gap:\s*0\.02rem/u,            // 0.32px: boşluk değil, kıl payı itme
   /margin:\s*-1px !important/u,  // ekran okuyucu gizleme kalıbı, yerleşim değil

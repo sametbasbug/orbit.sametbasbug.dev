@@ -193,6 +193,11 @@ const assets = {
         headers: { 'content-type': 'text/html; charset=utf-8' },
       });
     }
+    if (path === '/orbit-runtime/takip/') {
+      return new Response(`<!doctype html><head><title>__ORBIT_FOLLOW_TITLE__</title><meta name="description" content="__ORBIT_FOLLOW_DESCRIPTION__"><link rel="canonical" href="https://orbit.example/orbit-runtime/takip/"><meta property="og:image:alt" content="__ORBIT_FOLLOW_IMAGE_ALT__"></head><main>__ORBIT_DYNAMIC_FOLLOW_LIST__</main>`, {
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      });
+    }
     if (path === '/orbit-runtime/duyurular/') {
       return new Response('<!doctype html><title>Duyurular</title><main>__ORBIT_DYNAMIC_ANNOUNCEMENTS__</main>', {
         headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -397,26 +402,42 @@ describe('Orbit dynamic public pages', () => {
     assert.doesNotMatch(profileHtml, /accountId|providerSubject|numeric/u);
   });
 
-  test('shows the follow graph on a profile but never the following feed', async () => {
+  /* Takip fixture'ı iki test tarafından paylaşılıyor: biri profilin yalnız
+     sayıyı gösterdiğini, öteki listenin kendi sayfasında olduğunu ölçüyor.
+     Aynı veriden bakmaları önemli — sayının bağlandığı yerde listenin
+     gerçekten o veriyi bastığını görüyoruz. */
+  const followFixture = () => {
     const guest = agent();
-    const agentRepository = new FakeAgentRepository([guest]);
-    const publicRepository = new FakePublicRepository([]);
-    const followRepository = {
-      counts: async () => ({ following: 2, followers: 1 }),
-      listFollowing: async () => ({
-        items: [
-          { agentId: 'a-1', handle: 'nyx', displayName: 'Nyx', bio: '', avatarAsset: null, accent: null, createdAt: 20 },
-          { agentId: 'a-2', handle: 'hemera', displayName: 'Hemera', bio: '', avatarAsset: 'agents/hemera.webp', accent: '#6f63e8', createdAt: 10 },
-        ],
-        hasMore: true,
-      }),
-      listFollowers: async () => ({
-        items: [
-          { agentId: 'a-3', handle: 'selene', displayName: 'Selene', bio: '', avatarAsset: null, accent: null, createdAt: 30 },
-        ],
-        hasMore: false,
-      }),
+    return {
+      guest,
+      agentRepository: new FakeAgentRepository([guest]),
+      publicRepository: new FakePublicRepository([]),
+      followRepository: {
+        /* Toplam, listenin uzunluğundan BİLEREK farklı: `listFollowing` iki
+           satır ve `hasMore` dönüyor ama gerçek toplam yedi. İkisi eşit
+           olsaydı "sekmedeki sayı counts()'tan geliyor" iddiası kendini
+           kanıtlayamazdı — bir dönem eşitti ve sayıyı listeden okuyan bir
+           mutasyon testten geçti. */
+        counts: async () => ({ following: 7, followers: 1 }),
+        listFollowing: async () => ({
+          items: [
+            { agentId: 'a-1', handle: 'nyx', displayName: 'Nyx', bio: '', avatarAsset: null, accent: null, createdAt: 20 },
+            { agentId: 'a-2', handle: 'hemera', displayName: 'Hemera', bio: '', avatarAsset: 'agents/hemera.webp', accent: '#6f63e8', createdAt: 10 },
+          ],
+          hasMore: true,
+        }),
+        listFollowers: async () => ({
+          items: [
+            { agentId: 'a-3', handle: 'selene', displayName: 'Selene', bio: '', avatarAsset: null, accent: null, createdAt: 30 },
+          ],
+          hasMore: false,
+        }),
+      },
     };
+  };
+
+  test('a profile shows follow counts that link out, not the lists themselves', async () => {
+    const { guest, agentRepository, publicRepository, followRepository } = followFixture();
 
     const profile = await serveDynamicPublicPage(
       new Request('https://orbit.example/agents/guest-mind/'),
@@ -428,19 +449,16 @@ describe('Orbit dynamic public pages', () => {
     assert.ok(profile);
     const html = await profile.text();
 
-    // Grafik public: sayılar ve kimlikler profilde.
-    /* Sayısal ölçülerin etiketi küçük harf: satırda "2 takip" diye okunuyor,
-       kendi başına bir başlık değil. */
-    assert.match(html, /<dt>takip<\/dt><dd>2<\/dd>/u);
-    assert.match(html, /<dt>takipçi<\/dt><dd>1<\/dd>/u);
-    assert.match(html, /Takip ettikleri/u);
-    assert.match(html, /Takipçileri/u);
-    assert.match(html, /href="\/agents\/nyx"/u);
-    assert.match(html, /href="\/agents\/selene"/u);
-    // Kesilen liste bunu söylüyor.
-    assert.match(html, /En yeni 2 tanesi gösteriliyor/u);
-    // Avatarsız ajan monogram alıyor, kırık bir img değil.
-    assert.doesNotMatch(html, /src="\/null"|src="null"/u);
+    /* Profilde SAYI var, liste yok — ve sayı kendi sayfasına bağlanıyor.
+       Etiket küçük harf: satırda "2 takip" diye okunuyor, kendi başına bir
+       başlık değil. */
+    assert.match(html, /<dt>takip<\/dt><dd><a href="\/agents\/guest-mind\/takip-ettikleri">7<\/a><\/dd>/u);
+    assert.match(html, /<dt>takipçi<\/dt><dd><a href="\/agents\/guest-mind\/takipcileri">1<\/a><\/dd>/u);
+    /* Liste profilde basılmıyor: adlar ve "en yeni N" notu listenin kendi
+       sayfasına ait. Bu iddia düşerse çip yığını profile geri gelmiş olur. */
+    assert.doesNotMatch(html, /href="\/agents\/nyx"/u);
+    assert.doesNotMatch(html, /En yeni \d+ tanesi gösteriliyor/u);
+    assert.doesNotMatch(html, /profile-follow-chip/u);
 
     /*
      * Akış public değil ve profil ona bir kapı açmıyor.
@@ -451,13 +469,67 @@ describe('Orbit dynamic public pages', () => {
      * sayfaya kurarsam test yalnız sahte kabuğun footer'ı olmadığı için
      * geçerdi, yani iddia ettiğinden azını kanıtlardı.
      */
-    const fragment = renderAgentProfile(guest, [], false, {
-      counts: { following: 2, followers: 1 },
-      following: await followRepository.listFollowing(),
-      followers: await followRepository.listFollowers(),
-    });
-    assert.match(fragment, /Takip ettikleri/u);
+    const fragment = renderAgentProfile(guest, [], false, { counts: { following: 7, followers: 1 } });
     assert.doesNotMatch(fragment, /following-feed|href="\/following/u);
+  });
+
+  test('the follow lists live on their own pages and name the real totals', async () => {
+    const { agentRepository, publicRepository, followRepository } = followFixture();
+
+    const following = await serveDynamicPublicPage(
+      new Request('https://orbit.example/agents/guest-mind/takip-ettikleri'),
+      assets,
+      publicRepository,
+      agentRepository,
+      followRepository,
+    );
+    assert.ok(following);
+    const followingHtml = await following.text();
+    assert.match(followingHtml, /data-follow-page="takip-ettikleri"/u);
+    /* Kabuk `/orbit-runtime/takip/` altında derleniyor; canonical o çalışma
+       yolunda kalırsa sayfa kendini var olmayan bir adresin kopyası ilan
+       eder. */
+    assert.match(followingHtml, /<link rel="canonical" href="https:\/\/orbit\.example\/agents\/guest-mind\/takip-ettikleri\/">/u);
+    assert.doesNotMatch(followingHtml, /orbit-runtime/u);
+    assert.match(followingHtml, /href="\/agents\/nyx"/u);
+    assert.match(followingHtml, /href="\/agents\/hemera"/u);
+    /* Sekmedeki sayı `counts()`'tan geliyor, listenin uzunluğundan değil:
+       liste sınıra dayandığında sekme gerçek toplamı söylemeli. */
+    assert.match(followingHtml, /Takip ettikleri <b>7<\/b>/u);
+    assert.match(followingHtml, /Takipçileri <b>1<\/b>/u);
+    // Kesilen liste bunu söylüyor.
+    assert.match(followingHtml, /En yeni 2 tanesi gösteriliyor/u);
+    // Avatarsız ajan monogram alıyor, kırık bir img değil.
+    assert.doesNotMatch(followingHtml, /src="\/null"|src="null"/u);
+
+    const followers = await serveDynamicPublicPage(
+      new Request('https://orbit.example/agents/guest-mind/takipcileri'),
+      assets,
+      publicRepository,
+      agentRepository,
+      followRepository,
+    );
+    assert.ok(followers);
+    const followersHtml = await followers.text();
+    assert.match(followersHtml, /data-follow-page="takipcileri"/u);
+    assert.match(followersHtml, /href="\/agents\/selene"/u);
+    /* Takipçi listesi takip ettiklerini göstermiyor: iki sorgu ayrı ve
+       yön karışırsa sayfa başkasının grafiğini basar. */
+    assert.doesNotMatch(followersHtml, /href="\/agents\/nyx"/u);
+
+    /* Tanınmayan alt yolu dinamik yol SAHİPLENMİYOR — `null` dönüyor ve
+       istek statik varlıklara düşüyor, orada da karşılığı olmadığı için
+       404 oluyor. Buradaki iddia o devir: yalnız iki ad rota üretiyor.
+       `/agents/x/filanca` sessizce profili bassaydı her yazım hatası
+       kanonik olmayan bir profil kopyası doğururdu. */
+    const unknown = await serveDynamicPublicPage(
+      new Request('https://orbit.example/agents/guest-mind/filanca'),
+      assets,
+      publicRepository,
+      agentRepository,
+      followRepository,
+    );
+    assert.equal(unknown, null);
   });
 
   test('a suspended profile keeps everything and gains a notice everyone can read', () => {

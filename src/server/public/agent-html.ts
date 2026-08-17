@@ -8,4 +8,7 @@
 export {
   renderAgentDirectory,
   renderAgentProfile,
+  renderFollowPage,
+  FOLLOW_PAGE_KINDS,
 } from '../../shared/agent-markup';
+export type { FollowPageKind } from '../../shared/agent-markup';

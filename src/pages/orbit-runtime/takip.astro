@@ -1,0 +1,16 @@
+---
+/*
+ * Takip listesi sayfasının kabuğu. Gövdeyi worker basıyor: liste D1'de yaşıyor
+ * ve statik derlemenin ona erişimi yok. Kalıp `agent.astro` ile aynı.
+ */
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout navPath="/agents"
+  title="__ORBIT_FOLLOW_TITLE__"
+  description="__ORBIT_FOLLOW_DESCRIPTION__"
+  image="/og-image.webp"
+  imageAlt="__ORBIT_FOLLOW_IMAGE_ALT__"
+>
+  <Fragment set:html="__ORBIT_DYNAMIC_FOLLOW_LIST__" />
+</BaseLayout>

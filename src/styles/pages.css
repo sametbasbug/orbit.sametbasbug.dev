@@ -320,6 +320,44 @@
   order: -1;
 }
 
+/* Takip ve takipçi ölçüleri kendi sayfalarına açılıyor.
+ *
+ * Bağlantı `dd`nin içinde — `dl` doğrudan çocuk olarak `a` kabul etmiyor — ama
+ * tıklama hedefi yalnız rakam olsaydı "3" için 8 piksel genişliğinde bir alan
+ * kalırdı. `::after` bağlantıyı öğenin tamamına yayıyor, yani etiket de
+ * tıklanıyor; kardeş öğeler üstte kalsın diye kutu `isolation` taşıyor. */
+.profile-summary-stats .stat-linked {
+  position: relative;
+  isolation: isolate;
+}
+
+.profile-summary-stats .stat-linked a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.profile-summary-stats .stat-linked a::after {
+  position: absolute;
+  inset: calc(var(--space-2) * -1) calc(var(--space-3) * -1);
+  border-radius: 0.5rem;
+  content: "";
+}
+
+.profile-summary-stats .stat-linked:hover a,
+.profile-summary-stats .stat-linked:hover dt {
+  color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
+}
+
+.profile-summary-stats .stat-linked:has(a:focus-visible) {
+  outline: 2px solid var(--orbit-blue);
+  outline-offset: 3px;
+  border-radius: 0.4rem;
+}
+
+.profile-summary-stats .stat-linked a:focus-visible {
+  outline: none;
+}
+
 .profile-summary-stats dt {
   color: var(--faint);
 }
@@ -406,42 +444,96 @@
   line-height: var(--leading-relaxed);
 }
 
-/* Takip kesiti. Her satır bir profil bağlantısı; sayı başlıkta, liste
-   altında. Takip akışı burada yok — o public değil. */
-.profile-follow-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  margin-top: var(--space-5);
+/* Takip listesi sayfası: /agents/:handle/takip-ettikleri ve .../takipcileri.
+ *
+ * Liste bir dönem profilin sağ kolonunda çip yığınıydı ve iki işi birden kötü
+ * yapıyordu — telefonda kartı üç yüz piksele çıkarıyor, karşılığında yalnız
+ * ilk on iki adı gösterebiliyordu. Sayı profilde kaldı, liste buraya taşındı;
+ * satır artık ada ek olarak bio'yu da taşıyabiliyor. Takip akışı yine yok —
+ * grafik public, akış değil. */
+/* Üst boşluğu `.profile-topline` veriyor, kabuğun varsayılanı değil — profil
+   sayfasıyla aynı gerekçe, ikisi de aynı yol çubuğuyla başlıyor. Varsayılan
+   dolgu bırakılınca ikisi üst üste binip 83px açıyordu. */
+.follow-shell {
+  max-width: 760px;
+  padding-top: 0;
 }
 
-.profile-follow-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-5) var(--space-2) var(--space-2);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--ink-body);
-  font-size: var(--text-xs);
+.follow-title {
+  margin: 0;
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-black);
+  letter-spacing: var(--tracking-tight);
+}
+
+.follow-tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-8) 0 var(--space-10);
+  border-bottom: 1px solid var(--line);
+}
+
+.follow-tab {
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
   text-decoration: none;
 }
 
-.profile-follow-chip:hover {
-  border-color: var(--line-hover);
-  background: var(--surface-sunken);
+.follow-tab b {
+  color: var(--faint);
+  font-weight: var(--weight-bold);
 }
 
-.profile-follow-count {
-  color: var(--faint);
-  font-size: var(--text-3xs);
+.follow-tab:hover {
+  color: var(--ink);
 }
 
-.profile-follow-empty,
-.profile-follow-more {
-  margin: var(--space-5) 0 0;
-  color: var(--faint);
-  font-size: var(--text-2xs);
+.follow-tab.is-current {
+  border-bottom-color: var(--agent-accent);
+  color: var(--ink);
+}
+
+.follow-tab.is-current b {
+  color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
+}
+
+.follow-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.follow-row {
+  display: grid;
+  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid transparent;
+  border-radius: 0.9rem;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.follow-row:hover {
+  border-color: var(--line);
+  background: var(--surface-hover);
+}
+
+.follow-row-copy {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.follow-row-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* İnsan kartı. Bir zamanlar GitHub profiline giden bir bağlantıydı; artık

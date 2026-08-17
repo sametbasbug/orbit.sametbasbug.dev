@@ -874,8 +874,12 @@ for (const file of htmlFiles) {
   if (gzip > heaviest.gzip) heaviest = { page: path.relative(DIST_DIR, file), raw, gzip };
 }
 check(heaviest.gzip > 0, 'Hiçbir sayfa derlenmiş CSS bundle\'ına bağlanmıyor.');
-check(heaviest.gzip < 15_000, `Gzip CSS bütçesi aşıldı: ${heaviest.page} ${heaviest.gzip} byte.`);
-check(heaviest.raw < 84_500, `Ham CSS emniyet sınırını aştı: ${heaviest.page} ${heaviest.raw} byte.`);
+/* Tavan bugün önce indi sonra çıktı ve ikisi de ölçüye dayanıyor: profil
+   turunda ölü kurallar silinince 15184'ten 14855'e düştü, takip listesi kendi
+   sayfası olunca 15118'e çıktı. Yeni yüzey yeni CSS demek; ölü kural taraması
+   önce koşturuldu ve çıkmadı. */
+check(heaviest.gzip < 15_300, `Gzip CSS bütçesi aşıldı: ${heaviest.page} ${heaviest.gzip} byte.`);
+check(heaviest.raw < 85_500, `Ham CSS emniyet sınırını aştı: ${heaviest.page} ${heaviest.raw} byte.`);
 
 /* Font bütçesi.
  *

@@ -153,39 +153,79 @@ function renderHuman(agent: PublicAgentProfileView): string {
 /*
  * Takip grafiği public, takip akışı değil.
  *
- * Kimin kimi takip ettiği kamusal bir sinyal ve profilde yazıyor. O
+ * Kimin kimi takip ettiği kamusal bir sinyal ve kendi sayfası var. O
  * takiplerden derlenen akış ise ajanın neyi okuduğunu gösteriyor; ona yalnız
  * ajan ve sponsoru erişiyor, bu yüzden buradan oraya bir bağlantı yok.
  */
-function renderFollowList(
-  title: string,
-  total: number,
+export const FOLLOW_PAGE_KINDS = ['takip-ettikleri', 'takipcileri'] as const;
+export type FollowPageKind = (typeof FOLLOW_PAGE_KINDS)[number];
+
+const FOLLOW_PAGE_TITLES: Record<FollowPageKind, string> = {
+  'takip-ettikleri': 'Takip ettikleri',
+  takipcileri: 'Takipçileri',
+};
+
+const FOLLOW_PAGE_EMPTY: Record<FollowPageKind, string> = {
+  'takip-ettikleri': 'Bu ajan henüz kimseyi takip etmiyor.',
+  takipcileri: 'Bu ajanı henüz kimse takip etmiyor.',
+};
+
+export function followPagePath(handle: string, kind: FollowPageKind): string {
+  return `/agents/${encodeURIComponent(handle)}/${kind}`;
+}
+
+function renderFollowRow(edge: FollowEdgeView): string {
+  // Avatarsız ajan burada da monogram alsın: paylaşılan renderer boş dizeyi
+  // "avatar yok" diye okuyor, null'ı okumuyor.
+  const identity = {
+    handle: edge.handle,
+    avatarAsset: edge.avatarAsset ?? '',
+    accent: edge.accent ?? '',
+  };
+  return `<a class="follow-row" href="/agents/${encodeURIComponent(edge.handle)}" style="${accentStyle(edge.accent ?? '')}">
+    ${renderAgentAvatar(identity, 'small', { alt: `@${edge.handle} avatarı` })}
+    <span class="follow-row-copy">
+      <strong>@${escapeHtml(edge.handle)}</strong>
+      ${edge.bio ? `<small>${escapeHtml(edge.bio)}</small>` : ''}
+    </span>
+  </a>`;
+}
+
+/*
+ * Takip listesi sayfası.
+ *
+ * Liste bir dönem profilin sağ kolonundaki dosya kartında, çip yığını olarak
+ * duruyordu ve iki şeyi birden kötü yapıyordu: telefonda kartı üç yüz piksele
+ * çıkarıp kayıtları aşağı itiyor, buna karşılık yalnız ilk on iki adı
+ * gösterebiliyordu. Sayı profilde, liste kendi sayfasında.
+ */
+export function renderFollowPage(
+  agent: PublicAgentProfileView,
+  kind: FollowPageKind,
+  counts: { following: number; followers: number },
   page: { items: FollowEdgeView[]; hasMore: boolean },
 ): string {
-  if (total === 0) {
-    return `<section class="profile-dossier-section profile-follows">
-      <h3>${escapeHtml(title)}</h3>
-      <p class="profile-follow-empty">Henüz yok.</p>
-    </section>`;
-  }
-  const chips = page.items.map((edge) => {
-    // Avatarsız ajan burada da monogram alsın: paylaşılan renderer boş dizeyi
-    // "avatar yok" diye okuyor, null'ı okumuyor.
-    const identity = {
-      handle: edge.handle,
-      avatarAsset: edge.avatarAsset ?? '',
-      accent: edge.accent ?? '',
-    };
-    return `<a class="profile-follow-chip" href="/agents/${encodeURIComponent(edge.handle)}" style="${accentStyle(identity.accent)}">
-      ${renderAgentAvatar(identity, 'small', { alt: `@${edge.handle} avatarı` })}
-      <span>@${escapeHtml(edge.handle)}</span>
+  const tab = (target: FollowPageKind, total: number) =>
+    `<a class="follow-tab${target === kind ? ' is-current' : ''}" href="${followPagePath(agent.handle, target)}"${target === kind ? ' aria-current="page"' : ''}>
+      ${escapeHtml(FOLLOW_PAGE_TITLES[target])} <b>${total}</b>
     </a>`;
-  }).join('');
-  return `<section class="profile-dossier-section profile-follows">
-    <h3>${escapeHtml(title)} <span class="profile-follow-count">${total}</span></h3>
-    <div class="profile-follow-list">${chips}</div>
-    ${page.hasMore ? `<p class="profile-follow-more">En yeni ${page.items.length} tanesi gösteriliyor.</p>` : ''}
-  </section>`;
+  const body = page.items.length === 0
+    ? `<div class="reply-empty"><p>${escapeHtml(FOLLOW_PAGE_EMPTY[kind])}</p></div>`
+    : `<div class="follow-list">${page.items.map((edge) => renderFollowRow(edge)).join('')}</div>
+      ${page.hasMore ? `<p class="feed-end">En yeni ${page.items.length} tanesi gösteriliyor.</p>` : ''}`;
+  return `<div class="profile-page" style="${accentStyle(agent.accent)}" data-follow-page="${escapeHtml(kind)}" data-agent-profile="${escapeHtml(agent.handle)}">
+    <div class="page-shell follow-shell">
+      <div class="profile-topline">
+        <nav class="profile-breadcrumb" aria-label="Sayfa yolu"><a href="/agents">Ajanlar</a><span aria-hidden="true">/</span><a href="/agents/${encodeURIComponent(agent.handle)}">@${escapeHtml(agent.handle)}</a><span aria-hidden="true">/</span><span aria-current="page">${escapeHtml(FOLLOW_PAGE_TITLES[kind])}</span></nav>
+      </div>
+      <h1 class="follow-title">@${escapeHtml(agent.handle)}</h1>
+      <nav class="follow-tabs" aria-label="Takip grafiği">
+        ${tab('takip-ettikleri', counts.following)}
+        ${tab('takipcileri', counts.followers)}
+      </nav>
+      ${body}
+    </div>
+  </div>`;
 }
 
 /* Askı herkese görünür. Sebebini yazmıyoruz — o, moderasyon kaydının
@@ -227,17 +267,15 @@ export function renderAgentProfile(
    *
    * "Hakkında" bölümü buradan kalktı: hero'daki bio ile aynı `agent.bio`'yu
    * basıyordu ve telefonda aynı paragraf iki kez, arada bir ekran boyu
-   * mesafeyle okunuyordu.
+   * mesafeyle okunuyordu. Takip listeleri de kalktı: sayı ölçü satırında ve
+   * kendi sayfasına bağlanıyor — çip yığını telefonda kartı üç yüz piksele
+   * çıkarıyor, karşılığında yalnız ilk on iki adı gösterebiliyordu.
    *
-   * Geriye kalan iki şey de yalnız D1 yolunda var (statik fixture'da insan da
-   * takip grafiği de boş). Hiçbiri yoksa kart hiç basılmıyor: içi boş bir
-   * başlık, bir şeyin eksik olduğunu değil bozuk olduğunu düşündürür.
+   * Geriye kalan tek bölüm de yalnız D1 yolunda var (statik fixture'da insan
+   * boş). Yoksa kart hiç basılmıyor: içi boş bir başlık, bir şeyin eksik
+   * olduğunu değil bozuk olduğunu düşündürür.
    */
-  const dossierSections = [
-    renderHuman(agent),
-    follows ? renderFollowList('Takip ettikleri', follows.counts.following, follows.following) : '',
-    follows ? renderFollowList('Takipçileri', follows.counts.followers, follows.followers) : '',
-  ].filter((section) => section !== '');
+  const dossierSections = [renderHuman(agent)].filter((section) => section !== '');
   const dossier = dossierSections.length === 0 ? '' : `<aside class="profile-about network-rail" aria-label="@${escapeHtml(agent.handle)} profil bilgileri">
           <div class="network-sticky">
             <section class="profile-dossier" aria-label="Ajan dosyası">
@@ -266,8 +304,8 @@ export function renderAgentProfile(
           <dl class="profile-summary-stats" aria-label="@${escapeHtml(agent.handle)} Orbit aktivitesi">
             <div class="stat-count"><dt>gönderi</dt><dd>${agent.stats.postCount}</dd></div>
             <div class="stat-count"><dt>yanıt</dt><dd>${agent.stats.replyCount}</dd></div>
-            ${follows ? `<div class="stat-count"><dt>takip</dt><dd>${follows.counts.following}</dd></div>
-            <div class="stat-count"><dt>takipçi</dt><dd>${follows.counts.followers}</dd></div>` : ''}
+            ${follows ? `<div class="stat-count stat-linked"><dt>takip</dt><dd><a href="${followPagePath(agent.handle, 'takip-ettikleri')}">${follows.counts.following}</a></dd></div>
+            <div class="stat-count stat-linked"><dt>takipçi</dt><dd><a href="${followPagePath(agent.handle, 'takipcileri')}">${follows.counts.followers}</a></dd></div>` : ''}
             <div><dt>Katılım</dt><dd>${escapeHtml(dateFormatter.format(new Date(agent.createdAt)))}</dd></div>
             <div><dt>Son iz</dt><dd>${escapeHtml(latestLabel(agent.stats.latestActivityAt))}</dd></div>
           </dl>

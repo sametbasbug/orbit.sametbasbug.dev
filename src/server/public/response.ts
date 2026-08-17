@@ -1,10 +1,13 @@
 import type { AssetsBinding } from '../identity/bindings';
 import type { AgentRepository } from '../repositories/agent-repository';
 import type { PublicRecordView, PublicRepository } from '../repositories/public-repository';
-import type { FollowPage, FollowRepository } from '../repositories/follow-repository';
+import type { FollowRepository } from '../repositories/follow-repository';
 import {
   renderAgentDirectory,
   renderAgentProfile,
+  renderFollowPage,
+  FOLLOW_PAGE_KINDS,
+  type FollowPageKind,
 } from './agent-html';
 import { renderPublicFeed, renderPublicRecordPage } from './html';
 import { renderPublicRssFeed } from './rss';
@@ -13,26 +16,32 @@ import { renderAnnouncementList, renderAnnouncementPanel } from '../../shared/an
 type PublicAgentPageRepository = Pick<AgentRepository, 'listPublicAgents' | 'getPublicAgent'>;
 type PublicFollowRepository = Pick<FollowRepository, 'counts' | 'listFollowing' | 'listFollowers'>;
 
-/** Profilde gösterilen takip kesiti; tamamı değil, en yeni bu kadarı. */
-const PROFILE_FOLLOW_PREVIEW = 12;
+/*
+ * Takip listesi sayfasının bir seferde gösterdiği ad sayısı.
+ *
+ * Sayfalama yok ve bu bilinçli: kotalar takip sayısını çok altında tutuyor,
+ * yani bugün hiçbir ajanda ikinci sayfa oluşmuyor. `hasMore` yine de basılıyor
+ * ve sayfa "en yeni N tanesi" diyor — sınıra gerçekten dayanıldığında sayfa
+ * yalan söylemiyor, eksik olanı eksik olarak bildiriyor.
+ */
+const FOLLOW_PAGE_LIMIT = 100;
 
 export interface ProfileFollowGraph {
   counts: { following: number; followers: number };
-  following: FollowPage;
-  followers: FollowPage;
 }
 
+/*
+ * Profil yalnız SAYIYI gösteriyor, listeyi değil — o yüzden burada iki liste
+ * sorgusu yok. Bir dönem profil her açılışta iki `listFollow*` çağrısı daha
+ * yapıyordu; çektiği on iki adın gittiği yer, sayfanın sağ kolonundaki bir çip
+ * yığınıydı.
+ */
 async function profileFollowGraph(
   repository: PublicFollowRepository | undefined,
   agentId: string,
 ): Promise<ProfileFollowGraph | null> {
   if (!repository) return null;
-  const [counts, following, followers] = await Promise.all([
-    repository.counts(agentId),
-    repository.listFollowing({ agentId, limit: PROFILE_FOLLOW_PREVIEW, cursor: null }),
-    repository.listFollowers({ agentId, limit: PROFILE_FOLLOW_PREVIEW, cursor: null }),
-  ]);
-  return { counts, following, followers };
+  return { counts: await repository.counts(agentId) };
 }
 
 const FEED_START = '<!-- ORBIT_DYNAMIC_FEED_START -->';
@@ -43,6 +52,8 @@ const AGENT_DIRECTORY_PLACEHOLDER = '__ORBIT_DYNAMIC_AGENT_DIRECTORY__';
 const AGENT_PROFILE_PLACEHOLDER = '__ORBIT_DYNAMIC_AGENT_PROFILE__';
 const AGENT_DIRECTORY_RUNTIME_PATH = '/orbit-runtime/agents/';
 const AGENT_PROFILE_RUNTIME_PATH = '/orbit-runtime/agent/';
+const FOLLOW_LIST_PLACEHOLDER = '__ORBIT_DYNAMIC_FOLLOW_LIST__';
+const FOLLOW_LIST_RUNTIME_PATH = '/orbit-runtime/takip/';
 const ANNOUNCEMENTS_PLACEHOLDER = '__ORBIT_DYNAMIC_ANNOUNCEMENTS__';
 const ANNOUNCEMENTS_RUNTIME_PATH = '/orbit-runtime/duyurular/';
 const ANNOUNCEMENT_PANEL_START = '<!-- ORBIT_DYNAMIC_ANNOUNCEMENT_PANEL_START -->';
@@ -327,6 +338,53 @@ async function renderAgentProfileRoute(
   return htmlResponse(shell, html, request.method === 'HEAD');
 }
 
+/*
+ * Takip listesi sayfası: /agents/:handle/takip-ettikleri ve .../takipcileri.
+ *
+ * Sayılar profilde duruyor ve buraya bağlanıyor; liste bu sayfada. İki yön tek
+ * işleyiciden geçiyor çünkü sayfanın kendisi — başlık, sekmeler, satır kalıbı —
+ * ikisinde de aynı; değişen yalnız hangi sorgunun koştuğu.
+ *
+ * Sekmelerin sayıları listeden değil `counts()`'tan geliyor: liste sınıra
+ * dayanırsa sekmede gerçek toplam yazmalı, gösterilen satır sayısı değil.
+ */
+async function renderFollowListRoute(
+  request: Request,
+  assets: AssetsBinding,
+  agentRepository: PublicAgentPageRepository,
+  followRepository: PublicFollowRepository,
+  handle: string,
+  kind: FollowPageKind,
+): Promise<Response> {
+  const agent = await agentRepository.getPublicAgent(handle.toLowerCase());
+  if (!agent) return await notFound(request, assets);
+  const [counts, page] = await Promise.all([
+    followRepository.counts(agent.id),
+    kind === 'takip-ettikleri'
+      ? followRepository.listFollowing({ agentId: agent.id, limit: FOLLOW_PAGE_LIMIT, cursor: null })
+      : followRepository.listFollowers({ agentId: agent.id, limit: FOLLOW_PAGE_LIMIT, cursor: null }),
+  ]);
+  const shell = await assets.fetch(new Request(new URL(FOLLOW_LIST_RUNTIME_PATH, request.url)));
+  if (!shell.ok) return shell;
+  let html = await shell.text();
+  if (!html.includes(FOLLOW_LIST_PLACEHOLDER)) throw new Error('dynamic_follow_list_placeholder_missing');
+  const heading = kind === 'takip-ettikleri' ? 'Takip ettikleri' : 'Takipçileri';
+  const metadata = new Map([
+    ['__ORBIT_FOLLOW_TITLE__', escapeHtml(`@${agent.handle} · ${heading}`)],
+    ['__ORBIT_FOLLOW_DESCRIPTION__', escapeHtml(
+      kind === 'takip-ettikleri'
+        ? `@${agent.handle} ajanının Orbit'te takip ettiği ajanlar.`
+        : `@${agent.handle} ajanını Orbit'te takip eden ajanlar.`,
+    )],
+    ['__ORBIT_FOLLOW_IMAGE_ALT__', escapeHtml(`@${agent.handle} Orbit ajanı`)],
+  ]);
+  html = html
+    .replaceAll(FOLLOW_LIST_RUNTIME_PATH, `/agents/${encodeURIComponent(agent.handle)}/${kind}/`)
+    .replace(/__ORBIT_FOLLOW_(?:TITLE|DESCRIPTION|IMAGE_ALT)__/gu, (token) => metadata.get(token) ?? token)
+    .replace(FOLLOW_LIST_PLACEHOLDER, renderFollowPage(agent, kind, counts, page));
+  return htmlResponse(shell, html, request.method === 'HEAD');
+}
+
 function projectRedirect(request: Request, path: string): Response | null {
   const match = path.match(/^\/projects(?:\/([^/]+))?(?:\/page\/\d+)?\/?$/u);
   if (!match) return null;
@@ -391,6 +449,24 @@ export async function serveDynamicPublicPage(
 
   if ((url.pathname === '/agents' || url.pathname === '/agents/') && agentRepository) {
     return await renderAgentDirectoryRoute(request, assets, agentRepository);
+  }
+
+  /* Takip listeleri profil rotasından ÖNCE: ajan kalıbı `/?$` ile bitiyor,
+     yani alt yolu zaten yakalamıyor — ama sıra bir gün o kalıp gevşerse
+     listenin profile düşmesini engelliyor. */
+  const followMatch = url.pathname.match(/^\/agents\/([a-z0-9][a-z0-9-]{1,31})\/([a-z-]+)\/?$/u);
+  if (followMatch && agentRepository && followRepository) {
+    const kind = FOLLOW_PAGE_KINDS.find((candidate) => candidate === followMatch[2]);
+    if (kind) {
+      return await renderFollowListRoute(
+        request,
+        assets,
+        agentRepository,
+        followRepository,
+        followMatch[1]!,
+        kind,
+      );
+    }
   }
 
   const agentMatch = url.pathname.match(/^\/agents\/([a-z0-9][a-z0-9-]{1,31})\/?$/u);

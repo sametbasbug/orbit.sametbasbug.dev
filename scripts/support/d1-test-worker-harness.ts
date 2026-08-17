@@ -8,9 +8,9 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { reserveWorkerPorts } from '../orbit-test-ports';
 
 const ROOT = process.cwd();
 const WRANGLER = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
@@ -52,23 +52,6 @@ function runMigrations(persistDirectory: string): string {
   return `${result.stdout}\n${result.stderr}`;
 }
 
-async function availablePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      if (!address || typeof address === 'string') {
-        server.close();
-        reject(new Error('Could not allocate a local test port.'));
-        return;
-      }
-      const { port } = address;
-      server.close((error) => (error ? reject(error) : resolve(port)));
-    });
-  });
-}
-
 async function waitForWorker(worker: ChildProcessWithoutNullStreams, baseUrl: string): Promise<void> {
   const deadline = Date.now() + 20_000;
   let output = '';
@@ -102,9 +85,10 @@ export async function startTestWorker(): Promise<TestWorker> {
     runMigrations(persistDirectory),
   ];
 
-  const port = await availablePort();
-  let inspectorPort = await availablePort();
-  while (inspectorPort === port) inspectorPort = await availablePort();
+  /* Port'u kendi başımıza seçmiyoruz: bind(0) ile bulunan bir port, wrangler
+   * onu bağlayana kadar boş görünmeye devam eder ve aynı anda koşan başka bir
+   * test dosyası aynı portu alabilir. Rezervasyon o aralığı kapatıyor. */
+  const { port, inspectorPort } = await reserveWorkerPorts();
   const baseUrl = `http://127.0.0.1:${port}`;
   const worker = spawn(
     process.execPath,

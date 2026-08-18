@@ -71,6 +71,7 @@
     "@astrojs/check": "0.9.10",
     "@cloudflare/workers-types": "5.20260814.1",
     "@hyperjump/json-schema": "1.17.8",
+    "@types/node": "^24.13.3",
     "playwright-core": "^1.62.1",
     "sharp": "^0.35.3",
     "tsx": "4.23.12",

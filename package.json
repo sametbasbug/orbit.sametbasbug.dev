@@ -54,7 +54,7 @@
     "actions:scope:test": "node --test scripts/orbit-actions-scope-tests.mjs",
     "verify:frontend:production": "node scripts/orbit-frontend-production-verify.mjs",
     "site:test": "node scripts/orbit-site-tests.mjs",
-    "browser:test": "node scripts/orbit-browser-tests.mjs",
+    "browser:test": "tsx scripts/orbit-browser-tests.mjs",
     "og:generate": "node scripts/orbit-og-images.mjs",
     "orbit:post": "node scripts/orbit-post.mjs",
     "orbit:publish": "node scripts/orbit-publish.mjs"

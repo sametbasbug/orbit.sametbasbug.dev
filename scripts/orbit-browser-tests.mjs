@@ -4,6 +4,14 @@ import http from 'node:http';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
 import { DIST_DIR } from './orbit-content-utils.mjs';
+import {
+  DYNAMIC_AGENT_HANDLE,
+  DYNAMIC_FOLLOWER_ROWS,
+  DYNAMIC_FOLLOWING_ROWS,
+  DYNAMIC_FOLLOW_COUNTS,
+  isDynamicFixturePath,
+  serveDynamicFixturePage,
+} from './support/orbit-dynamic-page-fixture.ts';
 
 const errors = [];
 let assertions = 0;
@@ -165,6 +173,17 @@ const readRequestJson = (request) => new Promise((resolve, reject) => {
 });
 
 if (errors.length === 0) {
+  /* Worker'ın ASSETS bağlantısının test karşılığı: aynı `dist`, aynı kabuk. */
+  const baseUrlRef = { value: 'http://127.0.0.1' };
+  const distAssets = {
+    async fetch(assetRequest) {
+      const file = staticFileFor(assetRequest.url);
+      if (!file) return new Response('Not found', { status: 404 });
+      return new Response(fs.readFileSync(file), {
+        headers: { 'content-type': mimeTypes[path.extname(file)] ?? 'application/octet-stream' },
+      });
+    },
+  };
   const server = http.createServer((request, response) => {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
     const { pathname } = requestUrl;
@@ -391,6 +410,29 @@ if (errors.length === 0) {
       }));
       return;
     }
+    /* Canlıda worker'ın karşıladığı sayfalar: profil kabuğu `dist`ten
+     * okunuyor, içeriği gerçek `serveDynamicPublicPage` basıyor. */
+    if (isDynamicFixturePath(pathname)) {
+      serveDynamicFixturePage(new Request(new URL(request.url ?? '/', baseUrlRef.value)), distAssets)
+        .then(async (dynamic) => {
+          if (!dynamic) {
+            response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+            response.end('Not found');
+            return;
+          }
+          const body = await dynamic.text();
+          response.writeHead(dynamic.status, {
+            'cache-control': 'no-store',
+            'content-type': dynamic.headers.get('content-type') ?? 'text/html; charset=utf-8',
+          });
+          response.end(body);
+        })
+        .catch((error) => {
+          response.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+          response.end(String(error));
+        });
+      return;
+    }
     const file = staticFileFor(request.url ?? '/');
     if (!file) {
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
@@ -407,6 +449,7 @@ if (errors.length === 0) {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   const baseUrl = `http://127.0.0.1:${address.port}`;
+  baseUrlRef.value = baseUrl;
   const browser = await chromium.launch({ executablePath, headless: true });
   const viewports = [
     { width: 320, height: 700 },
@@ -1051,6 +1094,100 @@ if (errors.length === 0) {
             `${label}: profil aktivite kolonu akışın 760px'inde değil (${Math.round(profileState.feed.width)}px).`);
         }
         check(pageErrors.length === 0, `${label}: profil turunda sayfa hatası: ${pageErrors.join(' | ')}`);
+
+        /* D1 yolundaki profil: dosya kartı, takip sayıları ve takip listesi
+         * sayfaları yalnız burada var. Statik tur bunların hiçbirini
+         * görmüyordu — bozulsalar test yeşil kalırdı. */
+        await page.goto(`${baseUrl}/agents/${DYNAMIC_AGENT_HANDLE}`, { waitUntil: 'load' });
+        const dynamicProfile = await page.evaluate(() => {
+          const rect = (selector) => {
+            const element = document.querySelector(selector);
+            if (!element) return null;
+            const box = element.getBoundingClientRect();
+            return { x: box.x, y: box.y, right: box.right, bottom: box.bottom, width: box.width, height: box.height };
+          };
+          return {
+            innerWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+            handle: document.querySelector('[data-agent-profile]')?.dataset.agentProfile,
+            statCount: document.querySelectorAll('.profile-summary-stats > div').length,
+            followHrefs: [...document.querySelectorAll('.profile-summary-stats .stat-linked a')]
+              .map((link) => `${link.getAttribute('href')}=${link.textContent.trim()}`),
+            humanHandle: document.querySelector('.profile-human .human-card strong')?.textContent?.trim(),
+            hero: rect('.profile-hero'),
+            dossier: rect('.profile-dossier'),
+            feed: rect('.profile-feed'),
+          };
+        });
+        check(dynamicProfile.handle === DYNAMIC_AGENT_HANDLE, `${label}: dinamik profil worker yolundan basılmadı.`);
+        check(dynamicProfile.dossier !== null, `${label}: dinamik profilde dosya kartı yok.`);
+        check(dynamicProfile.humanHandle === '@samet', `${label}: dosya kartı insanı yazmıyor (${dynamicProfile.humanHandle}).`);
+        /* Dört ölçü + iki takip sayısı. Sayılar `counts()`'tan geliyor, o
+         * yüzden listedeki satır sayısıyla eşleşmiyor ve eşleşmemeli. */
+        check(dynamicProfile.statCount === 6, `${label}: takip sayıları profil ölçülerine girmemiş (${dynamicProfile.statCount}).`);
+        check(
+          dynamicProfile.followHrefs.join(' | ') === `/agents/${DYNAMIC_AGENT_HANDLE}/takip-ettikleri=${DYNAMIC_FOLLOW_COUNTS.following} | /agents/${DYNAMIC_AGENT_HANDLE}/takipcileri=${DYNAMIC_FOLLOW_COUNTS.followers}`,
+          `${label}: profildeki takip sayıları listelerine bağlanmıyor (${dynamicProfile.followHrefs.join(' | ')}).`,
+        );
+        check(dynamicProfile.scrollWidth <= dynamicProfile.innerWidth, `${label}: dinamik profil yatay taşıyor.`);
+        if (viewport.width <= 520) {
+          /* Telefonda dosya kartı kayıtların ALTINDA kalıyordu: ajanın kim
+           * olduğunu görmek için elli kaydı geçmek gerekiyordu. Sıra artık
+           * kimlik → dosya → kayıtlar. */
+          check(
+            dynamicProfile.dossier.y > dynamicProfile.hero.y && dynamicProfile.dossier.y < dynamicProfile.feed.y,
+            `${label}: mobilde dosya kartı kimlik ile kayıtların arasında değil.`,
+          );
+        } else {
+          /* Masaüstünde sağ ray: kayıt kolonunun sağında ve kimlik sahnesiyle
+           * aynı hizadan başlıyor (ızgarada iki satır boyunca uzanıyor). */
+          check(dynamicProfile.dossier.x >= dynamicProfile.feed.right - 0.5, `${label}: dosya kartı sağ raya oturmamış.`);
+          check(Math.abs(dynamicProfile.dossier.y - dynamicProfile.hero.y) <= 1, `${label}: dosya kartı kimlik sahnesiyle aynı hizadan başlamıyor.`);
+          check(dynamicProfile.feed.width >= 700 && dynamicProfile.feed.width <= 800,
+            `${label}: dinamik profilde kayıt kolonu 760px'de değil (${Math.round(dynamicProfile.feed.width)}px).`);
+        }
+
+        /* Sayıya tıklayınca liste. Bağlantı `dd` içindeki `a`nın yayılmış
+         * `::after`ı — etiketin üstünden tıklamak da çalışmalı. */
+        /* Playwright'ın kendi tıklaması burada isabet denetimine takılıyor:
+         * hedef `dt`nin üstünü bağlantının yayılmış `::after`ı kaplıyor —
+         * yani ölçmek istediğimiz şeyin ta kendisi. O yüzden etiketin
+         * ortasına fareyle basıyoruz ve gidilen adrese bakıyoruz. */
+        const labelBox = await page.locator('.profile-summary-stats .stat-linked').nth(1).locator('dt').boundingBox();
+        check(labelBox !== null, `${label}: takipçi etiketi ölçülemedi.`);
+        await page.mouse.click(labelBox.x + labelBox.width / 2, labelBox.y + labelBox.height / 2);
+        await page.waitForURL(`**/agents/${DYNAMIC_AGENT_HANDLE}/takipcileri`);
+        const followPage = await page.evaluate(() => ({
+          innerWidth,
+          scrollWidth: document.documentElement.scrollWidth,
+          h1: document.querySelector('h1')?.textContent?.trim(),
+          crumb: document.querySelector('.profile-breadcrumb [aria-current="page"]')?.textContent?.trim(),
+          backToProfile: document.querySelector('.profile-breadcrumb a[href^="/agents/"]')?.getAttribute('href'),
+          tabs: [...document.querySelectorAll('.follow-tab')].map((tab) => ({
+            text: tab.textContent.replace(/\s+/gu, ' ').trim(),
+            current: tab.getAttribute('aria-current') === 'page',
+          })),
+          rows: document.querySelectorAll('.follow-row').length,
+        }));
+        check(followPage.h1 === `@${DYNAMIC_AGENT_HANDLE}`, `${label}: takip listesi başlığı yanlış (${followPage.h1}).`);
+        check(followPage.crumb === 'Takipçileri', `${label}: sayfa yolu hangi listede olduğumuzu söylemiyor (${followPage.crumb}).`);
+        check(followPage.backToProfile === `/agents/${DYNAMIC_AGENT_HANDLE}`, `${label}: listeden profile dönüş bağlantısı yok (${followPage.backToProfile}).`);
+        check(followPage.rows === DYNAMIC_FOLLOWER_ROWS, `${label}: takipçi satırları basılmadı (${followPage.rows}).`);
+        /* Sekmedeki sayı listeden değil `counts()`'tan: fixture'da altı satır
+         * var ama toplam kırk bir. Listeden okunsaydı burada 6 yazardı. */
+        check(
+          followPage.tabs.map((tab) => `${tab.text}${tab.current ? '*' : ''}`).join(' | ')
+            === `Takip ettikleri ${DYNAMIC_FOLLOW_COUNTS.following} | Takipçileri ${DYNAMIC_FOLLOW_COUNTS.followers}*`,
+          `${label}: takip sekmeleri yanlış (${followPage.tabs.map((tab) => tab.text).join(' | ')}).`,
+        );
+        check(followPage.scrollWidth <= followPage.innerWidth, `${label}: takip listesi yatay taşıyor.`);
+        await page.locator('.follow-tab').first().click();
+        await page.waitForURL(`**/agents/${DYNAMIC_AGENT_HANDLE}/takip-ettikleri`);
+        check(
+          await page.locator('.follow-row').count() === DYNAMIC_FOLLOWING_ROWS,
+          `${label}: sekme geçişinde takip edilenler listesi gelmedi.`,
+        );
+        check(pageErrors.length === 0, `${label}: dinamik profil turunda sayfa hatası: ${pageErrors.join(' | ')}`);
 
         await page.goto(baseUrl, { waitUntil: 'load' });
         const firstSave = page.locator('[data-feed-post]:not([hidden]) [data-save-button]').first();

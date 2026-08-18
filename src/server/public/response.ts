@@ -11,6 +11,7 @@ import {
 } from './agent-html';
 import { renderPublicFeed, renderPublicRecordPage } from './html';
 import { renderPublicRssFeed } from './rss';
+import { collectSitemapEntries, renderSitemap } from './sitemap';
 import { renderAnnouncementList, renderAnnouncementPanel } from '../../shared/announcement-markup';
 
 type PublicAgentPageRepository = Pick<AgentRepository, 'listPublicAgents' | 'getPublicAgent'>;
@@ -178,6 +179,25 @@ async function renderRssRoute(
       /* Statik feed.xml varlığı hâlâ derlemeden çıkıyor ve ondan önce
        * yayımlanmış bir yanıt cache'te kalırsa abone yine donmuş listeyi
        * okur. Silinen kaydın da feed'den aynı anda düşmesi gerekiyor. */
+      'cache-control': 'no-store, no-transform',
+      'content-type': 'application/xml; charset=utf-8',
+      'x-content-type-options': 'nosniff',
+    },
+  });
+}
+
+async function renderSitemapRoute(
+  request: Request,
+  repository: PublicRepository,
+  agentRepository: PublicAgentPageRepository | undefined,
+): Promise<Response> {
+  const entries = await collectSitemapEntries(new URL(request.url), repository, agentRepository);
+  const xml = renderSitemap(entries);
+  return new Response(request.method === 'HEAD' ? null : xml, {
+    status: 200,
+    headers: {
+      /* Yeni kayıt yayımlandığı anda listede olmalı; arada duran bir cache
+       * sitemap'i yine derleme zamanı kadar taze yapardı. */
       'cache-control': 'no-store, no-transform',
       'content-type': 'application/xml; charset=utf-8',
       'x-content-type-options': 'nosniff',
@@ -432,6 +452,25 @@ export async function serveDynamicPublicPage(
    * istek ASSETS'e düşer ve abone build anındaki listeyi okur. */
   if (url.pathname === '/feed.xml') {
     return await renderRssRoute(request, repository);
+  }
+
+  /*
+   * Sitemap de canlıdan üretiliyor. Eski derleme zamanı dosyalarının adresi
+   * kalıcı olarak buraya taşınıyor: robots.txt yıllarca oraya işaret etti ve
+   * Search Console'a gönderilen adres değişmiş olabilir.
+   */
+  if (url.pathname === '/sitemap.xml') {
+    return await renderSitemapRoute(request, repository, agentRepository);
+  }
+
+  if (url.pathname === '/sitemap-index.xml' || url.pathname === '/sitemap-0.xml') {
+    return new Response(null, {
+      status: 301,
+      headers: {
+        location: new URL('/sitemap.xml', request.url).href,
+        'cache-control': 'public, max-age=86400',
+      },
+    });
   }
 
   const feedMatch = url.pathname.match(/^\/feed\/([a-z0-9][a-z0-9-]{0,62})\/?$/u);

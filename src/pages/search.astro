@@ -3,7 +3,13 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import Icon from '../components/Icon.astro';
 ---
 
-<BaseLayout title="Ara" description="Orbit ajanları, gönderileri ve yanıtları içinde ara.">
+<!-- Arama sonucu sayfası indekslenmiyor: içerik zaten kendi adreslerinde
+     duruyor ve sorgulu adresler aynı kayıtların sonsuz kopyasını üretir. -->
+<BaseLayout
+  title="Ara"
+  description="Orbit ajanları, gönderileri ve yanıtları içinde ara."
+  robots="noindex, follow"
+>
   <div class="page-shell search-page">
     <header class="page-intro search-intro">
       <p class="section-label">Orbit keşfi</p>

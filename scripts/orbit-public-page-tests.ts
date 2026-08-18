@@ -105,10 +105,20 @@ class FakeAgentRepository {
 class FakePublicRepository implements PublicRepository {
   readonly records: PublicRecordView[];
   readonly announcements: PublicAnnouncementView[];
+  readonly topics: PublicDictionaryItem[];
+  /** Sitemap sayfalamasını sınamak için: ilk sayfa `hasMore` der. */
+  readonly feedPageSize: number | null;
+  feedCalls = 0;
 
-  constructor(records: PublicRecordView[], announcements: PublicAnnouncementView[] = []) {
+  constructor(
+    records: PublicRecordView[],
+    announcements: PublicAnnouncementView[] = [],
+    options: { topics?: PublicDictionaryItem[]; feedPageSize?: number } = {},
+  ) {
     this.records = records;
     this.announcements = announcements;
+    this.topics = options.topics ?? [];
+    this.feedPageSize = options.feedPageSize ?? null;
   }
 
   /* Sahte depo hedef kitleye göre filtrelemez, çünkü filtrenin yeri burası
@@ -120,10 +130,17 @@ class FakePublicRepository implements PublicRepository {
   }
 
   async listFeed(input: Parameters<PublicRepository['listFeed']>[0]): Promise<PublicPage> {
-    return {
-      items: this.records.filter((item) => item.kind === 'post' && (!input.agentHandle || item.author.handle === input.agentHandle)),
-      hasMore: false,
-    };
+    this.feedCalls += 1;
+    const matching = this.records
+      .filter((item) => item.kind === 'post' && (!input.agentHandle || item.author.handle === input.agentHandle));
+    if (this.feedPageSize === null) return { items: matching, hasMore: false };
+    /* Gerçek sorgu gibi imleçten devam ediyor: imleci taşımayan bir çağıran
+     * ilk sayfayı sonsuza kadar okur. */
+    const start = input.cursor
+      ? matching.findIndex((item) => item.id === input.cursor!.id) + 1
+      : 0;
+    const items = matching.slice(start, start + this.feedPageSize);
+    return { items, hasMore: start + items.length < matching.length };
   }
 
   async searchRecords(): Promise<PublicPage> {
@@ -162,7 +179,7 @@ class FakePublicRepository implements PublicRepository {
   }
 
   async listTopics(): Promise<PublicDictionaryItem[]> {
-    return [];
+    return this.topics;
   }
 
   async listTopicsPage(): Promise<{ items: PublicDictionaryItem[]; hasMore: boolean }> {
@@ -240,6 +257,79 @@ describe('Orbit dynamic public pages', () => {
     assert.match(html, /data-save-slug="d1-dinamik-kayit"/u);
     assert.match(html, /<a href="\/topics\/orbit" style="--topic-accent:#6f63e8;/u);
     assert.doesNotMatch(html, /__ORBIT_/u);
+  });
+
+  /*
+   * Sitemap uzun süre derleme anında donuyordu: canlıdaki yedi ajanın dördü,
+   * D1'e yazılan gönderilerin hiçbiri listede yoktu ve Google yeni içeriği
+   * yalnız bir bağlantıya rastlarsa görüyordu. Buradaki testler listenin
+   * canlıdan üretildiğini ve neyi DIŞARIDA bıraktığını koruyor.
+   */
+  test('builds the sitemap from D1 agents, records and topics', async () => {
+    const first = record({ id: 'record-1', slug: 'ilk-kayit', publishedAt: Date.UTC(2026, 6, 19, 10, 0), updatedAt: Date.UTC(2026, 6, 20, 8, 0) });
+    const second = record({ id: 'record-2', slug: 'ikinci-kayit', publishedAt: Date.UTC(2026, 7, 1, 10, 0), updatedAt: Date.UTC(2026, 7, 2, 9, 0) });
+    const repository = new FakePublicRepository([first, second], [], {
+      topics: [{ id: 'topic-orbit', slug: 'orbit', name: 'Orbit', description: '', accent: '#6f63e8' }],
+      /* Sayfa başına tek kayıt: imleci taşımayan bir toplayıcı ikinci kaydı
+       * hiç görmez. */
+      feedPageSize: 1,
+    });
+    const response = await serveDynamicPublicPage(
+      new Request('https://orbit.example/sitemap.xml'),
+      assets,
+      repository,
+      new FakeAgentRepository([agent(), agent({ id: 'agent-nyx', handle: 'nyx' })]),
+    );
+    assert.ok(response);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'application/xml; charset=utf-8');
+    const xml = await response.text();
+    assert.match(xml, /^<\?xml version="1\.0" encoding="UTF-8"\?><urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9">/u);
+    assert.match(xml, /<loc>https:\/\/orbit\.example\/<\/loc>/u);
+    assert.match(xml, /<loc>https:\/\/orbit\.example\/agents\/guest-mind\/<\/loc>/u);
+    assert.match(xml, /<loc>https:\/\/orbit\.example\/agents\/nyx\/<\/loc>/u);
+    assert.match(xml, /<loc>https:\/\/orbit\.example\/topics\/orbit\/<\/loc>/u);
+    assert.match(xml, /<loc>https:\/\/orbit\.example\/posts\/ilk-kayit\/<\/loc>/u);
+    /* Sayfalama: ikinci kayıt yalnız imleç taşındıysa listede olur. */
+    assert.match(xml, /<loc>https:\/\/orbit\.example\/posts\/ikinci-kayit\/<\/loc>/u);
+    /* Tazelik sinyali: kaydın kendi güncellenme anı, derleme anı değil. */
+    assert.match(xml, /<loc>https:\/\/orbit\.example\/posts\/ikinci-kayit\/<\/loc><lastmod>2026-08-02T09:00:00\.000Z<\/lastmod>/u);
+    /* Ana sayfa bir listedir; yaşı içindeki en yeni kaydın yaşıdır. */
+    assert.match(xml, /<loc>https:\/\/orbit\.example\/<\/loc><lastmod>2026-08-02T09:00:00\.000Z<\/lastmod>/u);
+  });
+
+  test('keeps noindex shells and derived pages out of the sitemap', async () => {
+    const response = await serveDynamicPublicPage(
+      new Request('https://orbit.example/sitemap.xml'),
+      assets,
+      new FakePublicRepository([record()]),
+      new FakeAgentRepository([agent()]),
+    );
+    assert.ok(response);
+    const xml = await response.text();
+    /* Sitemap "bunu indeksle" demek; sayfanın kendisi `noindex` diyorsa liste
+     * kendi kendisiyle çelişir ve tarama bütçesi boşa gider. */
+    for (const path of ['/dashboard/', '/dashboard/platform/', '/messages/', '/following/', '/saved/', '/search/']) {
+      assert.doesNotMatch(xml, new RegExp(`<loc>https://orbit\\.example${path}</loc>`, 'u'), `${path} sitemap'te olmamalı`);
+    }
+    /* Türev yüzeyler: ajan akışı profilin kopyası, takip listeleri profilden
+     * türüyor, çalışma kabuğu hiç kamusal değil. */
+    assert.doesNotMatch(xml, /<loc>[^<]*\/feed\//u);
+    assert.doesNotMatch(xml, /<loc>[^<]*\/takipcileri/u);
+    assert.doesNotMatch(xml, /<loc>[^<]*\/orbit-runtime\//u);
+  });
+
+  test('moves the old build-time sitemap addresses to the live one', async () => {
+    for (const path of ['/sitemap-index.xml', '/sitemap-0.xml']) {
+      const response = await serveDynamicPublicPage(
+        new Request(`https://orbit.example${path}`),
+        assets,
+        new FakePublicRepository([record()]),
+      );
+      assert.ok(response);
+      assert.equal(response.status, 301);
+      assert.equal(response.headers.get('location'), 'https://orbit.example/sitemap.xml');
+    }
   });
 
   test('replaces the build-time homepage records with D1 records', async () => {

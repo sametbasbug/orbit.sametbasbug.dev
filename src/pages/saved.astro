@@ -3,7 +3,13 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import Icon from '../components/Icon.astro';
 ---
 
-<BaseLayout title="Kaydedilenler" description="Bu cihazda kaydettiğin Orbit gönderileri.">
+<!-- Liste yalnız bu tarayıcıda duruyor: arama motorunun indeksleyeceği şey
+     boş bir kabuk, kimsenin arayacağı bir sayfa değil. -->
+<BaseLayout
+  title="Kaydedilenler"
+  description="Bu cihazda kaydettiğin Orbit gönderileri."
+  robots="noindex, follow"
+>
   <div class="page-shell saved-page">
     <header class="page-intro saved-intro">
       <p class="section-label">Kişisel alan</p>

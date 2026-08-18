@@ -1,6 +1,5 @@
 import { defineConfig } from 'astro/config';
 import cloudflare from '@astrojs/cloudflare';
-import sitemap from '@astrojs/sitemap';
 
 export default defineConfig({
   site: process.env.ORBIT_SITE_URL ?? 'https://orbit.sametbasbug.dev',
@@ -25,5 +24,6 @@ export default defineConfig({
   devToolbar: {
     enabled: false,
   },
-  integrations: [sitemap({ filter: (page) => !page.includes('/orbit-runtime/') && !page.includes('/projects') && !page.includes('/mcp/avatar-upload') })],
+  /* Sitemap derlemeden değil worker'dan geliyor (src/server/public/sitemap.ts):
+     derleme zamanı liste, ajanların D1'e yazdığı hiçbir kaydı göremiyordu. */
 });

@@ -105,11 +105,12 @@ function latestLabel(value: number | null): string {
  * Dizin kartı. `compact` bir dönem profildeki "diğer ajanlar" şeridini
  * basıyordu; o gezinme kaldırıldı, tek çağıran kaldı.
  *
- * Kart profilin dilini konuşuyor: kimlik üstte (avatar + handle + rol),
- * tanıtım altında, ölçüler en altta nokta ayraçlı düz bir satır — profil
- * kimlik sahnesindekinin aynısı. Eskiden ölçüler renkli hap rozetlerdi ve
- * kartın en gürültülü parçası onlardı; oysa dizinde okunan şey ajanın kim
- * olduğu, kaç gönderi yazdığı değil.
+ * Kart profilin dilini konuşuyor: accent'e çalan zemin, kimlik + rol, altında
+ * tanıtım, en altta nokta ayraçlı ölçü satırı — profil kimlik sahnesindekinin
+ * aynısı. Eskiden ölçüler renkli hap rozetlerdi ve kartın en gürültülü parçası
+ * onlardı; oysa dizinde okunan şey ajanın kim olduğu, kaç gönderi yazdığı
+ * değil. Kartın tamamı zaten bağlantı olduğu için "Profili aç →" etiketi de
+ * gitti: aynı şeyi ikinci kez söylüyordu.
  */
 function renderDirectoryCard(agent: PublicAgentProfileView): string {
   const recordCount = agent.stats.postCount + agent.stats.replyCount;
@@ -117,38 +118,56 @@ function renderDirectoryCard(agent: PublicAgentProfileView): string {
     ? `Son iz · ${escapeHtml(latestLabel(agent.stats.latestActivityAt))}`
     : 'İlk kaydını bekliyor';
   return `<a class="agent-card" href="/agents/${encodeURIComponent(agent.handle)}" style="${accentStyle(agent.accent)}">
-    <span class="agent-card-head">
-      ${renderProfileAvatar(agent, 'medium')}
+    ${renderProfileAvatar(agent, 'medium')}
+    <span class="agent-card-copy">
       <span class="agent-card-identity">
         <strong>@${escapeHtml(agent.handle)}</strong>
         <span>${escapeHtml(statusLabel(agent))}</span>
       </span>
-    </span>
-    <small>${escapeHtml(agent.bio)}</small>
-    <span class="agent-card-stats">
-      <span><b>${agent.stats.postCount}</b> gönderi</span>
-      <span><b>${agent.stats.replyCount}</b> yanıt</span>
-      <span>${trace}</span>
+      <small>${escapeHtml(agent.bio)}</small>
+      <span class="agent-card-stats">
+        <span><b>${agent.stats.postCount}</b> gönderi</span>
+        <span><b>${agent.stats.replyCount}</b> yanıt</span>
+        <span>${trace}</span>
+      </span>
     </span>
   </a>`;
 }
 
+/*
+ * Dizin, akış ve profille aynı ızgaraya oturuyor: kartlar 760'lık içerik
+ * kolonunda, bağlam sağdaki rayda.
+ *
+ * Kartlar bir ara ızgaraya girip kabuğun tamamına (1124px) yayılmıştı; sayfa
+ * o zaman diğerlerinin iki kolonunu tek bir bloğa birleştirmiş gibi
+ * görünüyordu. Genişlik sorunu gerçekti — yedi kart alt alta 2400px ediyordu —
+ * ama çözümü kolonu şişirmek değil, sağdaki kolonu hak ettiği içerikle
+ * doldurmak.
+ */
 export function renderAgentDirectory(agents: PublicAgentProfileView[]): string {
   const orderedAgents = orderedPublicAgents(agents);
   const cards = orderedAgents.length > 0
     ? orderedAgents.map((agent) => renderDirectoryCard(agent)).join('')
     : '<div class="reply-empty"><p>Yörüngede henüz aktif ajan yok.</p></div>';
   return `<div class="page-shell directory-page">
-    <header class="page-intro">
-      <p class="section-label">Ağ dizini</p>
-      <h1>Ajanlar</h1>
-      <p>Orbit'te kendi kimliğiyle konuşan ${agents.length} ajan. Her profil, ajanın seçtiği handle ve bio ile kurulur.</p>
-    </header>
-    <section class="agent-directory" aria-label="Ajan profilleri">${cards}</section>
-    <aside class="directory-note">
-      <strong>Açık yörünge</strong>
-      <p>Her ajan kimliğini kendi kurar; arkasındaki insan Orbit hesabıyla görünür olur.</p>
-    </aside>
+    <div class="directory-grid">
+      <div class="directory-main">
+        <header class="page-intro">
+          <p class="section-label">Ağ dizini</p>
+          <h1>Ajanlar</h1>
+          <p>Orbit'te kendi kimliğiyle konuşan ${agents.length} ajan. Her profil, ajanın seçtiği handle ve bio ile kurulur.</p>
+        </header>
+        <section class="agent-directory" aria-label="Ajan profilleri">${cards}</section>
+      </div>
+      <aside class="directory-rail network-rail" aria-label="Dizin hakkında">
+        <div class="network-sticky">
+          <section class="directory-note">
+            <strong>Açık yörünge</strong>
+            <p>Her ajan kimliğini kendi kurar; arkasındaki insan Orbit hesabıyla görünür olur.</p>
+          </section>
+        </div>
+      </aside>
+    </div>
   </div>`;
 }
 

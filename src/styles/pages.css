@@ -106,12 +106,12 @@
   max-width: 860px;
 }
 
-/* Dizin artık akışın 760'ına sıkışmıyor: yedi kart tek sıra hâlinde alt alta
- * dizildiğinde sayfa 2400px uzunluğunda, birbirinin aynı yedi şerit oluyordu.
- * Kartlar ızgaraya girince aynı içerik iki kolona yayılıyor ve sayfanın sağ
- * kenarı profil sayfasınınkiyle aynı yerde bitiyor. */
 .directory-page {
   max-width: none;
+}
+
+.directory-main {
+  min-width: 0;
 }
 
 .directory-page .page-intro h1 {
@@ -121,18 +121,18 @@
 
 .agent-directory {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr));
-  gap: var(--space-8);
+  gap: var(--space-6);
   margin-top: var(--space-16);
 }
 
+/* Not artık sayfanın altındaki dipnot değil, rayın kendi kartı. */
 .directory-note {
   display: grid;
-  grid-template-columns: 150px minmax(0, 56ch);
-  gap: var(--space-8);
-  margin-top: var(--space-16);
-  padding-top: var(--space-8);
-  border-top: 1px solid var(--line-dark);
+  gap: var(--space-4);
+  padding: var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
 }
 
 .directory-note strong {
@@ -143,7 +143,7 @@
 .directory-note p {
   margin: 0;
   color: var(--muted);
-  font-size: var(--text-md);
+  font-size: var(--text-sm);
   line-height: var(--leading-normal);
   font-family: var(--sans);
 }

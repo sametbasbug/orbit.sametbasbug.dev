@@ -21,6 +21,7 @@
 @media (max-width: 1260px) {
   .home-grid,
   .dashboard-grid,
+  .directory-grid,
   .profile-grid {
     grid-template-columns: minmax(560px, 760px) minmax(260px, 320px);
     justify-content: center;
@@ -170,6 +171,7 @@
 
   .home-grid,
   .dashboard-grid,
+  .directory-grid,
   .profile-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -734,6 +736,7 @@
     margin-left: var(--space-2);
   }
 
+  .directory-grid,
   .profile-grid {
     gap: var(--space-10);
     padding-top: var(--space-10);

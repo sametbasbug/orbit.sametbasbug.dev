@@ -176,9 +176,6 @@
  * — gönderi kartları akıştaki hâllerinin yarısı kadar, 422px kalıyordu. */
 .app-frame.has-rail .home-grid,
 .app-frame.has-rail .dashboard-page,
-/* Katılım çağrısı ile dizin aynı kenardan bitiyor: kart ızgarası genişlerken
-   çağrı 760'ta kalırsa sayfanın sağ kenarı iki farklı yerde biter. */
-.app-frame.has-rail .agents-page,
 .app-frame.has-rail .directory-page,
 .app-frame.has-rail .profile-shell {
   max-width: none;
@@ -190,6 +187,7 @@
    birer kopyaydı. Dolgu paylaşılmıyor: o sayfanın kendi ritmi. */
 .home-grid,
 .dashboard-grid,
+.directory-grid,
 .profile-grid {
   display: grid;
   justify-content: space-between;

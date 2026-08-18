@@ -819,23 +819,29 @@ if (errors.length === 0) {
       );
       await page.evaluate(() => localStorage.removeItem('orbit-agent-invite'));
 
-      /* Dizin ızgarası. Kartlar bir dönem 760px'lik tek kolonda alt alta
-       * dizilen yatay şeritlerdi: yedi ajanda sayfa 2400px oluyordu ve
-       * kartların hepsi birbirinin aynısıydı. Ölçülen şey kolon sayısı değil
-       * yerleşim: geniş ekranda kartlar iki farklı sol kenardan başlıyor,
-       * telefonda tek kenardan. */
+      /* Dizin akışla aynı ızgarada: kartlar 760'lık içerik kolonunda, not
+       * sağdaki rayda. Kartlar bir ara kabuğun tamamına yayılmıştı ve sayfa
+       * diğerlerinin iki kolonunu tek bloğa birleştirmiş gibi görünüyordu. */
       const directory = await page.evaluate(() => {
         const cards = [...document.querySelectorAll('.agent-directory .agent-card')];
+        const box = (selector) => {
+          const element = document.querySelector(selector);
+          if (!element) return null;
+          const rect = element.getBoundingClientRect();
+          return { x: rect.x, y: rect.y, right: rect.right, width: rect.width };
+        };
         return {
           innerWidth,
           overflow: document.documentElement.scrollWidth - innerWidth,
           count: cards.length,
           columns: [...new Set(cards.map((card) => Math.round(card.getBoundingClientRect().x)))].length,
-          /* Kartın sağ kenarı ile katılım çağrısının sağ kenarı aynı yerde:
-           * ikisi ayrı kabuklarda ve biri diğerinden dar kalırsa sayfanın
-           * sağ kenarı iki farklı yerde biter. */
+          cardWidth: cards[0] ? cards[0].getBoundingClientRect().width : 0,
           cardRight: Math.round(Math.max(...cards.map((card) => card.getBoundingClientRect().right))),
+          cardTop: Math.round(Math.min(...cards.map((card) => card.getBoundingClientRect().y))),
+          /* Katılım çağrısı da içerik kolonunda: biri 760'ta kalıp diğeri
+           * yayılırsa sayfanın sağ kenarı iki farklı yerde biter. */
           inviteRight: Math.round(document.querySelector('#agent-invite').getBoundingClientRect().right),
+          rail: box('.directory-rail'),
           statLines: document.querySelectorAll('.agent-card-stats > span').length,
           /* Kartın tamamı zaten bağlantı; ikinci kez "Profili aç →" demesi
            * gerekmiyordu ve o etiket dar ekranda gizleniyordu bile. */
@@ -847,15 +853,26 @@ if (errors.length === 0) {
       check(directory.hrefs === directory.count, `${label}: dizin kartlarının hepsi profile bağlanmıyor.`);
       check(directory.openLabels === 0, `${label}: kaldırılan "Profili aç" etiketi kartta kaldı.`);
       check(directory.statLines === 3 * directory.count, `${label}: kart ölçüleri üç değer taşımıyor.`);
+      check(directory.columns === 1, `${label}: dizin kartları tek kolonda dizilmiyor (${directory.columns}).`);
       check(directory.overflow <= 0, `${label}: ajan dizini yatay taşıyor (${directory.overflow}px).`);
+      check(directory.rail !== null, `${label}: dizin rayı basılmadı.`);
       check(
         Math.abs(directory.cardRight - directory.inviteRight) <= 1,
         `${label}: dizin ile katılım çağrısı aynı kenarda bitmiyor (${directory.cardRight}/${directory.inviteRight}).`,
       );
       if (viewport.width >= 1440) {
-        check(directory.columns === 2, `${label}: geniş ekranda dizin tek kolonda kaldı (${directory.columns}).`);
+        /* Akışın 760'ı: ölçü `.home-grid` ile ORTAK kuraldan geliyor ve
+         * `.directory-grid` o seçici listesinden düşerse kolon kabuğun
+         * tamamına yayılır — üst sınır o düşüşü yakalıyor. */
+        check(directory.cardWidth >= 700 && directory.cardWidth <= 800,
+          `${label}: dizin kartları akışın 760px'inde değil (${Math.round(directory.cardWidth)}px).`);
+        check(directory.rail.x >= directory.cardRight - 0.5, `${label}: dizin rayı içerik kolonunun sağında değil.`);
       } else if (viewport.width <= 520) {
-        check(directory.columns === 1, `${label}: telefonda dizin kartları yan yana sıkıştı (${directory.columns}).`);
+        /* Telefonda ray kartların altına iniyor; yan yana kalırsa iki kolon
+         * 375px'i paylaşır ve kart 132px'e düşer. */
+        check(directory.rail.y > directory.cardTop, `${label}: telefonda dizin rayı kartların yanında sıkışıyor.`);
+        check(directory.cardWidth > directory.innerWidth * 0.8,
+          `${label}: telefonda dizin kartı ekranı kullanmıyor (${Math.round(directory.cardWidth)}px).`);
       }
 
       if (viewport.width === 1440) {

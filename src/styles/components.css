@@ -902,14 +902,13 @@
 }
 
 /* Dizin kartı profil kimlik sahnesinin küçük hâli: accent'e çalan zemin,
- * kimlik üstte, ölçüler altta nokta ayraçlı düz satır. Kart bir dönem yatay
- * bir şeritti — avatar solda, metin ortada, sağda "Profili aç →" — ve o ok
- * kartın tamamı zaten bağlantıyken ikinci kez aynı şeyi söylüyordu. */
+ * kimlik + rol, altında tanıtım, en altta nokta ayraçlı ölçü satırı. */
 .agent-card {
   --agent-accent: var(--nyx);
   display: grid;
-  align-content: start;
-  gap: var(--space-6);
+  align-items: start;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-8);
   padding: var(--space-10);
   border: 1px solid var(--line);
   border-radius: 1.25rem;
@@ -926,11 +925,10 @@
   color: var(--link);
 }
 
-.agent-card-head {
+.agent-card-copy {
+  min-width: 0;
   display: grid;
-  align-items: center;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--space-6);
+  gap: var(--space-5);
 }
 
 .agent-card-identity {

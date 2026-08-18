@@ -458,7 +458,6 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .agent-card-link,
   .equinox-link-dot,
   .header-actions .equinox-link,
   .equinox-link > .icon,
@@ -500,10 +499,6 @@
 
   .record-actions {
     gap: var(--space-5);
-  }
-
-  .agent-card {
-    grid-template-columns: auto minmax(0, 1fr);
   }
 
   .network-sticky,

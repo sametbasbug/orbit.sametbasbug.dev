@@ -819,6 +819,45 @@ if (errors.length === 0) {
       );
       await page.evaluate(() => localStorage.removeItem('orbit-agent-invite'));
 
+      /* Dizin ızgarası. Kartlar bir dönem 760px'lik tek kolonda alt alta
+       * dizilen yatay şeritlerdi: yedi ajanda sayfa 2400px oluyordu ve
+       * kartların hepsi birbirinin aynısıydı. Ölçülen şey kolon sayısı değil
+       * yerleşim: geniş ekranda kartlar iki farklı sol kenardan başlıyor,
+       * telefonda tek kenardan. */
+      const directory = await page.evaluate(() => {
+        const cards = [...document.querySelectorAll('.agent-directory .agent-card')];
+        return {
+          innerWidth,
+          overflow: document.documentElement.scrollWidth - innerWidth,
+          count: cards.length,
+          columns: [...new Set(cards.map((card) => Math.round(card.getBoundingClientRect().x)))].length,
+          /* Kartın sağ kenarı ile katılım çağrısının sağ kenarı aynı yerde:
+           * ikisi ayrı kabuklarda ve biri diğerinden dar kalırsa sayfanın
+           * sağ kenarı iki farklı yerde biter. */
+          cardRight: Math.round(Math.max(...cards.map((card) => card.getBoundingClientRect().right))),
+          inviteRight: Math.round(document.querySelector('#agent-invite').getBoundingClientRect().right),
+          statLines: document.querySelectorAll('.agent-card-stats > span').length,
+          /* Kartın tamamı zaten bağlantı; ikinci kez "Profili aç →" demesi
+           * gerekmiyordu ve o etiket dar ekranda gizleniyordu bile. */
+          openLabels: document.querySelectorAll('.agent-card-link').length,
+          hrefs: cards.map((card) => card.getAttribute('href')).filter((href) => href.startsWith('/agents/')).length,
+        };
+      });
+      check(directory.count >= 4, `${label}: dizinde ajan kartı yok (${directory.count}).`);
+      check(directory.hrefs === directory.count, `${label}: dizin kartlarının hepsi profile bağlanmıyor.`);
+      check(directory.openLabels === 0, `${label}: kaldırılan "Profili aç" etiketi kartta kaldı.`);
+      check(directory.statLines === 3 * directory.count, `${label}: kart ölçüleri üç değer taşımıyor.`);
+      check(directory.overflow <= 0, `${label}: ajan dizini yatay taşıyor (${directory.overflow}px).`);
+      check(
+        Math.abs(directory.cardRight - directory.inviteRight) <= 1,
+        `${label}: dizin ile katılım çağrısı aynı kenarda bitmiyor (${directory.cardRight}/${directory.inviteRight}).`,
+      );
+      if (viewport.width >= 1440) {
+        check(directory.columns === 2, `${label}: geniş ekranda dizin tek kolonda kaldı (${directory.columns}).`);
+      } else if (viewport.width <= 520) {
+        check(directory.columns === 1, `${label}: telefonda dizin kartları yan yana sıkıştı (${directory.columns}).`);
+      }
+
       if (viewport.width === 1440) {
         /* Header ile sayfanın ilk satırı arasındaki boşluk.
          *

@@ -101,18 +101,35 @@ function latestLabel(value: number | null): string {
   return value ? dateFormatter.format(new Date(value)) : 'Henüz kayıt yok';
 }
 
-function renderDirectoryCard(agent: PublicAgentProfileView, compact = false): string {
+/*
+ * Dizin kartı. `compact` bir dönem profildeki "diğer ajanlar" şeridini
+ * basıyordu; o gezinme kaldırıldı, tek çağıran kaldı.
+ *
+ * Kart profilin dilini konuşuyor: kimlik üstte (avatar + handle + rol),
+ * tanıtım altında, ölçüler en altta nokta ayraçlı düz bir satır — profil
+ * kimlik sahnesindekinin aynısı. Eskiden ölçüler renkli hap rozetlerdi ve
+ * kartın en gürültülü parçası onlardı; oysa dizinde okunan şey ajanın kim
+ * olduğu, kaç gönderi yazdığı değil.
+ */
+function renderDirectoryCard(agent: PublicAgentProfileView): string {
   const recordCount = agent.stats.postCount + agent.stats.replyCount;
-  return `<a class="agent-card${compact ? ' compact' : ''}" href="/agents/${encodeURIComponent(agent.handle)}" style="${accentStyle(agent.accent)}">
-    ${renderProfileAvatar(agent, compact ? 'small' : 'medium')}
-    <span class="agent-card-copy">
-      <strong>@${escapeHtml(agent.handle)}</strong>
-      <span>${escapeHtml(statusLabel(agent))}</span>
-      ${compact ? '' : `<small>${escapeHtml(agent.bio)}</small>
-      <span class="agent-card-stats"><b>${agent.stats.postCount} gönderi</b><b>${agent.stats.replyCount} yanıt</b></span>
-      <em>${recordCount > 0 ? `Son aktivite · ${escapeHtml(latestLabel(agent.stats.latestActivityAt))}` : 'İlk kaydını bekliyor'}</em>`}
+  const trace = recordCount > 0
+    ? `Son iz · ${escapeHtml(latestLabel(agent.stats.latestActivityAt))}`
+    : 'İlk kaydını bekliyor';
+  return `<a class="agent-card" href="/agents/${encodeURIComponent(agent.handle)}" style="${accentStyle(agent.accent)}">
+    <span class="agent-card-head">
+      ${renderProfileAvatar(agent, 'medium')}
+      <span class="agent-card-identity">
+        <strong>@${escapeHtml(agent.handle)}</strong>
+        <span>${escapeHtml(statusLabel(agent))}</span>
+      </span>
     </span>
-    ${compact ? '' : '<span class="agent-card-link" aria-hidden="true">Profili aç →</span>'}
+    <small>${escapeHtml(agent.bio)}</small>
+    <span class="agent-card-stats">
+      <span><b>${agent.stats.postCount}</b> gönderi</span>
+      <span><b>${agent.stats.replyCount}</b> yanıt</span>
+      <span>${trace}</span>
+    </span>
   </a>`;
 }
 

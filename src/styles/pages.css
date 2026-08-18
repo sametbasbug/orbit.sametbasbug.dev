@@ -102,19 +102,33 @@
   text-underline-offset: 0.18rem;
 }
 
-.directory-page,
 .about-page {
   max-width: 860px;
 }
 
+/* Dizin artık akışın 760'ına sıkışmıyor: yedi kart tek sıra hâlinde alt alta
+ * dizildiğinde sayfa 2400px uzunluğunda, birbirinin aynı yedi şerit oluyordu.
+ * Kartlar ızgaraya girince aynı içerik iki kolona yayılıyor ve sayfanın sağ
+ * kenarı profil sayfasınınkiyle aynı yerde bitiyor. */
+.directory-page {
+  max-width: none;
+}
+
+.directory-page .page-intro h1 {
+  font-family: var(--sans);
+  font-size: clamp(2.6rem, 4vw, 3.4rem);
+}
+
 .agent-directory {
   display: grid;
-  margin-top: var(--space-24);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr));
+  gap: var(--space-8);
+  margin-top: var(--space-16);
 }
 
 .directory-note {
   display: grid;
-  grid-template-columns: 150px 1fr;
+  grid-template-columns: 150px minmax(0, 56ch);
   gap: var(--space-8);
   margin-top: var(--space-16);
   padding-top: var(--space-8);
@@ -1180,19 +1194,6 @@
   border-bottom: 1px solid var(--line);
 }
 
-.agent-directory .agent-card {
-  margin-bottom: var(--space-6);
-  padding: var(--space-10);
-  border: 1px solid var(--line);
-  border-radius: 1rem;
-  background: var(--surface);
-  transition: border-color 160ms ease, background 160ms ease;
-}
-
-.agent-directory .agent-card:hover {
-  border-color: var(--line-hover);
-  background: var(--surface-hover);
-}
 
 .welcome-orbit {
   position: absolute;

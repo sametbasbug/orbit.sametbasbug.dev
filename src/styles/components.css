@@ -901,63 +901,82 @@
   font-weight: var(--weight-bold);
 }
 
+/* Dizin kartı profil kimlik sahnesinin küçük hâli: accent'e çalan zemin,
+ * kimlik üstte, ölçüler altta nokta ayraçlı düz satır. Kart bir dönem yatay
+ * bir şeritti — avatar solda, metin ortada, sağda "Profili aç →" — ve o ok
+ * kartın tamamı zaten bağlantıyken ikinci kez aynı şeyi söylüyordu. */
 .agent-card {
   --agent-accent: var(--nyx);
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: var(--space-8);
-  min-height: 7.5rem;
-  padding: var(--space-8) 0;
-  border-bottom: 1px solid var(--line);
+  align-content: start;
+  gap: var(--space-6);
+  padding: var(--space-10);
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--agent-accent) 5%, var(--surface)), var(--surface) 62%);
   text-decoration: none;
+  transition: border-color 160ms ease, background 160ms ease;
 }
 
-.agent-card:first-child {
-  border-top: 1px solid var(--line);
+.agent-card:hover {
+  border-color: color-mix(in srgb, var(--agent-accent) 40%, var(--line));
 }
 
-.agent-card:hover .agent-card-copy strong,
-.agent-card:hover .agent-card-link {
+.agent-card:hover .agent-card-identity strong {
   color: var(--link);
 }
 
-.agent-card-copy {
+.agent-card-head {
+  display: grid;
+  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+.agent-card-identity {
   min-width: 0;
   display: grid;
 }
 
-.agent-card-copy strong {
+.agent-card-identity strong {
+  overflow-wrap: anywhere;
   font-size: var(--text-md);
 }
 
-.agent-card-copy > span {
+.agent-card-identity > span {
   margin-top: var(--space-1);
   color: var(--muted);
   font-size: var(--text-xs);
 }
 
-.agent-card-copy small {
-  max-width: 34rem;
-  margin-top: var(--space-4);
-  color: var(--muted);
+.agent-card small {
+  margin: 0;
+  color: var(--ink-body);
   font-size: var(--text-md);
   line-height: var(--leading-normal);
   font-family: var(--sans);
 }
 
-.agent-card-copy em {
-  margin-top: var(--space-4);
-  color: var(--faint);
-  font-size: var(--text-2xs);
-  font-style: normal;
+/* Ölçüler profildeki `.profile-summary-stats` ile aynı dili konuşuyor:
+ * ayraç nokta, kutu yok, rozet yok. */
+.agent-card-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-5);
+  color: var(--muted);
+  font-size: var(--text-xs);
 }
 
-.agent-card-link {
+.agent-card-stats > span:not(:last-child)::after {
+  margin-left: var(--space-4);
   color: var(--faint);
-  font-size: var(--text-2xs);
-  text-decoration: underline;
-  text-underline-offset: 0.18rem;
+  content: "·";
+}
+
+.agent-card-stats b {
+  color: var(--ink-body);
+  font-weight: var(--weight-bold);
 }
 
 .page-intro {
@@ -1197,21 +1216,6 @@
   font-weight: var(--weight-bold);
 }
 
-.agent-card-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  margin-top: var(--space-5);
-}
-
-.agent-card-stats b {
-  padding: var(--space-2) var(--space-4);
-  border-radius: 999px;
-  color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
-  background: color-mix(in srgb, var(--agent-accent) 10%, var(--surface));
-  font-size: var(--text-3xs);
-  font-weight: var(--weight-bold);
-}
 
 .share-tools {
   min-height: 3rem;

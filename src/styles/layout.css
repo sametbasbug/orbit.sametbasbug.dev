@@ -220,17 +220,34 @@
    tamamını alınca ortalanmış bir footer tek başına içeride kalıyor ve
    sayfanın altında hizasız bir blok gibi duruyordu. Genişlik yine kapalı —
    footer metni 1900px'e yayılmamalı. */
+/* Footer, header ve çerçeveyle AYNI kutuyu kullanır: tam genişlik + aynı
+ * yatay dolgu. Ortalama işini üçünde de kenar boşluğu değil, içerideki
+ * `--rail-gutter` yapıyor.
+ *
+ * Burada bir dönem `max-width: 1476px` yazılıydı ve `margin-inline: auto`
+ * YOKTU. 1476'nın altında fark etmiyordu — 1440'lık bir ekranda footer da
+ * sayfa da 16'dan 1424'e uzanıyor ve hiza tutuyor. Üstünde ise footer
+ * genişlemeyi bırakıp sola yapışıyordu: 1920'de sayfa içeriği 580–1340
+ * arasında ortalanırken footer 0–1476'da kalıyor, sağında 444px boşluk
+ * bırakıyordu. Yani kusur yalnız geniş ekranda görünüyordu.
+ *
+ * 1476 ayrıca hiçbir şeye denk gelmeyen bir sayıydı; kabuğun gerçek ölçüsü
+ * 320 + 760 + 320 = 1400 ve onu zaten oluk ifadesi taşıyor. */
 .footer-inner {
   display: grid;
   gap: 0;
   padding: var(--space-24) var(--space-8) var(--space-12);
   width: 100%;
-  max-width: 1476px;
 }
 
+/* İki blok iki kenara yaslanıyor — alt şeritteki telif/RSS çiftiyle aynı
+ * davranış. Nav sütunu `auto`: eskiden `minmax(350px, 1fr)` idi ve marka
+ * sütunu `1.5fr` alıyordu, yani ekran genişledikçe ikisi de büyüyordu.
+ * Marka metni 40rem'de kapandığı için büyüyen tek şey ölü boşluktu ve nav
+ * sayfanın sağ kenarından içeri kaçıyordu. */
 .footer-main {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(350px, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: clamp(2.5rem, 7vw, 7rem);
   padding-bottom: var(--space-20);
 }

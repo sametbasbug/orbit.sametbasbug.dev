@@ -511,6 +511,9 @@ if (errors.length === 0) {
           appRail: rect('.app-rail'),
           feedColumn: rect('.feed'),
           networkRail: rect('.network-rail'),
+          footerBottom: rect('.footer-bottom'),
+          footerBrand: rect('.footer-brand'),
+          footerNav: rect('.footer-nav'),
           headerTopicCount: document.querySelectorAll('.header-topic').length,
           /* Ray artık `HomeFeed` içinde değil, `BaseLayout`'ta ve her
              sayfada. Seçici de oraya taşındı; niyet aynı: masaüstünde menü
@@ -672,6 +675,34 @@ if (errors.length === 0) {
           `${label}: akış sütunu ekranın ortasında değil (kayma ${kayma.toFixed(1)}px, sınır ${kaymaSiniri}).`,
         );
         check(!(await page.locator('.header-mobile-search').isVisible()), `${label}: mobil arama düğmesi masaüstünde görünür kaldı.`);
+
+        /* Footer sayfanın kutusunu paylaşıyor mu?
+         *
+         * Header ve çerçeve tam genişlik + aynı yatay dolgu kullanıyor;
+         * ortalamayı kenar boşluğu değil içerideki oluk yapıyor. Footer bir
+         * dönem BAŞKA bir mekanizma kullanıyordu: `max-width: 1476px`, ve
+         * `margin-inline: auto` YOK. 1476'nın altında fark etmiyor, üstünde
+         * footer genişlemeyi bırakıp sola yapışıyordu.
+         *
+         * Bu yüzden iddia dar ekranda hiçbir şey ölçmez ve ölçmemeli — kusur
+         * yalnız 1476'nın üstünde görünüyor. Listede 1536 olduğu için orada
+         * yakalanıyor; o viewport listeden düşerse bu iddia sessizce körelir.
+         *
+         * Ölçü tek bir sayı değil iki kenar: sol kenar rayla, sağ kenar ağ
+         * rayıyla. Yalnız birine bakmak kaymayı kaçırırdı, çünkü sola yapışan
+         * footer'ın SOL kenarı doğru duruyordu. */
+        check(
+          Math.abs(layout.footerBottom.x - layout.appRail.x) <= 1,
+          `${label}: footer'ın sol kenarı rayla hizalı değil (${Math.round(layout.footerBottom.x)}/${Math.round(layout.appRail.x)}).`,
+        );
+        check(
+          Math.abs(layout.footerBottom.right - layout.networkRail.right) <= 1,
+          `${label}: footer'ın sağ kenarı içerik sütunuyla hizalı değil (${Math.round(layout.footerBottom.right)}/${Math.round(layout.networkRail.right)}).`,
+        );
+        check(
+          Math.abs(layout.footerNav.right - layout.networkRail.right) <= 1,
+          `${label}: footer menüsü sayfanın sağ kenarına yaslanmıyor (${Math.round(layout.footerNav.right)}/${Math.round(layout.networkRail.right)}).`,
+        );
       }
 
       /* Duyuru ikonu ve alt sayfası.

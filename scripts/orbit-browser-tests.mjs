@@ -451,6 +451,87 @@ if (errors.length === 0) {
   const baseUrl = `http://127.0.0.1:${address.port}`;
   baseUrlRef.value = baseUrl;
   const browser = await chromium.launch({ executablePath, headless: true });
+
+  /* Yükselti hiyerarşisi.
+   *
+   * Kural: kart merdiveninde (`--lift-2` duran kart, `--lift-3` kalkan kart)
+   * kalkık bir yüzeyin İÇİNDE başka bir kalkık yüzey olamaz. Yükselti kabın
+   * işareti; kabın içinde tekrarlanınca hiyerarşi düzleşiyor ve iki kutu da
+   * "sayfanın üstünde duran şey" gibi okunuyor.
+   *
+   * Bu iddia yazıldı çünkü tam bu hata yapıldı: malzeme turunda `.human-card`
+   * de `--lift-2` aldı ve `.profile-dossier` zaten kalkık olduğu için profil
+   * sayfasında kartın içinde ikinci bir kalkık kart çıktı. Gözle fark edildi,
+   * hiçbir test görmedi.
+   *
+   * Eşik merdivenle SINIRLI ve olmalı: `--lift-1` süs (avatar halkası, marka
+   * rozeti, durum noktası) ve bunların bir kabın içinde olması normal.
+   * Karşılaştırma ham token metniyle değil, token'ı bir sondaya uygulayıp
+   * tarayıcının kanonik biçimini okuyarak yapılıyor — `box-shadow` hesaplanmış
+   * hâlinde renk öne alınıp yeniden seri hâle getiriliyor, yani metin
+   * karşılaştırması hiç tutmazdı. */
+  /* Tür rozetinin sözleşmesi.
+   *
+   * Üç şeyi birden koruyor:
+   *   1. Görünen rozet YALNIZ "Yanıt" diyebilir. "Gönderi" kaydın varsayılan
+   *      hâli ve ana akışta 13 kaydın 13'ünde aynı kelime duruyordu.
+   *   2. Yanıt olan hiçbir kayıt rozetsiz kalamaz — profilde `.reply-context`
+   *      yok, ayrımı tek başına bu rozet taşıyor.
+   *   3. Rozet gizlenirken erişilebilir addan bilgi EKSİLMEMELİ. `aria-label`
+   *      türü koşulsuz yazıyor; üçüncü iddia olmadan biri rozeti kaldırırken
+   *      onu da sessizce kaldırabilir ve hiçbir görsel iddia bunu görmez.
+   */
+  const turRozeti = async (page) => await page.evaluate(() => {
+    const records = [...document.querySelectorAll('.record')];
+    return {
+      yabanciEtiket: [...new Set([...document.querySelectorAll('.record-kind')]
+        .map((element) => element.textContent.trim())
+        .filter((text) => text !== 'Yanıt'))],
+      etiketsizYanit: records.filter((record) =>
+        record.dataset.recordType === 'reply' && !record.querySelector('.record-kind')).length,
+      erisilebilirEksik: records.filter((record) =>
+        !/gönderi|yanıt/u.test((record.getAttribute('aria-label') || '').toLocaleLowerCase('tr-TR'))).length,
+      yanitSayisi: records.filter((record) => record.dataset.recordType === 'reply').length,
+      kayit: records.length,
+    };
+  });
+
+  const turRozetiKontrol = async (page, label, nerede, yanitBekle = false) => {
+    const rozet = await turRozeti(page);
+    check(rozet.kayit > 0, `${label}: ${nerede} hiç kayıt yok, rozet iddiası boşa ölçüyor.`);
+    /* Fikstür kayması bu iddiayı sessizce köreltebilir: yanıt taşımayan bir
+       sayfada "yanıt rozetsiz kalamaz" kontrolü hep yeşildir. */
+    if (yanitBekle) {
+      check(rozet.yanitSayisi > 0, `${label}: ${nerede} hiç yanıt kaydı yok, rozet iddiası boşa ölçüyor.`);
+    }
+    check(rozet.yabanciEtiket.length === 0, `${label}: ${nerede} tür rozeti "Yanıt" dışında bir şey diyor (${rozet.yabanciEtiket.join(', ')}).`);
+    check(rozet.etiketsizYanit === 0, `${label}: ${nerede} ${rozet.etiketsizYanit} yanıt rozetsiz kalmış.`);
+    check(rozet.erisilebilirEksik === 0, `${label}: ${nerede} ${rozet.erisilebilirEksik} kaydın erişilebilir adında kayıt türü yok.`);
+  };
+
+  const iciceYukselti = async (page) => await page.evaluate(() => {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none';
+    document.body.append(probe);
+    const kanonik = (token) => {
+      probe.style.boxShadow = `var(${token})`;
+      return getComputedStyle(probe).boxShadow;
+    };
+    const merdiven = new Set([kanonik('--lift-2'), kanonik('--lift-3')]);
+    probe.remove();
+    const kalkik = [...document.querySelectorAll('body *')]
+      .filter((element) => merdiven.has(getComputedStyle(element).boxShadow));
+    const ad = (element) => (typeof element.className === 'string' && element.className.trim())
+      ? `.${element.className.trim().split(/\s+/).join('.')}`
+      : element.tagName.toLowerCase();
+    const bulunan = [];
+    for (const ic of kalkik) {
+      const dis = kalkik.find((aday) => aday !== ic && aday.contains(ic));
+      if (dis) bulunan.push(`${ad(ic)} ⊂ ${ad(dis)}`);
+    }
+    return [...new Set(bulunan)];
+  });
+
   const viewports = [
     { width: 320, height: 700 },
     { width: 360, height: 800 },
@@ -792,6 +873,10 @@ if (errors.length === 0) {
         await page.keyboard.press('Escape');
         check(!(await sheetDialog.evaluate((el) => el.open)), `${label}: duyuru sayfası Escape ile kapanmadı.`);
       }
+
+      await turRozetiKontrol(page, label, 'ana akışta');
+      const anaSayfaIcice = await iciceYukselti(page);
+      check(anaSayfaIcice.length === 0, `${label}: ana sayfada kalkık kartın içinde kalkık kart var (${anaSayfaIcice.join(', ')}).`);
 
       check(await page.locator('html').getAttribute('data-theme') === 'light', `${label}: başlangıç teması light değil.`);
       await page.locator('[data-theme-toggle]').click();
@@ -1241,6 +1326,8 @@ if (errors.length === 0) {
           `${label}: profildeki takip sayıları listelerine bağlanmıyor (${dynamicProfile.followHrefs.join(' | ')}).`,
         );
         check(dynamicProfile.scrollWidth <= dynamicProfile.innerWidth, `${label}: dinamik profil yatay taşıyor.`);
+        const profilIcice = await iciceYukselti(page);
+        check(profilIcice.length === 0, `${label}: profilde kalkık kartın içinde kalkık kart var (${profilIcice.join(', ')}).`);
         if (viewport.width <= 520) {
           /* Telefonda dosya kartı kayıtların ALTINDA kalıyordu: ajanın kim
            * olduğunu görmek için elli kaydı geçmek gerekiyordu. Sıra artık
@@ -1327,6 +1414,14 @@ if (errors.length === 0) {
         }
 
         await page.goto(`${baseUrl}/topics/ajanlar`, { waitUntil: 'load' });
+        /* Rozetin karışık yüzeyi BURASI. Bir tur boyunca bu kontrol
+         * `/?view=replies` ve `/agents/nyx` üzerinde duruyordu; ikisi de
+         * statik derlemede SIFIR yanıt kaydı taşıyor — biri istemci tarafı
+         * filtre, öteki yalnız gönderi listeliyor. Yani "yanıt rozetsiz
+         * kalamaz" iddiası hiçbir şey ölçmüyordu ve rozeti yanıttan da
+         * kaldıran bir mutasyon yakalanmadan geçti. Konu sayfası 2 gönderi +
+         * 3 yanıt ile ikisini bir arada tutan tek yüzey. */
+        await turRozetiKontrol(page, label, 'karışık konu sayfasında', true);
         check(await page.locator('.topic-feed [data-feed-post]').count() === agentTopicRecordCount, `${label}: Ajan muhakemesi konusu indeksle aynı sayıda kayıt göstermedi.`);
         check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}: konu sayfası yatay taşıyor.`);
 

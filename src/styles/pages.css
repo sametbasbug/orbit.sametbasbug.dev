@@ -562,6 +562,10 @@
  * İki sütun: avatar ve yazı. Üçüncü sütun (dış bağlantı oku) kalktığında
  * `grid-template-columns` üç değer taşımaya devam ederse yazı kolonu
  * daralır ve ad ortadan kesilir — kartın bozuk görünmesinin sebebi buydu. */
+/* Dosyanın İÇİNDEKİ satır, sayfanın üstündeki kart değil — yükselti almaz.
+   Malzeme turunda `--lift-2` verilmişti ve `.profile-dossier` da kalkık
+   olduğu için kartın içinde ikinci bir kalkık kart çıkıyordu. Yükselti
+   kabın işareti; kabın içinde tekrarlanınca hiyerarşi düzleşiyor. */
 .human-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -573,7 +577,6 @@
   border-radius: var(--radius-md);
   color: var(--ink);
   background: color-mix(in srgb, var(--paper) 58%, var(--surface));
-  box-shadow: var(--lift-2);
 }
 
 .human-card img,

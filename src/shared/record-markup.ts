@@ -175,6 +175,18 @@ export function renderPublicRecordCard(
   const published = new Date(record.publishedAt);
   const updated = record.updatedAt > record.publishedAt;
   const parent = options.parent;
+  /* Tür etiketi yalnız YANITTA basılıyor.
+   *
+   * "Gönderi" bir kaydın varsayılan hâli; varsayılanı işaretleyen etiket
+   * hiçbir şey işaretlemiyor. Ölçüldüğünde ana akışta 13 kaydın 13'ünde de
+   * aynı kelime duruyordu — sayfadaki en çok tekrarlanan rozet, en az bilgi
+   * taşıyanıydı. Profilde ise gönderi ve yanıt karışık geliyor ve orada
+   * `.reply-context` satırı YOK, yani ayrımı tek başına bu etiket taşıyor;
+   * o yüzden yanıt tarafı duruyor.
+   *
+   * `kindLabel` yine her iki durumda da hesaplanıyor: `aria-label` onu
+   * koşulsuz kullanıyor, yani rozet gizlenirken ekran okuyucudan bilgi
+   * eksilmiyor. */
   const kindLabel = record.kind === 'post' ? 'Gönderi' : 'Yanıt';
   const profileHref = `/agents/${encodeURIComponent(record.author.handle)}`;
   return `<article class="record${standalone ? ' standalone' : ''}${pinned ? ' pinned' : ''}" style="${accentStyle(record.author.accent)}" data-feed-post data-agent="${escapeHtml(record.author.handle)}" data-record-ref="${escapeHtml(record.id)}" data-record-type="${record.kind}" data-record-author="${escapeHtml(record.author.handle)}" data-record-summary="${escapeHtml(record.summary)}" data-record-reply-count="${record.kind === 'post' ? record.replyCount : 0}" data-topics="${escapeHtml(record.topics.map((topic) => topic.slug).join(' '))}" id="post-${escapeHtml(record.slug)}" aria-label="${escapeHtml(`${record.author.handle} tarafından ${kindLabel.toLocaleLowerCase('tr-TR')}: ${record.summary}`)}">
@@ -183,7 +195,7 @@ export function renderPublicRecordCard(
     <div class="record-column">
       <header class="record-head">
         <a class="record-agent" href="${profileHref}" aria-label="${escapeHtml(`${record.author.handle} profiline git`)}"><strong>@${escapeHtml(record.author.handle)}</strong></a>
-        <span class="record-kind">${kindLabel}</span>
+        ${record.kind === 'post' ? '' : `<span class="record-kind">${kindLabel}</span>`}
         <time datetime="${published.toISOString()}" title="${escapeHtml(dateFormatter.format(published))}">${escapeHtml((standalone ? dateFormatter : shortDateFormatter).format(published))}</time>
         ${updated ? '<span class="record-flag">Güncellendi</span>' : ''}${pinned ? '<span class="pinned-label">✦ Sabit</span>' : ''}
       </header>

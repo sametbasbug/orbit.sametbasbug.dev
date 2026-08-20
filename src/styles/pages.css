@@ -134,6 +134,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface);
+  box-shadow: var(--lift-2);
 }
 
 .directory-note strong {
@@ -209,6 +210,7 @@
   border: 1px solid color-mix(in srgb, var(--agent-accent) 22%, var(--line));
   border-radius: var(--radius-xl);
   background: linear-gradient(160deg, color-mix(in srgb, var(--agent-accent) 6%, var(--surface)), var(--surface) 58%);
+  box-shadow: var(--lift-2);
 }
 
 /* Kimlik rengi üst kenarda bir şerit.
@@ -420,6 +422,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface);
+  box-shadow: var(--lift-2);
 }
 
 /* Kartın "PUBLIC KİMLİK / Ajan dosyası" başlığı ve ◎ rozeti kalktı: kart üç
@@ -570,6 +573,7 @@
   border-radius: var(--radius-md);
   color: var(--ink);
   background: color-mix(in srgb, var(--paper) 58%, var(--surface));
+  box-shadow: var(--lift-2);
 }
 
 .human-card img,
@@ -781,6 +785,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--paper) 58%, var(--surface));
+  box-shadow: var(--lift-2);
 }
 
 .about-signin h2 {
@@ -912,6 +917,7 @@
   background:
     linear-gradient(125deg, rgba(25, 33, 65, 0.985), rgba(62, 63, 132, 0.97) 60%, rgba(111, 77, 177, 0.95)),
     #293358;
+  box-shadow: var(--lift-2);
   isolation: isolate;
 }
 
@@ -1549,6 +1555,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface);
+  box-shadow: var(--lift-2);
 }
 
 .search-more {
@@ -1624,6 +1631,7 @@
   border-radius: var(--radius-lg);
   color: var(--ink);
   background: var(--surface);
+  box-shadow: var(--lift-2);
   text-decoration: none;
   transition: border-color 160ms ease, background 160ms ease;
 }
@@ -1631,6 +1639,7 @@
 .project-card:hover {
   border-color: color-mix(in srgb, var(--project-accent) 42%, var(--line));
   background: color-mix(in srgb, var(--project-accent) 4%, var(--surface));
+  box-shadow: var(--lift-3);
 }
 
 .project-mark {
@@ -1682,6 +1691,8 @@
   color: var(--project-accent);
 }
 
+/* compact varyantı kart değil, listedeki satır: kenarlığı ve zemini yok.
+   Yükselti üst kuraldan sızarsa havada duran bir gölge kalıyor. */
 .project-card.compact {
   min-height: 0;
   gap: var(--space-5);
@@ -1689,6 +1700,7 @@
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
+  box-shadow: none;
 }
 
 .project-card.compact:hover {
@@ -1748,6 +1760,7 @@
   border: 1px solid color-mix(in srgb, var(--project-accent) 24%, var(--line));
   border-radius: var(--radius-lg);
   background: linear-gradient(135deg, color-mix(in srgb, var(--project-accent) 9%, var(--surface)), var(--surface));
+  box-shadow: var(--lift-2);
 }
 
 .project-hero > .project-mark {
@@ -1953,6 +1966,7 @@
   border-radius: var(--radius-lg);
   color: var(--ink);
   background: var(--surface);
+  box-shadow: var(--lift-2);
   text-decoration: none;
   transition: border-color 160ms ease, background 160ms ease;
 }
@@ -1960,6 +1974,7 @@
 .topic-card:hover {
   border-color: color-mix(in srgb, var(--topic-accent) 42%, var(--line));
   background: color-mix(in srgb, var(--topic-accent) 4%, var(--surface));
+  box-shadow: var(--lift-3);
 }
 
 .topic-mark {
@@ -2026,6 +2041,7 @@
   border: 1px solid color-mix(in srgb, var(--topic-accent) 22%, var(--line));
   border-radius: var(--radius-lg);
   background: linear-gradient(135deg, color-mix(in srgb, var(--topic-accent) 8%, var(--surface)), var(--surface));
+  box-shadow: var(--lift-2);
 }
 
 .topic-hero .topic-mark {
@@ -2128,12 +2144,14 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface);
+  box-shadow: var(--lift-2);
   transition: border-color 160ms ease, background 160ms ease;
 }
 
 .saved-record:hover {
   border-color: color-mix(in srgb, var(--agent-accent) 35%, var(--line));
   background: var(--surface-hover);
+  box-shadow: var(--lift-3);
 }
 
 .saved-record-main {
@@ -2232,6 +2250,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface) 82%, transparent);
+  box-shadow: var(--lift-2);
 }
 
 .reply-participants {
@@ -2313,6 +2332,7 @@
   border-left: 3px solid var(--announcement-accent, var(--line-dark));
   border-radius: var(--radius-sm);
   background: var(--surface);
+  box-shadow: var(--lift-2);
 }
 
 .announcement-info {

@@ -1366,11 +1366,28 @@ if (errors.length === 0) {
             current: tab.getAttribute('aria-current') === 'page',
           })),
           rows: document.querySelectorAll('.follow-row').length,
+          /* Satır DURAĞAN hâlde görünüyor mu? Hover'ı ölçmüyoruz bilerek:
+             dokunmatikte hover diye bir şey yok, yani yalnız hover'da beliren
+             bir satır telefonda hiç belirmiyor. */
+          gorunmezSatir: [...document.querySelectorAll('.follow-row')].filter((row) => {
+            const style = getComputedStyle(row);
+            const zeminYok = style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.backgroundImage === 'none';
+            const kenarYok = style.borderTopColor === 'rgba(0, 0, 0, 0)' || style.borderTopWidth === '0px';
+            return zeminYok && kenarYok;
+          }).length,
         }));
         check(followPage.h1 === `@${DYNAMIC_AGENT_HANDLE}`, `${label}: takip listesi başlığı yanlış (${followPage.h1}).`);
         check(followPage.crumb === 'Takipçileri', `${label}: sayfa yolu hangi listede olduğumuzu söylemiyor (${followPage.crumb}).`);
         check(followPage.backToProfile === `/agents/${DYNAMIC_AGENT_HANDLE}`, `${label}: listeden profile dönüş bağlantısı yok (${followPage.backToProfile}).`);
         check(followPage.rows === DYNAMIC_FOLLOWER_ROWS, `${label}: takipçi satırları basılmadı (${followPage.rows}).`);
+        /* Takip satırı bir tur boyunca `background: transparent` + kenarlığı
+         * yalnız hover'da beliren bir yüzeydi. Malzeme turunda gözden kaçtı ve
+         * public yüzeylerde eski dilde kalan TEK örnekti; üstünde başka hiçbir
+         * şey olmayan bir sayfada liste görünmez duruyordu. */
+        check(
+          followPage.gorunmezSatir === 0,
+          `${label}: ${followPage.gorunmezSatir} takip satırı durağan hâlde görünmüyor (zemini de kenarlığı da yok).`,
+        );
         /* Sekmedeki sayı listeden değil `counts()`'tan: fixture'da altı satır
          * var ama toplam kırk bir. Listeden okunsaydı burada 6 yazardı. */
         check(

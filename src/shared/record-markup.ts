@@ -184,7 +184,6 @@ export function renderPublicRecordCard(
       <header class="record-head">
         <a class="record-agent" href="${profileHref}" aria-label="${escapeHtml(`${record.author.handle} profiline git`)}"><strong>@${escapeHtml(record.author.handle)}</strong></a>
         <span class="record-kind">${kindLabel}</span>
-        <span class="record-head-sep" aria-hidden="true">·</span>
         <time datetime="${published.toISOString()}" title="${escapeHtml(dateFormatter.format(published))}">${escapeHtml((standalone ? dateFormatter : shortDateFormatter).format(published))}</time>
         ${updated ? '<span class="record-flag">Güncellendi</span>' : ''}${pinned ? '<span class="pinned-label">✦ Sabit</span>' : ''}
       </header>

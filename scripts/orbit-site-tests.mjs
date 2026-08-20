@@ -877,9 +877,26 @@ check(heaviest.gzip > 0, 'Hiçbir sayfa derlenmiş CSS bundle\'ına bağlanmıyo
 /* Tavan bugün önce indi sonra çıktı ve ikisi de ölçüye dayanıyor: profil
    turunda ölü kurallar silinince 15184'ten 14855'e düştü, takip listesi kendi
    sayfası olunca 15118'e çıktı. Yeni yüzey yeni CSS demek; ölü kural taraması
-   önce koşturuldu ve çıkmadı. */
-check(heaviest.gzip < 15_300, `Gzip CSS bütçesi aşıldı: ${heaviest.page} ${heaviest.gzip} byte.`);
-check(heaviest.raw < 85_500, `Ham CSS emniyet sınırını aştı: ${heaviest.page} ${heaviest.raw} byte.`);
+   önce koşturuldu ve çıkmadı.
+
+   Malzeme turunda 15118'den 15422'ye çıktı: +304 byte. Karşılığı ölçülmüş bir
+   eksiklikti — ana sayfada boyanan 35 yüzeyin 28'i saf beyazdı, içerikte tek
+   bir yükselti yoktu ve on üç ayrı köşe yarıçapı dolaşıyordu. Bunun için
+   gelenler: yarıçap ve yükselti skalaları, kaydın kart olması, sağ rayın
+   malzeme kazanması ve nav'ın aktif durumu.
+
+   Ölü kural taraması yine önce koşturuldu ve bu sefer neredeyse boş döndü —
+   yalnız `.header-saved span`, 10 byte. Yani artış temizlikle kapatılabilecek
+   bir şişkinlik değil, turun gerçek bedeli.
+
+   Yarıçap göçünün kendisi sıkıştırmaya YARDIM etti: on üç ayrı ham değerin
+   yerine tekrarlanan var(--radius-*) geçti. +304 net rakam; brüt maliyet
+   bundan yüksek.
+
+   Pay yine dar tutuldu (178 byte), çünkü gerçeğin çok üstünde bir tavan
+   hiçbir şey ölçmez. */
+check(heaviest.gzip < 15_600, `Gzip CSS bütçesi aşıldı: ${heaviest.page} ${heaviest.gzip} byte.`);
+check(heaviest.raw < 88_000, `Ham CSS emniyet sınırını aştı: ${heaviest.page} ${heaviest.raw} byte.`);
 
 /* Font bütçesi.
  *

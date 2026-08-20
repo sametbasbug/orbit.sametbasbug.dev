@@ -53,20 +53,20 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
 <style>
   .avatar-upload-page { width: min(760px, calc(100% - 2rem)); margin: var(--space-32) auto var(--space-48); /* 7rem idi: skalanın en üst kademesi 6rem */ }
-  .avatar-upload-card { padding: clamp(1.4rem, 3vw, 2.4rem); border: 1px solid var(--line); border-radius: 1.25rem; background: var(--surface); box-shadow: 0 18px 60px rgba(25, 30, 55, .08); }
+  .avatar-upload-card { padding: clamp(1.4rem, 3vw, 2.4rem); border: 1px solid var(--line); border-radius: var(--radius-xl); background: var(--surface); box-shadow: 0 18px 60px rgba(25, 30, 55, .08); }
   .avatar-upload-card h1 { margin: var(--space-2) 0 var(--space-6); font-size: clamp(1.9rem, 5vw, 3rem); letter-spacing: var(--tracking-tight); }
   .lede, .security-note, .muted { color: var(--muted); }
   .lede { max-width: 64ch; line-height: var(--leading-relaxed); }
-  .session-state, .result, .login-panel { margin: var(--space-10) 0; padding: var(--space-8) var(--space-8); border: 1px solid var(--line); border-radius: .85rem; background: color-mix(in srgb, var(--surface) 88%, var(--orbit-violet) 12%); }
+  .session-state, .result, .login-panel { margin: var(--space-10) 0; padding: var(--space-8) var(--space-8); border: 1px solid var(--line); border-radius: var(--radius-md); background: color-mix(in srgb, var(--surface) 88%, var(--orbit-violet) 12%); }
   .session-state.error, .result.error { border-color: #c64e4e; background: color-mix(in srgb, var(--surface) 90%, #c64e4e 10%); }
   .result.ok { border-color: #3c8b68; background: color-mix(in srgb, var(--surface) 90%, #3c8b68 10%); }
   .upload-form { display: grid; gap: var(--space-10); margin-top: var(--space-12); }
   .agent-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); }
-  .agent-summary > div { display: grid; gap: var(--space-2); padding: var(--space-7) var(--space-8); border: 1px solid var(--line); border-radius: .8rem; }
-  .file-field { display: grid; gap: var(--space-4); padding: var(--space-8); border: 1px dashed color-mix(in srgb, var(--orbit-violet) 55%, var(--line)); border-radius: .9rem; }
+  .agent-summary > div { display: grid; gap: var(--space-2); padding: var(--space-7) var(--space-8); border: 1px solid var(--line); border-radius: var(--radius-md); }
+  .file-field { display: grid; gap: var(--space-4); padding: var(--space-8); border: 1px dashed color-mix(in srgb, var(--orbit-violet) 55%, var(--line)); border-radius: var(--radius-md); }
   .file-field input { width: 100%; }
   .file-field small { color: var(--muted); }
-  .button { display: inline-flex; align-items: center; justify-content: center; width: fit-content; min-height: 42px; padding: var(--space-5) var(--space-8); border: 1px solid transparent; border-radius: .75rem; font: inherit; font-weight: var(--weight-bold); cursor: pointer; text-decoration: none; }
+  .button { display: inline-flex; align-items: center; justify-content: center; width: fit-content; min-height: 42px; padding: var(--space-5) var(--space-8); border: 1px solid transparent; border-radius: var(--radius-sm); font: inherit; font-weight: var(--weight-bold); cursor: pointer; text-decoration: none; }
   .button.primary { color: white; background: var(--orbit-violet); }
   .button.secondary { color: var(--ink); border-color: var(--line); background: var(--surface); }
   .button:disabled { cursor: not-allowed; opacity: .55; }

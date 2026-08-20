@@ -33,7 +33,7 @@
   gap: var(--space-5);
   min-width: 0;
   padding: var(--space-6) var(--space-6);
-  border-radius: 0.8rem;
+  border-radius: var(--radius-md);
   color: var(--text);
   text-decoration: none;
   transition: color 160ms ease, background 160ms ease;
@@ -84,8 +84,9 @@
 .network-section {
   padding: var(--space-10);
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-lg);
   background: var(--surface);
+  box-shadow: var(--lift-2);
 }
 
 .network-section > h2 {
@@ -131,7 +132,7 @@
   gap: var(--space-4);
   padding: var(--space-8);
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
 
@@ -206,7 +207,7 @@
   overflow: hidden;
   padding: var(--space-16) var(--space-16) var(--space-14);
   border: 1px solid color-mix(in srgb, var(--agent-accent) 22%, var(--line));
-  border-radius: 1.5rem;
+  border-radius: var(--radius-xl);
   background: linear-gradient(160deg, color-mix(in srgb, var(--agent-accent) 6%, var(--surface)), var(--surface) 58%);
 }
 
@@ -353,7 +354,7 @@
 .profile-summary-stats .stat-linked a::after {
   position: absolute;
   inset: calc(var(--space-2) * -1) calc(var(--space-3) * -1);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-sm);
   content: "";
 }
 
@@ -365,7 +366,7 @@
 .profile-summary-stats .stat-linked:has(a:focus-visible) {
   outline: 2px solid var(--orbit-blue);
   outline-offset: 3px;
-  border-radius: 0.4rem;
+  border-radius: var(--radius-xs);
 }
 
 .profile-summary-stats .stat-linked a:focus-visible {
@@ -417,7 +418,7 @@
 .profile-dossier {
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 1.15rem;
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
 
@@ -526,7 +527,7 @@
   gap: var(--space-6);
   padding: var(--space-5) var(--space-6);
   border: 1px solid transparent;
-  border-radius: 0.9rem;
+  border-radius: var(--radius-md);
   color: var(--ink);
   text-decoration: none;
 }
@@ -566,7 +567,7 @@
   margin-top: var(--space-6);
   padding: var(--space-5);
   border: 1px solid var(--line);
-  border-radius: 0.8rem;
+  border-radius: var(--radius-md);
   color: var(--ink);
   background: color-mix(in srgb, var(--paper) 58%, var(--surface));
 }
@@ -672,11 +673,17 @@
   text-transform: none;
 }
 
+/* Yanıt kuşağı. Sol çizgi iş parçacığını taşıyor; ham hex yazılıydı ve
+   koyu temada hiç çevrilmiyordu — token'a alındı.
+
+   Kayıtlar kart olduktan sonra kuşağın kendi girintisi azaldı: kartın kendi
+   dolgusu zaten var, ikisi üst üste binince yanıtlar sayfanın ortasından
+   başlıyordu. Dikey aralık kartların margin'inden geliyor, buradaki gap
+   ikisini toplamasın diye sıfır. */
 .reply-list {
   display: grid;
-  gap: var(--space-6);
-  padding-left: var(--space-18);
-  border-left: 2px solid #dde2f3;
+  padding-left: var(--space-10);
+  border-left: 2px solid var(--line);
 }
 
 .about-intro {
@@ -728,7 +735,7 @@
   font-size: var(--text-sm);
   padding: var(--space-1) var(--space-3);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   background: var(--surface-sunken);
   overflow-wrap: anywhere;
 }
@@ -772,7 +779,7 @@
   margin-top: var(--space-16);
   padding: var(--space-12);
   border: 1px solid var(--line);
-  border-radius: 0.9rem;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--paper) 58%, var(--surface));
 }
 
@@ -900,7 +907,7 @@
   margin-bottom: var(--space-6);
   padding: var(--space-10) var(--space-12);
   border: 1px solid rgba(110, 105, 190, 0.16);
-  border-radius: 1.2rem;
+  border-radius: var(--radius-xl);
   color: #fff;
   background:
     linear-gradient(125deg, rgba(25, 33, 65, 0.985), rgba(62, 63, 132, 0.97) 60%, rgba(111, 77, 177, 0.95)),
@@ -982,7 +989,7 @@
 .agent-invite-heading:focus-visible {
   outline: 2px solid rgba(184, 193, 255, 0.9);
   outline-offset: var(--space-2);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-sm);
 }
 
 /* Panel kapalı geldiği için okun "burası açılır" demesi gerekiyor. Bunu
@@ -996,7 +1003,7 @@
   display: grid;
   place-items: center;
   border: 1px solid rgba(184, 193, 255, 0.38);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: #e6e9ff;
   background: rgba(150, 160, 255, 0.16);
   transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease;
@@ -1043,7 +1050,7 @@
   display: grid;
   place-items: center;
   border: 1px solid rgba(184, 193, 255, 0.34);
-  border-radius: 0.85rem;
+  border-radius: var(--radius-md);
   color: #d5dbff;
   background: rgba(255, 255, 255, 0.08);
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
@@ -1071,7 +1078,7 @@
   margin-top: var(--space-8);
   padding: var(--space-7) var(--space-8);
   border: 1px solid rgba(255, 255, 255, 0.11);
-  border-radius: 0.8rem;
+  border-radius: var(--radius-md);
   background: rgba(8, 12, 28, 0.45);
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.04);
 }
@@ -1122,7 +1129,7 @@
   height: 1.2rem;
   display: grid;
   place-items: center;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: #fff;
   background: rgba(174, 185, 255, 0.22);
   font-size: var(--text-2xs);
@@ -1177,7 +1184,7 @@
   align-items: center;
   gap: var(--space-5);
   padding: var(--space-4) var(--space-6);
-  border-radius: 0.55rem;
+  border-radius: var(--radius-sm);
   color: light-dark(#626c84, var(--muted));
   background: light-dark(linear-gradient(90deg, #f6f4ff, #f4f7ff), linear-gradient(90deg, #201d32, #1a2234));
   font-size: var(--text-2xs);
@@ -1189,10 +1196,6 @@
   color: var(--orbit-blue);
 }
 
-
-.reply-list .record {
-  border-bottom: 1px solid var(--line);
-}
 
 
 .welcome-orbit {
@@ -1237,36 +1240,57 @@
 /* Katılım bağlantısı. `.network-section` kutusunu ALMIYOR: sağ kolondaki
    ötekiler birer bölüm — başlığı ve içeriği var — bu ise tek bir eylem.
    Aynı kutuya koymak onu okunacak bir şey gibi gösterirdi. */
+/* Katılım bağlantısı. `.network-section` kutusunu ALMIYOR: sağ kolondaki
+   ötekiler birer bölüm — başlığı ve içeriği var — bu ise tek bir eylem.
+   Aynı kutuya koymak onu okunacak bir şey gibi gösterirdi.
+
+   Ayrıca sayfanın TEK dolgu renkli yüzeyi. Sağ kolon üç beyaz kutu hâlinde
+   sıralanınca hiçbiri diğerinden önce okunmuyordu; sitedeki en önemli eylem
+   de o üçünün ortasında kayboluyordu. Solid degrade onu kolonun odağı
+   yapıyor — ve bu ayrıcalık pahalı olsun diye ikinci bir örneği yok. */
 .network-join {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: var(--space-6);
   padding: var(--space-8) var(--space-10);
-  border: 1px solid color-mix(in srgb, var(--orbit-blue) 30%, var(--line));
-  border-radius: 1rem;
-  color: var(--orbit-blue);
-  background: color-mix(in srgb, var(--orbit-blue) 6%, var(--surface));
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  color: #fff;
+  background: linear-gradient(105deg, var(--orbit-violet), var(--orbit-blue));
+  box-shadow: var(--lift-2);
   text-decoration: none;
-  transition: background 160ms ease, border-color 160ms ease;
+  transition: box-shadow 160ms ease, transform 160ms ease;
 }
 
 .network-join:hover {
-  border-color: color-mix(in srgb, var(--orbit-blue) 52%, var(--line));
-  background: color-mix(in srgb, var(--orbit-blue) 11%, var(--surface));
+  box-shadow: var(--lift-3);
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .network-join {
+    transition: none;
+  }
+
+  .network-join:hover {
+    transform: none;
+  }
 }
 
 .network-join > span {
   display: grid;
   gap: var(--space-1);
   min-width: 0;
-  color: var(--muted);
+  /* Degradenin üstünde kırılmış beyaz: saf beyaz alt satırı başlıkla eşit
+     sesle okutuyor, --muted ise degradede okunmuyor. */
+  color: rgba(255, 255, 255, 0.78);
   font-size: var(--text-2xs);
   line-height: var(--leading-normal);
 }
 
 .network-join strong {
-  color: var(--ink);
+  color: #fff;
   font-size: var(--text-sm);
   letter-spacing: var(--tracking-tight);
 }
@@ -1321,7 +1345,7 @@
 .reply-heading > span {
   min-width: 1.7rem;
   padding: var(--space-2) var(--space-3);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: var(--orbit-blue);
   background: color-mix(in srgb, var(--orbit-blue) 9%, var(--surface));
   font-size: var(--text-2xs);
@@ -1336,7 +1360,7 @@
   gap: var(--space-6);
   padding: var(--space-8);
   border: 1px dashed var(--line-dark);
-  border-radius: 0.85rem;
+  border-radius: var(--radius-md);
   color: var(--faint);
   background: color-mix(in srgb, var(--surface) 72%, transparent);
 }
@@ -1365,7 +1389,7 @@
   margin: var(--space-16) 0 0;
   padding: 0 var(--space-10);
   border: 1px solid var(--line-dark);
-  border-radius: 1rem;
+  border-radius: var(--radius-lg);
   color: var(--orbit-blue);
   background: var(--surface);
 }
@@ -1392,7 +1416,7 @@
   min-width: 1.8rem;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
-  border-radius: 0.45rem;
+  border-radius: var(--radius-xs);
   color: var(--faint);
   background: var(--paper);
   font-size: var(--text-xs);
@@ -1429,7 +1453,7 @@
   min-height: 2.75rem;
   padding: 0 var(--space-6);
   border: 1px solid var(--line);
-  border-radius: 0.72rem;
+  border-radius: var(--radius-sm);
   color: var(--ink);
   background: var(--surface);
   font-size: var(--text-sm);
@@ -1469,7 +1493,7 @@
 .search-group > header span {
   min-width: 1.7rem;
   padding: var(--space-2) var(--space-3);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: var(--orbit-blue);
   background: color-mix(in srgb, var(--orbit-blue) 9%, var(--surface));
   font-size: var(--text-2xs);
@@ -1498,7 +1522,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: var(--space-6);
   padding: var(--space-7);
-  border-radius: 0.9rem;
+  border-radius: var(--radius-md);
 }
 
 .search-agent > span,
@@ -1523,7 +1547,7 @@
 .search-post-list {
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
 
@@ -1532,7 +1556,7 @@
   min-height: 2.7rem;
   padding: var(--space-5) var(--space-8);
   border: 1px solid var(--line-dark);
-  border-radius: 0.72rem;
+  border-radius: var(--radius-sm);
   color: var(--orbit-blue);
   background: var(--surface);
   font: inherit;
@@ -1597,7 +1621,7 @@
   min-height: 10.5rem;
   padding: var(--space-10);
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-lg);
   color: var(--ink);
   background: var(--surface);
   text-decoration: none;
@@ -1614,7 +1638,7 @@
   height: 3.4rem;
   display: grid;
   place-items: center;
-  border-radius: 0.95rem;
+  border-radius: var(--radius-md);
   color: var(--project-accent);
   background: color-mix(in srgb, var(--project-accent) 10%, var(--surface));
 }
@@ -1663,7 +1687,7 @@
   gap: var(--space-5);
   padding: var(--space-5);
   border: 0;
-  border-radius: 0.72rem;
+  border-radius: var(--radius-sm);
   background: transparent;
 }
 
@@ -1675,7 +1699,7 @@
 .project-card.compact .project-mark {
   width: 2.15rem;
   height: 2.15rem;
-  border-radius: 0.62rem;
+  border-radius: var(--radius-sm);
 }
 
 .project-card.compact .project-card-copy > strong {
@@ -1722,14 +1746,14 @@
   gap: var(--space-10);
   padding: var(--space-12);
   border: 1px solid color-mix(in srgb, var(--project-accent) 24%, var(--line));
-  border-radius: 1.15rem;
+  border-radius: var(--radius-lg);
   background: linear-gradient(135deg, color-mix(in srgb, var(--project-accent) 9%, var(--surface)), var(--surface));
 }
 
 .project-hero > .project-mark {
   width: 5rem;
   height: 5rem;
-  border-radius: 1.3rem;
+  border-radius: var(--radius-xl);
 }
 
 .project-hero h1 {
@@ -1826,7 +1850,7 @@
   gap: var(--space-5);
   padding: var(--space-6);
   border: 1px solid var(--line);
-  border-radius: 0.85rem;
+  border-radius: var(--radius-md);
   color: var(--ink);
   background: var(--surface);
   text-decoration: none;
@@ -1862,7 +1886,7 @@
   gap: var(--space-4);
   padding: var(--space-32) var(--space-12);
   border: 1px dashed color-mix(in srgb, var(--project-accent) 35%, var(--line));
-  border-radius: 1rem;
+  border-radius: var(--radius-lg);
   color: var(--muted);
   background: color-mix(in srgb, var(--project-accent) 4%, var(--surface));
   text-align: center;
@@ -1888,7 +1912,7 @@
   gap: var(--space-4);
   padding: var(--space-32) var(--space-12);
   border: 1px dashed var(--line-dark);
-  border-radius: 1rem;
+  border-radius: var(--radius-lg);
   color: var(--muted);
   text-align: center;
 }
@@ -1926,7 +1950,7 @@
   min-height: 10rem;
   padding: var(--space-10);
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-lg);
   color: var(--ink);
   background: var(--surface);
   text-decoration: none;
@@ -1943,7 +1967,7 @@
   height: 3.1rem;
   display: grid;
   place-items: center;
-  border-radius: 0.9rem;
+  border-radius: var(--radius-md);
   color: var(--topic-accent);
   background: color-mix(in srgb, var(--topic-accent) 10%, var(--surface));
 }
@@ -2000,14 +2024,14 @@
   gap: var(--space-10);
   padding: var(--space-12);
   border: 1px solid color-mix(in srgb, var(--topic-accent) 22%, var(--line));
-  border-radius: 1.1rem;
+  border-radius: var(--radius-lg);
   background: linear-gradient(135deg, color-mix(in srgb, var(--topic-accent) 8%, var(--surface)), var(--surface));
 }
 
 .topic-hero .topic-mark {
   width: 4.5rem;
   height: 4.5rem;
-  border-radius: 1.2rem;
+  border-radius: var(--radius-xl);
 }
 
 .topic-hero h1 {
@@ -2067,7 +2091,7 @@
   margin-top: var(--space-12);
   padding: var(--space-7) var(--space-8);
   border: 1px solid color-mix(in srgb, var(--orbit-violet) 20%, var(--line));
-  border-radius: 0.85rem;
+  border-radius: var(--radius-md);
   color: var(--orbit-violet);
   background: color-mix(in srgb, var(--orbit-violet) 6%, var(--surface));
 }
@@ -2102,7 +2126,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   transition: border-color 160ms ease, background 160ms ease;
 }
@@ -2168,7 +2192,7 @@
   gap: var(--space-4);
   padding: var(--space-32) var(--space-12);
   border: 1px dashed var(--line-dark);
-  border-radius: 1rem;
+  border-radius: var(--radius-lg);
   color: var(--muted);
   text-align: center;
 }
@@ -2206,7 +2230,7 @@
   margin-bottom: var(--space-6);
   padding: var(--space-6) var(--space-7);
   border: 1px solid var(--line);
-  border-radius: 0.9rem;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface) 82%, transparent);
 }
 
@@ -2287,7 +2311,7 @@
   padding: var(--space-14) var(--space-16);
   border: 1px solid var(--line);
   border-left: 3px solid var(--announcement-accent, var(--line-dark));
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
 }
 
@@ -2335,7 +2359,7 @@
   justify-self: start;
   margin: 0;
   padding: var(--space-1) var(--space-5);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--announcement-surface);
   color: var(--announcement-ink);
   font-size: var(--text-xs);
@@ -2433,7 +2457,7 @@
 .announcement-empty {
   padding: var(--space-20) var(--space-16);
   border: 1px dashed var(--line-dark);
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   text-align: center;
 }

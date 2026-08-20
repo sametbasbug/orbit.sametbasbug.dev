@@ -70,6 +70,11 @@ const EXEMPT: readonly RegExp[] = [
   /gap:\s*0\.02rem/u,            // 0.32px: boşluk değil, kıl payı itme
   /margin:\s*-1px !important/u,  // ekran okuyucu gizleme kalıbı, yerleşim değil
   /padding:\s*2px$/u,            // avatar halkası: kalınlığı kenarlığa bağlı, ritme değil
+  /* 3px'lik çubukların ucu: aktif sekme göstergesi ve kaydın accent omurgası.
+     Yarıçap ritimden değil çubuğun KENDİ kalınlığından geliyor — yarısı
+     yuvarlanınca uç kapanıyor. Skalanın en küçük kademesi (6px) burada
+     çubuğun iki katı olurdu. */
+  /border-radius:\s*(?:0 3px 3px 0|3px 3px 0 0)$/u,
 ];
 
 type Axis = { readonly property: RegExp; readonly token: string };
@@ -81,6 +86,16 @@ const AXES: readonly Axis[] = [
   { property: /^\s*line-height:/u, token: '--leading-' },
   { property: /^\s*(?:margin|padding)(?:-(?:top|bottom|left|right))?:/u, token: '--space-' },
   { property: /^\s*(?:row-|column-)?gap:/u, token: '--space-' },
+  /* Köşe yarıçapı skalaya en son katılan eksen, ve sebebi ötekilerle aynı:
+     taranan dosyalarda elle yazılmış ON ÜÇ ayrı değer vardı — 0.6'dan
+     1.5rem'e, aralarındaki farkların çoğu 1px'ti. Beş role indirildi. Göç
+     ettirip kilitsiz bırakmak, aynı dağılmayı bir sonraki turda yeniden
+     yaşamak olurdu.
+
+     `50%` bu eksene takılmıyor ve takılmamalı: yüzde `carriesLength`
+     kontrolünden geçmiyor, çünkü o bir kademe değil daireye çevirme
+     talimatı. */
+  { property: /^\s*border(?:-[a-z]+)?-radius:/u, token: '--radius-' },
 ];
 
 /** Sayısal bir uzunluk mu taşıyor? `margin: 0` ya da `inherit` sayılmaz. */

@@ -85,7 +85,7 @@
   gap: var(--space-6);
   min-height: 2.9rem;
   padding: 0 var(--space-6);
-  border-radius: 0.8rem;
+  border-radius: var(--radius-md);
   color: var(--muted);
   font-size: var(--text-md);
   font-weight: var(--weight-bold);
@@ -103,9 +103,18 @@
   background: var(--surface-hover);
 }
 
+/* Bulunduğun yer. Eskiden yarı saydam beyaz bir zemindi ve beyaz kâğıdın
+   üstünde neredeyse görünmüyordu — "hangi sayfadayım" sorusunun cevabı
+   sayfadaki en zayıf sinyaldi. Artık markanın kendi degradesi; ikon da
+   beyaza dönüyor, yoksa mavi ikon mavi zeminde kayboluyor. */
 .app-rail-nav a[aria-current="page"] {
-  color: var(--ink);
-  background: var(--surface-nav-active);
+  color: #fff;
+  background: linear-gradient(100deg, var(--orbit-violet), var(--orbit-blue));
+  box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--orbit-blue) 65%, transparent);
+}
+
+.app-rail-nav a[aria-current="page"] > .icon {
+  color: #fff;
 }
 
 /* Hesap bölgesi ana menüden çizgiyle ayrı: ötekiler Orbit'in içeriğine,

@@ -24,7 +24,7 @@ html {
 ::-webkit-scrollbar-thumb {
   min-height: 3rem;
   border: 3px solid var(--scrollbar-track);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(180deg, var(--orbit-violet), var(--orbit-blue));
 }
 
@@ -134,7 +134,7 @@ main {
   top: 0.75rem;
   left: 0.75rem;
   padding: var(--space-6) var(--space-7);
-  border-radius: 0.7rem;
+  border-radius: var(--radius-sm);
   color: #fff;
   background: #27345f;
   font-size: var(--text-sm);

@@ -121,9 +121,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
      sayfa ve Hesabım ile aynı ölçüde. Burada yalnız sütunların iç dizilimi
      var. */
   .dashboard-main, .dashboard-rail, .dashboard-stack, .dashboard-list { display: grid; gap: var(--space-8); min-width: 0; }
-  .dashboard-card { min-width: 0; padding: var(--space-10); border: 1px solid rgba(218, 223, 234, .95); border-radius: 1rem; background: rgba(255,255,255,.94); box-shadow: 0 6px 20px rgba(31,42,70,.055); }
+  .dashboard-card { min-width: 0; padding: var(--space-10); border: 1px solid rgba(218, 223, 234, .95); border-radius: var(--radius-lg); background: rgba(255,255,255,.94); box-shadow: 0 6px 20px rgba(31,42,70,.055); }
   .dashboard-card h2 { margin: 0 0 var(--space-8); font-size: var(--text-base); letter-spacing: var(--tracking-tight); }
-  .dashboard-note { margin: 0; padding: var(--space-6) var(--space-6); border: 1px solid color-mix(in srgb,var(--orbit-blue) 24%,var(--line)); border-radius: .7rem; background: color-mix(in srgb,var(--orbit-blue) 6%,var(--surface)); color: var(--muted); font-size: var(--text-sm); line-height: var(--leading-normal); }
+  .dashboard-note { margin: 0; padding: var(--space-6) var(--space-6); border: 1px solid color-mix(in srgb,var(--orbit-blue) 24%,var(--line)); border-radius: var(--radius-sm); background: color-mix(in srgb,var(--orbit-blue) 6%,var(--surface)); color: var(--muted); font-size: var(--text-sm); line-height: var(--leading-normal); }
   .dashboard-note strong { color: var(--text); }
   .dashboard-note a { color: var(--orbit-blue); }
   .dashboard-note.is-warning { border-color: color-mix(in srgb,var(--warning-ink) 38%,var(--line)); background: var(--warning-surface); color: var(--warning-ink); }
@@ -140,15 +140,15 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   .between h2 { margin: 0; }
   .dashboard-field { display: grid; gap: var(--space-3); }
   .dashboard-field span { color: var(--muted); font-size: var(--text-xs); font-weight: var(--weight-semibold); }
-  .dashboard-page input:not([type="checkbox"]), .dashboard-page textarea, .dashboard-page select, dialog textarea { width: 100%; padding: var(--space-6) var(--space-6); border: 1px solid var(--line-dark); border-radius: .72rem; color: var(--ink); background: #f7f8fb; font: inherit; }
+  .dashboard-page input:not([type="checkbox"]), .dashboard-page textarea, .dashboard-page select, dialog textarea { width: 100%; padding: var(--space-6) var(--space-6); border: 1px solid var(--line-dark); border-radius: var(--radius-sm); color: var(--ink); background: #f7f8fb; font: inherit; }
   .dashboard-page textarea, dialog textarea { min-height: 110px; resize: vertical; }
   .dashboard-page input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: var(--orbit-blue); }
   .dashboard-page input:focus, .dashboard-page textarea:focus, .dashboard-page select:focus, dialog textarea:focus { outline: 0; border-color: color-mix(in srgb,var(--orbit-blue) 48%,var(--line)); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb,var(--orbit-blue) 10%,transparent); }
-  .dashboard-button { min-height: 2.6rem; display: inline-flex; align-items: center; justify-content: center; padding: var(--space-5) var(--space-8); border: 1px solid var(--line-dark); border-radius: .72rem; font: inherit; font-size: var(--text-sm); font-weight: var(--weight-bold); text-decoration: none; cursor: pointer; }
+  .dashboard-button { min-height: 2.6rem; display: inline-flex; align-items: center; justify-content: center; padding: var(--space-5) var(--space-8); border: 1px solid var(--line-dark); border-radius: var(--radius-sm); font: inherit; font-size: var(--text-sm); font-weight: var(--weight-bold); text-decoration: none; cursor: pointer; }
   .dashboard-button.primary { color: #fff; border-color: #5267d9; background: linear-gradient(135deg,#5267d9,#745fe0); box-shadow: 0 5px 14px rgba(82,103,217,.14); }
   .dashboard-button.secondary { color: var(--muted); background: #f7f8fb; }
   .dashboard-button.danger { color: #a42f46; border-color: #e4aeba; background: #fff1f3; }
-  .dashboard-item { padding: var(--space-7) var(--space-7); border: 1px solid var(--line); border-radius: .82rem; background: #f7f8fb; }
+  .dashboard-item { padding: var(--space-7) var(--space-7); border: 1px solid var(--line); border-radius: var(--radius-md); background: #f7f8fb; }
   .dashboard-item strong { display: block; margin-bottom: var(--space-1); }
   .dashboard-item .dashboard-button { margin-top: var(--space-5); }
   .dashboard-item.is-error { border-color: #edbdc5; background: #fff1f3; }
@@ -156,20 +156,20 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   /* Yedek durumu: önce tek cümlelik hâl, sonra yalnız başarısızlar. Kart
      bir dönem otuz dört özdeş satırdı ve içindeki tek başarısızlık
      diğerleriyle aynı ağırlıkta görünüyordu. */
-  .backup-summary { padding: var(--space-7) var(--space-8); border: 1px solid #adddc9; border-radius: .82rem; background: #edf9f4; }
+  .backup-summary { padding: var(--space-7) var(--space-8); border: 1px solid #adddc9; border-radius: var(--radius-md); background: #edf9f4; }
   .backup-summary strong { display: block; margin-bottom: var(--space-2); color: #116947; }
   .backup-summary.is-failing { border-color: #edbdc5; background: #fff1f3; }
   .backup-summary.is-failing strong { color: #9c2f43; }
   .meta, .muted { color: var(--muted); font-size: var(--text-sm); }
-  .dashboard-notice { margin: 0 0 var(--space-8); padding: var(--space-6) var(--space-7); border: 1px solid var(--line); border-radius: .8rem; color: var(--muted); background: var(--surface); }
+  .dashboard-notice { margin: 0 0 var(--space-8); padding: var(--space-6) var(--space-7); border: 1px solid var(--line); border-radius: var(--radius-md); color: var(--muted); background: var(--surface); }
   .dashboard-notice.error { color: #9c2f43; border-color: #edbdc5; background: #fff1f3; }
   .dashboard-notice.ok { color: #116947; border-color: #adddc9; background: #edf9f4; }
   .hidden { display: none !important; }
-  dialog { width: min(720px,calc(100% - 30px)); padding: var(--space-12); border: 1px solid var(--line); border-radius: 1rem; color: var(--ink); background: var(--surface); box-shadow: 0 24px 80px rgba(22,28,50,.25); }
+  dialog { width: min(720px,calc(100% - 30px)); padding: var(--space-12); border: 1px solid var(--line); border-radius: var(--radius-lg); color: var(--ink); background: var(--surface); box-shadow: 0 24px 80px rgba(22,28,50,.25); }
   dialog::backdrop { background: rgba(15,20,34,.55); backdrop-filter: blur(3px); }
   .diff { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); }
-  .diff pre { min-height: 100px; margin: 0; padding: var(--space-6); border: 1px solid var(--line); border-radius: .75rem; background: #f7f8fb; white-space: pre-wrap; }
-  .review-media { display: block; max-width: 100%; max-height: 360px; margin: var(--space-6) 0; border: 1px solid var(--line); border-radius: .8rem; }
+  .diff pre { min-height: 100px; margin: 0; padding: var(--space-6); border: 1px solid var(--line); border-radius: var(--radius-sm); background: #f7f8fb; white-space: pre-wrap; }
+  .review-media { display: block; max-width: 100%; max-height: 360px; margin: var(--space-6) 0; border: 1px solid var(--line); border-radius: var(--radius-md); }
   html[data-theme="dark"] .dashboard-card { border-color: var(--line); background: var(--surface); }
   html[data-theme="dark"] .dashboard-page input:not([type="checkbox"]), html[data-theme="dark"] .dashboard-page textarea, html[data-theme="dark"] .dashboard-page select, html[data-theme="dark"] .dashboard-item, html[data-theme="dark"] .diff pre, html[data-theme="dark"] dialog textarea { border-color: var(--line); background: #111724; }
   html[data-theme="dark"] .dashboard-button.secondary { color: var(--muted); border-color: var(--line); background: #171e2c; }

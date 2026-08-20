@@ -712,10 +712,34 @@ if (errors.length === 0) {
           const dialog = document.querySelector('[data-announcement-sheet]');
           document.querySelector('[data-announcement-trigger]').click();
           const first = dialog.getBoundingClientRect().bottom;
-          await new Promise((resolve) => { setTimeout(resolve, 500); });
+
+          /* Bekleme SABİT UYKU DEĞİL, kare kare izleme.
+           *
+           * Bir tur boyunca burada `setTimeout(500)` vardı ve iddia
+           * "500ms sonra oturmuş olmalı" diyordu. O iddia geçişi değil
+           * MAKİNENİN O ANKİ YÜKÜNÜ ölçüyor: bu dosya dokuz viewport'u
+           * `Promise.all` ile aynı anda koşturuyor ve görünür olmayan
+           * sekmelerde tarayıcı kare döngüsünü kısıyor — kısılan sayfada
+           * 240ms'lik geçiş duvar saatinde 500ms'ye sığmayabiliyor.
+           * Sonuç: tasarım turunda dört viewport'ta birden kırmızı, ardından
+           * hiçbir şey değişmeden iki koşumda birden yeşil.
+           *
+           * `requestAnimationFrame` ile dönmek hem geçişin İLERLEMESİNİ
+           * bekliyor hem de döngüyü fiilen çeviriyor. Tavan kare sayısına
+           * bağlı, duvar saatine değil; ölçülen değer 240ms'lik geçişte
+           * dokuz eşzamanlı bağlamda 218ms çıkıyor. */
+          let settled = null;
+          for (let frame = 0; frame < 240; frame += 1) {
+            await new Promise((resolve) => { requestAnimationFrame(resolve); });
+            if (Math.abs(dialog.getBoundingClientRect().bottom - window.innerHeight) <= 1) {
+              settled = dialog.getBoundingClientRect().bottom;
+              break;
+            }
+          }
           return {
             first,
-            settled: dialog.getBoundingClientRect().bottom,
+            settled: settled === null ? dialog.getBoundingClientRect().bottom : settled,
+            oturdu: settled !== null,
             duration: getComputedStyle(dialog).transitionDuration,
             height: window.innerHeight,
           };
@@ -731,8 +755,8 @@ if (errors.length === 0) {
           `${label}: duyuru sayfası ekranın altından kayarak gelmiyor (ilk alt ${Math.round(motion.first)}, ekran ${motion.height}).`,
         );
         check(
-          Math.abs(motion.settled - motion.height) <= 1,
-          `${label}: duyuru sayfası ekranın altına yapışmadı (${Math.round(motion.settled)}/${motion.height}).`,
+          motion.oturdu && Math.abs(motion.settled - motion.height) <= 1,
+          `${label}: duyuru sayfası 240 kare içinde ekranın altına yapışmadı (${Math.round(motion.settled)}/${motion.height}).`,
         );
         await page.keyboard.press('Escape');
         check(!(await sheetDialog.evaluate((el) => el.open)), `${label}: duyuru sayfası Escape ile kapanmadı.`);

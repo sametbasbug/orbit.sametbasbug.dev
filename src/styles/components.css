@@ -38,7 +38,7 @@
   gap: var(--space-5);
   padding: 0 var(--space-6);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: var(--faint);
   background: var(--surface-control);
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
@@ -71,7 +71,7 @@
   display: grid;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 0.42rem;
+  border-radius: var(--radius-xs);
   color: var(--faint);
   background: var(--surface);
   font-family: inherit;
@@ -90,7 +90,7 @@
   justify-content: center;
   gap: var(--space-3);
   padding: 0 var(--space-7);
-  border-radius: 0.85rem;
+  border-radius: var(--radius-md);
   font-size: var(--text-sm);
   transition: color 160ms ease, background 160ms ease, transform 160ms ease;
 }
@@ -119,7 +119,7 @@
   gap: var(--space-4);
   padding: var(--space-4) var(--space-6);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: var(--muted);
   background: var(--surface-control);
   font-size: var(--text-xs);
@@ -143,7 +143,7 @@
   margin-top: var(--space-10);
   padding: var(--space-8);
   border: 1px solid rgba(139, 109, 232, 0.15);
-  border-radius: 0.9rem;
+  border-radius: var(--radius-md);
   background: rgba(242, 239, 255, 0.72);
 }
 
@@ -159,31 +159,77 @@
   display: grid;
 }
 
-/* Kayıt: kap değil. Solda avatar sütunu, sağda kaydın tamamı, kayıtlar
-   arasında hairline. Yükselti, köşe yarıçapı ve zemin yok — sayfanın kendi
-   zemini taşıyor.
-
-   Sol accent çizgisi ajanın profil renginden gelir ve artık kaydın TAMAMI
-   boyunca iner: eski yerleşimde çizgi kimlik rayının yüksekliği kadardı,
-   yani uzun gövdeli kayıtlarda ilk birkaç satırda bitiyordu. Ham accent
-   değil kelepçelenmiş türev — ham hâli açık zeminde 1.7–2.9 kontrast verir. */
+/* Kayıt: kap.
+ *
+ * Bir tur boyunca kasıtlı olarak kapsızdı — "sayfanın kendi zemini taşıyor"
+ * deniyordu ve tutarlıydı. Bedeli ölçüldüğünde görüldü: ana sayfada boyanan
+ * 35 yüzeyin 28'i saf beyazdı, içerikte tek bir yükselti yoktu ve sayfa tek
+ * düzlem olarak okunuyordu. Kayıt platformun en çok bakılan nesnesi; ayırt
+ * edilebilir olması gerekiyor.
+ *
+ * Kimlik rengi üç yerden geliyor ve üçü de kelepçelenmiş türev, ham accent
+ * değil (ham hâli açık zeminde 1.7–2.9 kontrast verir): sol omurga, sol üst
+ * köşeden inen yıkama ve hover kenarı. Yıkama radial ve %10'da — bant hâlinde
+ * dolgu renk, uzun akışta her kayıt ayrı renkte olduğu için alacalı görünüyor.
+ *
+ * Omurga `border-left` değil `::before`, çünkü yarıçap gelince kenarlık da
+ * yuvarlanıyor ve renkli kalın bir yay bırakıyordu. Konumlanmış sözde eleman
+ * düz iniyor ve dikey olarak içeriden başlıyor. */
 .record {
   position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--space-6);
-  padding: var(--space-12) 0 var(--space-10) var(--space-8);
-  border-bottom: 1px solid var(--line);
-  border-left: 2px solid light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
+  gap: var(--space-7);
+  margin-bottom: var(--space-8);
+  padding: var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(120% 90% at 0% 0%,
+      color-mix(in srgb, light-dark(var(--agent-accent-strong), var(--agent-accent-soft)) 10%, transparent),
+      transparent 58%),
+    var(--surface);
+  box-shadow: var(--lift-2);
+  transition: box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease;
 }
 
-.record:first-child {
-  border-top: 1px solid var(--line-dark);
+.record::before {
+  content: "";
+  /* Tıklama yüzeyinin ÜSTÜNDE ama tıklamayı yemeyecek şekilde: z-index'siz
+     bırakılırsa .record-hit onu örtüyor. */
+  position: absolute;
+  z-index: 2;
+  top: var(--space-10);
+  bottom: var(--space-10);
+  left: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg,
+    light-dark(var(--agent-accent-strong), var(--agent-accent-soft)),
+    color-mix(in srgb, light-dark(var(--agent-accent-strong), var(--agent-accent-soft)) 22%, transparent));
+  pointer-events: none;
 }
 
-.record.standalone {
-  border-top: 0;
+.record:hover {
+  border-color: color-mix(in srgb, light-dark(var(--agent-accent-strong), var(--agent-accent-soft)) 42%, var(--line));
+  box-shadow: var(--lift-3);
+  transform: translateY(-1px);
 }
+
+/* Sabit kayıt: omurga kalınlaşır. Eskiden kenarlık genişliğiydi. */
+.record.pinned::before {
+  width: 5px;
+}
+
+/* Tek başına duran kayıt (gönderi sayfası) tıklanabilir değil: `.record-hit`
+   basılmıyor. O yüzden hover'da kalkmaz da — kalkan bir yüzey tıklanabilir
+   olduğunu söyler ve burada söylediği şey yalan olurdu. */
+.record.standalone:hover {
+  border-color: var(--line);
+  box-shadow: var(--lift-2);
+  transform: none;
+}
+
 
 /* Tıklama yüzeyi metnin ALTINDA: kayıt boşluklarından açılır, gövde metni
    seçilebilir kalır. Ters sıralama akıştaki metni seçilemez yapıyordu. */
@@ -191,6 +237,9 @@
   position: absolute;
   z-index: 0;
   inset: 0;
+  /* Kart yuvarlandığından beri gerekli: kare bir odak halkası kartın
+     köşelerinden taşıyordu. */
+  border-radius: inherit;
 }
 
 .record-hit:focus-visible {
@@ -210,19 +259,20 @@
   align-self: start;
 }
 
-.record.pinned {
-  border-left-width: 4px;
-}
 
 /* Kimlik başlığı: tek yatay satır. Dar ekranda sarmasına izin veriliyor,
    ama sarma noktası @handle'dan sonra olsun diye handle ile tür etiketi
-   arasında kırılma yok. */
+   arasında kırılma yok.
+
+   Hizalama baseline değil center: tür etiketi hap hâline gelince kendi
+   dolgusu kadar yükseldi ve ortak taban çizgisi rozeti handle'ın altına
+   kaydırıyordu. */
 .record-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
   color: var(--faint);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
@@ -238,9 +288,9 @@
 }
 
 .record-agent strong {
-  font-size: var(--text-md);
+  font-size: var(--text-lg);
   font-weight: var(--weight-extrabold);
-  letter-spacing: var(--tracking-none);
+  letter-spacing: var(--tracking-tight);
 }
 
 .record-agent:hover strong {
@@ -249,9 +299,16 @@
   text-underline-offset: 0.18rem;
 }
 
+/* Tür etiketi. Hap, ama DOLGU değil ton: accent'e dolu bir rozet denendi ve
+   akışta her kayıt ayrı renkte bağırıyordu — üstelik akıştaki kayıtların
+   neredeyse hepsi zaten "gönderi", yani en yüksek sesle söylenen şey en az
+   bilgi taşıyanıydı. Ton hâli kimliği veriyor, sesi vermiyor. */
 .record-kind {
+  padding: var(--space-1) var(--space-5);
+  border-radius: var(--radius-pill);
   color: light-dark(var(--agent-accent-strong), var(--agent-accent-soft));
-  font-size: var(--text-2xs);
+  background: color-mix(in srgb, light-dark(var(--agent-accent-strong), var(--agent-accent-soft)) 13%, transparent);
+  font-size: var(--text-3xs);
   font-weight: var(--weight-extrabold);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
@@ -309,7 +366,7 @@
   gap: var(--space-2);
   padding: var(--space-1) var(--space-4);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-control);
 }
 
@@ -328,13 +385,19 @@
 }
 
 /* Aksiyon çubuğu: kaydın altında, gövdeyle aynı sütunda. Sol hizalı ve
-   seyrek — sosyal akışın tanıdık kalıbı bu. */
+   seyrek — sosyal akışın tanıdık kalıbı bu.
+
+   Kart olduktan sonra kendi bölgesine çekildi: bir hairline gövdeyi metadan
+   ayırıyor. Kapsız yerleşimde bu çizgi gereksizdi, çünkü kaydın alt sınırı
+   zaten bir çizgiydi. */
 .record-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-6);
-  margin-top: var(--space-8);
+  margin-top: var(--space-10);
+  padding-top: var(--space-7);
+  border-top: 1px solid var(--line);
 }
 
 .agent-avatar {
@@ -409,8 +472,13 @@
   height: 7.4rem;
 }
 
+/* Gövde ekrandaki en iri yazı. Ölçüldüğünde sayfadaki yazının yarısından
+   fazlası 12.6px kalın etiketti (76 kullanım), gövde ise 16px'te kalıyordu —
+   sayfa içerik gibi değil kontrol paneli gibi okunuyordu. */
 .record-body p {
   margin: 0;
+  font-size: var(--text-lg);
+  line-height: var(--leading-relaxed);
 }
 
 .record-body p + p {
@@ -468,7 +536,7 @@
 
 .record-body code {
   padding: var(--space-1) var(--space-2);
-  border-radius: 0.35rem;
+  border-radius: var(--radius-xs);
   background: var(--surface-sunken);
   font-family: var(--mono);
   font-size: var(--text-md);
@@ -479,7 +547,7 @@
   margin: var(--space-8) 0;
   padding: var(--space-6);
   border: 1px solid var(--line);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-sm);
   background: var(--surface-sunken);
 }
 
@@ -499,7 +567,7 @@
 
 .record-body img {
   max-width: 100%;
-  border-radius: 0.6rem;
+  border-radius: var(--radius-sm);
 }
 
 /* Gövdenin ilk ve son çocuğu kendi dış boşluğunu kaydın hizasına taşımasın. */
@@ -519,7 +587,7 @@
   overflow: hidden;
   margin: var(--space-12) 0 0;
   border: 1px solid var(--line);
-  border-radius: 0.95rem;
+  border-radius: var(--radius-md);
   background: var(--surface-sunken);
 }
 
@@ -585,7 +653,7 @@
   gap: var(--space-3);
   padding: 0 var(--space-4);
   border: 0;
-  border-radius: 0.65rem;
+  border-radius: var(--radius-sm);
   color: var(--faint);
   background: transparent;
   font-size: var(--text-xs);
@@ -615,7 +683,7 @@
   margin-left: auto;
   padding: 0;
   border: 0;
-  border-radius: 0.65rem;
+  border-radius: var(--radius-sm);
   color: var(--faint);
   background: transparent;
   opacity: 0.55;
@@ -657,7 +725,7 @@
   margin-block: var(--space-6) var(--space-12);
   padding: var(--space-10) var(--space-12);
   border: 1px solid color-mix(in srgb, var(--warning-ink) 34%, transparent);
-  border-radius: 0.9rem;
+  border-radius: var(--radius-md);
   background: var(--warning-surface);
   color: var(--warning-ink);
 }
@@ -684,7 +752,7 @@
 .agent-moderation-button {
   padding: var(--space-3) var(--space-8);
   border: 1px solid color-mix(in srgb, var(--danger-ink) 32%, transparent);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-sm);
   font: inherit;
   font-size: var(--text-xs);
   color: var(--danger-ink);
@@ -715,7 +783,7 @@
   max-height: calc(100dvh - 2rem);
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 1.15rem;
+  border-radius: var(--radius-lg);
   color: var(--ink);
   background: var(--surface);
   box-shadow: 0 28px 90px rgba(18, 24, 42, 0.28);
@@ -785,7 +853,7 @@
   gap: var(--space-2);
   padding: var(--space-7) var(--space-7);
   border: 1px solid var(--line);
-  border-radius: 0.8rem;
+  border-radius: var(--radius-md);
   background: var(--surface-sunken);
 }
 
@@ -819,7 +887,7 @@
   min-height: 5.7rem;
   padding: var(--space-6) var(--space-6);
   border: 1px solid light-dark(var(--line-dark), var(--line));
-  border-radius: 0.75rem;
+  border-radius: var(--radius-sm);
   color: var(--ink);
   background: var(--surface-sunken);
   font: inherit;
@@ -856,7 +924,7 @@
 .record-moderation-actions button {
   min-height: 2.65rem;
   padding: var(--space-5) var(--space-8);
-  border-radius: 0.72rem;
+  border-radius: var(--radius-sm);
   font: inherit;
   font-size: var(--text-sm);
   font-weight: var(--weight-extrabold);
@@ -893,7 +961,7 @@
   max-width: min(24rem, calc(100% - 2rem));
   padding: var(--space-6) var(--space-7);
   border: 1px solid var(--success-line);
-  border-radius: 0.8rem;
+  border-radius: var(--radius-md);
   color: var(--success-ink);
   background: var(--success-surface);
   box-shadow: 0 14px 40px rgba(18, 36, 31, 0.16);
@@ -911,14 +979,20 @@
   gap: var(--space-8);
   padding: var(--space-10);
   border: 1px solid var(--line);
-  border-radius: 1.25rem;
+  border-radius: var(--radius-lg);
   background: linear-gradient(160deg, color-mix(in srgb, var(--agent-accent) 5%, var(--surface)), var(--surface) 62%);
+  box-shadow: var(--lift-2);
   text-decoration: none;
-  transition: border-color 160ms ease, background 160ms ease;
+  transition: box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease;
 }
 
+/* Dizin kartı ve akış kaydı aynı malzemeden: ikisi de tıklanabilir kart,
+   ikisi de bir ajanın kimliğini taşıyor. Ayrı yükselti dilleri konuşmaları
+   için bir sebep yok — yarıçap da --radius-xl'den kart rolüne indi. */
 .agent-card:hover {
   border-color: color-mix(in srgb, var(--agent-accent) 40%, var(--line));
+  box-shadow: var(--lift-3);
+  transform: translateY(-1px);
 }
 
 .agent-card:hover .agent-card-identity strong {
@@ -1013,7 +1087,7 @@
   overflow: hidden;
   display: grid;
   place-items: center;
-  border-radius: 0.82rem;
+  border-radius: var(--radius-md);
   background: linear-gradient(145deg, #536bdf, #8f6de6);
   box-shadow: 0 8px 20px rgba(82, 103, 217, 0.24);
 }
@@ -1238,7 +1312,7 @@
   min-height: 2rem;
   padding: 0 var(--space-5);
   border: 0;
-  border-radius: 0.6rem;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   background: transparent;
   font-size: var(--text-2xs);
@@ -1282,7 +1356,7 @@
 .footer-brand-lockup img {
   width: 3.25rem;
   height: 3.25rem;
-  border-radius: 0.95rem;
+  border-radius: var(--radius-md);
   box-shadow: 0 10px 24px rgba(87, 76, 183, 0.2);
 }
 
@@ -1422,7 +1496,7 @@
   width: 0.5rem;
   height: 0.5rem;
   border: 2px solid var(--surface);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--danger-ink);
 }
 
@@ -1441,7 +1515,7 @@
   position: fixed;
   inset: auto 0 0;
   border: 0;
-  border-radius: 1.2rem 1.2rem 0 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   color: var(--ink);
   background: var(--surface);
   box-shadow: 0 -12px 40px rgba(31, 40, 72, 0.22);
@@ -1518,7 +1592,7 @@
   display: grid;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: var(--muted);
   background: transparent;
   cursor: pointer;

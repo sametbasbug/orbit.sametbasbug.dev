@@ -202,6 +202,46 @@ export class D1SiteAuthorizationRepository implements SiteAuthorizationRepositor
     return clientFromSql(row, uris.results.map((entry) => entry.redirect_uri));
   }
 
+  async createClient(
+    input: Parameters<SiteAuthorizationRepository['createClient']>[0],
+  ): Promise<SiteClientView | null> {
+    /* Var olanı EZMİYORUZ. Aynı `client_id` ikinci kez kaydedilirse mevcut
+     * sitenin sırrı sessizce geçersizleşir ve o site bir daha giriş
+     * yaptıramaz — sebebi de hiçbir yerde görünmez. */
+    const existing = await this.#db
+      .prepare('SELECT 1 FROM oauth_clients WHERE client_id = ?')
+      .bind(input.clientId)
+      .first();
+    if (existing) return null;
+
+    /* İstemci ve yönlendirme adresleri TEK toplu yazımda: adressiz bir
+     * istemci satırı, hiçbir girişi tamamlayamayacak ölü bir kayıt olurdu. */
+    await this.#db.batch([
+      this.#db.prepare(`
+        INSERT INTO oauth_clients (
+          id, client_id, secret_digest, hash_version, label, site_url,
+          allowed_scopes, environment, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+      `).bind(
+        input.id,
+        input.clientId,
+        input.secretDigest,
+        input.hashVersion,
+        input.label,
+        input.siteUrl,
+        input.allowedScopes.join(' '),
+        input.environment,
+        input.createdAt,
+      ),
+      ...input.redirectUris.map((entry) => this.#db.prepare(`
+        INSERT INTO oauth_client_redirect_uris (id, client_id, redirect_uri, created_at)
+        VALUES (?, ?, ?, ?)
+      `).bind(entry.id, input.id, entry.uri, input.createdAt)),
+    ]);
+
+    return this.getClientByClientId(input.clientId);
+  }
+
   async ensureSubject(
     input: Parameters<SiteAuthorizationRepository['ensureSubject']>[0],
   ): Promise<string> {

@@ -9,17 +9,22 @@
  * Equinox sitesini Orbit'e bağlayacaksak bu adımın tekrarlanabilir olması
  * gerekiyor.
  *
- * NEDEN SQL BASIYOR, VERİTABANINA YAZMIYOR: yazmak için üretim
- * kimlik bilgisi gerekirdi. Betik yalnız metin üretiyor; nereye
- * uygulanacağına operatör karar veriyor ve komutu kendi gözüyle görüyor.
+ * ÜRETİM İÇİN BU BETİK DEĞİL, `POST /v1/site-clients` KULLANILIYOR: özet
+ * peper'la hesaplanıyor ve peper bir Worker sırrı, geri okunamıyor. Uç onu
+ * Worker'ın içinde hesaplıyor, yani peper hiç dışarı çıkmıyor.
+ *
+ * Betik YEREL GELİŞTİRME için duruyor: elinde çalışan bir Orbit ve
+ * `platform_owner` oturumu yokken yerel D1'e istemci eklemenin kısa yolu.
+ * Doğrulama ve özet hesabı ucun kullandığı modülden geliyor, yani iki yol
+ * aynı kuralları uyguluyor.
  *
  * SIRLAR STDIN'DEN GELİR, ARGÜMANDAN DEĞİL. Komut satırı argümanları
  * `ps` çıktısında ve kabuk geçmişinde görünür. Betik ne peper'ı ne de
  * istemci sırrını EKRANA BASAR; çıktıda yalnız özet vardır.
  *
- * Kullanım:
+ * Kullanım (tsx ile — düz `node` uzantısız TS import'unu çözemiyor):
  *   printf '%s\n%s\n' "$PEPPER" "$CLIENT_SECRET" \
- *     | node scripts/orbit-site-client-register.mjs ayar.json
+ *     | npm run site-client:sql -- ayar.json
  *
  * `ayar.json` biçimi:
  *   {
@@ -34,20 +39,17 @@
 
 import { readFileSync } from 'node:fs';
 
-/* Orbit'in `TOKEN_HASH_VERSION` sabitiyle aynı olmak ZORUNDA. Ayrıştığı gün
- * satır yazılır ama istemci kimlik doğrulaması sessizce reddedilir. */
-const TOKEN_HASH_VERSION = 1;
+/* Doğrulama ve özet ucun kullandığı modülden. İkinci bir kopya olsaydı biri
+ * gevşetildiğinde hangi kuralın geçerli olduğu, isteğin hangi yoldan geldiğine
+ * bağlı hale gelirdi. */
+import {
+  MIN_CLIENT_SECRET_LENGTH,
+  normalizeSiteClientDeclaration,
+  siteClientSecretDigest,
+} from '../src/server/identity/site-client-registration.ts';
 
-/* `site-authorization-scopes.ts` ile aynı liste ve aynı SIRA. Sıra önemli:
- * kapsamlar veritabanına kanonik sırayla, boşlukla ayrılmış tek metin olarak
- * yazılıyor; 'profile openid' ile 'openid profile' iki farklı satır olurdu. */
-const SITE_AUTHORIZATION_SCOPES = [
-  'openid',
-  'profile',
-  'email',
-  'orbit.graph.read',
-  'orbit.posts.read',
-];
+/* `TOKEN_HASH_VERSION` ile aynı olmak zorunda. */
+const TOKEN_HASH_VERSION = 1;
 
 function base64Url(bytes) {
   let binary = '';
@@ -55,93 +57,11 @@ function base64Url(bytes) {
   return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '');
 }
 
-/* api.ts:4153 ile birebir aynı: HMAC-SHA256, base64url, dolgusuz, ve aynı
- * alan öneki. Önek olmadan aynı peper'la üretilen başka bir özet bu alanda
- * geçerli olurdu. */
-export async function siteClientSecretDigest(secret, pepper) {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(pepper),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const imza = await crypto.subtle.sign(
-    'HMAC',
-    key,
-    encoder.encode(`orbit:site-client-secret:v1:${secret}`),
-  );
-  return base64Url(new Uint8Array(imza));
-}
-
 /* SQL metin kaçışı. Değerler doğrulamadan geçiyor ama tek tırnak yine de
  * kaçırılıyor: doğrulamayı gevşetecek bir sonraki değişiklik burayı
  * hatırlamayabilir. */
 function q(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
-}
-
-export function ayariDogrula(ayar) {
-  const hatalar = [];
-  const { clientId, label, siteUrl, scopes, redirectUris, environment } = ayar;
-
-  if (typeof clientId !== 'string' || clientId.trim().length < 8 || clientId.length > 255) {
-    hatalar.push('clientId 8-255 karakter olmalı');
-  }
-  if (typeof label !== 'string' || label.trim().length < 1 || label.length > 120) {
-    hatalar.push('label 1-120 karakter olmalı');
-  }
-  if (environment !== 'production' && environment !== 'development') {
-    hatalar.push("environment 'production' veya 'development' olmalı");
-  }
-  if (typeof siteUrl !== 'string'
-    || !(siteUrl.startsWith('https://') || siteUrl.startsWith('http://localhost'))) {
-    hatalar.push('siteUrl https:// veya http://localhost ile başlamalı');
-  }
-
-  if (!Array.isArray(scopes) || scopes.length === 0) {
-    hatalar.push('scopes boş olamaz');
-  } else {
-    const taninmayan = scopes.filter((s) => !SITE_AUTHORIZATION_SCOPES.includes(s));
-    if (taninmayan.length > 0) hatalar.push(`tanınmayan kapsam: ${taninmayan.join(', ')}`);
-    /* `openid` zorunlu: `sub` claim'i onunla geliyor ve `sub` olmadan site
-     * kullanıcıyı tanıyamaz. */
-    if (!scopes.includes('openid')) hatalar.push("scopes 'openid' içermeli");
-    if (new Set(scopes).size !== scopes.length) hatalar.push('scopes tekrar içeriyor');
-  }
-
-  if (!Array.isArray(redirectUris) || redirectUris.length === 0) {
-    hatalar.push('redirectUris boş olamaz');
-  } else {
-    for (const uri of redirectUris) {
-      /* Tetikleyicinin (0041) reddedeceği adresi buraya kadar getirmiyoruz:
-       * hata mesajını SQLite'tan değil buradan almak daha anlaşılır. */
-      if (typeof uri !== 'string' || uri.includes('#')) {
-        hatalar.push(`redirect_uri parça (#) taşıyamaz: ${uri}`);
-        continue;
-      }
-      if (uri.length < 8 || uri.length > 500) {
-        hatalar.push(`redirect_uri 8-500 karakter olmalı: ${uri}`);
-      }
-      const yerelGelistirme = environment === 'development' && uri.startsWith('http://localhost');
-      if (!uri.startsWith('https://') && !yerelGelistirme) {
-        hatalar.push(`redirect_uri https:// olmalı (localhost yalnız development'ta): ${uri}`);
-      }
-    }
-  }
-
-  if (hatalar.length > 0) throw new Error(`ayar geçersiz:\n  - ${hatalar.join('\n  - ')}`);
-
-  /* Kanonik sıraya diziliyor; girdideki sıra yok sayılıyor. */
-  return {
-    clientId: clientId.trim(),
-    label: label.trim(),
-    siteUrl,
-    environment,
-    redirectUris,
-    scopes: SITE_AUTHORIZATION_SCOPES.filter((s) => scopes.includes(s)),
-  };
 }
 
 export function sqlUret({ ayar, ozet, satirId, yonlendirmeIdleri, simdi }) {
@@ -188,12 +108,12 @@ async function main() {
     process.exit(2);
   }
   /* Zayıf bir istemci sırrı, güçlü bir imzayı anlamsız kılar. */
-  if (istemciSirri.length < 32) {
-    console.error('istemci sırrı en az 32 karakter olmalı (öneri: openssl rand -base64 48)');
+  if (istemciSirri.length < MIN_CLIENT_SECRET_LENGTH) {
+    console.error(`istemci sırrı en az ${MIN_CLIENT_SECRET_LENGTH} karakter olmalı (öneri: openssl rand -base64 48)`);
     process.exit(2);
   }
 
-  const ayar = ayariDogrula(JSON.parse(readFileSync(yol, 'utf-8')));
+  const ayar = normalizeSiteClientDeclaration(JSON.parse(readFileSync(yol, 'utf-8')));
   const ozet = await siteClientSecretDigest(istemciSirri, pepper);
 
   console.log(sqlUret({

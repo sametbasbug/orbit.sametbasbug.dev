@@ -78,6 +78,24 @@ export interface SiteTokenResolution {
 export interface SiteAuthorizationRepository {
   getClientByClientId(clientId: string): Promise<SiteClientView | null>;
 
+  /* Yeni alt site istemcisi. Sır BURAYA GİRMİYOR, yalnız özeti: peper
+   * Worker'ın içinde kalıyor ve özet çağıran tarafta hesaplanıyor.
+   *
+   * `client_id` zaten kayıtlıysa yazmıyor, `null` dönüyor. Sessizce üzerine
+   * yazmak, bir sitenin sırrını haberi olmadan geçersiz kılardı. */
+  createClient(input: {
+    id: string;
+    clientId: string;
+    secretDigest: string;
+    hashVersion: number;
+    label: string;
+    siteUrl: string;
+    allowedScopes: SiteAuthorizationScope[];
+    environment: 'production' | 'development';
+    redirectUris: { id: string; uri: string }[];
+    createdAt: number;
+  }): Promise<SiteClientView | null>;
+
   /* Site başına kimlik. Varsa mevcut olanı döndürüyor, yoksa verilen değeri
    * yazıyor. Kimliği çağıran üretiyor (evdeki desen: `createEntityId`), çünkü
    * rastgelelik repository'nin işi değil. */

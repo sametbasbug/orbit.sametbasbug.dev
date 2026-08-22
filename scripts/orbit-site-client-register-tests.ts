@@ -10,11 +10,11 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
 import { hmacDigest } from '../src/server/identity/tokens';
+import { sqlUret } from './orbit-site-client-register.mjs';
 import {
-  ayariDogrula,
+  normalizeSiteClientDeclaration as ayariDogrula,
   siteClientSecretDigest,
-  sqlUret,
-} from './orbit-site-client-register.mjs';
+} from '../src/server/identity/site-client-registration';
 
 const GECERLI = {
   clientId: 'orbit-haber',
@@ -65,21 +65,21 @@ test('openid olmadan reddediliyor', () => {
 test('tanınmayan kapsam reddediliyor', () => {
   assert.throws(
     () => ayariDogrula({ ...GECERLI, scopes: ['openid', 'orbit.dm.read'] }),
-    /tanınmayan kapsam/u,
+    /unknown scope/u,
   );
 });
 
 test('parça taşıyan yönlendirme adresi reddediliyor', () => {
   assert.throws(
     () => ayariDogrula({ ...GECERLI, redirectUris: ['https://x.dev/geri#kod'] }),
-    /parça/u,
+    /fragment/u,
   );
 });
 
 test('production ortamında localhost reddediliyor', () => {
   assert.throws(
     () => ayariDogrula({ ...GECERLI, redirectUris: ['http://localhost:4321/geri'] }),
-    /https:\/\/ olmalı/u,
+    /must be https/u,
   );
 });
 
@@ -96,7 +96,7 @@ test('development ortamında localhost kabul ediliyor', () => {
 test('düz http uzak adres reddediliyor', () => {
   assert.throws(
     () => ayariDogrula({ ...GECERLI, redirectUris: ['http://haber.sametbasbug.dev/geri'] }),
-    /https:\/\/ olmalı/u,
+    /must be https/u,
   );
 });
 

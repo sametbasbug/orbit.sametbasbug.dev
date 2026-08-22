@@ -25,6 +25,7 @@ import {
   SITE_REFRESH_TOKEN_TTL_MS,
   SITE_RETURN_COOKIE,
   SITE_RETURN_TTL_MS,
+  TOKEN_HASH_VERSION,
 } from '../identity/constants';
 import { assertIdentityBindings, openRegistrationEnabled, type OrbitBindings } from '../identity/bindings';
 /* Onayın sürümü, yasal metinlerin yürürlük tarihi. Sayfada yazan tarih ile
@@ -90,6 +91,12 @@ import {
   parseOAuthCookie,
   parseOAuthState,
 } from '../identity/oauth';
+import {
+  MIN_CLIENT_SECRET_LENGTH,
+  normalizeSiteClientDeclaration,
+  SiteClientDeclarationError,
+  siteClientSecretDigest,
+} from '../identity/site-client-registration';
 import {
   createMcpAuthorizationTicket,
   verifyMcpAuthorizationTicket,
@@ -4150,9 +4157,6 @@ function siteCodeRedirect(redirectUri: string, state: string, code: string): Res
   });
 }
 
-function siteClientSecretDigest(secret: string, pepper: string): Promise<string> {
-  return hmacDigest(`orbit:site-client-secret:v1:${secret}`, pepper);
-}
 
 /* İstemci kimlik doğrulaması. Basic başlığı ve gövde, ikisi de kabul —
  * kütüphaneler ikisini de kullanıyor ve keşif belgesi ikisini de ilan ediyor. */
@@ -4601,6 +4605,100 @@ async function handleSiteConsent(
     requestId,
     now,
   });
+}
+
+/* Yeni alt site istemcisi kaydı.
+ *
+ * 0041 dinamik kaydı bilerek kapattı: kendi kendine kaydolabilen bir istemci
+ * yüzeyi, onay ekranında rastgele bir ismin görünmesine izin vermek demekti.
+ * Bu uç o kararı bozmuyor — kayıt hâlâ operatör eliyle oluyor, yalnız artık
+ * TEKRARLANABİLİR bir yolu var. Öncesinde tek yol elle SQL yazmaktı ve
+ * canlıdaki tek satırın nasıl girildiği hiçbir yerde kayıtlı değildi.
+ *
+ * Neden bir uç, neden betik değil: özet peper'la hesaplanıyor ve peper bir
+ * Worker sırrı — geri okunamıyor. Dışarıda hesaplamak ya peper'ı dışarı
+ * çıkarmayı ya da onu döndürmeyi gerektirirdi; döndürmek anime'nin girişinin
+ * dayandığı istemci sırrını da geçersiz kılardı. Uç sayesinde peper hiç
+ * dışarı çıkmıyor.
+ *
+ * Kapı `platform_owner`. Bu yetki canlıda tek hesapta.
+ */
+async function handleCreateSiteClient(
+  request: Request,
+  env: OrbitBindings,
+  siteRepository: SiteAuthorizationRepository,
+  auth: AuthenticatedHuman,
+  now: number,
+): Promise<Response> {
+  requirePlatformOwner(auth);
+  const { tokenPepper } = siteAuthorizationConfig(env);
+
+  const body = await readJson(request);
+  requireExactFields(
+    body,
+    ['clientId', 'label', 'siteUrl', 'scopes', 'redirectUris', 'environment', 'clientSecret'],
+    'invalid_site_client_fields',
+  );
+
+  /* Sır ayrı tutuluyor ve bildirimin içine hiç girmiyor: bildirim
+   * günlüklenebilir bir nesne, sır değil. */
+  const clientSecret = body.clientSecret;
+  if (typeof clientSecret !== 'string' || clientSecret.length < MIN_CLIENT_SECRET_LENGTH) {
+    throw new ApiError(
+      400,
+      'invalid_site_client_secret',
+      `clientSecret must be at least ${MIN_CLIENT_SECRET_LENGTH} characters.`,
+    );
+  }
+
+  let declaration;
+  try {
+    declaration = normalizeSiteClientDeclaration(body);
+  } catch (cause) {
+    if (cause instanceof SiteClientDeclarationError) {
+      throw new ApiError(400, 'invalid_site_client', cause.problems.join('; '));
+    }
+    throw cause;
+  }
+
+  const created = await siteRepository.createClient({
+    id: createEntityId(),
+    clientId: declaration.clientId,
+    secretDigest: await siteClientSecretDigest(clientSecret, tokenPepper),
+    hashVersion: TOKEN_HASH_VERSION,
+    label: declaration.label,
+    siteUrl: declaration.siteUrl,
+    allowedScopes: declaration.scopes,
+    environment: declaration.environment,
+    redirectUris: declaration.redirectUris.map((uri) => ({ id: createEntityId(), uri })),
+    createdAt: now,
+  });
+
+  /* Zaten kayıtlı. 409, çünkü istek biçim olarak geçerli; çakışan şey
+   * dünyanın durumu. Üzerine yazmak o sitenin sırrını sessizce düşürürdü. */
+  if (!created) {
+    throw new ApiError(
+      409,
+      'site_client_exists',
+      'A client with that client_id is already registered.',
+    );
+  }
+
+  /* Yanıtta sır YOK, özet de YOK. Çağıran sırrı zaten biliyor — o değeri
+   * geri yansıtmak, onu bir yanıt günlüğüne daha yazmaktan başka bir şey
+   * yapmaz. */
+  return json({
+    siteClient: {
+      clientId: created.clientId,
+      label: created.label,
+      siteUrl: created.siteUrl,
+      allowedScopes: created.allowedScopes,
+      environment: created.environment,
+      status: created.status,
+      redirectUris: created.redirectUris,
+      createdAt: created.createdAt,
+    },
+  }, 201);
 }
 
 async function handleSiteToken(
@@ -6904,6 +7002,13 @@ export async function handleApiRequest(
       return await handleSiteConsent(
         request, env, repository, siteRepository, now, requestId,
       );
+    }
+    /* Alt site istemcisi kaydı. `platform_owner` korumalı ve CSRF kontrolü
+     * açık (authenticateHuman'ın son argümanı): tarayıcı oturumuyla çalışan
+     * bir yazma ucu, siteler arası istek sahteciliğine kapalı olmak zorunda. */
+    if (request.method === 'POST' && path === '/v1/site-clients') {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      return await handleCreateSiteClient(request, env, siteRepository, auth, now);
     }
     if (request.method === 'POST' && path === '/v1/oauth/token') {
       return await handleSiteToken(

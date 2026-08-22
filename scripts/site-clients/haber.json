@@ -1,0 +1,8 @@
+{
+  "clientId": "orbit-haber",
+  "label": "Equinox Haber",
+  "siteUrl": "https://haber.sametbasbug.dev",
+  "scopes": ["openid", "profile"],
+  "redirectUris": ["https://haber.sametbasbug.dev/giris/orbit/donus"],
+  "environment": "production"
+}

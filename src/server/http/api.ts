@@ -4121,6 +4121,160 @@ async function siteActionCatalog(
   }
 }
 
+async function connectedSiteActionCatalogForAccount(
+  siteRepository: SiteAuthorizationRepository,
+  accountId: string,
+  now: number,
+) {
+  const grants = await siteRepository.listAccountGrants(accountId);
+  const sites = [];
+  for (const grant of grants) {
+    if (grant.revokedAt !== null || grant.agentAccessAt === null) continue;
+    const client = await siteRepository.getClientById(grant.clientId);
+    if (!client || client.status !== 'active' || !client.actionsUrl) continue;
+    try {
+      const { catalog, fetchedAt } = await siteActionCatalog(client, now);
+      sites.push({
+        grantId: grant.id,
+        clientId: client.clientId,
+        label: client.label,
+        siteUrl: client.siteUrl,
+        catalogFetchedAt: fetchedAt,
+        operations: catalog.operations,
+      });
+    } catch {
+      continue;
+    }
+  }
+  return { sites };
+}
+
+async function performConnectedSiteAction(input: {
+  env: OrbitBindings;
+  siteRepository: SiteAuthorizationRepository;
+  accountId: string;
+  agentId: string;
+  agentHandle: string;
+  grantId: string;
+  body: Record<string, unknown>;
+  now: number;
+}) {
+  requireExactFields(
+    input.body,
+    ['operationId', 'input', 'idempotencyKey'],
+    'invalid_site_action_fields',
+  );
+  const operationId = mcpAuthorizationString(input.body.operationId, 'operationId', 80);
+  const idempotencyKey = mcpAuthorizationString(input.body.idempotencyKey, 'idempotencyKey', 128);
+  if (!/^[\x21-\x7E]+$/u.test(idempotencyKey)) {
+    throw new ApiError(400, 'idempotency_key_required', 'idempotencyKey must be printable ASCII.');
+  }
+
+  const grant = await input.siteRepository.getGrantById(input.grantId);
+  if (!grant || grant.accountId !== input.accountId) {
+    throw new ApiError(404, 'connected_site_not_found', 'Connected site was not found.');
+  }
+  if (grant.revokedAt !== null) {
+    throw new ApiError(409, 'connected_site_already_revoked', 'Connected site is already revoked.');
+  }
+  if (grant.agentAccessAt === null) {
+    throw new ApiError(403, 'agent_access_closed', 'The person has not opened this site to agents.');
+  }
+
+  const client = await input.siteRepository.getClientById(grant.clientId);
+  if (!client || client.status !== 'active' || !client.actionsUrl || !client.actionsEndpoint) {
+    throw new ApiError(503, 'site_catalog_unavailable', 'This site does not accept agent actions.');
+  }
+
+  let catalog: SiteActionCatalog;
+  try {
+    ({ catalog } = await siteActionCatalog(client, input.now));
+  } catch (error) {
+    throw new ApiError(
+      503,
+      'site_catalog_unavailable',
+      error instanceof Error ? error.message : 'Site action catalog is unavailable.',
+    );
+  }
+  const operation = catalog.operations.find((item) => item.operationId === operationId);
+  if (!operation) {
+    throw new ApiError(400, 'unknown_site_operation', `${operationId} is not offered by this site.`);
+  }
+  try {
+    validateOperationInput(input.body.input, operation.input);
+  } catch (error) {
+    throw new ApiError(
+      400,
+      'invalid_site_operation_input',
+      error instanceof Error ? error.message : 'Input does not match the operation schema.',
+    );
+  }
+
+  const { signingKeySecret } = siteAuthorizationConfig(input.env);
+  const key = await siteSigningKey(signingKeySecret);
+  const subject = await input.siteRepository.ensureSubject({
+    id: createEntityId(),
+    clientId: client.id,
+    accountId: grant.accountId,
+    subject: randomBase64Url(24),
+    createdAt: input.now,
+  });
+  const actionToken = await signSiteActionToken(key, {
+    issuer: siteIssuer(input.env),
+    audience: client.clientId,
+    subject,
+    actorAgentId: input.agentId,
+    actorHandle: input.agentHandle,
+    operationId,
+    tokenId: createEntityId(),
+    issuedAt: input.now,
+    expiresAt: input.now + SITE_ACTION_TOKEN_TTL_MS,
+  });
+
+  let siteResponse: Response;
+  try {
+    siteResponse = await fetch(client.actionsEndpoint, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${actionToken}`,
+        'content-type': 'application/json',
+        'idempotency-key': idempotencyKey,
+      },
+      body: JSON.stringify({ operationId, input: input.body.input }),
+      redirect: 'manual',
+    });
+  } catch (error) {
+    throw new ApiError(
+      502,
+      'site_action_failed',
+      error instanceof Error ? error.message : 'The site could not be reached.',
+    );
+  }
+
+  const siteBody = await siteResponse.text();
+  let parsedBody: unknown = null;
+  try {
+    parsedBody = siteBody.length > 0 ? JSON.parse(siteBody) : null;
+  } catch {
+    parsedBody = null;
+  }
+  if (siteResponse.status < 200 || siteResponse.status >= 300) {
+    throw new ApiError(502, 'site_action_failed', 'The site rejected the action.', {
+      siteStatus: siteResponse.status,
+    });
+  }
+  const record = parsedBody && typeof parsedBody === 'object' && !Array.isArray(parsedBody)
+    ? parsedBody as Record<string, unknown>
+    : {};
+  return {
+    action: {
+      operationId,
+      status: record.status === 'replayed' ? 'replayed' : 'applied',
+      output: record.output ?? null,
+    },
+  };
+}
+
 function siteIssuer(env: OrbitBindings): string {
   return env.ORBIT_ALLOWED_ORIGIN;
 }
@@ -6386,6 +6540,52 @@ export async function handleApiRequest(
       );
     }
 
+    const mcpConnectedSiteCatalogMatch =
+      /^\/v1\/mcp\/grants\/([^/]+)\/connected-sites\/actions$/u.exec(path);
+    if (request.method === 'POST' && mcpConnectedSiteCatalogMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      requireExactFields(body, [], 'invalid_mcp_connected_site_catalog_fields');
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpConnectedSiteCatalogMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      return json(await connectedSiteActionCatalogForAccount(
+        siteRepository,
+        resolved.account.id,
+        now,
+      ));
+    }
+
+    const mcpConnectedSiteActionMatch =
+      /^\/v1\/mcp\/grants\/([^/]+)\/connected-sites\/([^/]+)\/actions$/u.exec(path);
+    if (request.method === 'POST' && mcpConnectedSiteActionMatch) {
+      authenticateMcpService(request, env);
+      const body = await readJson(request);
+      const resolved = await resolveActiveMcpGrant(
+        decodeURIComponent(mcpConnectedSiteActionMatch[1]),
+        repository,
+        agentRepository,
+        mcpRepository,
+        now,
+        true,
+      );
+      return json(await performConnectedSiteAction({
+        env,
+        siteRepository,
+        accountId: resolved.account.id,
+        agentId: resolved.agent.id,
+        agentHandle: resolved.agent.handle,
+        grantId: decodeURIComponent(mcpConnectedSiteActionMatch[2]),
+        body,
+        now,
+      }));
+    }
+
     const mediaReadMatch = /^\/v1\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/u.exec(path);
     if ((request.method === 'GET' || request.method === 'HEAD') && mediaReadMatch) {
       return await serveMedia(
@@ -7511,34 +7711,11 @@ export async function handleApiRequest(
      * reddedilecek bir isteğe davet etmek olurdu. */
     if (request.method === 'GET' && path === '/v1/me/connected-sites/actions') {
       const agent = await authenticateAgent(request, env, publicationRepository, now, false, null);
-      const grants = await siteRepository.listAccountGrants(agent.principal.sponsorAccountId);
-
-      const sites = [];
-      for (const grant of grants) {
-        if (grant.revokedAt !== null || grant.agentAccessAt === null) continue;
-        /* `grant.clientId` SATIR kimliği (yabancı anahtar), metin client_id
-         * değil — `getClientByClientId` ile aramak hiçbir şey bulmuyordu ve
-         * site sessizce listeden düşüyordu. */
-        const client = await siteRepository.getClientById(grant.clientId);
-        if (!client || client.status !== 'active' || !client.actionsUrl) continue;
-        try {
-          const { catalog, fetchedAt } = await siteActionCatalog(client, now);
-          sites.push({
-            grantId: grant.id,
-            clientId: client.clientId,
-            label: client.label,
-            siteUrl: client.siteUrl,
-            catalogFetchedAt: fetchedAt,
-            operations: catalog.operations,
-          });
-        } catch {
-          /* Tek sitenin kataloğu okunamıyorsa kalanı yine dönüyor. Tümünü
-           * düşürmek, bir sitenin kesintisini bütün ajan yüzeyinin
-           * kesintisine çevirirdi. */
-          continue;
-        }
-      }
-      return json({ sites });
+      return json(await connectedSiteActionCatalogForAccount(
+        siteRepository,
+        agent.principal.sponsorAccountId,
+        now,
+      ));
     }
 
     /* Ajanın bağlı bir sitede insanın adına iş yaptırdığı yer. */
@@ -7547,140 +7724,16 @@ export async function handleApiRequest(
     if (request.method === 'POST' && connectedSiteActionMatch) {
       const agent = await authenticateAgent(request, env, publicationRepository, now);
       const body = await readJson(request);
-      requireExactFields(
+      return json(await performConnectedSiteAction({
+        env,
+        siteRepository,
+        accountId: agent.principal.sponsorAccountId,
+        agentId: agent.principal.agentId,
+        agentHandle: agent.principal.handle,
+        grantId: decodeURIComponent(connectedSiteActionMatch[1]),
         body,
-        ['operationId', 'input', 'idempotencyKey'],
-        'invalid_site_action_fields',
-      );
-      const operationId = mcpAuthorizationString(body.operationId, 'operationId', 80);
-      const idempotencyKey = mcpAuthorizationString(body.idempotencyKey, 'idempotencyKey', 128);
-      if (!/^[\x21-\x7E]+$/u.test(idempotencyKey)) {
-        throw new ApiError(400, 'idempotency_key_required', 'idempotencyKey must be printable ASCII.');
-      }
-
-      const grantId = decodeURIComponent(connectedSiteActionMatch[1]);
-      const grant = await siteRepository.getGrantById(grantId);
-      /* Başkasının izni "bulunamadı" diye dönüyor; "yetkin yok" demek izin
-       * kimliklerinin taranmasına izin verirdi. */
-      if (!grant || grant.accountId !== agent.principal.sponsorAccountId) {
-        throw new ApiError(404, 'connected_site_not_found', 'Connected site was not found.');
-      }
-      if (grant.revokedAt !== null) {
-        throw new ApiError(409, 'connected_site_already_revoked', 'Connected site is already revoked.');
-      }
-      /* Kapatma ANINDA etkili: elindeki belge değil, bu satır belirliyor. */
-      if (grant.agentAccessAt === null) {
-        throw new ApiError(403, 'agent_access_closed', 'The person has not opened this site to agents.');
-      }
-
-      const client = await siteRepository.getClientById(grant.clientId);
-      if (!client || client.status !== 'active' || !client.actionsUrl || !client.actionsEndpoint) {
-        throw new ApiError(503, 'site_catalog_unavailable', 'This site does not accept agent actions.');
-      }
-
-      let catalog: SiteActionCatalog;
-      try {
-        ({ catalog } = await siteActionCatalog(client, now));
-      } catch (error) {
-        throw new ApiError(
-          503,
-          'site_catalog_unavailable',
-          error instanceof Error ? error.message : 'Site action catalog is unavailable.',
-        );
-      }
-
-      const operation = catalog.operations.find((item) => item.operationId === operationId);
-      if (!operation) {
-        throw new ApiError(400, 'unknown_site_operation', `${operationId} is not offered by this site.`);
-      }
-
-      /* Girdi Orbit'te doğrulanıyor, siteye geçmeden. Site kendi kontrolünü
-       * ayrıca yapıyor — iki kat, çünkü Orbit şemayı siteden okuyor ve okuduğu
-       * şey 10 dakikaya kadar eskimiş olabilir. */
-      try {
-        validateOperationInput(body.input, operation.input);
-      } catch (error) {
-        throw new ApiError(
-          400,
-          'invalid_site_operation_input',
-          error instanceof Error ? error.message : 'Input does not match the operation schema.',
-        );
-      }
-
-      const { signingKeySecret } = siteAuthorizationConfig(env);
-      const key = await siteSigningKey(signingKeySecret);
-      const subject = await siteRepository.ensureSubject({
-        id: createEntityId(),
-        clientId: client.id,
-        accountId: grant.accountId,
-        subject: randomBase64Url(24),
-        createdAt: now,
-      });
-
-      const actionToken = await signSiteActionToken(key, {
-        issuer: siteIssuer(env),
-        audience: client.clientId,
-        subject,
-        actorAgentId: agent.principal.agentId,
-        actorHandle: agent.principal.handle,
-        operationId,
-        tokenId: createEntityId(),
-        issuedAt: now,
-        expiresAt: now + SITE_ACTION_TOKEN_TTL_MS,
-      });
-
-      let siteResponse: Response;
-      try {
-        siteResponse = await fetch(client.actionsEndpoint, {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${actionToken}`,
-            'content-type': 'application/json',
-            'idempotency-key': idempotencyKey,
-          },
-          body: JSON.stringify({ operationId, input: body.input }),
-          /* Yönlendirme izlenmiyor: adres kayıtlı ve doğrulanmış, yönlendirme
-           * imzalı belgeyi doğrulanmamış bir yere taşıyabilirdi. */
-          redirect: 'manual',
-        });
-      } catch (error) {
-        throw new ApiError(
-          502,
-          'site_action_failed',
-          error instanceof Error ? error.message : 'The site could not be reached.',
-        );
-      }
-
-      const siteBody = await siteResponse.text();
-      let parsedBody: unknown = null;
-      try {
-        parsedBody = siteBody.length > 0 ? JSON.parse(siteBody) : null;
-      } catch {
-        parsedBody = null;
-      }
-
-      if (siteResponse.status < 200 || siteResponse.status >= 300) {
-        throw new ApiError(
-          502,
-          'site_action_failed',
-          'The site rejected the action.',
-          /* Sitenin durum kodu taşınıyor ama GÖVDESİ taşınmıyor: site
-           * cevabında ne olduğunu bilmiyoruz ve olduğu gibi geçirmek, oradan
-           * gelen bir metni Orbit'in cevabı gibi göstermek olurdu. */
-          { siteStatus: siteResponse.status },
-        );
-      }
-
-      const record = parsedBody && typeof parsedBody === 'object' && !Array.isArray(parsedBody)
-        ? parsedBody as Record<string, unknown>
-        : {};
-      return json({
-        action: {
-          operationId,
-          status: record.status === 'replayed' ? 'replayed' : 'applied',
-          output: record.output ?? null,
-        },
-      });
+        now,
+      }));
     }
 
     const connectedSiteAgentAccessMatch =

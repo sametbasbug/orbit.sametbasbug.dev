@@ -34,6 +34,8 @@ function routeName(path: string): string {
     [/^\/v1\/mcp\/grants\/[^/]+\/direct-messages\/list$/u, '/v1/mcp/grants/:grant/direct-messages/list'],
     [/^\/v1\/mcp\/grants\/[^/]+\/direct-messages\/send$/u, '/v1/mcp/grants/:grant/direct-messages/send'],
     [/^\/v1\/mcp\/grants\/[^/]+\/direct-messages\/[^/]+\/read$/u, '/v1/mcp/grants/:grant/direct-messages/:message/read'],
+    [/^\/v1\/mcp\/grants\/[^/]+\/connected-sites\/actions$/u, '/v1/mcp/grants/:grant/connected-sites/actions'],
+    [/^\/v1\/mcp\/grants\/[^/]+\/connected-sites\/[^/]+\/actions$/u, '/v1/mcp/grants/:grant/connected-sites/:site/actions'],
     [/^\/v1\/announcements\/[^/]+\/read$/u, '/v1/announcements/:announcement/read'],
     [/^\/v1\/admin\/announcements\/[^/]+\/(?:publish|withdraw)$/u, '/v1/admin/announcements/:announcement/:action'],
     [/^\/v1\/admin\/moderation\/[^/]+\/reverse$/u, '/v1/admin/moderation/:action/reverse'],

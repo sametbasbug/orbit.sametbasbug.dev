@@ -44,6 +44,17 @@ import {
   type SiteAuthorizationScope,
 } from '../identity/site-authorization-scopes';
 import {
+  SITE_ACTION_TOKEN_TTL_MS,
+  signSiteActionToken,
+} from '../identity/site-action-token';
+import {
+  SITE_ACTION_CATALOG_TTL_MS,
+  SiteActionCatalogError,
+  fetchSiteActionCatalog,
+  validateOperationInput,
+  type SiteActionCatalog,
+} from '../identity/site-action-catalog';
+import {
   createSiteAuthorizationRequestTicket,
   verifySiteAuthorizationRequestTicket,
   type SiteAuthorizationRequest,
@@ -4074,6 +4085,42 @@ async function siteSigningKey(secret: string): Promise<SiteSigningKey> {
   }
 }
 
+/* Site işlem kataloğu önbelleği.
+ *
+ * Anahtar katalog adresi: aynı adresi iki site paylaşamıyor (kayıt anında
+ * verilir) ve site kimliğiyle anahtarlamak, adres değiştiğinde bayat kataloğu
+ * yaşatırdı.
+ *
+ * Worker izolasyonu ömrü boyunca yaşıyor; yeniden başladığında boşalıyor. Bu
+ * bir sorun değil — bayat katalog en fazla 10 dakika yaşıyor ve boş önbellek
+ * yalnız bir ek istek demek. */
+const siteActionCatalogCache = new Map<string, { catalog: SiteActionCatalog; fetchedAt: number }>();
+
+async function siteActionCatalog(
+  client: SiteClientView,
+  now: number,
+): Promise<{ catalog: SiteActionCatalog; fetchedAt: number }> {
+  if (!client.actionsUrl || !client.actionsEndpoint) {
+    throw new SiteActionCatalogError('site ajan eylemi sunmuyor');
+  }
+  const cached = siteActionCatalogCache.get(client.actionsUrl);
+  if (cached && now - cached.fetchedAt < SITE_ACTION_CATALOG_TTL_MS) return cached;
+
+  try {
+    const catalog = await fetchSiteActionCatalog({ actionsUrl: client.actionsUrl });
+    const fresh = { catalog, fetchedAt: now };
+    siteActionCatalogCache.set(client.actionsUrl, fresh);
+    return fresh;
+  } catch (error) {
+    /* Site şu an erişilemiyorsa ELDEKİ BAYAT KATALOG kullanılıyor. Alternatifi,
+     * sitenin bir dakikalık kesintisinde ajanın "yapabileceğin hiçbir şey yok"
+     * cevabı almasıydı — oysa işlemler duruyor ve çağrı muhtemelen çalışacak.
+     * Bayat katalogla yapılan çağrı yanlışsa zaten site reddediyor. */
+    if (cached) return cached;
+    throw error;
+  }
+}
+
 function siteIssuer(env: OrbitBindings): string {
   return env.ORBIT_ALLOWED_ORIGIN;
 }
@@ -7454,6 +7501,185 @@ export async function handleApiRequest(
      * veriliyor ve kapatıldığında bir sonraki istek reddediliyor. Kullanıcı
      * anahtarı kapattıktan sonra "acaba hâlâ yazabiliyor mu" diye
      * düşünmemeli. */
+    /* Ajanın bağlı sitelerde ne yapabileceğinin kataloğu.
+     *
+     * Ajan kimliğiyle çağrılıyor, insanın kimliğiyle değil: ajan bunu kendi
+     * başına, insan ekranda değilken soruyor. İnsan `sponsorAccountId`'den
+     * bulunuyor.
+     *
+     * Erişimi KAPALI siteler listede hiç görünmüyor. Göstermek, ajanı kesin
+     * reddedilecek bir isteğe davet etmek olurdu. */
+    if (request.method === 'GET' && path === '/v1/me/connected-sites/actions') {
+      const agent = await authenticateAgent(request, env, publicationRepository, now, false, null);
+      const grants = await siteRepository.listAccountGrants(agent.principal.sponsorAccountId);
+
+      const sites = [];
+      for (const grant of grants) {
+        if (grant.revokedAt !== null || grant.agentAccessAt === null) continue;
+        const client = await siteRepository.getClientByClientId(grant.clientId);
+        if (!client || client.status !== 'active' || !client.actionsUrl) continue;
+        try {
+          const { catalog, fetchedAt } = await siteActionCatalog(client, now);
+          sites.push({
+            grantId: grant.id,
+            clientId: client.clientId,
+            label: client.label,
+            siteUrl: client.siteUrl,
+            catalogFetchedAt: fetchedAt,
+            operations: catalog.operations,
+          });
+        } catch {
+          /* Tek sitenin kataloğu okunamıyorsa kalanı yine dönüyor. Tümünü
+           * düşürmek, bir sitenin kesintisini bütün ajan yüzeyinin
+           * kesintisine çevirirdi. */
+          continue;
+        }
+      }
+      return json({ sites });
+    }
+
+    /* Ajanın bağlı bir sitede insanın adına iş yaptırdığı yer. */
+    const connectedSiteActionMatch =
+      /^\/v1\/me\/connected-sites\/([^/]+)\/actions$/u.exec(path);
+    if (request.method === 'POST' && connectedSiteActionMatch) {
+      const agent = await authenticateAgent(request, env, publicationRepository, now);
+      const body = await readJson(request);
+      requireExactFields(
+        body,
+        ['operationId', 'input', 'idempotencyKey'],
+        'invalid_site_action_fields',
+      );
+      const operationId = mcpAuthorizationString(body.operationId, 'operationId', 80);
+      const idempotencyKey = mcpAuthorizationString(body.idempotencyKey, 'idempotencyKey', 128);
+      if (!/^[\x21-\x7E]+$/u.test(idempotencyKey)) {
+        throw new ApiError(400, 'idempotency_key_required', 'idempotencyKey must be printable ASCII.');
+      }
+
+      const grantId = decodeURIComponent(connectedSiteActionMatch[1]);
+      const grant = await siteRepository.getGrantById(grantId);
+      /* Başkasının izni "bulunamadı" diye dönüyor; "yetkin yok" demek izin
+       * kimliklerinin taranmasına izin verirdi. */
+      if (!grant || grant.accountId !== agent.principal.sponsorAccountId) {
+        throw new ApiError(404, 'connected_site_not_found', 'Connected site was not found.');
+      }
+      if (grant.revokedAt !== null) {
+        throw new ApiError(409, 'connected_site_already_revoked', 'Connected site is already revoked.');
+      }
+      /* Kapatma ANINDA etkili: elindeki belge değil, bu satır belirliyor. */
+      if (grant.agentAccessAt === null) {
+        throw new ApiError(403, 'agent_access_closed', 'The person has not opened this site to agents.');
+      }
+
+      const client = await siteRepository.getClientByClientId(grant.clientId);
+      if (!client || client.status !== 'active' || !client.actionsUrl || !client.actionsEndpoint) {
+        throw new ApiError(503, 'site_catalog_unavailable', 'This site does not accept agent actions.');
+      }
+
+      let catalog: SiteActionCatalog;
+      try {
+        ({ catalog } = await siteActionCatalog(client, now));
+      } catch (error) {
+        throw new ApiError(
+          503,
+          'site_catalog_unavailable',
+          error instanceof Error ? error.message : 'Site action catalog is unavailable.',
+        );
+      }
+
+      const operation = catalog.operations.find((item) => item.operationId === operationId);
+      if (!operation) {
+        throw new ApiError(400, 'unknown_site_operation', `${operationId} is not offered by this site.`);
+      }
+
+      /* Girdi Orbit'te doğrulanıyor, siteye geçmeden. Site kendi kontrolünü
+       * ayrıca yapıyor — iki kat, çünkü Orbit şemayı siteden okuyor ve okuduğu
+       * şey 10 dakikaya kadar eskimiş olabilir. */
+      try {
+        validateOperationInput(body.input, operation.input);
+      } catch (error) {
+        throw new ApiError(
+          400,
+          'invalid_site_operation_input',
+          error instanceof Error ? error.message : 'Input does not match the operation schema.',
+        );
+      }
+
+      const { signingKeySecret } = siteAuthorizationConfig(env);
+      const key = await siteSigningKey(signingKeySecret);
+      const subject = await siteRepository.ensureSubject({
+        id: createEntityId(),
+        clientId: client.id,
+        accountId: grant.accountId,
+        subject: randomBase64Url(24),
+        createdAt: now,
+      });
+
+      const actionToken = await signSiteActionToken(key, {
+        issuer: siteIssuer(env),
+        audience: client.clientId,
+        subject,
+        actorAgentId: agent.principal.agentId,
+        actorHandle: agent.principal.handle,
+        operationId,
+        tokenId: createEntityId(),
+        issuedAt: now,
+        expiresAt: now + SITE_ACTION_TOKEN_TTL_MS,
+      });
+
+      let siteResponse: Response;
+      try {
+        siteResponse = await fetch(client.actionsEndpoint, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${actionToken}`,
+            'content-type': 'application/json',
+            'idempotency-key': idempotencyKey,
+          },
+          body: JSON.stringify({ operationId, input: body.input }),
+          /* Yönlendirme izlenmiyor: adres kayıtlı ve doğrulanmış, yönlendirme
+           * imzalı belgeyi doğrulanmamış bir yere taşıyabilirdi. */
+          redirect: 'manual',
+        });
+      } catch (error) {
+        throw new ApiError(
+          502,
+          'site_action_failed',
+          error instanceof Error ? error.message : 'The site could not be reached.',
+        );
+      }
+
+      const siteBody = await siteResponse.text();
+      let parsedBody: unknown = null;
+      try {
+        parsedBody = siteBody.length > 0 ? JSON.parse(siteBody) : null;
+      } catch {
+        parsedBody = null;
+      }
+
+      if (siteResponse.status < 200 || siteResponse.status >= 300) {
+        throw new ApiError(
+          502,
+          'site_action_failed',
+          'The site rejected the action.',
+          /* Sitenin durum kodu taşınıyor ama GÖVDESİ taşınmıyor: site
+           * cevabında ne olduğunu bilmiyoruz ve olduğu gibi geçirmek, oradan
+           * gelen bir metni Orbit'in cevabı gibi göstermek olurdu. */
+          { siteStatus: siteResponse.status },
+        );
+      }
+
+      const record = parsedBody && typeof parsedBody === 'object' && !Array.isArray(parsedBody)
+        ? parsedBody as Record<string, unknown>
+        : {};
+      return json({
+        action: {
+          operationId,
+          status: record.status === 'replayed' ? 'replayed' : 'applied',
+          output: record.output ?? null,
+        },
+      });
+    }
+
     const connectedSiteAgentAccessMatch =
       /^\/v1\/me\/connected-sites\/([^/]+)\/agent-access$/u.exec(path);
     if (request.method === 'POST' && connectedSiteAgentAccessMatch) {

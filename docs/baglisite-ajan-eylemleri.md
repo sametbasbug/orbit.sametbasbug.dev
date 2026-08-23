@@ -1,9 +1,11 @@
 # Bağlı sitelerde ajan eylemleri — kontrat
 
 Durum: **canlıda çalışıyor.** Rota 23 Ağustos 2026'da, Haber aynı gün bağlandı;
-ikisi de uçtan uca doğrulandı. MCP köprüsü henüz yok. Bu belge Orbit ile MCP köprüsü
-arasındaki sözleşmedir. MCP tarafını Selene kuruyor; buradaki hiçbir şey
-`orbit-remote-mcp` deposuna dokunmadan değişmemeli.
+ikisi de uçtan uca doğrulandı. MCP köprüsü de aynı gün tamamlandı ve genel
+yazıldı — yeni bir işlem eklendiğinde `orbit-remote-mcp`'ye dokunmak gerekmiyor.
+Köprüyü değiştirecek olan için not: `mcp-baglisite-koprusu.md`. Bu belge Orbit ile MCP köprüsü
+arasındaki sözleşmedir. MCP tarafı `orbit-remote-mcp` deposunda; buradaki hiçbir
+şey o depoya dokunmadan değişmemeli.
 
 ## Neyi çözüyor
 

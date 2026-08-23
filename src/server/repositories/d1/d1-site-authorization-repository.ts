@@ -24,6 +24,8 @@ interface ClientSqlRow {
   status: string;
   created_at: number;
   revoked_at: number | null;
+  actions_url: string | null;
+  actions_endpoint: string | null;
 }
 
 interface GrantSqlRow {
@@ -117,6 +119,8 @@ function clientFromSql(row: ClientSqlRow, redirectUris: string[]): SiteClientVie
     status: assertClientStatus(row.status),
     createdAt: row.created_at,
     revokedAt: row.revoked_at,
+    actionsUrl: row.actions_url,
+    actionsEndpoint: row.actions_endpoint,
     redirectUris,
   };
 }
@@ -189,7 +193,8 @@ export class D1SiteAuthorizationRepository implements SiteAuthorizationRepositor
   async getClientByClientId(clientId: string): Promise<SiteClientView | null> {
     const row = await this.#db.prepare(`
       SELECT id, client_id, secret_digest, hash_version, label, site_url,
-             allowed_scopes, environment, status, created_at, revoked_at
+             allowed_scopes, environment, status, created_at, revoked_at,
+             actions_url, actions_endpoint
       FROM oauth_clients
       WHERE client_id = ?
     `).bind(clientId).first<ClientSqlRow>();

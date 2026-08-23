@@ -17,6 +17,14 @@ export interface SiteClientView {
   status: 'active' | 'revoked';
   createdAt: number;
   revokedAt: number | null;
+  /* Sitenin işlem kataloğunu yayımladığı adres. NULL ise site ajan eylemi
+   * sunmuyor demektir. Orbit bu dosyayı okur ama içeriğini kendi koduna
+   * gömmez — beşinci site geldiğinde Orbit'e kod girmemesinin sebebi bu. */
+  actionsUrl: string | null;
+  /* İsteğin gideceği adres. Katalog dosyasından DEĞİL buradan okunuyor: dosya
+   * siteye ait ama doğrulanmadan güvenilemez ve adresi o belirleseydi Orbit'i
+   * keyfi bir yere istek attırabilirdi. */
+  actionsEndpoint: string | null;
   redirectUris: string[];
 }
 

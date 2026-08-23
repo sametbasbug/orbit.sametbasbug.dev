@@ -74,10 +74,8 @@ kesin reddedilecek bir isteğe davet etmek olurdu.
 gidiş-dönüş demekti ve ajanın elinde saklayacak yer olmadığı için o gidiş-dönüş
 her seferinde tekrarlanırdı. Katalog küçük ve zaten site başına filtreli.
 
-`input` ve `output` **JSON Schema draft 2020-12** alt kümesidir: `type`,
-`required`, `properties`, `enum`, `additionalProperties`, `minimum`, `maximum`,
-`maxLength`, `items`. Bu listeyi genişletmek MCP tarafını kırabilir; genişlerse
-burada ilan edilir.
+`input` ve `output` **JSON Schema draft 2020-12'nin dar bir alt kümesidir**;
+tam liste ve gerekçesi aşağıda "Şema dilinin sınırı" başlığında.
 
 ## 2. Çağrı — ajan işi nasıl yaptırır
 
@@ -139,7 +137,6 @@ JSON koyar; sunucu gerekmez, GitHub Pages'te duran bir dosya yeter.
 ```json
 {
   "version": 1,
-  "actionsEndpoint": "https://rslltclzdfzwaxqtozmq.supabase.co/functions/v1/orbit-eylem",
   "operations": [ /* katalogdaki `operations` ile aynı biçim */ ]
 }
 ```
@@ -148,9 +145,45 @@ Orbit bu dosyayı okur ve **10 dakika** önbellekte tutar; `catalogFetchedAt` o
 anı verir. Yeni bir işlem eklendiğinde Orbit'e kod girmez, en geç 10 dakika
 sonra katalogda görünür.
 
-`actionsEndpoint` `https` olmak ve `oauth_clients.site_url` ile aynı kayıtlı
-siteye ait olmak zorundadır; katalog dosyası Orbit'i keyfi bir adrese istek
-atmaya ikna edemez.
+### İsteğin gideceği adres katalogda DEĞİL
+
+`actions_endpoint`, `oauth_clients` satırında durur ve kayıt anında platform
+sahibi tarafından verilir. Katalog dosyası onu değiştiremez.
+
+Tasarımın ilk halinde adresi katalog dosyası bildiriyordu ve Orbit onu kayıtlı
+alan adıyla karşılaştırıyordu. İki sorunu vardı. Birincisi güvenlik: dosya
+siteye ait ama doğrulanmadan güvenilemez, ve adresi o belirleseydi dosyayı ele
+geçiren biri Orbit'i seçtiği bir yere — iç ağ, bulut metadata servisi, üçüncü
+taraf — istek atmaya ikna edebilirdi, üstelik Orbit'in imzalı belgesini yanında
+taşıyarak. İkincisi kuralın kendisi çalışmıyordu: Rota'nın katalog dosyası
+GitHub Pages'te, yazma ucu Supabase'de duracak; alan adları farklı olduğu için
+kural Rota'yı reddediyordu.
+
+Gövdede `actionsEndpoint` alanı varsa **yok sayılır**, hata verilmez — bu
+belgenin erken sürümüne göre dosya hazırlamış bir site yüzünden kataloğun
+tamamı düşmesin diye.
+
+### Şema dilinin sınırı
+
+`input`/`output` şemalarında yalnız şu anahtarlar kabul edilir: `type`,
+`required`, `properties`, `items`, `enum`, `additionalProperties`, `minimum`,
+`maximum`, `maxLength`, `description`. Tür olarak `object`, `array`, `string`,
+`integer`, `number`, `boolean`.
+
+`$ref`, `pattern`, `patternProperties`, `allOf`/`anyOf`/`oneOf` **kabul
+edilmez**: ilki uzak adres çeker, ikinci ve üçüncüsü düzenli ifade çalıştırır
+(ReDoS), sonuncular iç içe geçip doğrulayıcıyı patlatır. Ajanın gördüğü şema
+aynı zamanda Orbit'in girdi doğrulamasında koştuğu şemadır — yani buraya giren
+her anahtar bizim de çalıştırdığımız kod demektir.
+
+Nesnelerde `additionalProperties` varsayılan olarak **kapalıdır**: şema açıkça
+`true` demediyse fazladan alan reddedilir. Ajanın uydurduğu bir alanı sessizce
+siteye taşımak, sitenin beklemediği bir şeyi yazmasına yol açabilirdi.
+
+Şema derinliği 8 ile, işlem sayısı 100 ile, dosya boyutu 128 KB ile sınırlıdır.
+
+Bu liste genişlerse burada ilan edilir; MCP tarafı bu alt kümeye göre yazılıyor
+ve sessiz genişleme onu kırar.
 
 ## 4. Orbit → site: devretme belgesi
 

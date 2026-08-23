@@ -1,6 +1,7 @@
 # Bağlı sitelerde ajan eylemleri — kontrat
 
-Durum: **tasarım kesinleşti, uygulama sürüyor.** Bu belge Orbit ile MCP köprüsü
+Durum: **canlıda çalışıyor.** Rota 23 Ağustos 2026'da, Haber aynı gün bağlandı;
+ikisi de uçtan uca doğrulandı. MCP köprüsü henüz yok. Bu belge Orbit ile MCP köprüsü
 arasındaki sözleşmedir. MCP tarafını Selene kuruyor; buradaki hiçbir şey
 `orbit-remote-mcp` deposuna dokunmadan değişmemeli.
 
@@ -227,15 +228,37 @@ paylaşılan kalıcı bir sır **yoktur** — sızacak bir şey olmasın diye.
 Site şunları doğrulamak zorundadır: imza, `iss`, `aud` (kendi clientId'si),
 `exp`, ve `operation` ile gövdedeki `operationId`'nin eşleştiği.
 
-## 5. Rota'nın ilk işlemleri
+## 5. Bağlı sitelerin işlemleri
+
+**Equinox Rota** — `personal_list_entries` üzerinde, **insanın satırlarında**.
+Ajanın kendi listesi yoktur.
 
 | operationId | ne yapar |
 |---|---|
-| `rota.listeyeEkle` | Listeye ekler ya da var olan kaydın durumunu/ilerlemesini/puanını günceller. |
+| `rota.katalogdaAra` | Katalogda arar; `animeId` tahmin edilmez, buradan alınır. |
+| `rota.listeyeEkle` | Listeye ekler ya da kaydın durumunu/ilerlemesini/puanını günceller. |
 | `rota.listeyiOku` | İnsanın listesini döndürür. |
+| `rota.listedenSil` | Kaydı tombstone ile işaretler. |
 
-İkisi de `personal_list_entries` üzerinde ve **insanın satırlarında** çalışır.
-Ajanın kendi listesi yoktur.
+**Equinox Haber** — 23 Ağustos 2026'da bağlandı. İki işlem, sitedeki iki
+yayın ucunun karşılığı; yayın hattının kendi yolundan geçiyorlar.
+
+| operationId | ne yapar |
+|---|---|
+| `haber.panoYaz` | Aday panosunu sabitler, `briefId` döndürür. |
+| `haber.yayinla` | Sabitlenmiş panodan bir haber yayımlar. |
+
+Haber'de bir ayrıntı bu kontratı ilgilendiriyor: **yayın kapılarının reddi
+2xx ile dönüyor.** "Bu haber zaten yayında" ya da "kabul sözleşmesine uymuyor"
+bir arıza değil, ajanın öğrenmesi gereken bilgi; HTTP hatası olarak dönseydi
+Orbit gövdeyi düşürür ve ajan içeriksiz bir `site_action_failed` görürdü.
+Çıktıda `uygulandi: false` ve sebep taşınıyor. Yetki ve yapılandırma hataları
+bunun dışında — onlar reddetme olarak çıkıyor.
+
+Ayrıca Haber'de yayın yetkisi Orbit'ten ithal edilmiyor: ajan erişiminin açık
+olması "bu ajan Haber'e gelebilir" demek, "yayımlayabilir" demek değil. İkinci
+kararı Haber kendi `publishers` tablosundan veriyor ve yayın imzası da oradan
+okunuyor — belgedeki `act.handle`tan değil, çünkü handle geri alınabiliyor.
 
 ## Kararlar ve gerekçeleri
 

@@ -7413,6 +7413,10 @@ export async function handleApiRequest(
             scopes: grant.scopes,
             createdAt: grant.createdAt,
             lastUsedAt: grant.lastUsedAt,
+            /* Ajan erişimi. Panel bunu bir anahtar olarak gösteriyor; açık
+             * olması, kişinin ajanının o sitede KENDİ ADINA değil KİŞİNİN
+             * adına iş yapabildiği anlamına geliyor. */
+            agentAccess: grant.agentAccessAt !== null,
           })),
       });
     }
@@ -7442,6 +7446,42 @@ export async function handleApiRequest(
         revokedAt: now,
       });
       return json({ connectedSite: { id: grantId, revoked: true } });
+    }
+
+    /* Ajanın bu sitede insanın adına iş yapmasını açar/kapatır.
+     *
+     * Kapatmak ANINDA etkili olmalı: ajanın elindeki token bu satıra bakarak
+     * veriliyor ve kapatıldığında bir sonraki istek reddediliyor. Kullanıcı
+     * anahtarı kapattıktan sonra "acaba hâlâ yazabiliyor mu" diye
+     * düşünmemeli. */
+    const connectedSiteAgentAccessMatch =
+      /^\/v1\/me\/connected-sites\/([^/]+)\/agent-access$/u.exec(path);
+    if (request.method === 'POST' && connectedSiteAgentAccessMatch) {
+      const auth = await authenticateHuman(request, env, repository, now, true);
+      const body = await readJson(request);
+      requireExactFields(body, ['allowed'], 'invalid_agent_access_fields');
+      if (typeof body.allowed !== 'boolean') {
+        throw new ApiError(400, 'invalid_agent_access_fields', '`allowed` must be a boolean.');
+      }
+      const grantId = decodeURIComponent(connectedSiteAgentAccessMatch[1]);
+      const grant = await siteRepository.getGrantById(grantId);
+      /* Başkasının izni "bulunamadı" diye dönüyor — iptal ucundaki gerekçenin
+       * aynısı: "yetkin yok" demek, izin kimliklerinin taranmasına izin
+       * verirdi. */
+      if (!grant || grant.accountId !== auth.account.id) {
+        throw new ApiError(404, 'connected_site_not_found', 'Connected site was not found.');
+      }
+      if (grant.revokedAt !== null) {
+        throw new ApiError(409, 'connected_site_already_revoked', 'Connected site is already revoked.');
+      }
+      const updated = await siteRepository.setAgentAccess({
+        grantId,
+        allowed: body.allowed,
+        now,
+      });
+      return json({
+        connectedSite: { id: grantId, agentAccess: updated?.agentAccessAt != null },
+      });
     }
 
     const mcpAuthorizationRevokeMatch = /^\/v1\/mcp\/authorizations\/([^/]+)\/revoke$/u.exec(path);

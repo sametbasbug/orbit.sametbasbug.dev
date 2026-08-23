@@ -128,6 +128,7 @@ interface GrantView {
   lastUsedAt: number | null;
   revokedAt: number | null;
   revokedReason: string | null;
+  agentAccessAt: number | null;
 }
 
 interface StateView {
@@ -597,6 +598,59 @@ describe('Orbit as a sign-in door for other sites', { concurrency: false }, () =
       grantId: grant.id,
     });
     assert.equal(afterReplay.tokens.filter((row) => row.revoked_at === null).length, 0);
+  });
+
+  test('agent access is off until the person turns it on, and dies with the grant', async () => {
+    const now = 1_760_000_900_000;
+    const accountId = 'door-agent';
+    await seedClientAndAccount(accountId, now);
+    const grant = await consent({ prefix: 'agent', accountId, now });
+
+    /* Varsayılan kapalı. Bağlı olan her siteye ajan erişimini açık saymak,
+       kullanıcının hiç sorulmamış bir soruya "evet" demesi olurdu. */
+    assert.equal(grant.agentAccessAt, null, 'agent access must start closed');
+
+    const opened = await callAction<{ grant: GrantView }>('setSiteAgentAccess', {
+      grantId: grant.id, allowed: true, now: now + 1_000,
+    });
+    assert.equal(opened.grant.agentAccessAt, now + 1_000);
+
+    const listed = await callAction<{ grants: GrantView[] }>('listSiteAccountGrants', { accountId });
+    assert.equal(
+      listed.grants.find((row) => row.id === grant.id)?.agentAccessAt,
+      now + 1_000,
+      'the dashboard reads this list; the switch has to be visible there',
+    );
+
+    const closed = await callAction<{ grant: GrantView }>('setSiteAgentAccess', {
+      grantId: grant.id, allowed: false, now: now + 2_000,
+    });
+    assert.equal(closed.grant.agentAccessAt, null, 'closing must clear it, not just stamp a second time');
+
+    /* Asıl mesele: site bağlantısı kesildiğinde ajan erişimi de ölmeli ve bu
+       AYRI BİR TEMİZLİK ADIMI gerektirmemeli. Ajan erişimi izin satırının
+       içinde durduğu için `revoked_at` ikisini birden düşürüyor. Ayrı tabloda
+       olsaydı burası "iptal edildi ama ajan hâlâ açık" durumunu yakalardı. */
+    await callAction<{ grant: GrantView }>('setSiteAgentAccess', {
+      grantId: grant.id, allowed: true, now: now + 3_000,
+    });
+    await callAction('revokeSiteGrant', {
+      grantId: grant.id,
+      actorAccountId: accountId,
+      reason: 'disconnected_by_owner',
+      auditEventId: 'agent-access-audit',
+      requestId: 'agent-access-request',
+      now: now + 4_000,
+    });
+
+    const afterRevoke = await callAction<{ grant: GrantView }>('setSiteAgentAccess', {
+      grantId: grant.id, allowed: true, now: now + 5_000,
+    });
+    assert.notEqual(
+      afterRevoke.grant.agentAccessAt,
+      now + 5_000,
+      'a revoked grant must not accept agent access; that switch would look open and never work',
+    );
   });
 
   test('revoking a grant kills its tokens and unredeemed codes in one step', async () => {

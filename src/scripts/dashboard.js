@@ -356,12 +356,36 @@ async function loadConnectedSites() {
     const lastUsed = site.lastUsedAt
       ? ` · son giriş ${new Date(site.lastUsedAt).toLocaleDateString('tr-TR')}`
       : '';
-    item.innerHTML = `<strong>${escapeHtml(site.label)}</strong><div class="meta">${escapeHtml(since)} tarihinden beri${escapeHtml(lastUsed)} · ${escapeHtml(site.scopes.join(', '))}</div>`;
+    item.innerHTML = `<strong>${escapeHtml(site.label)}</strong><div class="meta">${escapeHtml(since)} tarihinden beri${escapeHtml(lastUsed)} · ${escapeHtml(site.scopes.join(', '))}${site.agentAccess ? ' · <b>ajanın da kullanabilir</b>' : ''}</div>`;
     /* Uyarı metni bilerek "oturumun kapanır" DEMİYOR, çünkü kapanmıyor.
        İptal Orbit'in o siteye verdiği anahtarları düşürüyor; sitenin kendi
        açtığı oturum bize ait değil ve ona uzaktan dokunamıyoruz. Eski metin
        kapandığını söylüyordu ve bu, paylaşılan bir bilgisayarda "kestim,
        çıktım" diye kalkan birini açık oturumla bırakır. */
+    /* Ajan anahtarı. Kural insanın kendi cümlesiyle: alt sitelerde ajan,
+       insanın yapabildiğini insanın ADINA yapar — ayrı ajan listesi olmaz.
+       Açık olduğunda ajan bu site için Orbit'ten anahtar alabiliyor; kapalıysa
+       alamıyor ve elindeki bir sonraki istekte düşüyor.
+
+       Anahtar metni durumu değil EYLEMİ söylüyor ("Ajan erişimini aç/kapat"):
+       "Ajan erişimi açık" yazan bir düğmede basınca ne olacağı belirsiz
+       kalıyor. */
+    item.append(actionButton(
+      site.agentAccess ? 'Ajan erişimini kapat' : 'Ajan erişimini aç',
+      async () => {
+        try {
+          await mutate(
+            `/v1/me/connected-sites/${encodeURIComponent(site.id)}/agent-access`,
+            'POST',
+            { allowed: !site.agentAccess },
+          );
+          await loadConnectedSites();
+          flash(site.agentAccess
+            ? `${site.label} için ajan erişimi kapatıldı.`
+            : `${site.label} için ajan erişimi açıldı. Ajanın oradaki işleri senin adına yapabilir.`);
+        } catch (error) { flash(error.message, 'error'); }
+      },
+    ));
     item.append(actionButton('Bağlantıyı kes', async () => {
       if (!window.confirm(`${site.label} bağlantısı kesilsin mi? Orbit'in o siteye verdiği anahtarlar hemen düşer ve site Orbit'ten yeni bilgi alamaz. Sitedeki oturumun açık kalır; oradan ayrıca çıkman gerekir.`)) return;
       try {

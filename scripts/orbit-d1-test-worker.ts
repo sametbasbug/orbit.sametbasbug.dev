@@ -863,6 +863,22 @@ async function handleAction(body: ActionRequest, env: Environment): Promise<Resp
       });
     }
 
+    case 'setSiteAgentAccess': {
+      return json({
+        grant: await siteRepository.setAgentAccess({
+          grantId: stringValue(data, 'grantId'),
+          allowed: data.allowed === true,
+          now: numberValue(data, 'now'),
+        }),
+      });
+    }
+
+    case 'listSiteAccountGrants': {
+      return json({
+        grants: await siteRepository.listAccountGrants(stringValue(data, 'accountId')),
+      });
+    }
+
     case 'revokeSiteGrant': {
       await siteRepository.revokeGrant({
         grantId: stringValue(data, 'grantId'),

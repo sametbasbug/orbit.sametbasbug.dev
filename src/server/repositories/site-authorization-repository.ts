@@ -33,6 +33,11 @@ export interface SiteGrantView {
   lastUsedAt: number | null;
   revokedAt: number | null;
   revokedReason: string | null;
+  /* Ajan erişimi bu iznin İÇİNDE yaşıyor: NULL ise kapalı, doluysa insanın
+   * ajanına o siteyi açtığı an. Ayrı tabloda olsaydı site bağlantısı
+   * kesildiğinde ayrıca temizlenmesi gerekirdi ve unutulan temizlik açık
+   * kalan kapıdır. */
+  agentAccessAt: number | null;
 }
 
 export interface SiteAuthorizationCodeView {
@@ -112,6 +117,15 @@ export interface SiteAuthorizationRepository {
   getGrantById(grantId: string): Promise<SiteGrantView | null>;
 
   listAccountGrants(accountId: string): Promise<SiteGrantView[]>;
+
+  /* Ajan erişimini açar veya kapatır. Yalnız yürürlükteki bir izin üzerinde
+   * çalışır: iptal edilmiş bir siteye ajan erişimi açmak, kapalı bir kapının
+   * kilidini değiştirmek gibi anlamsız olurdu. */
+  setAgentAccess(input: {
+    grantId: string;
+    allowed: boolean;
+    now: number;
+  }): Promise<SiteGrantView | null>;
 
   /* Onay ekranının yazdığı yer: izin satırı (yeni ya da tazelenmiş) ve ona
    * bağlı tek kullanımlık kod aynı işlemde doğuyor. */

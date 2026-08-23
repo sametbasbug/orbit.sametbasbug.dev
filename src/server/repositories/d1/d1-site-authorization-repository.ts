@@ -39,6 +39,7 @@ interface GrantSqlRow {
   last_used_at: number | null;
   revoked_at: number | null;
   revoked_reason: string | null;
+  agent_access_at: number | null;
 }
 
 interface CodeSqlRow {
@@ -74,7 +75,7 @@ const GRANT_SELECT = `
          client.site_url AS client_site_url, grant_row.account_id,
          grant_row.scopes, grant_row.consent_version, grant_row.created_at,
          grant_row.updated_at, grant_row.last_used_at, grant_row.revoked_at,
-         grant_row.revoked_reason
+         grant_row.revoked_reason, grant_row.agent_access_at
   FROM oauth_client_grants grant_row
   JOIN oauth_clients client ON client.id = grant_row.client_id
 `;
@@ -134,6 +135,7 @@ function grantFromSql(row: GrantSqlRow): SiteGrantView {
     lastUsedAt: row.last_used_at,
     revokedAt: row.revoked_at,
     revokedReason: row.revoked_reason,
+    agentAccessAt: row.agent_access_at,
   };
 }
 
@@ -292,6 +294,27 @@ export class D1SiteAuthorizationRepository implements SiteAuthorizationRepositor
       ORDER BY grant_row.created_at DESC
     `).bind(accountId).all<GrantSqlRow>();
     return rows.results.map(grantFromSql);
+  }
+
+  async setAgentAccess(input: {
+    grantId: string;
+    allowed: boolean;
+    now: number;
+  }): Promise<SiteGrantView | null> {
+    /* `revoked_at IS NULL` koşulu WHERE'de, çağıranın kontrolüne bırakılmadı:
+     * iptal edilmiş bir izne ajan erişimi açmak sessizce "başarılı" dönerse
+     * panelde açık görünen ama hiçbir zaman çalışmayacak bir anahtar doğar. */
+    await this.#db.prepare(`
+      UPDATE oauth_client_grants
+         SET agent_access_at = ?, updated_at = ?
+       WHERE id = ? AND revoked_at IS NULL
+    `).bind(input.allowed ? input.now : null, input.now, input.grantId).run();
+
+    const row = await this.#db.prepare(`
+      ${GRANT_SELECT}
+      WHERE grant_row.id = ?
+    `).bind(input.grantId).first<GrantSqlRow>();
+    return row ? grantFromSql(row) : null;
   }
 
   async recordConsentWithCode(

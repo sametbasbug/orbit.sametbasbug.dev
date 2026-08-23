@@ -209,6 +209,25 @@ export class D1SiteAuthorizationRepository implements SiteAuthorizationRepositor
     return clientFromSql(row, uris.results.map((entry) => entry.redirect_uri));
   }
 
+  async getClientById(id: string): Promise<SiteClientView | null> {
+    const row = await this.#db.prepare(`
+      SELECT id, client_id, secret_digest, hash_version, label, site_url,
+             allowed_scopes, environment, status, created_at, revoked_at,
+             actions_url, actions_endpoint
+      FROM oauth_clients
+      WHERE id = ?
+    `).bind(id).first<ClientSqlRow>();
+    if (!row) return null;
+
+    const uris = await this.#db.prepare(`
+      SELECT redirect_uri FROM oauth_client_redirect_uris
+      WHERE client_id = ?
+      ORDER BY created_at, redirect_uri
+    `).bind(row.id).all<{ redirect_uri: string }>();
+
+    return clientFromSql(row, uris.results.map((entry) => entry.redirect_uri));
+  }
+
   async createClient(
     input: Parameters<SiteAuthorizationRepository['createClient']>[0],
   ): Promise<SiteClientView | null> {

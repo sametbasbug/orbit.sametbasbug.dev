@@ -91,6 +91,16 @@ export interface SiteTokenResolution {
 export interface SiteAuthorizationRepository {
   getClientByClientId(clientId: string): Promise<SiteClientView | null>;
 
+  /* SATIR KİMLİĞİYLE istemci. `getClientByClientId` metin `client_id`'yi arar
+   * (örn. "orbit-equinox-rota"); bu ise `oauth_clients.id`'yi.
+   *
+   * İkisi ayrı olmak zorunda ve karıştırmak sessiz: `SiteGrantView.clientId`
+   * yabancı anahtar, yani SATIR kimliği. Onu metin arayan fonksiyona verince
+   * sorgu hiçbir şey bulmuyor, `null` dönüyor ve çağıran tarafta "bu site
+   * eylem sunmuyor" gibi görünüyor. Canlıda tam olarak bu oldu: katalog boş
+   * döndü, hata da vermedi. */
+  getClientById(id: string): Promise<SiteClientView | null>;
+
   /* Yeni alt site istemcisi. Sır BURAYA GİRMİYOR, yalnız özeti: peper
    * Worker'ın içinde kalıyor ve özet çağıran tarafta hesaplanıyor.
    *

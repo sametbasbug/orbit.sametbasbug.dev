@@ -748,6 +748,12 @@ async function handleAction(body: ActionRequest, env: Environment): Promise<Resp
       return json({ ok: true });
     }
 
+    case 'getSiteClientById': {
+      return json({
+        client: await siteRepository.getClientById(stringValue(data, 'id')),
+      });
+    }
+
     case 'getSiteClient': {
       return json({ client: await siteRepository.getClientByClientId(stringValue(data, 'clientId')) });
     }

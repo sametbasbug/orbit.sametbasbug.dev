@@ -7516,7 +7516,10 @@ export async function handleApiRequest(
       const sites = [];
       for (const grant of grants) {
         if (grant.revokedAt !== null || grant.agentAccessAt === null) continue;
-        const client = await siteRepository.getClientByClientId(grant.clientId);
+        /* `grant.clientId` SATIR kimliği (yabancı anahtar), metin client_id
+         * değil — `getClientByClientId` ile aramak hiçbir şey bulmuyordu ve
+         * site sessizce listeden düşüyordu. */
+        const client = await siteRepository.getClientById(grant.clientId);
         if (!client || client.status !== 'active' || !client.actionsUrl) continue;
         try {
           const { catalog, fetchedAt } = await siteActionCatalog(client, now);
@@ -7570,7 +7573,7 @@ export async function handleApiRequest(
         throw new ApiError(403, 'agent_access_closed', 'The person has not opened this site to agents.');
       }
 
-      const client = await siteRepository.getClientByClientId(grant.clientId);
+      const client = await siteRepository.getClientById(grant.clientId);
       if (!client || client.status !== 'active' || !client.actionsUrl || !client.actionsEndpoint) {
         throw new ApiError(503, 'site_catalog_unavailable', 'This site does not accept agent actions.');
       }

@@ -600,6 +600,37 @@ describe('Orbit as a sign-in door for other sites', { concurrency: false }, () =
     assert.equal(afterReplay.tokens.filter((row) => row.revoked_at === null).length, 0);
   });
 
+  test('a grant points at the client ROW id, not the public client_id', async () => {
+    const now = 1_760_000_950_000;
+    const accountId = 'door-rowid';
+    await seedClientAndAccount(accountId, now);
+    const grant = await consent({ prefix: 'rowid', accountId, now });
+
+    /* Bu test canlıda ödenen bir bedelden doğdu. `SiteGrantView.clientId`
+       yabancı anahtar, yani `oauth_clients.id`. Onu metin `client_id` arayan
+       `getClientByClientId`'ye verince sorgu hiçbir şey bulmuyor, null dönüyor
+       ve çağıran tarafta "bu site eylem sunmuyor" gibi görünüyor. Ajan
+       kataloğu boş döndü ve hiçbir yerde hata görünmedi — çünkü çağıran
+       taraftaki `continue` onu yutuyordu.
+
+       İki isim birbirine o kadar benziyor ki karıştırmak kaçınılmaz; bu yüzden
+       ayrımı test tutuyor. */
+    assert.equal(grant.clientId, CLIENT.id, 'grant satır kimliğini taşımalı');
+    assert.notEqual(grant.clientId, CLIENT.clientId, 'metin client_id ile aynı olmamalı');
+
+    const byRow = await callAction<{ client: { clientId: string } | null }>(
+      'getSiteClientById', { id: grant.clientId },
+    );
+    assert.equal(byRow.client?.clientId, CLIENT.clientId, 'satır kimliğiyle bulunmalı');
+
+    /* Ters yön: satır kimliğini metin arayan fonksiyona vermek BULMAMALI.
+       Bulsaydı hata görünür olurdu; bulmadığı için sessizdi. */
+    const byPublic = await callAction<{ client: unknown | null }>(
+      'getSiteClient', { clientId: grant.clientId },
+    );
+    assert.equal(byPublic.client, null, 'satır kimliği metin client_id olarak aranamaz');
+  });
+
   test('agent access is off until the person turns it on, and dies with the grant', async () => {
     const now = 1_760_000_900_000;
     const accountId = 'door-agent';

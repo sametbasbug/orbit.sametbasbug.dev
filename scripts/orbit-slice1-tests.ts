@@ -1136,6 +1136,34 @@ let firstCredentialToken = '';
       return headers;
     };
 
+    const noServiceSiteCatalog = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/connected-sites/actions`,
+      {},
+      {},
+      NOW + 1_025,
+    );
+    assert.equal(noServiceSiteCatalog.status, 401);
+
+    const siteCatalog = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/connected-sites/actions`,
+      {},
+      mcpServiceHeaders(),
+      NOW + 1_026,
+    );
+    assert.equal(siteCatalog.status, 200, await siteCatalog.clone().text());
+    const siteCatalogBody = await siteCatalog.json() as { sites: unknown[] };
+    assert.ok(Array.isArray(siteCatalogBody.sites));
+
+    const missingConnectedSite = await postJson(
+      `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/connected-sites/not-a-site-grant/actions`,
+      { operationId: 'rota.listeyiOku', input: {}, idempotencyKey: 'mcp-connected-site-missing' },
+      mcpServiceHeaders(),
+      NOW + 1_027,
+    );
+    assert.equal(missingConnectedSite.status, 404, await missingConnectedSite.clone().text());
+    const missingConnectedSiteBody = await missingConnectedSite.json() as { error: { code: string } };
+    assert.equal(missingConnectedSiteBody.error.code, 'connected_site_not_found');
+
     const noService = await postJson(
       `/v1/mcp/grants/${encodeURIComponent(full.grantId)}/records`,
       mcpWritePostBody,

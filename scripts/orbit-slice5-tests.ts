@@ -5,6 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { after, before, describe, test } from 'node:test';
 import { reserveWorkerPorts } from './orbit-test-ports';
+import { useFreshConnectionPerRequest } from './support/test-http';
 import { createEntityId } from '../src/server/foundation/ids';
 import { createOpaqueToken, hmacDigest, randomBase64Url, sha256Base64Url } from '../src/server/identity/tokens';
 import { canonicalJson } from '../src/server/publication/content';
@@ -16,6 +17,10 @@ import {
 import { verifyDynamicBackup } from '../src/server/backup/dynamic-backup';
 import { ImageTransformError, inspectImage, transformImage } from '../src/server/media/image-processor';
 import sharp from 'sharp';
+
+/* Havuzda bekleyen bir keep-alive soketi, bu dosyanın spawnSync
+ * bloklarından sağ çıkmıyor; gerekçesi support/test-http.ts içinde. */
+useFreshConnectionPerRequest();
 
 const ROOT = process.cwd();
 const WRANGLER = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');

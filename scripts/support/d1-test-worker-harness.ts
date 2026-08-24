@@ -11,6 +11,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { reserveWorkerPorts } from '../orbit-test-ports';
+import { useFreshConnectionPerRequest } from './test-http';
+
+/* Havuzda bekleyen bir keep-alive soketi, bu dosyanın spawnSync
+ * bloklarından sağ çıkmıyor; gerekçesi support/test-http.ts içinde. */
+useFreshConnectionPerRequest();
 
 const ROOT = process.cwd();
 const WRANGLER = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');

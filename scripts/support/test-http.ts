@@ -31,6 +31,7 @@
  * istek için maliyeti ölçülemeyecek kadar küçük.
  */
 import { Agent, setGlobalDispatcher } from 'undici';
+import type { Dispatcher } from 'undici';
 
 let installed = false;
 
@@ -39,6 +40,40 @@ let installed = false;
  * yazdığı için yerleşik fetch de bu ayarı görüyor. */
 export function useFreshConnectionPerRequest(): void {
   if (installed) return;
-  setGlobalDispatcher(new Agent({ pipelining: 0 }));
+  const agent = new Agent({ pipelining: 0 });
+  setGlobalDispatcher(agent);
+  assertDispatcherInstalled(agent);
   installed = true;
+}
+
+/* Bekçi: ayarın gerçekten yerleşip yerleşmediğini kontrol eder.
+ *
+ * `setGlobalDispatcher` global bir sembole yazıyor ve Node'un yerleşik
+ * `fetch`'i onu okuyor. Bugün (Node 26 / undici 7) iki sembol de —
+ * `undici.globalDispatcher.1` ve `.2` — aynı nesneyi gösteriyor. Yarın
+ * paket ile Node'un sembolleri ayrışırsa çağrı sessizce hiçbir şey yapmaz:
+ * keep-alive geri gelir, flake geri gelir ve hiçbir test kırılmaz, çünkü
+ * bu yalnızca ara sıra düşen bir yarışı geri açar.
+ *
+ * Sessiz bozulmayı gürültülü hataya çeviriyoruz: yerleşmediyse testler
+ * daha ilk satırda dursun. */
+function assertDispatcherInstalled(expected: Dispatcher): void {
+  const seen = [
+    Symbol.for('undici.globalDispatcher.1'),
+    Symbol.for('undici.globalDispatcher.2'),
+  ].filter((symbol) => symbol in globalThis);
+
+  const missed = seen.filter(
+    (symbol) => (globalThis as Record<symbol, unknown>)[symbol] !== expected,
+  );
+
+  if (seen.length === 0 || missed.length > 0) {
+    throw new Error(
+      'Test fetch bağlantı politikası yerleşmedi: undici setGlobalDispatcher ' +
+        "Node'un yerleşik fetch'inin okuduğu sembole yazmıyor. Keep-alive " +
+        'yeniden kullanımı geri döner ve UND_ERR_SOCKET flake\'i yeniden ' +
+        'başlar. support/test-http.ts içindeki gerekçeye bak; undici ve Node ' +
+        'sürümlerinin uyumunu kontrol et.',
+    );
+  }
 }

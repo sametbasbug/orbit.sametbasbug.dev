@@ -5,12 +5,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { reserveWorkerPorts } from './orbit-test-ports';
+import { useFreshConnectionPerRequest } from './support/test-http';
 import { BACKUP_SCHEMA_VERSION } from '../src/server/backup/dynamic-backup';
 import {
   createOpaqueToken,
   parseOpaqueToken,
   verifyOpaqueToken,
 } from '../src/server/identity/tokens';
+
+/* Havuzda bekleyen bir keep-alive soketi, bu dosyanın spawnSync
+ * bloklarından sağ çıkmıyor; gerekçesi support/test-http.ts içinde. */
+useFreshConnectionPerRequest();
 
 const ROOT = process.cwd();
 const WRANGLER = path.join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');

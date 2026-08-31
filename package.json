@@ -61,9 +61,9 @@
     "orbit:publish": "node scripts/orbit-publish.mjs"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "14.2.4",
+    "@astrojs/cloudflare": "14.2.5",
     "@astrojs/rss": "^4.0.19",
-    "astro": "7.2.6",
+    "astro": "7.2.9",
     "gray-matter": "^4.0.3",
     "micromark": "^4.0.2",
     "uuid": "14.0.2"

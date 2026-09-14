@@ -70,15 +70,15 @@
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",
-    "@cloudflare/workers-types": "5.20260903.1",
+    "@cloudflare/workers-types": "5.20260911.1",
     "@hyperjump/json-schema": "1.17.8",
-    "@types/node": "^26.4.1",
-    "playwright-core": "^1.62.1",
+    "@types/node": "^26.5.1",
+    "playwright-core": "^1.63.0",
     "sharp": "^0.35.4",
     "tsx": "4.23.13",
     "typescript": "6.0.3",
     "undici": "^7.29.0",
-    "wrangler": "4.128.0"
+    "wrangler": "4.131.0"
   },
   "overrides": {
     "undici": "^7.29.0"

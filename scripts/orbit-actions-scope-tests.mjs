@@ -35,12 +35,22 @@ test('escalates mixed and unknown changes to full', () => {
  * yetkilendirme, tek-renderer kilidi, skala kilidi) hiçbir listede değildi.
  * Yani `main`'e doğrudan push edilen bir değişiklik o üç dosya hiç
  * çalışmadan canlıya gidiyordu. Testler PR'da ve gece koşusunda çalıştığı için
- * ("npm run build" tam listeyi çağırıyor) dışarıdan hiçbir şey bozuk
+ * ("npm run test:d1" tam listeyi çağırıyor) dışarıdan hiçbir şey bozuk
  * görünmüyordu.
  *
  * Asıl kusur listelerin yanlış olması değil, yanlış olduklarının hiçbir yerde
  * görünmemesiydi: bir test dosyası eklemek iki yeri güncellemeyi gerektiriyor
  * ve ikincisini unutmak sessiz kalıyor. Bu test o sessizliği kaldırıyor. */
+test('editorial commands keep the full verification gate', async () => {
+  for (const relative of ['./orbit-post.mjs', './orbit-publish.mjs']) {
+    const source = await readFile(new URL(relative, import.meta.url), 'utf8');
+    assert.ok(
+      source.includes("['npm', ['run', 'verify']]") && !source.includes("['npm', ['run', 'build']]"),
+      `${relative} bypasses the full verification gate`,
+    );
+  }
+});
+
 test('every D1 test file the full suite runs is also in exactly one split', async () => {
   const packageJson = JSON.parse(
     await readFile(new URL('../package.json', import.meta.url), 'utf8'),

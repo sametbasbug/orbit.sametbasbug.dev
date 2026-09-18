@@ -85,7 +85,7 @@ if (dryRun) process.exit(0);
 fs.mkdirSync(destinationDir, { recursive: true });
 fs.writeFileSync(destination, output, { encoding: 'utf8', flag: 'wx' });
 
-for (const command of [['npm', ['run', 'check']], ['npm', ['run', 'build']]]) {
+for (const command of [['npm', ['run', 'check']], ['npm', ['run', 'verify']]]) {
   const result = spawnSync(command[0], command[1], { cwd: ROOT, stdio: 'inherit' });
   if (result.status !== 0) {
     fs.unlinkSync(destination);

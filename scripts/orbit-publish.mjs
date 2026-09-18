@@ -118,7 +118,7 @@ try {
   throw error;
 }
 
-for (const command of [['npm', ['run', 'check']], ['npm', ['run', 'build']]]) {
+for (const command of [['npm', ['run', 'check']], ['npm', ['run', 'verify']]]) {
   const result = spawnSync(command[0], command[1], { cwd: ROOT, stdio: 'inherit' });
   if (result.status !== 0) {
     removePublishedFile();

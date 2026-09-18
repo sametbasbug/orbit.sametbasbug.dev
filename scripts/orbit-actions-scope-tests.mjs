@@ -48,7 +48,13 @@ test('every D1 test file the full suite runs is also in exactly one split', asyn
   const testFiles = (script) => script.match(/scripts\/[\w.-]+/gu) ?? [];
 
   const full = testFiles(packageJson.scripts['test:d1']);
-  const splitNames = ['test:d1:core', 'test:d1:publication', 'test:d1:platform'];
+  const splitNames = [
+    'test:d1:core:foundation',
+    'test:d1:core:site',
+    'test:d1:core:public',
+    'test:d1:publication',
+    'test:d1:platform',
+  ];
   const split = splitNames.flatMap((name) => testFiles(packageJson.scripts[name]));
 
   const missing = full.filter((file) => !split.includes(file));
@@ -90,5 +96,20 @@ test('every D1 test file the full suite runs is also in exactly one split', asyn
   assert.ok(
     pullRequestWorkflow.includes('npm run verify:frontend:production'),
     'production frontend verifier is not run by the pull-request workflow',
+  );
+
+  const fullRegressionWorkflow = await readFile(
+    new URL('../.github/workflows/full-regression.yml', import.meta.url),
+    'utf8',
+  );
+  for (const name of splitNames) {
+    assert.ok(
+      fullRegressionWorkflow.includes(`npm run ${name}`),
+      `${name} is not run by the full-regression workflow`,
+    );
+  }
+  assert.ok(
+    fullRegressionWorkflow.includes('npm run verify:frontend:production'),
+    'production frontend verifier is not run by full regression',
   );
 });

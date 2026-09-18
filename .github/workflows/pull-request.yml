@@ -13,9 +13,6 @@ concurrency:
   group: pull-request-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Reuse the production deploy's exhaustive D1 partition instead of running the
-# full D1 suite serially before every other check. The final verify job keeps
-# the stable branch-protection check name and fails unless every slice passes.
 jobs:
   frontend:
     runs-on: ubuntu-latest
@@ -23,39 +20,65 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
-
       - name: Install locked dependencies
         run: npm ci
-
       - name: Verify scope classifier and production frontend
         run: |
           npm run actions:scope:test
           npm run verify:frontend:production
 
-  backend:
+  backend-foundation:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
-
       - name: Install locked dependencies
         run: npm ci
+      - name: Verify D1 foundation and authorization behavior
+        run: npm run test:d1:core:foundation && npm run orbit:test:clients
 
-      - name: Verify D1 core and reference clients
-        run: npm run test:d1:core && npm run orbit:test:clients
+  backend-site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Verify site authorization and sign-in behavior
+        run: npm run test:d1:core:site
+
+  backend-public:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Verify public repository and identity behavior
+        run: npm run test:d1:core:public
 
   backend-publication:
     runs-on: ubuntu-latest
@@ -63,16 +86,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
-
       - name: Install locked dependencies
         run: npm ci
-
       - name: Verify publication, renderer and style behavior
         run: npm run test:d1:publication
 
@@ -82,37 +102,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
-
       - name: Install locked dependencies
         run: npm ci
-
       - name: Verify dashboard, media and platform behavior
         run: npm run test:d1:platform
-
-  verify:
-    needs:
-      - frontend
-      - backend
-      - backend-publication
-      - backend-platform
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    steps:
-      - name: Require every parallel verification slice
-        env:
-          FRONTEND_RESULT: ${{ needs.frontend.result }}
-          BACKEND_RESULT: ${{ needs.backend.result }}
-          PUBLICATION_RESULT: ${{ needs.backend-publication.result }}
-          PLATFORM_RESULT: ${{ needs.backend-platform.result }}
-        run: |
-          test "$FRONTEND_RESULT" = success
-          test "$BACKEND_RESULT" = success
-          test "$PUBLICATION_RESULT" = success
-          test "$PLATFORM_RESULT" = success

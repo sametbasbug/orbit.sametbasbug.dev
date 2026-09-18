@@ -83,13 +83,13 @@ jobs:
           include-hidden-files: true
           retention-days: 1
 
-  backend:
+  backend-foundation:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     outputs:
       scope: ${{ steps.scope.outputs.scope }}
     steps:
-      - name: Checkout backend candidate and history
+      - name: Checkout foundation candidate and history
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -117,13 +117,97 @@ jobs:
         if: ${{ steps.scope.outputs.scope == 'full' }}
         run: npm ci
 
-      - name: Verify D1, Worker, reference client and security behavior
+      - name: Verify D1 foundation, authorization and reference clients
         if: ${{ steps.scope.outputs.scope == 'full' }}
-        run: npm run test:d1:core && npm run orbit:test:clients
+        run: npm run test:d1:core:foundation && npm run orbit:test:clients
 
-      - name: Record frontend-only backend decision
+      - name: Record frontend-only decision
         if: ${{ steps.scope.outputs.scope != 'full' }}
-        run: echo 'No backend/security path changed; the fail-safe classifier selected frontend validation.'
+        run: echo 'No backend/security path changed; this validation slice is not required.'
+
+  backend-site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
+    steps:
+      - name: Checkout site-auth candidate and history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed paths independently
+        id: scope
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' || -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+            printf 'scope=full\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | node scripts/orbit-actions-scope.mjs
+
+      - name: Set up Node
+        if: ${{ steps.scope.outputs.scope == 'full' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        if: ${{ steps.scope.outputs.scope == 'full' }}
+        run: npm ci
+
+      - name: Verify site authorization and sign-in behavior
+        if: ${{ steps.scope.outputs.scope == 'full' }}
+        run: npm run test:d1:core:site
+
+      - name: Record frontend-only decision
+        if: ${{ steps.scope.outputs.scope != 'full' }}
+        run: echo 'No backend/security path changed; this validation slice is not required.'
+
+  backend-public:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
+    steps:
+      - name: Checkout public-core candidate and history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed paths independently
+        id: scope
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' || -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+            printf 'scope=full\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | node scripts/orbit-actions-scope.mjs
+
+      - name: Set up Node
+        if: ${{ steps.scope.outputs.scope == 'full' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        if: ${{ steps.scope.outputs.scope == 'full' }}
+        run: npm ci
+
+      - name: Verify public repository and identity behavior
+        if: ${{ steps.scope.outputs.scope == 'full' }}
+        run: npm run test:d1:core:public
+
+      - name: Record frontend-only decision
+        if: ${{ steps.scope.outputs.scope != 'full' }}
+        run: echo 'No backend/security path changed; this validation slice is not required.'
 
   backend-publication:
     runs-on: ubuntu-latest
@@ -212,10 +296,12 @@ jobs:
   deploy:
     needs:
       - frontend
-      - backend
+      - backend-foundation
+      - backend-site
+      - backend-public
       - backend-publication
       - backend-platform
-    if: ${{ needs.frontend.result == 'success' && needs.backend.result == 'success' && needs.backend-publication.result == 'success' && needs.backend-platform.result == 'success' && needs.frontend.outputs.scope != 'docs' && needs.frontend.outputs.scope == needs.backend.outputs.scope && needs.frontend.outputs.scope == needs.backend-publication.outputs.scope && needs.frontend.outputs.scope == needs.backend-platform.outputs.scope }}
+    if: ${{ needs.frontend.result == 'success' && needs.backend-foundation.result == 'success' && needs.backend-site.result == 'success' && needs.backend-public.result == 'success' && needs.backend-publication.result == 'success' && needs.backend-platform.result == 'success' && needs.frontend.outputs.scope != 'docs' && needs.frontend.outputs.scope == needs.backend-foundation.outputs.scope && needs.frontend.outputs.scope == needs.backend-site.outputs.scope && needs.frontend.outputs.scope == needs.backend-public.outputs.scope && needs.frontend.outputs.scope == needs.backend-publication.outputs.scope && needs.frontend.outputs.scope == needs.backend-platform.outputs.scope }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     environment:

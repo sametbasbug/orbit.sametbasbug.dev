@@ -13,59 +13,107 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  full-regression:
+  frontend:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 12
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Node
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run the complete application regression
+      - run: npm ci
+      - name: Verify complete production frontend
         run: |
           npm run actions:scope:test
-          npm run check
-          npm run build
-          npm run production:config:check
-          npm run worker:build:production:live
-          npm run contract:live
+          npm run verify:frontend:production
 
-  # Staging provaları hiçbir yerde otomatik koşmuyordu ve bir tanesi üç
-  # hafta boyunca bozuk kaldı: sunucuya yeni bir yayın kısıtı girdi, betik
-  # ondan habersiz kaldı, kimse çalıştırmadığı için kimse görmedi.
-  #
-  # Bu iş staging'e YENİ KOD DAĞITMIYOR. Staging Samet'in elle kullandığı
-  # kapı; gece yarısı üzerine yazmak, sabah bakmak için bıraktığı şeyi
-  # silmek olurdu. Burada aranan şey provaların ürüne ayak uydurup
-  # uydurmadığı — bunun için o an staging'de ne varsa yeter.
+  backend-foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:d1:core:foundation && npm run orbit:test:clients
+
+  backend-site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:d1:core:site
+
+  backend-public:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:d1:core:public
+
+  backend-publication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:d1:publication
+
+  backend-platform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:d1:platform
+
+  live-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify the live agent contract
+        run: npm run contract:live
+
   staging-rehearsal:
-    needs: full-regression
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
-
       - name: Install dependencies
         run: npm ci
-
-      # Eksik bir secret'ın hatası, provanın kendi hatasına benzemesin.
-      # Kimlik bilgisi olmadan düşen bir iş, gerçekten kırılmış bir
-      # sözleşmeyle karıştırılırsa görmezden gelinmeye başlar.
       - name: Verify the staging credentials are present
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -77,32 +125,17 @@ jobs:
           [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
           [ -n "$ORBIT_SESSION_PEPPER_V1" ] || missing="$missing ORBIT_STAGING_SESSION_PEPPER_V1"
           [ -n "$ORBIT_CSRF_PEPPER_V1" ] || missing="$missing ORBIT_STAGING_CSRF_PEPPER_V1"
-          [ -n "$ORBIT_AGENT_CREDENTIAL_PEPPER_V1" ] \
-            || missing="$missing ORBIT_STAGING_AGENT_CREDENTIAL_PEPPER_V1"
+          [ -n "$ORBIT_AGENT_CREDENTIAL_PEPPER_V1" ] || missing="$missing ORBIT_STAGING_AGENT_CREDENTIAL_PEPPER_V1"
           if [ -n "$missing" ]; then
             echo "::error::Staging rehearsal cannot run. Missing repository secrets:$missing"
             exit 1
           fi
-
       - name: Rehearse the staging contract
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           ORBIT_SESSION_PEPPER_V1: ${{ secrets.ORBIT_STAGING_SESSION_PEPPER_V1 }}
           ORBIT_CSRF_PEPPER_V1: ${{ secrets.ORBIT_STAGING_CSRF_PEPPER_V1 }}
           ORBIT_AGENT_CREDENTIAL_PEPPER_V1: ${{ secrets.ORBIT_STAGING_AGENT_CREDENTIAL_PEPPER_V1 }}
-        # Buraya yalnız yeşil olduğu ölçülmüş provalar giriyor. Bir provayı
-        # kırmızı hâlde bağlamak, gecelik işi görmezden gelinen bir işe
-        # çevirir — düzeltmeye çalıştığımız sorunun ta kendisi.
-        #
-        # Bu yüzden slice2 ve slice3 provaları buraya eklenmedi, silindi:
-        # biri kaldırılmış bir API'ye bakıyordu, diğeri staging büyüdükçe
-        # kendi kendine bozulan sayılara. Kapsamın nereye düştüğü
-        # orbit-slice1-tests.ts ve orbit-slice3-tests.ts içinde,
-        # devraldıkları testin başında yazılı.
-        #
-        # Yeni bir staging betiği eklenirse ya buraya girer ya da elle
-        # çalışacağı orbit-production-config-tests.mjs'de açıkça beyan
-        # edilir; kilit ikisini de yapmadan geçmiyor.
         run: |
           npm run staging:verify
           npm run staging:slice4:e2e

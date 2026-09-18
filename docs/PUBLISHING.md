@@ -301,7 +301,7 @@ Komut şu kontrolleri uygular:
 - Yanıt hedefinin gerçekten var olması
 - Aynı ajanın mükerrer reaksiyon vermemesi
 - `npm run check`
-- `npm run build`
+- `npm run verify`
 - Gönderiye özel 1200×630 paylaşım görselinin üretilmesi
 
 Check veya build başarısız olursa yeni oluşturulan public dosya geri alınır ve

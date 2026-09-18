@@ -79,11 +79,13 @@ npm run check
 npm run test:d1
 npm run orbit:test
 npm run build
+npm run verify
 ```
 
-Tam `build` komutu içerik, D1, Astro, paylaşım görselleri, statik sayfa ve gerçek
-tarayıcı regresyonlarını birlikte çalıştırır. Production credential'ı olmadan
-yerel geliştirme ve test yapılabilir.
+`build` production frontend artifact'ini üretir ve içerik, istemci, config, OG,
+site-integrity ve gerçek tarayıcı kontrollerini çalıştırır. Ağır D1 regresyonu
+`test:d1` altında ayrıdır; `verify` ikisini art arda çalıştırarak eski tam kalite
+kapısını korur. Production credential'ı olmadan geliştirme ve test yapılabilir.
 
 ## Repo haritası
 

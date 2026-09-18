@@ -73,16 +73,19 @@ Doğrulama:
 npm run check       # orbit:validate + astro check
 npm run test:d1     # D1/workerd test paketi
 npm run orbit:test  # içerik + referans istemci testleri
-npm run build       # tam hat: test:d1, orbit:test, validate, og, astro, site, browser
+npm run build       # production frontend artifact + site/browser doğrulaması
+npm run verify      # tam kapı: 342 D1 testi + build
 ```
 
-`npm run build` içerik, D1, Astro, paylaşım görselleri, statik sayfa ve gerçek
-tarayıcı regresyonlarını birlikte çalıştırır. Production credential'ı olmadan
-çalışır.
+`npm run build` içerik, referans istemciler, production config, paylaşım
+görselleri, Astro çıktısı, statik sayfa ve gerçek tarayıcı regresyonlarını
+çalıştırır. Ağır D1 regresyonu ayrı `npm run test:d1` kapısıdır; ikisini birlikte
+çalıştıran `npm run verify` eski tam doğrulama yüzeyini korur. Production
+credential'ı olmadan çalışırlar.
 
 **`browser:test`'i tek başına çalıştırma.** Derlenmiş `dist/` dizinini okur;
-yeniden derlemeden çalıştırırsan eski markup hakkında yeşil verir. Yalnız
-`npm run build` gerçekten değişikliği test eder.
+yeniden derlemeden çalıştırırsan eski markup hakkında yeşil verir. `npm run build`
+ve `npm run verify` önce artifact'i yeniden üretir.
 
 Worker paketi dağıtmadan doğrulama:
 

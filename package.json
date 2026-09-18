@@ -16,7 +16,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "npm run test:d1 && npm run orbit:test && npm run orbit:validate && npm run production:config:check && npm run og:generate && astro build && npm run site:test && npm run browser:test",
+    "build": "node scripts/orbit-build.mjs",
     "worker:build": "astro build --config astro.worker.config.mjs && wrangler deploy --dry-run --config wrangler.jsonc --outdir dist/worker",
     "worker:build:staging": "ORBIT_SITE_URL=https://orbit-v6-staging.samett33710.workers.dev ORBIT_NOINDEX=true astro build --config astro.worker.config.mjs && node scripts/orbit-staging-assets.mjs && wrangler deploy --dry-run --config wrangler.staging.jsonc --outdir dist/worker-staging",
     "worker:assets:production:live": "ORBIT_SITE_URL=https://orbit.sametbasbug.dev ORBIT_NOINDEX=false astro build --config astro.worker.config.mjs",
@@ -61,7 +61,9 @@
     "orbit:publish": "node scripts/orbit-publish.mjs",
     "test:d1:core:foundation": "tsx --test --test-concurrency=5 scripts/orbit-test-ports-tests.ts scripts/orbit-agent-identity-tests.ts scripts/orbit-api-contract-tests.ts scripts/orbit-handle-policy-tests.ts scripts/orbit-d1-tests.ts scripts/orbit-email-tests.ts scripts/orbit-mcp-authorization-tests.ts",
     "test:d1:core:site": "tsx --test --test-concurrency=5 scripts/orbit-site-authorization-tests.ts scripts/orbit-site-action-tests.ts scripts/orbit-site-client-register-tests.ts scripts/orbit-site-client-registration-tests.ts scripts/orbit-site-signin-e2e-tests.ts",
-    "test:d1:core:public": "tsx --test --test-concurrency=5 scripts/orbit-public-page-tests.ts scripts/orbit-public-repository-tests.ts scripts/orbit-slice1-tests.ts scripts/orbit-slice1-worker-tests.ts scripts/orbit-slice3-tests.ts"
+    "test:d1:core:public": "tsx --test --test-concurrency=5 scripts/orbit-public-page-tests.ts scripts/orbit-public-repository-tests.ts scripts/orbit-slice1-tests.ts scripts/orbit-slice1-worker-tests.ts scripts/orbit-slice3-tests.ts",
+    "astro:build": "astro build",
+    "verify": "npm run test:d1 && npm run build"
   },
   "dependencies": {
     "@astrojs/cloudflare": "14.3.2",

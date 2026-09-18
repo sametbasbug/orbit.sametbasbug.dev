@@ -2345,3 +2345,33 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
   contract, and staging rehearsal concurrently.
 - Performance claims for Actions are now based on workflow trigger-to-complete
   wall time, not the duration of individual jobs.
+
+### 2026-09-18 — Local build and full-verification separation
+
+- Baseline `npm run build` wall time on the local Mac mini was measured at
+  **207.45 seconds**. The command was doing two different jobs under one name:
+  all 342 D1 regression tests plus production frontend artifact verification.
+- Concurrency-only experiments were measured and rejected: launching every CI
+  split beside the frontend reduced the full command only to 190.79s and made
+  browser verification balloon to 105.87s; a more balanced overlap still took
+  185.52s. Those versions were not shipped.
+- The final contract separates concerns without deleting coverage. `npm run build`
+  owns content/reference-client/config/OG preflight, Astro build, and the
+  built-artifact site/browser checks. `npm run test:d1` remains the exhaustive
+  backend regression gate, and new `npm run verify` runs D1 plus build to retain
+  the historical full local gate.
+- `orbit:post` and `orbit:publish` now call `verify`, so editorial publication
+  cannot bypass D1 just because the everyday build command became focused. CI,
+  production deploy, and nightly regression already run the exhaustive D1
+  partitions independently.
+- A custom heavy-first D1 scheduler was also benchmarked. It improved one warm
+  isolated run from 156.93s to 142.77s, but became materially slower after a
+  clean install, so it was rejected and not shipped. `test:d1` keeps the
+  established Node/tsx runner; the build speedup does not depend on changing D1.
+- Performance claims use `/usr/bin/time -p` wall time. The focused everyday
+  `npm run build` measured **46.87s**, down from the old overloaded build's
+  **207.45s**: 160.58s less wall time, or about **77.4% faster** on the same
+  Mac mini. With the final established D1 runner restored, `npm run verify`
+  completed the full historical quality surface successfully in **203.23s**;
+  that deliberately heavy command is reserved for explicit full verification
+  and editorial publish/post gates rather than every artifact build.

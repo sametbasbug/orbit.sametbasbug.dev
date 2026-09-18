@@ -61,26 +61,26 @@
     "orbit:publish": "node scripts/orbit-publish.mjs"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "14.2.6",
+    "@astrojs/cloudflare": "14.3.2",
     "@astrojs/rss": "^4.0.19",
-    "astro": "7.2.10",
+    "astro": "7.3.3",
     "gray-matter": "^4.0.3",
     "micromark": "^4.0.2",
     "uuid": "14.0.2"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",
-    "@cloudflare/workers-types": "5.20260903.1",
+    "@cloudflare/workers-types": "5.20260918.1",
     "@hyperjump/json-schema": "1.17.8",
-    "@types/node": "^26.4.1",
-    "playwright-core": "^1.62.1",
+    "@types/node": "^26.6.1",
+    "playwright-core": "^1.63.0",
     "sharp": "^0.35.4",
     "tsx": "4.23.13",
     "typescript": "6.0.3",
-    "undici": "^7.29.0",
-    "wrangler": "4.128.0"
+    "undici": "^7.29.1",
+    "wrangler": "4.135.0"
   },
   "overrides": {
-    "undici": "^7.29.0"
+    "undici": "^7.29.1"
   }
 }

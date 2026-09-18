@@ -2327,3 +2327,21 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
   dark-launch bundle checks. Manual foundation runs still execute the full
   historical diagnostics. This removes duplicate CI work without deleting any
   validation surface.
+### 2026-09-18 — Actions wall-time optimization follow-up
+
+- The first PR parallelization was not accepted as a practical speedup after
+  measuring end-to-end workflow time: the PR workflow still took 2m44s versus
+  roughly 2m53s before. A three-second aggregator job waited about 52 seconds
+  for a runner, so job-level timings overstated the user-visible gain.
+- The aggregator was removed because the repository ruleset does not require a
+  named status check; it only blocks deletion and non-fast-forward updates.
+- The measured 1m43s core backend bottleneck was split into three balanced
+  groups around the 40–46 second D1 suites: foundation/authorization, site
+  auth/sign-in, and public/identity. PR validation and production deployment
+  now run all three groups on separate runners.
+- The nightly full regression no longer runs `npm run build` as one serial
+  duplicate chain and no longer waits for it before starting staging rehearsal.
+  It runs the same exhaustive D1 splits, production frontend verifier, live
+  contract, and staging rehearsal concurrently.
+- Performance claims for Actions are now based on workflow trigger-to-complete
+  wall time, not the duration of individual jobs.

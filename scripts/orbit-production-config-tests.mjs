@@ -348,7 +348,9 @@ assert(
 assert(
   !deployWorkflow.includes('\n  classify:')
     && !deployWorkflow.includes('needs: classify')
-    && deployWorkflow.includes('needs.frontend.outputs.scope == needs.backend.outputs.scope')
+    && deployWorkflow.includes('needs.frontend.outputs.scope == needs.backend-foundation.outputs.scope')
+    && deployWorkflow.includes('needs.frontend.outputs.scope == needs.backend-site.outputs.scope')
+    && deployWorkflow.includes('needs.frontend.outputs.scope == needs.backend-public.outputs.scope')
     && deployWorkflow.includes('needs.frontend.outputs.scope == needs.backend-publication.outputs.scope')
     && deployWorkflow.includes('needs.frontend.outputs.scope == needs.backend-platform.outputs.scope'),
   'path classification still serializes validation jobs or can disagree without failing closed',
@@ -358,7 +360,9 @@ assert(
   'production frontend is not built and verified through the single-build path',
 );
 assert(
-  deployWorkflow.includes('npm run test:d1:core && npm run orbit:test:clients')
+  deployWorkflow.includes('npm run test:d1:core:foundation && npm run orbit:test:clients')
+    && deployWorkflow.includes('npm run test:d1:core:site')
+    && deployWorkflow.includes('npm run test:d1:core:public')
     && deployWorkflow.includes('npm run test:d1:publication')
     && deployWorkflow.includes('npm run test:d1:platform'),
   'full backend scope can skip D1, Worker or reference client verification',
@@ -396,8 +400,8 @@ assert(
  * çıkarılırlarsa aynı üç haftalık körlük geri gelir. */
 assert(
   fullRegressionWorkflow.includes('staging-rehearsal:')
-    && fullRegressionWorkflow.includes('needs: full-regression'),
-  'nightly regression no longer rehearses staging after the application checks',
+    && !fullRegressionWorkflow.includes('needs: full-regression'),
+  'nightly staging rehearsal is missing or unnecessarily serialized behind another regression job',
 );
 for (const script of ['staging:verify', 'staging:slice4:e2e']) {
   assert(
@@ -435,8 +439,8 @@ assert(
 assert(
   fullRegressionWorkflow.includes("cron: '30 1 * * *'")
     && fullRegressionWorkflow.includes('workflow_dispatch:')
-    && fullRegressionWorkflow.includes('npm run build')
-    && fullRegressionWorkflow.includes('npm run worker:build:production:live'),
+    && fullRegressionWorkflow.includes('npm run verify:frontend:production')
+    && fullRegressionWorkflow.includes('npm run contract:live'),
   'nightly/manual full regression surface is incomplete',
 );
 process.stdout.write(`Orbit production config tests: ${assertions} assertions passed\n`);

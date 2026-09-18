@@ -2305,3 +2305,25 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
   `site.tokens_issued`, `site.grant_revoked`, then a fresh consent and issue —
   in that order. Worth knowing before anyone reads a live grant row as proof
   that access was never withdrawn.
+
+### 2026-09-18 — Undici 8 and PR CI de-duplication
+
+- Upgraded the test-only direct Undici dependency and override from `7.29.1`
+  to `8.10.2`. Orbit's deployed Worker still does not ship Undici; it remains
+  Node-side test/build tooling.
+- Undici 8 moved the npm package's global dispatcher slot from the historical
+  `.1`/`.2` aliasing to `.2` while Node 26 still retained `.1`. The old guard
+  treated every visible historical slot as authoritative and would therefore
+  reject a valid upgrade. The guard now verifies the package dispatcher plus
+  at least one live global slot, and a MockAgent regression proves that Node's
+  built-in `fetch` actually honors the dispatcher installed by the npm package.
+- PR validation previously ran the full 341-test D1 suite serially in
+  `pull-request.yml` while `v6-foundation-check.yml` repeated the same D1,
+  source and production-live work for package/foundation changes. The PR path
+  now reuses the production deploy's exhaustive core/publication/platform
+  partition in parallel with the production frontend verifier, then preserves
+  the stable `verify` check as a fail-closed aggregator.
+- The foundation PR workflow now owns only the extra generic, staging and
+  dark-launch bundle checks. Manual foundation runs still execute the full
+  historical diagnostics. This removes duplicate CI work without deleting any
+  validation surface.

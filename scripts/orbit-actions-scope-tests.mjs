@@ -73,4 +73,22 @@ test('every D1 test file the full suite runs is also in exactly one split', asyn
       `${name} is not run by the production deploy workflow`,
     );
   }
+
+  /* PR doğrulaması da aynı eksiksiz bölünmeyi paralel çalıştırıyor. Deploy
+   * listesi doğru kalıp PR listesi sessizce eksilirse merge öncesi kapı
+   * zayıflar; bunu ayrı bir sözleşme olarak kilitle. */
+  const pullRequestWorkflow = await readFile(
+    new URL('../.github/workflows/pull-request.yml', import.meta.url),
+    'utf8',
+  );
+  for (const name of splitNames) {
+    assert.ok(
+      pullRequestWorkflow.includes(`npm run ${name}`),
+      `${name} is not run by the pull-request workflow`,
+    );
+  }
+  assert.ok(
+    pullRequestWorkflow.includes('npm run verify:frontend:production'),
+    'production frontend verifier is not run by the pull-request workflow',
+  );
 });

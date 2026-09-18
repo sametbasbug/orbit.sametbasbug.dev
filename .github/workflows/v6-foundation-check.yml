@@ -1,10 +1,8 @@
 name: Orbit V6 Foundation Check
 
-# Bu iş akışı bir zamanlar `v6/server-platform` geliştirme dalına da push
-# tetikleyicisiyle bağlıydı. O dal birleşip emekli olduğundan tetikleyici
-# hiçbir şeyi çalıştırmıyordu; kaldırıldı. Altyapıya dokunan PR'lar ve elle
-# tetikleme kalıyor — main'e push'ta üretim doğrulamasını deploy-production
-# iş akışı yapar.
+# Pull Request Check already validates the complete D1 split, source checks
+# and production-live artifact. This workflow is the extra deployment-mode
+# guard for foundation-sensitive PRs. Manual runs retain full diagnostics.
 on:
   pull_request:
     branches:
@@ -49,17 +47,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify D1 foundation and Worker build
-        run: npm run v6:check
+      - name: Verify generic Worker bundle
+        run: npm run worker:build
 
       - name: Verify isolated staging bundle
         run: npm run worker:build:staging
 
-      - name: Verify production config parity
-        run: npm run production:config:check
-
-      - name: Verify production live bundle without deployment
-        run: npm run worker:build:production:live
-
       - name: Verify production dark-launch rollback bundle without deployment
         run: npm run worker:build:production:dark-launch
+
+      - name: Run standalone full foundation diagnostics
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          npm run test:d1
+          npm run check
+          npm run production:config:check
+          npm run worker:build:production:live

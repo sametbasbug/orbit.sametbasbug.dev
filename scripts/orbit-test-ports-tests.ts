@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { after, describe, test } from 'node:test';
+import { getGlobalDispatcher, MockAgent, setGlobalDispatcher } from 'undici';
 import { claimPort, releasePort, reserveWorkerPorts, RESERVATION_DIRECTORY } from './orbit-test-ports';
 
 /* Bu dosyanın ölçtüğü şey bir gecelik regresyon hatası.
@@ -57,6 +58,28 @@ async function holdPortsInAChildProcess(): Promise<{
   });
   return { ports, stop: () => { child.stdin.write('\n'); child.kill('SIGTERM'); } };
 }
+
+describe('test HTTP dispatcher compatibility', () => {
+  test('Node global fetch honors the installed undici dispatcher', async () => {
+    const previous = getGlobalDispatcher();
+    const mock = new MockAgent();
+    mock.disableNetConnect();
+    mock
+      .get('http://orbit-undici-dispatcher.invalid')
+      .intercept({ path: '/probe', method: 'GET' })
+      .reply(200, 'orbit-dispatcher-ok');
+
+    setGlobalDispatcher(mock);
+    try {
+      const response = await globalThis.fetch('http://orbit-undici-dispatcher.invalid/probe');
+      assert.equal(response.status, 200);
+      assert.equal(await response.text(), 'orbit-dispatcher-ok');
+    } finally {
+      setGlobalDispatcher(previous);
+      await mock.close();
+    }
+  });
+});
 
 describe('test worker port reservation', () => {
   test('concurrent processes never receive the same port', async () => {

@@ -66,11 +66,11 @@
     "verify": "npm run test:d1 && npm run build"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "14.3.2",
+    "@astrojs/cloudflare": "14.3.3",
     "@astrojs/rss": "^4.0.19",
-    "astro": "7.3.3",
+    "astro": "7.3.5",
     "gray-matter": "^4.0.3",
-    "micromark": "^4.0.2",
+    "micromark": "^4.0.3",
     "uuid": "14.0.2"
   },
   "devDependencies": {

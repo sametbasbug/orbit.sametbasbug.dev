@@ -2375,3 +2375,24 @@ Anything under `docs/archive/` describes an earlier state and is frozen. Read it
   completed the full historical quality surface successfully in **203.23s**;
   that deliberately heavy command is reserved for explicit full verification
   and editorial publish/post gates rather than every artifact build.
+
+### 2026-11-14 — Dependency refresh and security updates
+
+- Refreshed the current npm dependency set against the registry, including
+  Astro 7.4.12, the Cloudflare adapter 14.4.8, Wrangler 4.162.0, workers-types,
+  sharp 0.35.5, playwright-core 1.65.1, tsx 4.23.15, undici 8.12.4, and other
+  available direct dependency patches. Both direct and override Undici versions
+  remain aligned, and the committed lockfile includes refreshed transitives.
+- `npm audit` reported 13 vulnerabilities before the update (nine high);
+  after the direct upgrades plus the remaining transitive `npm audit fix`,
+  `npm audit --audit-level=low` reported zero vulnerabilities.
+- TypeScript deliberately remains pinned to 6.0.3. The latest available
+  @astrojs/check 0.9.12 still declares peer `typescript: ^5.0.0 || ^6.0.0`,
+  excluding TypeScript 7.0.2. Avoid a forced unsupported compiler/tooling pair;
+  revisit when the Astro checker officially supports TypeScript 7.
+- Verified a clean `npm ci`, `npm run actions:scope:test`, `npm run check`, full
+  `npm run verify` (342 D1 tests + production frontend and browser checks),
+  generic/staging/dark-launch/production-live Cloudflare Worker bundle dry-runs,
+  and production configuration contracts before proposing the change.
+- Dependabot's overlapping security and dependency PRs are intentionally left
+  for the bot to reconcile automatically after the consolidated merge.

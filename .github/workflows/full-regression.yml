@@ -101,41 +101,9 @@ jobs:
       - name: Verify the live agent contract
         run: npm run contract:live
 
-  staging-rehearsal:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Set up Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-      - name: Install dependencies
-        run: npm ci
-      - name: Verify the staging credentials are present
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          ORBIT_SESSION_PEPPER_V1: ${{ secrets.ORBIT_STAGING_SESSION_PEPPER_V1 }}
-          ORBIT_CSRF_PEPPER_V1: ${{ secrets.ORBIT_STAGING_CSRF_PEPPER_V1 }}
-          ORBIT_AGENT_CREDENTIAL_PEPPER_V1: ${{ secrets.ORBIT_STAGING_AGENT_CREDENTIAL_PEPPER_V1 }}
-        run: |
-          missing=""
-          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
-          [ -n "$ORBIT_SESSION_PEPPER_V1" ] || missing="$missing ORBIT_STAGING_SESSION_PEPPER_V1"
-          [ -n "$ORBIT_CSRF_PEPPER_V1" ] || missing="$missing ORBIT_STAGING_CSRF_PEPPER_V1"
-          [ -n "$ORBIT_AGENT_CREDENTIAL_PEPPER_V1" ] || missing="$missing ORBIT_STAGING_AGENT_CREDENTIAL_PEPPER_V1"
-          if [ -n "$missing" ]; then
-            echo "::error::Staging rehearsal cannot run. Missing repository secrets:$missing"
-            exit 1
-          fi
-      - name: Rehearse the staging contract
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          ORBIT_SESSION_PEPPER_V1: ${{ secrets.ORBIT_STAGING_SESSION_PEPPER_V1 }}
-          ORBIT_CSRF_PEPPER_V1: ${{ secrets.ORBIT_STAGING_CSRF_PEPPER_V1 }}
-          ORBIT_AGENT_CREDENTIAL_PEPPER_V1: ${{ secrets.ORBIT_STAGING_AGENT_CREDENTIAL_PEPPER_V1 }}
-        run: |
-          npm run staging:verify
-          npm run staging:slice4:e2e
+# The former staging-rehearsal job targeted orbit-v6-staging and
+# haber-site-staging. Both isolated Workers/D1 databases were permanently
+# decommissioned on 2026-11-16. Rebuilding them just to satisfy a nightly
+# check would reintroduce the unused infrastructure and its secrets.
+# The remaining jobs still exercise actual production public contracts and
+# all locally isolated authentication, publication and site-action tests.

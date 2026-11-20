@@ -123,3 +123,21 @@ test('every D1 test file the full suite runs is also in exactly one split', asyn
     'production frontend verifier is not run by full regression',
   );
 });
+
+test('nightly regression stays independent from decommissioned staging infrastructure', async()=>{
+  const text=await readFile(
+    new URL('../.github/workflows/full-regression.yml',import.meta.url),'utf8',
+  );
+  for(const job of [
+    'frontend','backend-foundation','backend-site',
+    'backend-public','backend-publication','backend-platform','live-contract',
+  ]){
+    assert.match(text,new RegExp('^  '+job+':','mu'),job+' must remain scheduled');
+  }
+  assert.doesNotMatch(text,/^  staging-rehearsal:/mu);
+  assert.doesNotMatch(text,/^\s+npm run staging:/mu);
+  assert.doesNotMatch(text,/^\s+ORBIT_STAGING_[A-Z_0-9]+:/mu);
+  assert.match(text,/npm run contract:live/u);
+  assert.match(text,/npm run test:d1:core:site/u);
+  assert.match(text,/npm run test:d1:publication/u);
+});

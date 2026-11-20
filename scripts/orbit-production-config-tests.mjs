@@ -10,18 +10,18 @@ const files = {
   packageJson: new URL('../package.json', import.meta.url),
 };
 
-/* Elle çalıştırılacağı bilerek kabul edilmiş staging betikleri. Buraya
- * girmek bir beyandır: "bu iş gecelik koşamaz, çünkü ya dağıtım yapar ya
- * da ücretli/yıkıcı bir kaynağa dokunur." Aşağıdaki kilit, listede de
- * gecelik işte de olmayan bir staging betiğini hata sayar — bir prova
- * yazılıp hiç çalıştırılmadan üç hafta bozuk kalmasının önündeki tek
- * engel bu. */
+/* Staging Workers/D1s were retired in November 2026. These retained
+ * scripts are now explicit manual utilities for an owner-approved future
+ * staging reprovision, never CI dependencies. Registering any NEW staging
+ * script requires adding it here, rather than silently scheduling it. */
 const HAND_RUN_STAGING_SCRIPTS = new Set([
-  'staging:deploy', // staging'e yeni kod basar; kapıyı Samet açar
+  'staging:deploy', // only after explicit staging reprovision
   'staging:slice3:cutover-rehearsal', // veritabanı kopyalayıp geri yükler
   'staging:slice4:backup-rehearsal', // yedek alıp geri yükler
   'staging:slice5:r2-restore', // R2 kovasına yazar
   'staging:slice5:images-cpu', // Cloudflare Images kotası harcar
+  'staging:verify', // retired HTTP origin; only after staging reprovision
+  'staging:slice4:e2e', // retired HTTP origin; only after staging reprovision
 ]);
 
 let assertions = 0;
@@ -395,46 +395,38 @@ assert(
   deployWorkflow.includes("test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\""),
   'deploy job does not verify the exact candidate commit',
 );
-/* Staging provaları gecelik işte kalmalı. Buraya gelmelerinin sebebi
- * tam olarak kimsenin onları çalıştırmıyor oluşuydu; işten sessizce
- * çıkarılırlarsa aynı üç haftalık körlük geri gelir. */
+/* The overnight workflow must not attempt retired staging origins or
+ * demand stage-only secrets. All seven real, isolated production and backend
+ * suites stay scheduled. Stage scripts remain manual-only legacy tools until
+ * the owner explicitly provisions a new isolated environment. */
 assert(
-  fullRegressionWorkflow.includes('staging-rehearsal:')
-    && !fullRegressionWorkflow.includes('needs: full-regression'),
-  'nightly staging rehearsal is missing or unnecessarily serialized behind another regression job',
+  !/^  staging-rehearsal:/mu.test(fullRegressionWorkflow)
+    && !/^\s+npm run staging:/mu.test(fullRegressionWorkflow)
+    && !/^\s+ORBIT_STAGING_[A-Z_0-9]+:/mu.test(fullRegressionWorkflow),
+  'retired staging must not be a nightly dependency',
 );
-for (const script of ['staging:verify', 'staging:slice4:e2e']) {
+for (const job of [
+  'frontend','backend-foundation','backend-site','backend-public',
+  'backend-publication','backend-platform','live-contract',
+]){
   assert(
-    fullRegressionWorkflow.includes(`npm run ${script}`),
-    `nightly staging rehearsal dropped ${script}`,
+    fullRegressionWorkflow.includes('  '+job+':'),
+    'nightly regression lost independent job '+job,
   );
 }
-/* Her staging betiği ya gecelik işte koşar ya da elle koşacağı yukarıda
- * beyan edilmiştir. Üçüncü bir hâl — yazılmış ama kimsenin çalıştırmadığı
- * betik — bize üç haftalık bir körlüğe mal oldu. */
-const stagingScripts = Object.keys(
+const stagingScripts=Object.keys(
   JSON.parse(await readFile(files.packageJson, 'utf8')).scripts,
-).filter((name) => name.startsWith('staging:'));
-assert(stagingScripts.length > 0, 'package.json declares no staging script at all');
-for (const script of stagingScripts) {
+).filter((name)=>name.startsWith('staging:'));
+assert(stagingScripts.length>0,'legacy staging commands unexpectedly removed');
+for(const script of stagingScripts){
   assert(
-    fullRegressionWorkflow.includes(`npm run ${script}`) || HAND_RUN_STAGING_SCRIPTS.has(script),
-    `${script} runs nowhere: add it to the nightly rehearsal, `
-      + 'or declare it in HAND_RUN_STAGING_SCRIPTS with the reason it cannot',
+    HAND_RUN_STAGING_SCRIPTS.has(script),
+    'unreviewed staging command needs explicit manual-only registration: '+script,
   );
 }
-for (const script of HAND_RUN_STAGING_SCRIPTS) {
-  assert(
-    stagingScripts.includes(script),
-    `HAND_RUN_STAGING_SCRIPTS still lists ${script}, which package.json no longer defines`,
-  );
+for(const script of HAND_RUN_STAGING_SCRIPTS){
+  assert(stagingScripts.includes(script),'obsolete manual-only staging declaration '+script);
 }
-/* Eksik secret'ın hatası provanın hatasına benzemesin: ayırt edilemeyen
- * bir kırmızı, görmezden gelinen bir kırmızıya dönüşür. */
-assert(
-  fullRegressionWorkflow.includes('Missing repository secrets'),
-  'nightly staging rehearsal no longer names the credential it is missing',
-);
 
 assert(
   fullRegressionWorkflow.includes("cron: '30 1 * * *'")
